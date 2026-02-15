@@ -192,11 +192,48 @@ Program goal: implement Day 4 AuthService methods for phone OTP, verification, a
 
 ---
 
-## Current Summary (after Day 4)
+## Day 5 - Login Screen UI (OTP Flow)
+
+Program goal: implement parent login UI from design source, wire Day 4 AuthService, and support derived dark/tablet variants.
+
+### Commit entries
+
+1. **2026-02-15 22:45:58 +05:30**  
+   Commit: `(this commit - see latest git log)`  
+   Message: `Implement Day 5 login screen OTP flow and integration [design: parent_login_mobile_light]`  
+   Changes:
+   - Implemented `lib/screens/login_screen.dart` as a stateful, two-step OTP flow:
+     - Phone input step (`Send OTP`)
+     - OTP verification step (`Verify OTP`, `Change Number`, `Resend OTP`)
+     - Inline loading and error states
+   - Wired login actions to `AuthService.sendOTP(...)` and `AuthService.verifyOTP(...)`.
+   - Added temporary post-login target in `lib/screens/dashboard_screen.dart`.
+   - Updated `lib/main.dart`:
+     - Home now points to `LoginScreen`
+     - Added `themeMode: ThemeMode.system` and explicit light/dark theme seeds.
+   - Updated `test/widget_test.dart` to a Firebase-safe constructibility test for `MyApp`.
+   Validation:
+   - `flutter analyze` reported no issues.
+   - `flutter test` passed.
+   - `flutter run -d emulator-5554 --no-resident` built and installed successfully; service protocol connection closed on emulator during attach phase.
+   Design folder(s) used:
+   - `parent_login_mobile_light`
+   - `design_system_tokens_spec`
+   - `parent_dashboard_mobile_dark`
+   - `parent_dashboard_tablet_light_1`
+   Design assets checked:
+   - `screen.png`, `code.html`
+   UI fidelity note:
+   - Matched mobile-light structure and spacing hierarchy; dark/tablet variants were derived from token spec and existing parent dark/tablet patterns while keeping the same component order.
+
+---
+
+## Current Summary (after Day 5)
 
 - Day 1 completed: foundation, naming, structure, git + GitHub.
 - Day 2 completed: dependencies and Provider baseline.
 - Day 3 completed: Firebase Android configuration and initialization.
 - Day 4 implementation completed in code; real-device OTP validation pending.
+- Day 5 completed in code: login screen UI, OTP interaction wiring, dark/tablet derived variants, and app-entry integration.
 
 Last updated: 2026-02-15
