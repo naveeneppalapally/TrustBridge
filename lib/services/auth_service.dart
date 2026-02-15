@@ -3,16 +3,20 @@ import 'dart:developer' as developer;
 
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:firebase_auth/firebase_auth.dart';
+import 'package:trustbridge_app/services/firestore_service.dart';
 
 class AuthService {
   AuthService({
     FirebaseAuth? auth,
     FirebaseFirestore? firestore,
+    FirestoreService? firestoreService,
   })  : _auth = auth ?? FirebaseAuth.instance,
-        _firestore = firestore ?? FirebaseFirestore.instance;
+        _firestoreService = firestoreService ??
+            FirestoreService(
+                firestore: firestore ?? FirebaseFirestore.instance);
 
   final FirebaseAuth _auth;
-  final FirebaseFirestore _firestore;
+  final FirestoreService _firestoreService;
 
   String? _verificationId;
   int? _resendToken;
@@ -45,7 +49,7 @@ class AuthService {
             final user = userCredential.user;
             if (user != null &&
                 (userCredential.additionalUserInfo?.isNewUser ?? false)) {
-              await _createParentProfile(user);
+              await _ensureParentProfile(user);
             }
             if (!completer.isCompleted) {
               completer.complete(true);
@@ -118,8 +122,9 @@ class AuthService {
       final userCredential = await _auth.signInWithCredential(credential);
       final user = userCredential.user;
 
-      if (user != null && (userCredential.additionalUserInfo?.isNewUser ?? false)) {
-        await _createParentProfile(user);
+      if (user != null &&
+          (userCredential.additionalUserInfo?.isNewUser ?? false)) {
+        await _ensureParentProfile(user);
       }
 
       _log('OTP verification succeeded');
@@ -139,24 +144,12 @@ class AuthService {
     _log('User signed out');
   }
 
-  Future<void> _createParentProfile(User user) async {
-    final parentRef = _firestore.collection('parents').doc(user.uid);
-    final existing = await parentRef.get();
-    if (existing.exists) {
-      _log('Parent profile already exists for ${user.uid}');
-      return;
-    }
-
-    await parentRef.set({
-      'parentId': user.uid,
-      'phone': user.phoneNumber,
-      'createdAt': FieldValue.serverTimestamp(),
-      'subscription': {
-        'tier': 'free',
-        'validUntil': null,
-      },
-    });
-    _log('Parent profile created for ${user.uid}');
+  Future<void> _ensureParentProfile(User user) async {
+    await _firestoreService.ensureParentProfile(
+      parentId: user.uid,
+      phoneNumber: user.phoneNumber,
+    );
+    _log('Parent profile ensured for ${user.uid}');
   }
 
   String? _normalizePhoneNumber(String input) {

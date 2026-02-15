@@ -1,0 +1,25 @@
+rules_version = '2';
+service cloud.firestore {
+  match /databases/{database}/documents {
+    function isAuthenticated() {
+      return request.auth != null;
+    }
+
+    function isParent(parentId) {
+      return isAuthenticated() && request.auth.uid == parentId;
+    }
+
+    match /parents/{parentId} {
+      allow create: if isParent(parentId) &&
+        request.resource.data.parentId == request.auth.uid;
+      allow read, update, delete: if isParent(parentId);
+    }
+
+    match /children/{childId} {
+      allow create: if isAuthenticated() &&
+        request.resource.data.parentId == request.auth.uid;
+      allow read, update, delete: if isAuthenticated() &&
+        resource.data.parentId == request.auth.uid;
+    }
+  }
+}

@@ -228,12 +228,52 @@ Program goal: implement parent login UI from design source, wire Day 4 AuthServi
 
 ---
 
-## Current Summary (after Day 5)
+## Day 6 - Firestore Setup (Backend-Only)
+
+Program goal: enable Firestore backend with strict owner-only rules and wire parent profile repository into auth flow.
+
+### Commit entries
+
+1. **2026-02-15 23:20:00 +05:30**  
+   Commit: `(this commit - see latest git log)`  
+   Message: `Set up Firestore backend and parent profile repository`  
+   Changes:
+   - Provisioned Firestore backend for `trustbridge-navee`:
+     - Enabled Firestore API
+     - Created `(default)` Firestore Native database in `asia-south1`
+   - Added Firebase config files:
+     - `.firebaserc` (default project set)
+     - `firestore.rules` (strict owner-only rules for `parents` and `children`)
+     - `firestore.indexes.json` (minimal baseline)
+   - Updated `firebase.json` to include Firestore rules/indexes config while preserving FlutterFire config.
+   - Implemented `lib/services/firestore_service.dart`:
+     - `ensureParentProfile(...)`
+     - `getParentProfile(...)`
+     - `watchParentProfile(...)`
+   - Refactored `lib/services/auth_service.dart`:
+     - Injected/used `FirestoreService`
+     - Replaced direct Firestore parent creation with `ensureParentProfile(...)`
+   Validation:
+   - `firebase firestore:databases:list --project trustbridge-navee --json` succeeded and confirmed `locationId: asia-south1`.
+   - `firebase deploy --only firestore:rules,firestore:indexes --project trustbridge-navee` succeeded.
+   - `flutter pub get` succeeded.
+   - `flutter analyze` passed with no issues.
+   - `flutter test` passed.
+   - `flutter run -d emulator-5554 --no-resident` could not run because no emulator/device with id `emulator-5554` was available at execution time.
+   - Android build fallback validation: `flutter build apk --debug` succeeded.
+   Notes:
+   - Non-UI commit (design fields not applicable).
+   - Manual OTP login + Firestore rules simulator checks: pending (requires running device/emulator + Firebase Console).
+
+---
+
+## Current Summary (after Day 6)
 
 - Day 1 completed: foundation, naming, structure, git + GitHub.
 - Day 2 completed: dependencies and Provider baseline.
 - Day 3 completed: Firebase Android configuration and initialization.
 - Day 4 implementation completed in code; real-device OTP validation pending.
 - Day 5 completed in code: login screen UI, OTP interaction wiring, dark/tablet derived variants, and app-entry integration.
+- Day 6 completed in code and infra: Firestore database/rules/indexes configured, parent profile repository added, and auth integration refactored.
 
 Last updated: 2026-02-15
