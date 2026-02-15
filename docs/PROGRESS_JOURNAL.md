@@ -162,10 +162,41 @@ Program goal: configure Firebase for Android with FlutterFire CLI and initialize
 
 ---
 
-## Current Summary (after Day 3)
+## Day 4 - Authentication Service (OTP)
+
+Program goal: implement Day 4 AuthService methods for phone OTP, verification, and parent profile creation.
+
+### Commit entries
+
+1. **2026-02-15 22:20:34 +05:30**  
+   Commit: `(this commit - see latest git log)`  
+   Message: `Implement Day 4 AuthService with OTP and parent profile creation`  
+   Changes:
+   - Implemented `lib/services/auth_service.dart` with:
+     - `currentUser`, `authStateChanges`
+     - `sendOTP(...)` with +91 normalization for non-E.164 inputs
+     - `verifyOTP(...)` for manual code verification
+     - `signOut()`
+     - internal Firestore parent profile creation for first-time users
+   - Added callback handling for:
+     - `verificationCompleted` (auto verification)
+     - `verificationFailed`
+     - `codeSent`
+     - `codeAutoRetrievalTimeout`
+   Validation:
+   - `flutter pub get` succeeded.
+   - `flutter analyze` reported no issues.
+   - `flutter test` passed.
+   - `flutter run -d emulator-5554 --no-resident` succeeded.
+   - Manual real-phone OTP test: pending (must be completed on physical device).
+
+---
+
+## Current Summary (after Day 4)
 
 - Day 1 completed: foundation, naming, structure, git + GitHub.
 - Day 2 completed: dependencies and Provider baseline.
 - Day 3 completed: Firebase Android configuration and initialization.
+- Day 4 implementation completed in code; real-device OTP validation pending.
 
 Last updated: 2026-02-15
