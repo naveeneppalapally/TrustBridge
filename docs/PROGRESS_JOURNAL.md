@@ -10,6 +10,25 @@ After each new commit, append one entry to this file with:
 - What changed
 - Validation done
 
+For UI-related commits, also include:
+- Design folder(s) used
+- Design assets checked (`screen.png`, `code.html`)
+- UI fidelity note (one line: what matched or what intentionally differed)
+
+UI commit message convention:
+- Add suffix: `[design: <folder_name>]`
+- Example: `Implement login screen OTP flow [design: parent_login_mobile_light]`
+
+### UI Entry Template (copy-paste for UI commits)
+
+- Date/time:
+- Commit hash:
+- What changed:
+- Validation done:
+- Design folder(s) used:
+- Design assets checked: `screen.png`, `code.html`
+- UI fidelity note:
+
 ---
 
 ## Day 1 - Foundation

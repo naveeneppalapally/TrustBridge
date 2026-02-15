@@ -57,6 +57,16 @@ Target Launch: May 10, 2026 (+12 weeks)
 - [Quick Start Checklist](docs/QUICK_START_CHECKLIST.md)
 - [Architecture Overview](docs/TRUSTBRIDGE_ARCHITECTURE.md)
 
+## UI Design Source of Truth
+
+- For any UI screen/task, check this folder first:
+  - `C:\Users\navee\Documents\TrustBridge\app_design`
+- Use both assets from the selected design folder:
+  - `screen.png` for visual target
+  - `code.html` for layout/token reference
+- If a matching design exists, implementation must map to that folder name.
+- If no matching design exists, add a `No matching design found` note in the commit and in `docs/PROGRESS_JOURNAL.md`.
+
 ## Privacy Promise
 
 - No reading of messages or browser history
