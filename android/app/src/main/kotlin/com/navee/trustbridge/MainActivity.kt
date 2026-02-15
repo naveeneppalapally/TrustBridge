@@ -1,4 +1,4 @@
-package com.navee.parentalcontrols
+package com.navee.trustbridge
 
 import io.flutter.embedding.android.FlutterActivity
 

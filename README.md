@@ -1,6 +1,6 @@
-# Parental Controls App
+# TrustBridge App
 
-Privacy-first parental controls for Android that keeps families safe while respecting everyone's dignity.
+Privacy-first TrustBridge app for Android that keeps families safe while respecting everyone's dignity.
 
 ## What It Does
 
