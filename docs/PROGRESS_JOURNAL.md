@@ -865,7 +865,49 @@ Program goal: provide a complete schedule management editor for time-based restr
 
 ---
 
-## Current Summary (after Day 19)
+## Day 20 - Quick Modes (Week 4 Day 5)
+
+Program goal: enable one-tap policy preset switching for parents without manual editing.
+
+### Commit entries
+
+1. **2026-02-17 00:36:00 +05:30**  
+   Commit: `(this commit - see latest git log)`  
+   Message: `Implement Day 20 quick policy modes [design: quick_modes_mobile_light]`  
+   Changes:
+   - Created `lib/models/policy_quick_modes.dart`:
+     - quick mode presets (`Strict Shield`, `Balanced`, `Relaxed`, `School Night`)
+     - mode-to-policy transformation logic
+     - age-band-aware schedule presets per mode
+   - Created `lib/screens/quick_modes_screen.dart`:
+     - one-tap mode selection UI
+     - policy impact preview (categories/schedules/safe-search deltas)
+     - confirmation dialog before applying
+     - Firestore persistence via `FirestoreService.updateChild()`
+     - preserves existing custom blocked domains by design
+   - Updated `lib/screens/policy_overview_screen.dart`:
+     - added `Quick Modes` card in overview
+     - wired navigation to `QuickModesScreen`
+     - updates local policy summary after quick-mode apply
+   - Added tests:
+     - `test/screens/quick_modes_screen_test.dart`
+     - updated `test/screens/policy_overview_screen_test.dart` for Quick Modes section visibility
+   Validation:
+   - `C:\Users\navee\flutter\bin\flutter.bat analyze` passed.
+   - `C:\Users\navee\flutter\bin\flutter.bat test` passed (56/56).
+   - `C:\Users\navee\flutter\bin\flutter.bat run -d emulator-5554 --no-resident` passed (build/install).
+   Design folder(s) used:
+   - `policy_overview_mobile_light`
+   - `schedule_editor_mobile_light`
+   - `design_system_tokens_spec`
+   Design assets checked:
+   - `screen.png`, `code.html`
+   UI fidelity note:
+   - Quick Modes uses existing TrustBridge policy card language and spacing; no standalone quick-mode reference folder exists, so layout is derived from current policy/schedule design primitives.
+
+---
+
+## Current Summary (after Day 20)
 
 - Day 1 completed: foundation, naming, structure, git + GitHub.
 - Day 2 completed: dependencies and Provider baseline.
@@ -888,5 +930,6 @@ Program goal: provide a complete schedule management editor for time-based restr
 - Day 17 completed in code: Category Blocking editor added with risk-based toggles, select/clear quick actions, Firestore save flow, and Policy Overview integration.
 - Day 18 completed in code: Custom Domain editor added with input validation, add/remove actions, Firestore save flow, and Policy Overview integration.
 - Day 19 completed in code: Schedule Creator editor added with template/custom schedule controls, day/time editing, and Firestore persistence.
+- Day 20 completed in code: Quick Modes added for one-tap policy presets with confirmation, preview, and Firestore persistence.
 
-Last updated: 2026-02-16
+Last updated: 2026-02-17

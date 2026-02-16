@@ -58,6 +58,7 @@ void main() {
       expect(find.text('Time Restrictions'), findsOneWidget);
       expect(find.text('Safe Search'), findsOneWidget);
       expect(find.text('Custom Blocked Domains'), findsOneWidget);
+      expect(find.text('Quick Modes'), findsOneWidget);
     });
   });
 }

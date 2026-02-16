@@ -4,6 +4,7 @@ import 'package:trustbridge_app/models/policy.dart';
 import 'package:trustbridge_app/models/schedule.dart';
 import 'package:trustbridge_app/screens/block_categories_screen.dart';
 import 'package:trustbridge_app/screens/custom_domains_screen.dart';
+import 'package:trustbridge_app/screens/quick_modes_screen.dart';
 import 'package:trustbridge_app/screens/schedule_creator_screen.dart';
 
 class PolicyOverviewScreen extends StatefulWidget {
@@ -63,6 +64,8 @@ class _PolicyOverviewScreenState extends State<PolicyOverviewScreen> {
           ),
           const SizedBox(height: 20),
           _buildQuickStatsCard(context, policy),
+          const SizedBox(height: 12),
+          _buildQuickModesCard(context, policy),
           const SizedBox(height: 12),
           _buildBlockedContentCard(context, policy),
           const SizedBox(height: 12),
@@ -258,6 +261,71 @@ class _PolicyOverviewScreenState extends State<PolicyOverviewScreen> {
                       ),
                 ),
               ],
+            ],
+          ),
+        ),
+      ),
+    );
+  }
+
+  Widget _buildQuickModesCard(BuildContext context, Policy policy) {
+    return Card(
+      elevation: 0,
+      shape: RoundedRectangleBorder(
+        borderRadius: BorderRadius.circular(16),
+      ),
+      child: InkWell(
+        borderRadius: BorderRadius.circular(16),
+        onTap: () async => _openQuickModes(context),
+        child: Padding(
+          padding: const EdgeInsets.all(16),
+          child: Row(
+            children: [
+              Container(
+                padding: const EdgeInsets.all(8),
+                decoration: BoxDecoration(
+                  color: Colors.indigo.shade100,
+                  borderRadius: BorderRadius.circular(8),
+                ),
+                child: Icon(Icons.flash_on, color: Colors.indigo.shade700),
+              ),
+              const SizedBox(width: 12),
+              Expanded(
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Text(
+                      'Quick Modes',
+                      style: Theme.of(context).textTheme.titleMedium?.copyWith(
+                            fontWeight: FontWeight.w700,
+                          ),
+                    ),
+                    const SizedBox(height: 3),
+                    Text(
+                      'Apply one-tap presets for instant policy changes',
+                      style: Theme.of(context).textTheme.bodySmall?.copyWith(
+                            color: Colors.grey.shade600,
+                          ),
+                    ),
+                    const SizedBox(height: 8),
+                    Wrap(
+                      spacing: 8,
+                      runSpacing: 8,
+                      children: [
+                        _quickModeChip(
+                            '${policy.blockedCategories.length} categories'),
+                        _quickModeChip('${policy.schedules.length} schedules'),
+                        _quickModeChip(
+                          policy.safeSearchEnabled
+                              ? 'Safe Search ON'
+                              : 'Safe Search OFF',
+                        ),
+                      ],
+                    ),
+                  ],
+                ),
+              ),
+              Icon(Icons.chevron_right, color: Colors.grey.shade600),
             ],
           ),
         ),
@@ -573,6 +641,27 @@ class _PolicyOverviewScreenState extends State<PolicyOverviewScreen> {
         _child = updatedChild;
       });
     }
+  }
+
+  Future<void> _openQuickModes(BuildContext context) async {
+    final updatedChild = await Navigator.of(context).push<ChildProfile>(
+      MaterialPageRoute(
+        builder: (_) => QuickModesScreen(child: _child),
+      ),
+    );
+
+    if (updatedChild != null && mounted) {
+      setState(() {
+        _child = updatedChild;
+      });
+    }
+  }
+
+  Widget _quickModeChip(String label) {
+    return Chip(
+      visualDensity: VisualDensity.compact,
+      label: Text(label),
+    );
   }
 
   String _formatCategoryName(String category) {
