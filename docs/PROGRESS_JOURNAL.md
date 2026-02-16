@@ -712,7 +712,7 @@ Program goal: start policy management by introducing a parent-friendly overview 
 ### Commit entries
 
 1. **2026-02-16 18:14:58 +05:30**  
-   Commit: `(this commit - see latest git log)`  
+   Commit: `25f4676`  
    Message: `Implement Day 16 policy overview screen [design: policy_overview_mobile_light]`  
    Changes:
    - Created `lib/screens/policy_overview_screen.dart`:
