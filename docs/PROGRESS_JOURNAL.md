@@ -1336,7 +1336,76 @@ Program goal: implement DNS query parsing and block decision foundations to supp
 
 ---
 
-## Current Summary (after Day 30)
+## Day 31 - VPN Integration Core (Week 7 Day 1)
+
+Program goal: complete the DNS-based VPN integration loop with native packet handling, policy rule updates, and Flutter control bridge coverage.
+
+### Commit entries
+
+1. **2026-02-16 23:19:26 +05:30**  
+   Commit: `ac1b777`  
+   Message: `Implement Day 31 VPN DNS filtering core`  
+   Changes:
+   - Added Android VPN core files:
+     - `android/app/src/main/kotlin/com/navee/trustbridge/vpn/DnsVpnService.kt`
+       - foreground `VpnService` lifecycle (start/stop/revoke)
+       - TUN interface setup and packet processing loop
+       - notification channel + persistent VPN notification
+       - dynamic rule updates via service actions/extras
+     - `android/app/src/main/kotlin/com/navee/trustbridge/vpn/DnsPacketHandler.kt`
+       - IPv4/UDP DNS packet interception
+       - domain extraction from DNS query payloads
+       - blocked-domain short-circuit responses (`0.0.0.0`)
+       - forwarding allowed queries to upstream DNS and returning responses
+     - `android/app/src/main/kotlin/com/navee/trustbridge/vpn/DnsFilterEngine.kt`
+       - blocked-domain and category-based matching logic
+       - wildcard/suffix checks
+       - runtime rule updates from Flutter side
+   - Updated `android/app/src/main/kotlin/com/navee/trustbridge/MainActivity.kt`:
+     - expanded method-channel handling for:
+       - `hasVpnPermission`
+       - `requestVpnPermission`
+       - `startVpn`
+       - `stopVpn`
+       - `isVpnRunning`
+       - `updateFilterRules`
+       - existing `getStatus` compatibility
+     - supports both channel names:
+       - `trustbridge/vpn`
+       - `com.navee.trustbridge/vpn`
+   - Updated `android/app/src/main/AndroidManifest.xml`:
+     - added VPN service declaration for `.vpn.DnsVpnService`
+     - added network/foreground permissions used by the integration
+   - Updated `lib/services/vpn_service.dart`:
+     - added explicit permission/status methods
+     - added rule-aware `startVpn(...)`
+     - added `updateFilterRules(...)`
+     - preserved compatibility with existing status-driven screen flow
+   - Added `lib/screens/vpn_test_screen.dart`:
+     - development-only VPN test harness for permission/start/stop verification
+   - Updated `lib/screens/security_controls_screen.dart`:
+     - added navigation entry to `VpnTestScreen` (`VPN Test (Dev)`)
+   - Added/updated tests:
+     - `test/screens/vpn_test_screen_test.dart`
+     - `test/screens/security_controls_screen_test.dart`
+     - `test/screens/vpn_protection_screen_test.dart`
+     - `test/services/vpn_service_test.dart`
+   Validation:
+   - `C:\Users\navee\flutter\bin\flutter.bat analyze` passed.
+   - `C:\Users\navee\flutter\bin\flutter.bat test` passed (103/103).
+   - `C:\Users\navee\flutter\bin\flutter.bat build apk --debug` passed.
+   - Physical-device runtime verification is pending manual QA.
+   Design folder(s) used:
+   - `security_settings_light`
+   - `design_system_tokens_spec`
+   Design assets checked:
+   - `screen.png`, `code.html`
+   UI fidelity note:
+   - VPN testing controls were intentionally kept minimal and scoped to security flows to avoid disrupting parent-facing production UI.
+
+---
+
+## Current Summary (after Day 31)
 
 - Day 1 completed: foundation, naming, structure, git + GitHub.
 - Day 2 completed: dependencies and Provider baseline.
@@ -1370,5 +1439,6 @@ Program goal: implement DNS query parsing and block decision foundations to supp
 - Day 28 completed in code: Parent settings now include a Help & Support center with in-app support ticket submission and FAQ guidance.
 - Day 29 completed in code: Android VPN service foundation, Flutter bridge controls, and Security screen integration are now implemented and build-verified.
 - Day 30 completed in code: DNS packet parser and filter decision engine are implemented with in-app VPN self-check diagnostics.
+- Day 31 completed in code: full DNS-based VPN integration core is wired from Flutter channel commands to native packet interception and filter-rule updates.
 
 Last updated: 2026-02-16
