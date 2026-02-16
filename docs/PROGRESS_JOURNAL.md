@@ -914,7 +914,7 @@ Program goal: replace the Safe Search stub with a real persisted policy control 
 ### Commit entries
 
 1. **2026-02-17 01:12:00 +05:30**  
-   Commit: `(this commit - see latest git log)`  
+   Commit: `ccc31f9`  
    Message: `Implement Day 21 safe search policy controls [design: policy_overview_mobile_light]`  
    Changes:
    - Updated `lib/screens/policy_overview_screen.dart`:
