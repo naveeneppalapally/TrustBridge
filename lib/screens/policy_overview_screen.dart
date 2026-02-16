@@ -6,14 +6,22 @@ import 'package:trustbridge_app/screens/block_categories_screen.dart';
 import 'package:trustbridge_app/screens/custom_domains_screen.dart';
 import 'package:trustbridge_app/screens/quick_modes_screen.dart';
 import 'package:trustbridge_app/screens/schedule_creator_screen.dart';
+import 'package:trustbridge_app/services/auth_service.dart';
+import 'package:trustbridge_app/services/firestore_service.dart';
 
 class PolicyOverviewScreen extends StatefulWidget {
   const PolicyOverviewScreen({
     super.key,
     required this.child,
+    this.authService,
+    this.firestoreService,
+    this.parentIdOverride,
   });
 
   final ChildProfile child;
+  final AuthService? authService;
+  final FirestoreService? firestoreService;
+  final String? parentIdOverride;
 
   @override
   State<PolicyOverviewScreen> createState() => _PolicyOverviewScreenState();
@@ -21,6 +29,23 @@ class PolicyOverviewScreen extends StatefulWidget {
 
 class _PolicyOverviewScreenState extends State<PolicyOverviewScreen> {
   late ChildProfile _child;
+  AuthService? _authService;
+  FirestoreService? _firestoreService;
+  bool _isSavingSafeSearch = false;
+
+  AuthService get _resolvedAuthService {
+    _authService ??= widget.authService ?? AuthService();
+    return _authService!;
+  }
+
+  FirestoreService get _resolvedFirestoreService {
+    _firestoreService ??= widget.firestoreService ?? FirestoreService();
+    return _firestoreService!;
+  }
+
+  String? get _parentId {
+    return widget.parentIdOverride ?? _resolvedAuthService.currentUser?.uid;
+  }
 
   @override
   void initState() {
@@ -469,9 +494,11 @@ class _PolicyOverviewScreenState extends State<PolicyOverviewScreen> {
                   ),
                   const SizedBox(height: 3),
                   Text(
-                    policy.safeSearchEnabled
-                        ? 'Filters explicit results in search engines'
-                        : 'Not enabled',
+                    _isSavingSafeSearch
+                        ? 'Updating safe search settings...'
+                        : policy.safeSearchEnabled
+                            ? 'Filters explicit results in search engines'
+                            : 'Not enabled',
                     style: Theme.of(context).textTheme.bodySmall?.copyWith(
                           color: Colors.grey.shade600,
                         ),
@@ -479,17 +506,87 @@ class _PolicyOverviewScreenState extends State<PolicyOverviewScreen> {
                 ],
               ),
             ),
-            Switch(
-              value: policy.safeSearchEnabled,
-              onChanged: (_) => _showComingSoon(
-                context,
-                'Policy editing coming in Day 17!',
-              ),
-            ),
+            _isSavingSafeSearch
+                ? const SizedBox(
+                    width: 24,
+                    height: 24,
+                    child: CircularProgressIndicator(strokeWidth: 2),
+                  )
+                : Switch(
+                    value: policy.safeSearchEnabled,
+                    onChanged: _setSafeSearchEnabled,
+                  ),
           ],
         ),
       ),
     );
+  }
+
+  Future<void> _setSafeSearchEnabled(bool enabled) async {
+    if (_isSavingSafeSearch || enabled == _child.policy.safeSearchEnabled) {
+      return;
+    }
+
+    final previousChild = _child;
+    final updatedPolicy = _child.policy.copyWith(safeSearchEnabled: enabled);
+    final updatedChild = _child.copyWith(policy: updatedPolicy);
+
+    setState(() {
+      _child = updatedChild;
+      _isSavingSafeSearch = true;
+    });
+
+    try {
+      final parentId = _parentId;
+      if (parentId == null) {
+        throw Exception('Not logged in');
+      }
+
+      await _resolvedFirestoreService.updateChild(
+        parentId: parentId,
+        child: updatedChild,
+      );
+
+      if (!mounted) {
+        return;
+      }
+
+      setState(() {
+        _isSavingSafeSearch = false;
+      });
+
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text(
+            enabled ? 'Safe Search enabled' : 'Safe Search disabled',
+          ),
+        ),
+      );
+    } catch (error) {
+      if (!mounted) {
+        return;
+      }
+      setState(() {
+        _child = previousChild;
+        _isSavingSafeSearch = false;
+      });
+
+      showDialog<void>(
+        context: context,
+        builder: (context) {
+          return AlertDialog(
+            title: const Text('Update Failed'),
+            content: Text('Unable to update safe search: $error'),
+            actions: [
+              TextButton(
+                onPressed: () => Navigator.of(context).pop(),
+                child: const Text('OK'),
+              ),
+            ],
+          );
+        },
+      );
+    }
   }
 
   Widget _buildCustomDomainsCard(BuildContext context, Policy policy) {
@@ -595,16 +692,15 @@ class _PolicyOverviewScreenState extends State<PolicyOverviewScreen> {
     );
   }
 
-  void _showComingSoon(BuildContext context, String message) {
-    ScaffoldMessenger.of(context).showSnackBar(
-      SnackBar(content: Text(message)),
-    );
-  }
-
   Future<void> _openBlockCategories(BuildContext context) async {
     final updatedChild = await Navigator.of(context).push<ChildProfile>(
       MaterialPageRoute(
-        builder: (_) => BlockCategoriesScreen(child: _child),
+        builder: (_) => BlockCategoriesScreen(
+          child: _child,
+          authService: widget.authService,
+          firestoreService: widget.firestoreService,
+          parentIdOverride: widget.parentIdOverride,
+        ),
       ),
     );
 
@@ -618,7 +714,12 @@ class _PolicyOverviewScreenState extends State<PolicyOverviewScreen> {
   Future<void> _openCustomDomains(BuildContext context) async {
     final updatedChild = await Navigator.of(context).push<ChildProfile>(
       MaterialPageRoute(
-        builder: (_) => CustomDomainsScreen(child: _child),
+        builder: (_) => CustomDomainsScreen(
+          child: _child,
+          authService: widget.authService,
+          firestoreService: widget.firestoreService,
+          parentIdOverride: widget.parentIdOverride,
+        ),
       ),
     );
 
@@ -632,7 +733,12 @@ class _PolicyOverviewScreenState extends State<PolicyOverviewScreen> {
   Future<void> _openScheduleCreator(BuildContext context) async {
     final updatedChild = await Navigator.of(context).push<ChildProfile>(
       MaterialPageRoute(
-        builder: (_) => ScheduleCreatorScreen(child: _child),
+        builder: (_) => ScheduleCreatorScreen(
+          child: _child,
+          authService: widget.authService,
+          firestoreService: widget.firestoreService,
+          parentIdOverride: widget.parentIdOverride,
+        ),
       ),
     );
 
@@ -646,7 +752,12 @@ class _PolicyOverviewScreenState extends State<PolicyOverviewScreen> {
   Future<void> _openQuickModes(BuildContext context) async {
     final updatedChild = await Navigator.of(context).push<ChildProfile>(
       MaterialPageRoute(
-        builder: (_) => QuickModesScreen(child: _child),
+        builder: (_) => QuickModesScreen(
+          child: _child,
+          authService: widget.authService,
+          firestoreService: widget.firestoreService,
+          parentIdOverride: widget.parentIdOverride,
+        ),
       ),
     );
 

@@ -907,7 +907,40 @@ Program goal: enable one-tap policy preset switching for parents without manual 
 
 ---
 
-## Current Summary (after Day 20)
+## Day 21 - Safe Search Controls (Week 5 Day 1)
+
+Program goal: replace the Safe Search stub with a real persisted policy control and robust error handling.
+
+### Commit entries
+
+1. **2026-02-17 01:12:00 +05:30**  
+   Commit: `(this commit - see latest git log)`  
+   Message: `Implement Day 21 safe search policy controls [design: policy_overview_mobile_light]`  
+   Changes:
+   - Updated `lib/screens/policy_overview_screen.dart`:
+     - replaced Safe Search Day-17 stub with real toggle behavior
+     - added optimistic UI update with rollback on persistence failure
+     - added update-progress indicator while save is in-flight
+     - added dependency injection support (`authService`, `firestoreService`, `parentIdOverride`) for testability and deterministic policy updates
+     - passed injected services/parent through nested policy editor navigations
+   - Updated `test/screens/policy_overview_screen_test.dart`:
+     - added Firestore-backed widget test using `FakeFirebaseFirestore`
+     - verifies toggling Safe Search updates both UI and persisted child policy data
+   Validation:
+   - `C:\Users\navee\flutter\bin\flutter.bat analyze` passed.
+   - `C:\Users\navee\flutter\bin\flutter.bat test` passed (57/57).
+   - `C:\Users\navee\flutter\bin\flutter.bat run -d emulator-5554 --no-resident` passed (build/install).
+   Design folder(s) used:
+   - `policy_overview_mobile_light`
+   - `design_system_tokens_spec`
+   Design assets checked:
+   - `screen.png`, `code.html`
+   UI fidelity note:
+   - Preserved existing Policy Overview layout and interaction language while upgrading Safe Search from stub to production behavior.
+
+---
+
+## Current Summary (after Day 21)
 
 - Day 1 completed: foundation, naming, structure, git + GitHub.
 - Day 2 completed: dependencies and Provider baseline.
@@ -931,5 +964,6 @@ Program goal: enable one-tap policy preset switching for parents without manual 
 - Day 18 completed in code: Custom Domain editor added with input validation, add/remove actions, Firestore save flow, and Policy Overview integration.
 - Day 19 completed in code: Schedule Creator editor added with template/custom schedule controls, day/time editing, and Firestore persistence.
 - Day 20 completed in code: Quick Modes added for one-tap policy presets with confirmation, preview, and Firestore persistence.
+- Day 21 completed in code: Safe Search in Policy Overview now persists to Firestore with optimistic updates, rollback-on-error, and widget-level persistence tests.
 
 Last updated: 2026-02-17

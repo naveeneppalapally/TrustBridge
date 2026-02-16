@@ -1,7 +1,9 @@
+import 'package:fake_cloud_firestore/fake_cloud_firestore.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:trustbridge_app/models/child_profile.dart';
 import 'package:trustbridge_app/screens/policy_overview_screen.dart';
+import 'package:trustbridge_app/services/firestore_service.dart';
 
 void main() {
   group('PolicyOverviewScreen', () {
@@ -59,6 +61,43 @@ void main() {
       expect(find.text('Safe Search'), findsOneWidget);
       expect(find.text('Custom Blocked Domains'), findsOneWidget);
       expect(find.text('Quick Modes'), findsOneWidget);
+    });
+
+    testWidgets('safe search toggle updates Firestore policy', (tester) async {
+      await tester.binding.setSurfaceSize(const Size(430, 1400));
+      addTearDown(() => tester.binding.setSurfaceSize(null));
+
+      final fakeFirestore = FakeFirebaseFirestore();
+      final firestoreService = FirestoreService(firestore: fakeFirestore);
+      const parentId = 'parent-test-001';
+
+      await fakeFirestore.collection('children').doc(testChild.id).set({
+        ...testChild.toFirestore(),
+        'parentId': parentId,
+      });
+
+      await tester.pumpWidget(
+        MaterialApp(
+          home: PolicyOverviewScreen(
+            child: testChild,
+            firestoreService: firestoreService,
+            parentIdOverride: parentId,
+          ),
+        ),
+      );
+
+      expect(find.text('Filters explicit results in search engines'),
+          findsOneWidget);
+
+      await tester.tap(find.byType(Switch).first);
+      await tester.pumpAndSettle();
+
+      expect(find.text('Not enabled'), findsOneWidget);
+
+      final snapshot =
+          await fakeFirestore.collection('children').doc(testChild.id).get();
+      final policyMap = snapshot.data()!['policy'] as Map<String, dynamic>;
+      expect(policyMap['safeSearchEnabled'], false);
     });
   });
 }
