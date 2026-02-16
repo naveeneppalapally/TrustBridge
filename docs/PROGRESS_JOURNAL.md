@@ -789,7 +789,43 @@ Program goal: implement editable content-category blocking with risk-based group
 
 ---
 
-## Current Summary (after Day 17)
+## Day 18 - Custom Domain Blocking (Week 4 Day 3)
+
+Program goal: enable direct website-level blocking with a simple add/remove workflow and backend persistence.
+
+### Commit entries
+
+1. **2026-02-16 23:15:00 +05:30**  
+   Commit: `(this commit - see latest git log)`  
+   Message: `Implement Day 18 custom domain blocking editor [design: custom_domains_mobile_light]`  
+   Changes:
+   - Created `lib/screens/custom_domains_screen.dart`:
+     - add-domain input with normalization and validation
+     - quick-add suggestion chips
+     - blocked-domain list with remove actions
+     - save-on-change app bar action
+     - Firestore persistence through `FirestoreService.updateChild()`
+   - Updated `lib/screens/policy_overview_screen.dart`:
+     - replaced Day 18 stub with real navigation to `CustomDomainsScreen`
+     - updates in-screen counts/state after returning with saved policy
+   - Updated `lib/models/policy.dart`:
+     - hardened `copyWith(...)` to support `blockedDomains` and `safeSearchEnabled`
+   - Added `test/screens/custom_domains_screen_test.dart` with render, add, and validation coverage.
+   Validation:
+   - `C:\Users\navee\flutter\bin\flutter.bat analyze` passed.
+   - `C:\Users\navee\flutter\bin\flutter.bat test` passed (50/50).
+   - `C:\Users\navee\flutter\bin\flutter.bat run -d emulator-5554 --no-resident` passed (build/install).
+   Design folder(s) used:
+   - `category_blocking_mobile_light`
+   - `design_system_tokens_spec`
+   Design assets checked:
+   - `screen.png`, `code.html`
+   UI fidelity note:
+   - No exact `custom_domains_mobile_light` folder exists; the editor layout extends existing policy cards/components while maintaining TrustBridge spacing and visual language.
+
+---
+
+## Current Summary (after Day 18)
 
 - Day 1 completed: foundation, naming, structure, git + GitHub.
 - Day 2 completed: dependencies and Provider baseline.
@@ -810,5 +846,6 @@ Program goal: implement editable content-category blocking with risk-based group
 - Day 15 completed in code: Delete Child flow implemented with warning dialog, Firestore delete call, success/error handling, and dashboard return.
 - Day 16 completed in code: Policy Overview screen added with sectioned stats/breakdowns and navigation entry from Child Detail.
 - Day 17 completed in code: Category Blocking editor added with risk-based toggles, select/clear quick actions, Firestore save flow, and Policy Overview integration.
+- Day 18 completed in code: Custom Domain editor added with input validation, add/remove actions, Firestore save flow, and Policy Overview integration.
 
 Last updated: 2026-02-16

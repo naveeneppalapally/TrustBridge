@@ -86,13 +86,15 @@ class Policy {
 
   Policy copyWith({
     List<String>? blockedCategories,
+    List<String>? blockedDomains,
     List<Schedule>? schedules,
+    bool? safeSearchEnabled,
   }) {
     return Policy(
       blockedCategories: blockedCategories ?? this.blockedCategories,
-      blockedDomains: blockedDomains,
+      blockedDomains: blockedDomains ?? this.blockedDomains,
       schedules: schedules ?? this.schedules,
-      safeSearchEnabled: safeSearchEnabled,
+      safeSearchEnabled: safeSearchEnabled ?? this.safeSearchEnabled,
     );
   }
 }
