@@ -282,6 +282,62 @@ void main() {
         throwsA(isA<ArgumentError>()),
       );
     });
+
+    test('createSupportTicket writes normalized support ticket document',
+        () async {
+      final ticketId = await firestoreService.createSupportTicket(
+        parentId: 'parent-support-a',
+        subject: '  Policy Question  ',
+        message:
+            '  Schedules are not behaving as expected after recent changes.  ',
+        childId: 'child-123',
+      );
+
+      final snapshot =
+          await fakeFirestore.collection('supportTickets').doc(ticketId).get();
+      expect(snapshot.exists, isTrue);
+
+      final data = snapshot.data()!;
+      expect(data['parentId'], 'parent-support-a');
+      expect(data['subject'], 'Policy Question');
+      expect(
+        data['message'],
+        'Schedules are not behaving as expected after recent changes.',
+      );
+      expect(data['childId'], 'child-123');
+      expect(data['status'], 'open');
+      expect(data['createdAt'], isA<Timestamp>());
+      expect(data['updatedAt'], isA<Timestamp>());
+    });
+
+    test('createSupportTicket throws ArgumentError for invalid inputs', () {
+      expect(
+        () => firestoreService.createSupportTicket(
+          parentId: ' ',
+          subject: 'Policy Question',
+          message: 'Need help.',
+        ),
+        throwsA(isA<ArgumentError>()),
+      );
+
+      expect(
+        () => firestoreService.createSupportTicket(
+          parentId: 'parent-support-b',
+          subject: ' ',
+          message: 'Need help.',
+        ),
+        throwsA(isA<ArgumentError>()),
+      );
+
+      expect(
+        () => firestoreService.createSupportTicket(
+          parentId: 'parent-support-b',
+          subject: 'Policy Question',
+          message: '   ',
+        ),
+        throwsA(isA<ArgumentError>()),
+      );
+    });
   });
 }
 

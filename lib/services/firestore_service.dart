@@ -115,6 +115,39 @@ class FirestoreService {
     );
   }
 
+  Future<String> createSupportTicket({
+    required String parentId,
+    required String subject,
+    required String message,
+    String? childId,
+  }) async {
+    if (parentId.trim().isEmpty) {
+      throw ArgumentError.value(parentId, 'parentId', 'Parent ID is required.');
+    }
+
+    final normalizedSubject = subject.trim();
+    if (normalizedSubject.isEmpty) {
+      throw ArgumentError.value(subject, 'subject', 'Subject is required.');
+    }
+
+    final normalizedMessage = message.trim();
+    if (normalizedMessage.isEmpty) {
+      throw ArgumentError.value(message, 'message', 'Message is required.');
+    }
+
+    final ticketRef = _firestore.collection('supportTickets').doc();
+    await ticketRef.set({
+      'parentId': parentId,
+      'subject': normalizedSubject,
+      'message': normalizedMessage,
+      'childId': childId,
+      'status': 'open',
+      'createdAt': Timestamp.fromDate(DateTime.now()),
+      'updatedAt': Timestamp.fromDate(DateTime.now()),
+    });
+    return ticketRef.id;
+  }
+
   Future<ChildProfile> addChild({
     required String parentId,
     required String nickname,

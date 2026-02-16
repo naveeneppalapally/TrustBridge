@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import 'package:trustbridge_app/screens/help_support_screen.dart';
 import 'package:trustbridge_app/screens/privacy_center_screen.dart';
 import 'package:trustbridge_app/screens/security_controls_screen.dart';
 import 'package:trustbridge_app/services/auth_service.dart';
@@ -179,6 +180,9 @@ class _ParentSettingsScreenState extends State<ParentSettingsScreen> {
               const SizedBox(height: 16),
               _buildSectionHeader('Security & Privacy'),
               _buildSecurityCard(context),
+              const SizedBox(height: 24),
+              _buildSectionHeader('Support'),
+              _buildSupportCard(context),
               const SizedBox(height: 24),
               OutlinedButton.icon(
                 onPressed: _isSaving ? null : _signOut,
@@ -436,6 +440,22 @@ class _ParentSettingsScreenState extends State<ParentSettingsScreen> {
     );
   }
 
+  Widget _buildSupportCard(BuildContext context) {
+    return Card(
+      elevation: 0,
+      shape: RoundedRectangleBorder(
+        borderRadius: BorderRadius.circular(16),
+      ),
+      child: ListTile(
+        leading: Icon(Icons.support_agent, color: Colors.indigo.shade700),
+        title: const Text('Help & Support'),
+        subtitle: const Text('FAQs, troubleshooting, and contact support'),
+        trailing: const Icon(Icons.chevron_right),
+        onTap: () async => _openHelpSupport(context),
+      ),
+    );
+  }
+
   Widget _buildSectionHeader(String title) {
     return Padding(
       padding: const EdgeInsets.only(left: 4, bottom: 6),
@@ -540,6 +560,18 @@ class _ParentSettingsScreenState extends State<ParentSettingsScreen> {
     await Navigator.of(context).push(
       MaterialPageRoute(
         builder: (_) => SecurityControlsScreen(
+          authService: widget.authService,
+          firestoreService: widget.firestoreService,
+          parentIdOverride: widget.parentIdOverride,
+        ),
+      ),
+    );
+  }
+
+  Future<void> _openHelpSupport(BuildContext context) async {
+    await Navigator.of(context).push(
+      MaterialPageRoute(
+        builder: (_) => HelpSupportScreen(
           authService: widget.authService,
           firestoreService: widget.firestoreService,
           parentIdOverride: widget.parentIdOverride,

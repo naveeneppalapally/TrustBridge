@@ -61,6 +61,8 @@ void main() {
       expect(find.text('PREFERENCES'), findsOneWidget);
       expect(find.text('NOTIFICATIONS'), findsOneWidget);
       expect(find.text('SECURITY & PRIVACY'), findsOneWidget);
+      expect(find.text('SUPPORT'), findsOneWidget);
+      expect(find.text('Help & Support'), findsOneWidget);
     });
 
     testWidgets('saves toggled notification preference to Firestore',
@@ -143,6 +145,40 @@ void main() {
       await tester.pumpAndSettle();
 
       expect(find.text('Control Data Usage'), findsOneWidget);
+    });
+
+    testWidgets('navigates to help support screen from support card',
+        (tester) async {
+      await tester.binding.setSurfaceSize(const Size(430, 1400));
+      addTearDown(() => tester.binding.setSurfaceSize(null));
+
+      const parentId = 'parent-settings-d';
+      await seedParent(
+        parentId: parentId,
+        preferences: {
+          'language': 'en',
+          'timezone': 'Asia/Kolkata',
+          'pushNotificationsEnabled': true,
+          'weeklySummaryEnabled': true,
+          'securityAlertsEnabled': true,
+        },
+      );
+
+      await tester.pumpWidget(
+        MaterialApp(
+          home: ParentSettingsScreen(
+            parentIdOverride: parentId,
+            firestoreService: firestoreService,
+          ),
+        ),
+      );
+      await tester.pumpAndSettle();
+
+      await tester.tap(find.text('Help & Support'));
+      await tester.pumpAndSettle();
+
+      expect(find.text('Get Help Quickly'), findsOneWidget);
+      expect(find.text('Send Support Request'), findsOneWidget);
     });
   });
 }
