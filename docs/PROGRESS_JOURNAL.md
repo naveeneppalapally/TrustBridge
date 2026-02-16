@@ -368,7 +368,40 @@ Program goal: resolve runtime Firebase Auth `PigeonUserDetails` cast failure in 
 
 ---
 
-## Current Summary (after Day 7 follow-up)
+## Day 8 - Firestore Child Service (Backend-Only)
+
+Program goal: implement child CRUD in `FirestoreService` with automated service tests, without UI changes.
+
+### Commit entries
+
+1. **2026-02-16 11:41:08 +05:30**  
+   Commit: `(this commit - see latest git log)`  
+   Message: `Implement Day 8 Firestore child service and tests`  
+   Changes:
+   - Updated `lib/services/firestore_service.dart` with child APIs:
+     - `addChild(...)`
+     - `getChildrenStream(...)`
+     - `getChild(...)`
+     - `updateChild(...)`
+     - `deleteChild(...)`
+   - Added input validation for parent/child IDs and nickname.
+   - Kept top-level `children/{childId}` model with `parentId` ownership field.
+   - Added minimal model hardening in `lib/models/child_profile.dart`:
+     - safer map casting for Firestore payloads
+     - resilient timestamp parsing fallback
+   - Added `fake_cloud_firestore` dev dependency for service-level backend tests.
+   - Added `test/services/firestore_service_test.dart` with CRUD, ownership, ordering, and failure-path coverage.
+   Validation:
+   - `C:\Users\navee\flutter\bin\flutter.bat pub get` passed.
+   - `C:\Users\navee\flutter\bin\flutter.bat analyze` passed.
+   - `C:\Users\navee\flutter\bin\flutter.bat test` passed (16/16).
+   - `C:\Users\navee\flutter\bin\flutter.bat run -d emulator-5554 --no-resident` built and installed successfully.
+   Notes:
+   - Non-UI commit (design fields not applicable).
+
+---
+
+## Current Summary (after Day 8)
 
 - Day 1 completed: foundation, naming, structure, git + GitHub.
 - Day 2 completed: dependencies and Provider baseline.
@@ -379,5 +412,6 @@ Program goal: resolve runtime Firebase Auth `PigeonUserDetails` cast failure in 
 - Day 7 completed in code: essential data models and tests added for child, policy, and schedule domains.
 - Day 7 follow-up completed in code: email fallback auth and diagnostics added while preserving login design structure.
 - Day 7 compatibility fix completed in code: Firebase packages upgraded to resolve runtime auth plugin cast mismatch.
+- Day 8 completed in code: child CRUD Firestore service and automated backend tests added.
 
 Last updated: 2026-02-16

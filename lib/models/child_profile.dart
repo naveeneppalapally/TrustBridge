@@ -52,15 +52,15 @@ class ChildProfile {
   }
 
   factory ChildProfile.fromFirestore(DocumentSnapshot doc) {
-    final data = doc.data() as Map<String, dynamic>;
+    final data = _asMap(doc.data());
     return ChildProfile(
       id: doc.id,
-      nickname: data['nickname'] as String,
+      nickname: (data['nickname'] as String?) ?? '',
       ageBand: AgeBand.fromString(data['ageBand'] as String),
       deviceIds: List<String>.from(data['deviceIds'] ?? []),
-      policy: Policy.fromMap(data['policy'] as Map<String, dynamic>),
-      createdAt: (data['createdAt'] as Timestamp).toDate(),
-      updatedAt: (data['updatedAt'] as Timestamp).toDate(),
+      policy: Policy.fromMap(_asMap(data['policy'])),
+      createdAt: _toDateTime(data['createdAt']),
+      updatedAt: _toDateTime(data['updatedAt']),
     );
   }
 
@@ -89,5 +89,27 @@ class ChildProfile {
       createdAt: createdAt,
       updatedAt: DateTime.now(),
     );
+  }
+
+  static DateTime _toDateTime(Object? rawValue) {
+    if (rawValue is Timestamp) {
+      return rawValue.toDate();
+    }
+    if (rawValue is DateTime) {
+      return rawValue;
+    }
+    return DateTime.fromMillisecondsSinceEpoch(0);
+  }
+
+  static Map<String, dynamic> _asMap(Object? rawValue) {
+    if (rawValue is Map<String, dynamic>) {
+      return rawValue;
+    }
+    if (rawValue is Map) {
+      return rawValue.map(
+        (key, value) => MapEntry(key.toString(), value),
+      );
+    }
+    return <String, dynamic>{};
   }
 }

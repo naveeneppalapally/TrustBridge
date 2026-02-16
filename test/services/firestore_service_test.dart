@@ -1,0 +1,214 @@
+import 'package:cloud_firestore/cloud_firestore.dart';
+import 'package:fake_cloud_firestore/fake_cloud_firestore.dart';
+import 'package:flutter_test/flutter_test.dart';
+import 'package:trustbridge_app/models/child_profile.dart';
+import 'package:trustbridge_app/models/policy.dart';
+import 'package:trustbridge_app/services/firestore_service.dart';
+
+void main() {
+  group('FirestoreService child operations', () {
+    late FakeFirebaseFirestore fakeFirestore;
+    late FirestoreService firestoreService;
+
+    setUp(() {
+      fakeFirestore = FakeFirebaseFirestore();
+      firestoreService = FirestoreService(firestore: fakeFirestore);
+    });
+
+    test('addChild writes expected document including parentId', () async {
+      final child = await firestoreService.addChild(
+        parentId: 'parentA',
+        nickname: '  Leo  ',
+        ageBand: AgeBand.young,
+      );
+
+      final snapshot =
+          await fakeFirestore.collection('children').doc(child.id).get();
+
+      expect(snapshot.exists, isTrue);
+      final data = snapshot.data()!;
+      expect(data['parentId'], 'parentA');
+      expect(data['nickname'], 'Leo');
+      expect(data['ageBand'], AgeBand.young.value);
+    });
+
+    test('addChild throws ArgumentError when nickname is empty', () async {
+      expect(
+        () => firestoreService.addChild(
+          parentId: 'parentA',
+          nickname: '   ',
+          ageBand: AgeBand.middle,
+        ),
+        throwsA(isA<ArgumentError>()),
+      );
+    });
+
+    test('getChildrenStream returns only requested parent children', () async {
+      final expectedChild = await firestoreService.addChild(
+        parentId: 'parentA',
+        nickname: 'Maya',
+        ageBand: AgeBand.middle,
+      );
+      await firestoreService.addChild(
+        parentId: 'parentB',
+        nickname: 'Ravi',
+        ageBand: AgeBand.teen,
+      );
+
+      final children = await firestoreService.getChildrenStream('parentA').first;
+
+      expect(children.length, 1);
+      expect(children.first.id, expectedChild.id);
+      expect(children.first.nickname, 'Maya');
+    });
+
+    test('getChildrenStream ordering is deterministic by createdAt', () async {
+      await fakeFirestore.collection('children').doc('childLate').set(
+            _childDocData(
+              parentId: 'parentA',
+              nickname: 'Late',
+              ageBand: AgeBand.young,
+              createdAt: DateTime(2026, 2, 16, 10, 0, 0),
+            ),
+          );
+      await fakeFirestore.collection('children').doc('childEarly').set(
+            _childDocData(
+              parentId: 'parentA',
+              nickname: 'Early',
+              ageBand: AgeBand.young,
+              createdAt: DateTime(2026, 2, 16, 9, 0, 0),
+            ),
+          );
+
+      final children = await firestoreService.getChildrenStream('parentA').first;
+
+      expect(children.map((child) => child.id).toList(), [
+        'childEarly',
+        'childLate',
+      ]);
+    });
+
+    test('getChild returns null when document is missing', () async {
+      final child = await firestoreService.getChild(
+        parentId: 'parentA',
+        childId: 'does-not-exist',
+      );
+
+      expect(child, isNull);
+    });
+
+    test('getChild returns null when parentId does not match', () async {
+      final child = await firestoreService.addChild(
+        parentId: 'parentB',
+        nickname: 'Sophie',
+        ageBand: AgeBand.middle,
+      );
+
+      final result = await firestoreService.getChild(
+        parentId: 'parentA',
+        childId: child.id,
+      );
+
+      expect(result, isNull);
+    });
+
+    test('updateChild updates mutable fields and refreshes updatedAt', () async {
+      final created = await firestoreService.addChild(
+        parentId: 'parentA',
+        nickname: 'Arjun',
+        ageBand: AgeBand.young,
+      );
+      final originalSnapshot =
+          await fakeFirestore.collection('children').doc(created.id).get();
+      final originalUpdatedAt =
+          (originalSnapshot.data()!['updatedAt'] as Timestamp).toDate();
+      final originalCreatedAt =
+          (originalSnapshot.data()!['createdAt'] as Timestamp).toDate();
+
+      await Future<void>.delayed(const Duration(milliseconds: 10));
+
+      final updatedChild = ChildProfile(
+        id: created.id,
+        nickname: 'Arjun Updated',
+        ageBand: AgeBand.teen,
+        deviceIds: const ['device-1'],
+        policy: Policy.presetForAgeBand(AgeBand.teen),
+        createdAt: created.createdAt,
+        updatedAt: created.updatedAt,
+      );
+
+      await firestoreService.updateChild(
+        parentId: 'parentA',
+        child: updatedChild,
+      );
+
+      final updatedSnapshot =
+          await fakeFirestore.collection('children').doc(created.id).get();
+      final data = updatedSnapshot.data()!;
+
+      expect(data['nickname'], 'Arjun Updated');
+      expect(data['ageBand'], AgeBand.teen.value);
+      expect(data['deviceIds'], ['device-1']);
+      expect(data['parentId'], 'parentA');
+
+      final updatedAt = (data['updatedAt'] as Timestamp).toDate();
+      final createdAt = (data['createdAt'] as Timestamp).toDate();
+      expect(updatedAt.isBefore(originalUpdatedAt), isFalse);
+      expect(createdAt, originalCreatedAt);
+    });
+
+    test('deleteChild removes document', () async {
+      final child = await firestoreService.addChild(
+        parentId: 'parentA',
+        nickname: 'Delete Me',
+        ageBand: AgeBand.middle,
+      );
+
+      await firestoreService.deleteChild(
+        parentId: 'parentA',
+        childId: child.id,
+      );
+
+      final snapshot =
+          await fakeFirestore.collection('children').doc(child.id).get();
+      expect(snapshot.exists, isFalse);
+    });
+
+    test('updateChild on missing document throws FirebaseException', () async {
+      final missingChild = ChildProfile(
+        id: 'missing-child-id',
+        nickname: 'Missing',
+        ageBand: AgeBand.middle,
+        deviceIds: const [],
+        policy: Policy.presetForAgeBand(AgeBand.middle),
+        createdAt: DateTime(2026, 2, 16),
+        updatedAt: DateTime(2026, 2, 16),
+      );
+
+      expect(
+        () => firestoreService.updateChild(
+          parentId: 'parentA',
+          child: missingChild,
+        ),
+        throwsA(isA<FirebaseException>()),
+      );
+    });
+  });
+}
+
+Map<String, dynamic> _childDocData({
+  required String parentId,
+  required String nickname,
+  required AgeBand ageBand,
+  required DateTime createdAt,
+}) {
+  return {
+    'nickname': nickname,
+    'ageBand': ageBand.value,
+    'deviceIds': <String>[],
+    'policy': Policy.presetForAgeBand(ageBand).toMap(),
+    'createdAt': Timestamp.fromDate(createdAt),
+    'updatedAt': Timestamp.fromDate(createdAt),
+    'parentId': parentId,
+  };
+}
