@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:trustbridge_app/screens/change_password_screen.dart';
 import 'package:trustbridge_app/screens/vpn_protection_screen.dart';
+import 'package:trustbridge_app/screens/vpn_test_screen.dart';
 import 'package:trustbridge_app/services/auth_service.dart';
 import 'package:trustbridge_app/services/firestore_service.dart';
 import 'package:trustbridge_app/services/vpn_service.dart';
@@ -194,6 +195,12 @@ class _SecurityControlsScreenState extends State<SecurityControlsScreen> {
                 icon: const Icon(Icons.shield_outlined),
                 label: const Text('VPN Protection Engine'),
               ),
+              const SizedBox(height: 8),
+              TextButton(
+                key: const Key('security_vpn_test_button'),
+                onPressed: _isSaving ? null : () => _openVpnTest(context),
+                child: const Text('VPN Test (Dev)'),
+              ),
               const SizedBox(height: 16),
               Container(
                 padding: const EdgeInsets.all(12),
@@ -341,6 +348,16 @@ class _SecurityControlsScreenState extends State<SecurityControlsScreen> {
           firestoreService: widget.firestoreService,
           vpnService: widget.vpnService,
           parentIdOverride: widget.parentIdOverride,
+        ),
+      ),
+    );
+  }
+
+  Future<void> _openVpnTest(BuildContext context) async {
+    await Navigator.of(context).push(
+      MaterialPageRoute(
+        builder: (_) => VpnTestScreen(
+          vpnService: widget.vpnService,
         ),
       ),
     );

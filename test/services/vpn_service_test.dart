@@ -41,23 +41,48 @@ void main() {
       expect(status.isRunning, isTrue);
     });
 
-    test('requestPermission/start/stop map bool responses', () async {
+    test('permission/start/stop lifecycle methods map bool responses',
+        () async {
       TestDefaultBinaryMessengerBinding.instance.defaultBinaryMessenger
           .setMockMethodCallHandler(channel, (call) async {
-        if (call.method == 'requestPermission') {
+        if (call.method == 'hasVpnPermission') {
+          return true;
+        }
+        if (call.method == 'requestVpnPermission') {
           return true;
         }
         if (call.method == 'startVpn') {
           return true;
         }
+        if (call.method == 'isVpnRunning') {
+          return true;
+        }
         if (call.method == 'stopVpn') {
+          return true;
+        }
+        if (call.method == 'updateFilterRules') {
           return true;
         }
         return null;
       });
 
+      expect(await service.hasVpnPermission(), isTrue);
       expect(await service.requestPermission(), isTrue);
-      expect(await service.startVpn(), isTrue);
+      expect(
+        await service.startVpn(
+          blockedCategories: const ['social-networks'],
+          blockedDomains: const ['facebook.com'],
+        ),
+        isTrue,
+      );
+      expect(await service.isVpnRunning(), isTrue);
+      expect(
+        await service.updateFilterRules(
+          blockedCategories: const ['adult-content'],
+          blockedDomains: const ['example.com'],
+        ),
+        isTrue,
+      );
       expect(await service.stopVpn(), isTrue);
     });
   });

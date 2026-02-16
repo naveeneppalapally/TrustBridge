@@ -405,7 +405,10 @@ class _VpnProtectionScreenState extends State<VpnProtectionScreen> {
         return;
       }
 
-      final started = await _resolvedVpnService.startVpn();
+      final started = await _resolvedVpnService.startVpn(
+        blockedCategories: const ['social-networks', 'adult-content'],
+        blockedDomains: DnsFilterEngine.defaultSeedDomains.toList(),
+      );
       if (!mounted) {
         return;
       }

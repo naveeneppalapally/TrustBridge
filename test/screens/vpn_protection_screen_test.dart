@@ -29,6 +29,16 @@ class _FakeVpnService implements VpnServiceBase {
   }
 
   @override
+  Future<bool> hasVpnPermission() async {
+    return permissionGranted;
+  }
+
+  @override
+  Future<bool> isVpnRunning() async {
+    return running;
+  }
+
+  @override
   Future<bool> requestPermission() async {
     if (permissionResult) {
       permissionGranted = true;
@@ -37,7 +47,10 @@ class _FakeVpnService implements VpnServiceBase {
   }
 
   @override
-  Future<bool> startVpn() async {
+  Future<bool> startVpn({
+    List<String> blockedCategories = const [],
+    List<String> blockedDomains = const [],
+  }) async {
     if (startResult) {
       running = true;
     }
@@ -50,6 +63,14 @@ class _FakeVpnService implements VpnServiceBase {
       running = false;
     }
     return stopResult;
+  }
+
+  @override
+  Future<bool> updateFilterRules({
+    required List<String> blockedCategories,
+    required List<String> blockedDomains,
+  }) async {
+    return true;
   }
 }
 
