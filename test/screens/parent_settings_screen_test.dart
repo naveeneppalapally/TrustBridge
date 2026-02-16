@@ -38,6 +38,11 @@ void main() {
           'pushNotificationsEnabled': true,
           'weeklySummaryEnabled': true,
           'securityAlertsEnabled': true,
+          'activityHistoryEnabled': true,
+          'crashReportsEnabled': true,
+          'personalizedTipsEnabled': true,
+          'biometricLoginEnabled': false,
+          'incognitoModeEnabled': false,
         },
       );
 
@@ -72,6 +77,11 @@ void main() {
           'pushNotificationsEnabled': true,
           'weeklySummaryEnabled': true,
           'securityAlertsEnabled': true,
+          'activityHistoryEnabled': true,
+          'crashReportsEnabled': true,
+          'personalizedTipsEnabled': true,
+          'biometricLoginEnabled': false,
+          'incognitoModeEnabled': false,
         },
       );
 
@@ -100,6 +110,39 @@ void main() {
           snapshot.data()!['preferences'] as Map<String, dynamic>;
 
       expect(preferences['pushNotificationsEnabled'], false);
+    });
+
+    testWidgets('navigates to privacy center from security card',
+        (tester) async {
+      await tester.binding.setSurfaceSize(const Size(430, 1400));
+      addTearDown(() => tester.binding.setSurfaceSize(null));
+
+      const parentId = 'parent-settings-c';
+      await seedParent(
+        parentId: parentId,
+        preferences: {
+          'language': 'en',
+          'timezone': 'Asia/Kolkata',
+          'pushNotificationsEnabled': true,
+          'weeklySummaryEnabled': true,
+          'securityAlertsEnabled': true,
+        },
+      );
+
+      await tester.pumpWidget(
+        MaterialApp(
+          home: ParentSettingsScreen(
+            parentIdOverride: parentId,
+            firestoreService: firestoreService,
+          ),
+        ),
+      );
+      await tester.pumpAndSettle();
+
+      await tester.tap(find.text('Privacy Center'));
+      await tester.pumpAndSettle();
+
+      expect(find.text('Control Data Usage'), findsOneWidget);
     });
   });
 }

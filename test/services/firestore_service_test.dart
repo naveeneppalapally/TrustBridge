@@ -237,6 +237,40 @@ void main() {
       expect(preferences['securityAlertsEnabled'], true);
     });
 
+    test('updateParentPreferences writes privacy and security fields',
+        () async {
+      await fakeFirestore.collection('parents').doc('parentB').set({
+        'parentId': 'parentB',
+        'preferences': {
+          'activityHistoryEnabled': true,
+          'crashReportsEnabled': true,
+          'personalizedTipsEnabled': true,
+          'biometricLoginEnabled': false,
+          'incognitoModeEnabled': false,
+        },
+      });
+
+      await firestoreService.updateParentPreferences(
+        parentId: 'parentB',
+        activityHistoryEnabled: false,
+        crashReportsEnabled: false,
+        personalizedTipsEnabled: false,
+        biometricLoginEnabled: true,
+        incognitoModeEnabled: true,
+      );
+
+      final snapshot =
+          await fakeFirestore.collection('parents').doc('parentB').get();
+      final preferences =
+          snapshot.data()!['preferences'] as Map<String, dynamic>;
+
+      expect(preferences['activityHistoryEnabled'], false);
+      expect(preferences['crashReportsEnabled'], false);
+      expect(preferences['personalizedTipsEnabled'], false);
+      expect(preferences['biometricLoginEnabled'], true);
+      expect(preferences['incognitoModeEnabled'], true);
+    });
+
     test('updateParentPreferences throws ArgumentError for empty parentId', () {
       expect(
         () => firestoreService.updateParentPreferences(

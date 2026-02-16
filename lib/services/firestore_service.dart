@@ -28,6 +28,11 @@ class FirestoreService {
           'pushNotificationsEnabled': true,
           'weeklySummaryEnabled': true,
           'securityAlertsEnabled': true,
+          'activityHistoryEnabled': true,
+          'crashReportsEnabled': true,
+          'personalizedTipsEnabled': true,
+          'biometricLoginEnabled': false,
+          'incognitoModeEnabled': false,
         },
         'fcmToken': null,
       },
@@ -55,6 +60,11 @@ class FirestoreService {
     bool? pushNotificationsEnabled,
     bool? weeklySummaryEnabled,
     bool? securityAlertsEnabled,
+    bool? activityHistoryEnabled,
+    bool? crashReportsEnabled,
+    bool? personalizedTipsEnabled,
+    bool? biometricLoginEnabled,
+    bool? incognitoModeEnabled,
   }) async {
     if (parentId.trim().isEmpty) {
       throw ArgumentError.value(parentId, 'parentId', 'Parent ID is required.');
@@ -75,6 +85,21 @@ class FirestoreService {
     }
     if (securityAlertsEnabled != null) {
       preferenceUpdates['securityAlertsEnabled'] = securityAlertsEnabled;
+    }
+    if (activityHistoryEnabled != null) {
+      preferenceUpdates['activityHistoryEnabled'] = activityHistoryEnabled;
+    }
+    if (crashReportsEnabled != null) {
+      preferenceUpdates['crashReportsEnabled'] = crashReportsEnabled;
+    }
+    if (personalizedTipsEnabled != null) {
+      preferenceUpdates['personalizedTipsEnabled'] = personalizedTipsEnabled;
+    }
+    if (biometricLoginEnabled != null) {
+      preferenceUpdates['biometricLoginEnabled'] = biometricLoginEnabled;
+    }
+    if (incognitoModeEnabled != null) {
+      preferenceUpdates['incognitoModeEnabled'] = incognitoModeEnabled;
     }
 
     if (preferenceUpdates.isEmpty) {

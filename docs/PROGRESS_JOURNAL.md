@@ -1023,7 +1023,54 @@ Program goal: replace the dashboard settings stub with a real parent account set
 
 ---
 
-## Current Summary (after Day 23)
+## Day 24 - Privacy Center & Security Controls (Week 5 Day 4)
+
+Program goal: replace settings stubs with functional privacy/security controls backed by Firestore parent preferences.
+
+### Commit entries
+
+1. **2026-02-17 05:10:00 +05:30**  
+   Commit: `(this commit - see latest git log)`  
+   Message: `Implement Day 24 privacy center and security controls [design: parent_settings_mobile_light]`  
+   Changes:
+   - Created `lib/screens/privacy_center_screen.dart`:
+     - data/privacy preference toggles (activity history, crash reports, personalized tips)
+     - save-on-change app bar action
+     - parent profile stream hydration with safe defaults
+     - Firestore persistence for privacy preferences
+   - Created `lib/screens/security_controls_screen.dart`:
+     - account security toggles (biometric login, incognito mode)
+     - save-on-change app bar action
+     - parent profile stream hydration with safe defaults
+     - Firestore persistence for security preferences
+   - Updated `lib/screens/parent_settings_screen.dart`:
+     - replaced Privacy Center and Security Controls stubs with real navigation
+     - passes shared auth/firestore dependencies to nested screens
+   - Updated `lib/services/firestore_service.dart`:
+     - expanded default parent preference schema in `ensureParentProfile(...)`
+     - extended `updateParentPreferences(...)` with new privacy/security fields
+   - Added tests:
+     - `test/screens/privacy_center_screen_test.dart`
+     - `test/screens/security_controls_screen_test.dart`
+     - updated `test/screens/parent_settings_screen_test.dart` for navigation coverage
+     - updated `test/services/firestore_service_test.dart` for new parent preference fields
+   Validation:
+   - `C:\Users\navee\flutter\bin\flutter.bat analyze` passed.
+   - `C:\Users\navee\flutter\bin\flutter.bat test` passed (69/69).
+   - `C:\Users\navee\flutter\bin\flutter.bat run -d emulator-5554 --no-resident` passed (build/install).
+   Design folder(s) used:
+   - `parent_settings_mobile_light`
+   - `parent_settings_mobile_dark`
+   - `security_settings_light`
+   - `design_system_tokens_spec`
+   Design assets checked:
+   - `screen.png`, `code.html`
+   UI fidelity note:
+   - Maintains the grouped settings card layout from the parent settings references while replacing placeholders with persisted controls.
+
+---
+
+## Current Summary (after Day 24)
 
 - Day 1 completed: foundation, naming, structure, git + GitHub.
 - Day 2 completed: dependencies and Provider baseline.
@@ -1050,5 +1097,6 @@ Program goal: replace the dashboard settings stub with a real parent account set
 - Day 21 completed in code: Safe Search in Policy Overview now persists to Firestore with optimistic updates, rollback-on-error, and widget-level persistence tests.
 - Day 22 completed in code: Age Preset reapply flow added with current-vs-recommended preview, confirmation, and Firestore persistence.
 - Day 23 completed in code: Parent Settings screen added with persisted account preferences and dashboard settings navigation.
+- Day 24 completed in code: Privacy Center and Security Controls are now functional with persisted parent preference updates.
 
 Last updated: 2026-02-17

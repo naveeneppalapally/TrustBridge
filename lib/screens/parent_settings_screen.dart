@@ -1,4 +1,6 @@
 import 'package:flutter/material.dart';
+import 'package:trustbridge_app/screens/privacy_center_screen.dart';
+import 'package:trustbridge_app/screens/security_controls_screen.dart';
 import 'package:trustbridge_app/services/auth_service.dart';
 import 'package:trustbridge_app/services/firestore_service.dart';
 
@@ -419,8 +421,7 @@ class _ParentSettingsScreenState extends State<ParentSettingsScreen> {
             title: const Text('Privacy Center'),
             subtitle: const Text('Manage data and visibility settings'),
             trailing: const Icon(Icons.chevron_right),
-            onTap: () =>
-                _showInfo('Privacy Center is coming in a next sprint.'),
+            onTap: () async => _openPrivacyCenter(context),
           ),
           const Divider(height: 1),
           ListTile(
@@ -428,8 +429,7 @@ class _ParentSettingsScreenState extends State<ParentSettingsScreen> {
             title: const Text('Security Controls'),
             subtitle: const Text('Biometric login and account protections'),
             trailing: const Icon(Icons.chevron_right),
-            onTap: () =>
-                _showInfo('Security Controls are coming in a next sprint.'),
+            onTap: () async => _openSecurityControls(context),
           ),
         ],
       ),
@@ -522,6 +522,30 @@ class _ParentSettingsScreenState extends State<ParentSettingsScreen> {
       return;
     }
     Navigator.of(context).pushReplacementNamed('/login');
+  }
+
+  Future<void> _openPrivacyCenter(BuildContext context) async {
+    await Navigator.of(context).push(
+      MaterialPageRoute(
+        builder: (_) => PrivacyCenterScreen(
+          authService: widget.authService,
+          firestoreService: widget.firestoreService,
+          parentIdOverride: widget.parentIdOverride,
+        ),
+      ),
+    );
+  }
+
+  Future<void> _openSecurityControls(BuildContext context) async {
+    await Navigator.of(context).push(
+      MaterialPageRoute(
+        builder: (_) => SecurityControlsScreen(
+          authService: widget.authService,
+          firestoreService: widget.firestoreService,
+          parentIdOverride: widget.parentIdOverride,
+        ),
+      ),
+    );
   }
 
   void _hydrateFromProfile(Map<String, dynamic>? profile) {
