@@ -979,7 +979,51 @@ Program goal: let parents reapply age-recommended policy baselines with clear im
 
 ---
 
-## Current Summary (after Day 22)
+## Day 23 - Parent Settings Screen (Week 5 Day 3)
+
+Program goal: replace the dashboard settings stub with a real parent account settings flow and persisted preferences.
+
+### Commit entries
+
+1. **2026-02-17 03:20:00 +05:30**  
+   Commit: `(this commit - see latest git log)`  
+   Message: `Implement Day 23 parent settings screen and preference persistence [design: parent_settings_mobile_light]`  
+   Changes:
+   - Created `lib/screens/parent_settings_screen.dart`:
+     - parent settings UI with account, preferences, notifications, and security sections
+     - language and timezone selectors
+     - notification preference toggles
+     - save action with dirty-state detection
+     - sign-out action from settings
+     - Firestore-backed profile loading via parent profile stream
+   - Updated `lib/screens/dashboard_screen.dart`:
+     - replaced settings snackbar stub with navigation to `ParentSettingsScreen`
+     - passes injected auth/firestore dependencies for consistency with testable architecture
+   - Updated `lib/services/firestore_service.dart`:
+     - expanded default parent preference fields in `ensureParentProfile(...)`
+     - added `updateParentPreferences(...)` for persisted parent preference updates
+   - Added tests:
+     - `test/screens/parent_settings_screen_test.dart` for section rendering and preference save persistence
+     - extended `test/services/firestore_service_test.dart` with parent preference update coverage
+   Validation:
+   - `C:\Users\navee\flutter\bin\flutter.bat analyze` passed.
+   - `C:\Users\navee\flutter\bin\flutter.bat test` passed (63/63).
+   - `C:\Users\navee\flutter\bin\flutter.bat run -d emulator-5554 --no-resident` passed (build/install).
+   Design folder(s) used:
+   - `parent_settings_mobile_light`
+   - `parent_settings_mobile_dark`
+   - `parent_settings_tablet_light_1`
+   - `parent_settings_tablet_light_2`
+   - `security_settings_light`
+   - `design_system_tokens_spec`
+   Design assets checked:
+   - `screen.png`, `code.html`
+   UI fidelity note:
+   - The new settings screen follows the grouped-card layout and section hierarchy from parent settings references while preserving existing TrustBridge navigation and policy-management style.
+
+---
+
+## Current Summary (after Day 23)
 
 - Day 1 completed: foundation, naming, structure, git + GitHub.
 - Day 2 completed: dependencies and Provider baseline.
@@ -1005,5 +1049,6 @@ Program goal: let parents reapply age-recommended policy baselines with clear im
 - Day 20 completed in code: Quick Modes added for one-tap policy presets with confirmation, preview, and Firestore persistence.
 - Day 21 completed in code: Safe Search in Policy Overview now persists to Firestore with optimistic updates, rollback-on-error, and widget-level persistence tests.
 - Day 22 completed in code: Age Preset reapply flow added with current-vs-recommended preview, confirmation, and Firestore persistence.
+- Day 23 completed in code: Parent Settings screen added with persisted account preferences and dashboard settings navigation.
 
 Last updated: 2026-02-17

@@ -55,7 +55,8 @@ void main() {
         ageBand: AgeBand.teen,
       );
 
-      final children = await firestoreService.getChildrenStream('parentA').first;
+      final children =
+          await firestoreService.getChildrenStream('parentA').first;
 
       expect(children.length, 1);
       expect(children.first.id, expectedChild.id);
@@ -80,7 +81,8 @@ void main() {
             ),
           );
 
-      final children = await firestoreService.getChildrenStream('parentA').first;
+      final children =
+          await firestoreService.getChildrenStream('parentA').first;
 
       expect(children.map((child) => child.id).toList(), [
         'childEarly',
@@ -112,7 +114,8 @@ void main() {
       expect(result, isNull);
     });
 
-    test('updateChild updates mutable fields and refreshes updatedAt', () async {
+    test('updateChild updates mutable fields and refreshes updatedAt',
+        () async {
       final created = await firestoreService.addChild(
         parentId: 'parentA',
         nickname: 'Arjun',
@@ -191,6 +194,56 @@ void main() {
           child: missingChild,
         ),
         throwsA(isA<FirebaseException>()),
+      );
+    });
+  });
+
+  group('FirestoreService parent operations', () {
+    late FakeFirebaseFirestore fakeFirestore;
+    late FirestoreService firestoreService;
+
+    setUp(() {
+      fakeFirestore = FakeFirebaseFirestore();
+      firestoreService = FirestoreService(firestore: fakeFirestore);
+    });
+
+    test('updateParentPreferences merges preference values', () async {
+      await fakeFirestore.collection('parents').doc('parentA').set({
+        'parentId': 'parentA',
+        'preferences': {
+          'language': 'en',
+          'timezone': 'Asia/Kolkata',
+          'pushNotificationsEnabled': true,
+          'weeklySummaryEnabled': true,
+          'securityAlertsEnabled': true,
+        },
+      });
+
+      await firestoreService.updateParentPreferences(
+        parentId: 'parentA',
+        language: 'hi',
+        pushNotificationsEnabled: false,
+      );
+
+      final snapshot =
+          await fakeFirestore.collection('parents').doc('parentA').get();
+      final data = snapshot.data()!;
+      final preferences = data['preferences'] as Map<String, dynamic>;
+
+      expect(preferences['language'], 'hi');
+      expect(preferences['pushNotificationsEnabled'], false);
+      expect(preferences['timezone'], 'Asia/Kolkata');
+      expect(preferences['weeklySummaryEnabled'], true);
+      expect(preferences['securityAlertsEnabled'], true);
+    });
+
+    test('updateParentPreferences throws ArgumentError for empty parentId', () {
+      expect(
+        () => firestoreService.updateParentPreferences(
+          parentId: '   ',
+          language: 'en',
+        ),
+        throwsA(isA<ArgumentError>()),
       );
     });
   });

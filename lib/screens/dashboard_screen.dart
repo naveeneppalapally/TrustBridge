@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:trustbridge_app/models/child_profile.dart';
 import 'package:trustbridge_app/screens/add_child_screen.dart';
 import 'package:trustbridge_app/screens/child_detail_screen.dart';
+import 'package:trustbridge_app/screens/parent_settings_screen.dart';
 import 'package:trustbridge_app/services/auth_service.dart';
 import 'package:trustbridge_app/services/firestore_service.dart';
 
@@ -47,9 +48,15 @@ class _DashboardScreenState extends State<DashboardScreen> {
     Navigator.of(context).pushReplacementNamed('/login');
   }
 
-  void _showComingSoon(String message) {
-    ScaffoldMessenger.of(context).showSnackBar(
-      SnackBar(content: Text(message)),
+  Future<void> _openSettings() async {
+    await Navigator.of(context).push(
+      MaterialPageRoute(
+        builder: (_) => ParentSettingsScreen(
+          authService: widget.authService,
+          firestoreService: widget.firestoreService,
+          parentIdOverride: widget.parentIdOverride,
+        ),
+      ),
     );
   }
 
@@ -78,9 +85,7 @@ class _DashboardScreenState extends State<DashboardScreen> {
         actions: [
           IconButton(
             icon: const Icon(Icons.settings_outlined),
-            onPressed: () {
-              _showComingSoon('Settings screen coming in Day 10!');
-            },
+            onPressed: _openSettings,
           ),
           IconButton(
             icon: const Icon(Icons.logout),
@@ -119,7 +124,8 @@ class _DashboardScreenState extends State<DashboardScreen> {
                     Text(
                       '${snapshot.error}',
                       textAlign: TextAlign.center,
-                      style: TextStyle(color: Theme.of(context).colorScheme.error),
+                      style:
+                          TextStyle(color: Theme.of(context).colorScheme.error),
                     ),
                     const SizedBox(height: 18),
                     FilledButton(

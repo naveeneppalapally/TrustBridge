@@ -25,6 +25,9 @@ class FirestoreService {
         'preferences': {
           'language': 'en',
           'timezone': 'Asia/Kolkata',
+          'pushNotificationsEnabled': true,
+          'weeklySummaryEnabled': true,
+          'securityAlertsEnabled': true,
         },
         'fcmToken': null,
       },
@@ -43,6 +46,48 @@ class FirestoreService {
         .doc(parentId)
         .snapshots()
         .map((snapshot) => snapshot.data());
+  }
+
+  Future<void> updateParentPreferences({
+    required String parentId,
+    String? language,
+    String? timezone,
+    bool? pushNotificationsEnabled,
+    bool? weeklySummaryEnabled,
+    bool? securityAlertsEnabled,
+  }) async {
+    if (parentId.trim().isEmpty) {
+      throw ArgumentError.value(parentId, 'parentId', 'Parent ID is required.');
+    }
+
+    final preferenceUpdates = <String, dynamic>{};
+    if (language != null) {
+      preferenceUpdates['language'] = language;
+    }
+    if (timezone != null) {
+      preferenceUpdates['timezone'] = timezone;
+    }
+    if (pushNotificationsEnabled != null) {
+      preferenceUpdates['pushNotificationsEnabled'] = pushNotificationsEnabled;
+    }
+    if (weeklySummaryEnabled != null) {
+      preferenceUpdates['weeklySummaryEnabled'] = weeklySummaryEnabled;
+    }
+    if (securityAlertsEnabled != null) {
+      preferenceUpdates['securityAlertsEnabled'] = securityAlertsEnabled;
+    }
+
+    if (preferenceUpdates.isEmpty) {
+      return;
+    }
+
+    await _firestore.collection('parents').doc(parentId).set(
+      {
+        'preferences': preferenceUpdates,
+        'updatedAt': FieldValue.serverTimestamp(),
+      },
+      SetOptions(merge: true),
+    );
   }
 
   Future<ChildProfile> addChild({
@@ -86,12 +131,11 @@ class FirestoreService {
         .where('parentId', isEqualTo: parentId)
         .snapshots()
         .map((snapshot) {
-          final children = snapshot.docs
-              .map((doc) => ChildProfile.fromFirestore(doc))
-              .toList();
-          children.sort((a, b) => a.createdAt.compareTo(b.createdAt));
-          return children;
-        });
+      final children =
+          snapshot.docs.map((doc) => ChildProfile.fromFirestore(doc)).toList();
+      children.sort((a, b) => a.createdAt.compareTo(b.createdAt));
+      return children;
+    });
   }
 
   Future<ChildProfile?> getChild({
