@@ -494,7 +494,46 @@ Program goal: complete Week 2 navigation polish, wire dashboard to real stub scr
 
 ---
 
-## Current Summary (after Day 10)
+## Day 11 - Add Child Screen Implementation (Week 3 Day 1)
+
+Program goal: replace Add Child stub with a functional form that creates real child profiles in Firestore.
+
+### Commit entries
+
+1. **2026-02-16 12:24:33 +05:30**  
+   Commit: `(this commit - see latest git log)`  
+   Message: `Implement Day 11 Add Child screen with form and validation [design: add_child_mobile_light]`  
+   Changes:
+   - Replaced `lib/screens/add_child_screen.dart` stub with full implementation:
+     - nickname input with validation (required, 2-20 chars)
+     - age-band selection (6-9, 10-13, 14-17)
+     - live preset policy preview (blocked categories, schedules, safe search)
+     - Firestore save flow via `FirestoreService.addChild(...)`
+     - loading state, error banner, success snackbar, and navigate back to dashboard
+     - mode-responsive styling and constrained layout for mobile/tablet widths
+   - Added `test/screens/add_child_screen_test.dart`:
+     - form rendering test
+     - empty/short/long nickname validation tests
+     - age-band preview update test
+   - Updated existing tests impacted by UI evolution:
+     - `test/navigation_test.dart` now validates current Add Child form text and back navigation path.
+     - `test/screens/add_child_screen_test.dart` uses submit button key and viewport setup for stable interaction tests.
+   Validation:
+   - `C:\Users\navee\flutter\bin\flutter.bat analyze` passed.
+   - `C:\Users\navee\flutter\bin\flutter.bat test` passed (27/27).
+   - `C:\Users\navee\flutter\bin\flutter.bat run -d emulator-5554 --no-resident` built and installed successfully.
+   Design folder(s) used:
+   - `add_child_mobile_light`
+   - `add_child_mobile_dark`
+   - `design_system_tokens_spec`
+   Design assets checked:
+   - `screen.png`, `code.html`
+   UI fidelity note:
+   - Implemented the add-child hierarchy and protection-level intent from the design while adapting to current data model (age-band presets) and preserving system dark/light + responsive behavior.
+
+---
+
+## Current Summary (after Day 11)
 
 - Day 1 completed: foundation, naming, structure, git + GitHub.
 - Day 2 completed: dependencies and Provider baseline.
@@ -508,5 +547,6 @@ Program goal: complete Week 2 navigation polish, wire dashboard to real stub scr
 - Day 8 completed in code: child CRUD Firestore service and automated backend tests added.
 - Day 9 completed in code: dashboard UI wired to real-time Firestore children stream with auth wrapper and named-route navigation.
 - Day 10 completed in code: navigation stubs and screen-to-screen routing polish completed for Week 2 closure.
+- Day 11 completed in code: Add Child form is functional with Firestore create flow, policy preview, and validation tests.
 
 Last updated: 2026-02-16

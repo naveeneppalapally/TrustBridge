@@ -13,8 +13,8 @@ void main() {
         ),
       );
 
-      expect(find.text('Add Child Screen'), findsOneWidget);
-      expect(find.text('Coming in Week 3 Day 1'), findsOneWidget);
+      expect(find.text('Add a new child profile'), findsOneWidget);
+      expect(find.text('What will be blocked?'), findsOneWidget);
     });
 
     testWidgets('ChildDetailScreen displays child info', (tester) async {
@@ -58,9 +58,9 @@ void main() {
       await tester.tap(find.text('Navigate'));
       await tester.pumpAndSettle();
 
-      expect(find.text('Add Child Screen'), findsOneWidget);
+      expect(find.text('Add a new child profile'), findsOneWidget);
 
-      await tester.tap(find.text('Back to Dashboard'));
+      await tester.tap(find.byTooltip('Back'));
       await tester.pumpAndSettle();
 
       expect(find.text('Navigate'), findsOneWidget);
