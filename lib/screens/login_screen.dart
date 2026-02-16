@@ -18,6 +18,14 @@ class _LoginScreenState extends State<LoginScreen> {
   bool _isLoading = false;
   String? _errorMessage;
 
+  String _friendlyError(String fallback) {
+    final code = _authService.lastErrorMessage;
+    if (code == null || code.isEmpty) {
+      return fallback;
+    }
+    return '$fallback ($code)';
+  }
+
   @override
   void dispose() {
     _phoneController.dispose();
@@ -50,7 +58,7 @@ class _LoginScreenState extends State<LoginScreen> {
       _isOtpSent = success || _isOtpSent;
       _errorMessage = success
           ? (isResend ? 'OTP resent successfully.' : null)
-          : 'Failed to send OTP. Check number and try again.';
+          : _friendlyError('Failed to send OTP. Check number and try again.');
     });
   }
 
@@ -80,7 +88,9 @@ class _LoginScreenState extends State<LoginScreen> {
 
     if (user == null) {
       setState(() {
-        _errorMessage = 'Invalid OTP or verification failed. Try again.';
+        _errorMessage = _friendlyError(
+          'Invalid OTP or verification failed. Try again.',
+        );
       });
       return;
     }
@@ -88,6 +98,154 @@ class _LoginScreenState extends State<LoginScreen> {
     Navigator.of(context).pushReplacement(
       MaterialPageRoute(builder: (_) => const DashboardScreen()),
     );
+  }
+
+  Future<void> _showEmailAuthSheet() async {
+    final emailController = TextEditingController();
+    final passwordController = TextEditingController();
+    bool isSignUp = false;
+    bool isLoading = false;
+    String? errorMessage;
+
+    await showModalBottomSheet<void>(
+      context: context,
+      isScrollControlled: true,
+      builder: (sheetContext) {
+        return StatefulBuilder(
+          builder: (context, setModalState) {
+            Future<void> submit() async {
+              final sheetNavigator = Navigator.of(sheetContext);
+              final rootNavigator = Navigator.of(this.context);
+              final email = emailController.text.trim();
+              final password = passwordController.text;
+              if (email.isEmpty || password.isEmpty) {
+                setModalState(() {
+                  errorMessage = 'Email and password are required.';
+                });
+                return;
+              }
+              if (password.length < 6) {
+                setModalState(() {
+                  errorMessage = 'Password must be at least 6 characters.';
+                });
+                return;
+              }
+
+              setModalState(() {
+                isLoading = true;
+                errorMessage = null;
+              });
+
+              final user = isSignUp
+                  ? await _authService.signUpWithEmail(
+                      email: email,
+                      password: password,
+                    )
+                  : await _authService.signInWithEmail(
+                      email: email,
+                      password: password,
+                    );
+
+              if (!mounted) {
+                return;
+              }
+
+              if (user == null) {
+                setModalState(() {
+                  isLoading = false;
+                  errorMessage = _friendlyError(
+                    isSignUp
+                        ? 'Sign up failed. Try again.'
+                        : 'Sign in failed. Try again.',
+                  );
+                });
+                return;
+              }
+
+              if (sheetNavigator.canPop()) {
+                sheetNavigator.pop();
+              }
+
+              rootNavigator.pushReplacement(
+                MaterialPageRoute(builder: (_) => const DashboardScreen()),
+              );
+            }
+
+            final bottomInset = MediaQuery.of(context).viewInsets.bottom;
+
+            return Padding(
+              padding: EdgeInsets.fromLTRB(20, 16, 20, bottomInset + 20),
+              child: Column(
+                mainAxisSize: MainAxisSize.min,
+                crossAxisAlignment: CrossAxisAlignment.stretch,
+                children: [
+                  Text(
+                    isSignUp ? 'Create account with Email' : 'Login with Email',
+                    style: const TextStyle(
+                        fontSize: 18, fontWeight: FontWeight.w700),
+                  ),
+                  const SizedBox(height: 12),
+                  TextField(
+                    controller: emailController,
+                    keyboardType: TextInputType.emailAddress,
+                    decoration: const InputDecoration(
+                      labelText: 'Email',
+                      border: OutlineInputBorder(),
+                    ),
+                  ),
+                  const SizedBox(height: 10),
+                  TextField(
+                    controller: passwordController,
+                    obscureText: true,
+                    decoration: const InputDecoration(
+                      labelText: 'Password',
+                      border: OutlineInputBorder(),
+                    ),
+                  ),
+                  if (errorMessage != null) ...[
+                    const SizedBox(height: 10),
+                    Text(
+                      errorMessage!,
+                      style: const TextStyle(
+                          color: Colors.redAccent, fontSize: 13),
+                    ),
+                  ],
+                  const SizedBox(height: 12),
+                  FilledButton(
+                    onPressed: isLoading ? null : submit,
+                    child: isLoading
+                        ? const SizedBox(
+                            width: 18,
+                            height: 18,
+                            child: CircularProgressIndicator(strokeWidth: 2),
+                          )
+                        : Text(isSignUp ? 'Create Account' : 'Login'),
+                  ),
+                  TextButton(
+                    onPressed: isLoading
+                        ? null
+                        : () {
+                            setModalState(() {
+                              isSignUp = !isSignUp;
+                              errorMessage = null;
+                            });
+                          },
+                    child: Text(
+                      isSignUp
+                          ? 'Already have an account? Login'
+                          : 'No account? Create one',
+                    ),
+                  ),
+                ],
+              ),
+            );
+          },
+        );
+      },
+    );
+
+    emailController.dispose();
+    passwordController.dispose();
   }
 
   @override
@@ -426,7 +584,7 @@ class _LoginScreenState extends State<LoginScreen> {
     return Column(
       children: [
         TextButton(
-          onPressed: () {},
+          onPressed: _showEmailAuthSheet,
           child: const Text('Login with Email'),
         ),
         const SizedBox(height: 4),

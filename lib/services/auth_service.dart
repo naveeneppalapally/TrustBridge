@@ -13,15 +13,18 @@ class AuthService {
   })  : _auth = auth ?? FirebaseAuth.instance,
         _firestoreService = firestoreService ??
             FirestoreService(
-                firestore: firestore ?? FirebaseFirestore.instance);
+              firestore: firestore ?? FirebaseFirestore.instance,
+            );
 
   final FirebaseAuth _auth;
   final FirestoreService _firestoreService;
 
   String? _verificationId;
   int? _resendToken;
+  String? _lastErrorMessage;
 
   User? get currentUser => _auth.currentUser;
+  String? get lastErrorMessage => _lastErrorMessage;
 
   Stream<User?> get authStateChanges => _auth.authStateChanges();
 
@@ -31,9 +34,11 @@ class AuthService {
   }) async {
     final normalizedPhone = _normalizePhoneNumber(phoneNumber);
     if (normalizedPhone == null) {
+      _lastErrorMessage = 'invalid-phone-number';
       _log('OTP request rejected: invalid phone number input');
       return false;
     }
+    _lastErrorMessage = null;
 
     final completer = Completer<bool>();
 
@@ -55,6 +60,7 @@ class AuthService {
               completer.complete(true);
             }
           } catch (error, stackTrace) {
+            _lastErrorMessage = _extractErrorCode(error);
             _log(
               'Auto verification sign-in failed',
               error: error,
@@ -66,6 +72,7 @@ class AuthService {
           }
         },
         verificationFailed: (FirebaseAuthException exception) {
+          _lastErrorMessage = exception.code;
           _log(
             'Phone verification failed: ${exception.code}',
             error: exception,
@@ -89,6 +96,7 @@ class AuthService {
         },
       );
     } catch (error, stackTrace) {
+      _lastErrorMessage = _extractErrorCode(error);
       _log(
         'Exception while sending OTP',
         error: error,
@@ -100,6 +108,7 @@ class AuthService {
     return completer.future.timeout(
       timeout + const Duration(seconds: 5),
       onTimeout: () {
+        _lastErrorMessage = 'otp-send-timeout';
         _log('OTP send flow timed out before callback completion');
         return false;
       },
@@ -109,9 +118,11 @@ class AuthService {
   Future<User?> verifyOTP(String otp) async {
     final sanitizedOtp = otp.trim();
     if (_verificationId == null || sanitizedOtp.isEmpty) {
+      _lastErrorMessage = 'missing-verification-state';
       _log('OTP verification skipped: missing verificationId or code');
       return null;
     }
+    _lastErrorMessage = null;
 
     try {
       final credential = PhoneAuthProvider.credential(
@@ -130,6 +141,7 @@ class AuthService {
       _log('OTP verification succeeded');
       return user;
     } catch (error, stackTrace) {
+      _lastErrorMessage = _extractErrorCode(error);
       _log(
         'OTP verification failed',
         error: error,
@@ -144,7 +156,63 @@ class AuthService {
     _log('User signed out');
   }
 
+  Future<User?> signInWithEmail({
+    required String email,
+    required String password,
+  }) async {
+    _lastErrorMessage = null;
+    try {
+      final credential = await _auth.signInWithEmailAndPassword(
+        email: email.trim(),
+        password: password,
+      );
+      final user = credential.user;
+      if (user != null) {
+        await _ensureParentProfile(user);
+      }
+      _log('Email sign-in succeeded');
+      return user;
+    } catch (error, stackTrace) {
+      _lastErrorMessage = _extractErrorCode(error);
+      _log(
+        'Email sign-in failed',
+        error: error,
+        stackTrace: stackTrace,
+      );
+      return null;
+    }
+  }
+
+  Future<User?> signUpWithEmail({
+    required String email,
+    required String password,
+  }) async {
+    _lastErrorMessage = null;
+    try {
+      final credential = await _auth.createUserWithEmailAndPassword(
+        email: email.trim(),
+        password: password,
+      );
+      final user = credential.user;
+      if (user != null) {
+        await _ensureParentProfile(user);
+      }
+      _log('Email sign-up succeeded');
+      return user;
+    } catch (error, stackTrace) {
+      _lastErrorMessage = _extractErrorCode(error);
+      _log(
+        'Email sign-up failed',
+        error: error,
+        stackTrace: stackTrace,
+      );
+      return null;
+    }
+  }
+
   Future<void> _ensureParentProfile(User user) async {
+    // Ensure a fresh auth token is available before Firestore write.
+    await user.getIdToken(true);
     await _firestoreService.ensureParentProfile(
       parentId: user.uid,
       phoneNumber: user.phoneNumber,
@@ -172,6 +240,16 @@ class AuthService {
       normalized = normalized.substring(1);
     }
     return '+91$normalized';
+  }
+
+  String _extractErrorCode(Object error) {
+    if (error is FirebaseAuthException) {
+      return error.code;
+    }
+    if (error is FirebaseException) {
+      return error.code;
+    }
+    return error.toString();
   }
 
   void _log(

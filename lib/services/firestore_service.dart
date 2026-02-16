@@ -11,26 +11,24 @@ class FirestoreService {
     required String? phoneNumber,
   }) async {
     final parentRef = _firestore.collection('parents').doc(parentId);
-    final existing = await parentRef.get();
-    if (existing.exists) {
-      return;
-    }
-
-    await parentRef.set({
-      'parentId': parentId,
-      'phone': phoneNumber,
-      'createdAt': FieldValue.serverTimestamp(),
-      'subscription': {
-        'tier': 'free',
-        'validUntil': null,
-        'autoRenew': false,
+    await parentRef.set(
+      {
+        'parentId': parentId,
+        'phone': phoneNumber,
+        'createdAt': FieldValue.serverTimestamp(),
+        'subscription': {
+          'tier': 'free',
+          'validUntil': null,
+          'autoRenew': false,
+        },
+        'preferences': {
+          'language': 'en',
+          'timezone': 'Asia/Kolkata',
+        },
+        'fcmToken': null,
       },
-      'preferences': {
-        'language': 'en',
-        'timezone': 'Asia/Kolkata',
-      },
-      'fcmToken': null,
-    });
+      SetOptions(merge: true),
+    );
   }
 
   Future<Map<String, dynamic>?> getParentProfile(String parentId) async {

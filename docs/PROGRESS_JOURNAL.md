@@ -307,7 +307,41 @@ Program goal: implement essential child/policy/schedule data models with Firesto
 
 ---
 
-## Current Summary (after Day 7)
+## Day 7 - Auth Follow-Up (Email Fallback + Diagnostics)
+
+Program goal: unblock authentication progress without phone verification branding by enabling email auth path and explicit error diagnostics.
+
+### Commit entries
+
+1. **2026-02-16 09:43:54 +05:30**  
+   Commit: `(this commit - see latest git log)`  
+   Message: `Add email auth fallback and diagnostics [design: parent_login_mobile_light]`  
+   Changes:
+   - Updated `lib/screens/login_screen.dart`:
+     - wired `Login with Email` action to a bottom-sheet flow
+     - added sign-in/sign-up toggling
+     - surfaced auth error codes inline (fallback message + code)
+   - Updated `lib/services/auth_service.dart`:
+     - added `signInWithEmail(...)` and `signUpWithEmail(...)`
+     - added `lastErrorMessage` for UI diagnostics
+     - added token refresh before profile write (`getIdToken(true)`)
+   - Updated `lib/services/firestore_service.dart`:
+     - changed parent profile write to `set(..., SetOptions(merge: true))`
+     - removed read-then-write requirement to reduce auth/rules timing failures
+   Validation:
+   - `flutter analyze` passed.
+   - `flutter test` passed.
+   - `flutter run -d emulator-5554 --no-resident` build/install succeeded.
+   Design folder(s) used:
+   - `parent_login_mobile_light`
+   Design assets checked:
+   - `screen.png`, `code.html`
+   UI fidelity note:
+   - No layout redesign; only interaction wiring and inline error text behavior were updated.
+
+---
+
+## Current Summary (after Day 7 follow-up)
 
 - Day 1 completed: foundation, naming, structure, git + GitHub.
 - Day 2 completed: dependencies and Provider baseline.
@@ -316,5 +350,6 @@ Program goal: implement essential child/policy/schedule data models with Firesto
 - Day 5 completed in code: login screen UI, OTP interaction wiring, dark/tablet derived variants, and app-entry integration.
 - Day 6 completed in code and infra: Firestore database/rules/indexes configured, parent profile repository added, and auth integration refactored.
 - Day 7 completed in code: essential data models and tests added for child, policy, and schedule domains.
+- Day 7 follow-up completed in code: email fallback auth and diagnostics added while preserving login design structure.
 
 Last updated: 2026-02-16
