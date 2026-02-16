@@ -1152,7 +1152,56 @@ Program goal: replace the security password-change placeholder with a real passw
 
 ---
 
-## Current Summary (after Day 26)
+## Day 27 - Child Action Center Upgrades (Week 6 Day 2)
+
+Program goal: replace Child Detail quick-action placeholders with functional pause/resume controls and a real activity log.
+
+### Commit entries
+
+1. **2026-02-16 21:40:45 +05:30**  
+   Commit: `3996d10`  
+   Message: `Implement Day 27 child action center upgrades [design: child_detail_mobile_light]`  
+   Changes:
+   - Created `lib/screens/child_activity_log_screen.dart`:
+     - timeline-style activity feed for each child profile
+     - entries for profile creation, policy/device updates, and pause state
+     - date/time formatting for readable event history
+   - Updated `lib/screens/child_detail_screen.dart`:
+     - replaced bottom-sheet placeholders with working actions
+     - pause internet flow with duration picker (15m/30m/1h)
+     - resume internet flow for active pause sessions
+     - activity log navigation to `ChildActivityLogScreen`
+     - advanced settings shortcut to existing policy overview
+     - pause status surfaced in the child info card
+     - dependency injection support retained for testability
+   - Updated `lib/models/child_profile.dart`:
+     - added optional `pausedUntil` field
+     - Firestore serialization/deserialization support for pause metadata
+     - `copyWith(...)` support for setting/clearing pause state
+   - Updated `lib/services/firestore_service.dart`:
+     - persists `pausedUntil` in `updateChild(...)` without changing parent ownership semantics
+   - Updated `lib/screens/dashboard_screen.dart`:
+     - displays paused status chip on child cards
+   - Added tests:
+     - `test/screens/child_activity_log_screen_test.dart`
+     - updated `test/screens/child_detail_screen_test.dart` for new action center entries
+     - updated `test/services/firestore_service_test.dart` for paused timestamp persistence
+   Validation:
+   - `C:\Users\navee\flutter\bin\flutter.bat analyze` passed.
+   - `C:\Users\navee\flutter\bin\flutter.bat test` passed (79/79).
+   - Emulator sanity check deferred to interactive QA run.
+   Design folder(s) used:
+   - `child_detail_mobile_light`
+   - `child_detail_mobile_dark`
+   - `design_system_tokens_spec`
+   Design assets checked:
+   - `screen.png`, `code.html`
+   UI fidelity note:
+   - Maintains the existing TrustBridge card/action visual language while upgrading quick actions from placeholders to persistent behavior.
+
+---
+
+## Current Summary (after Day 27)
 
 - Day 1 completed: foundation, naming, structure, git + GitHub.
 - Day 2 completed: dependencies and Provider baseline.
@@ -1182,5 +1231,6 @@ Program goal: replace the security password-change placeholder with a real passw
 - Day 24 completed in code: Privacy Center and Security Controls are now functional with persisted parent preference updates.
 - Day 25 completed in code: Child Device Management editor added with linked-device CRUD and child-detail integration.
 - Day 26 completed in code: Security controls now include a real Change Password workflow with validation and Firebase reauthentication.
+- Day 27 completed in code: Child action center now supports pause/resume internet controls and an in-app activity log with persisted pause metadata.
 
-Last updated: 2026-02-17
+Last updated: 2026-02-16
