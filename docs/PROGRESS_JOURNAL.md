@@ -1201,7 +1201,46 @@ Program goal: replace Child Detail quick-action placeholders with functional pau
 
 ---
 
-## Current Summary (after Day 27)
+## Day 28 - Help & Support Center (Week 6 Day 3)
+
+Program goal: add an in-app support flow for parents with FAQs, contact tools, and support ticket submission.
+
+### Commit entries
+
+1. **2026-02-16 21:56:38 +05:30**  
+   Commit: `e95d563`  
+   Message: `Implement Day 28 help and support center [design: child_help_&_support_mobile]`  
+   Changes:
+   - Created `lib/screens/help_support_screen.dart`:
+     - support contact card with copy-email action
+     - structured support request form (topic, optional child context, issue details)
+     - request validation and Firestore submission
+     - FAQ section with expandable answers for common parent questions
+   - Updated `lib/screens/parent_settings_screen.dart`:
+     - added SUPPORT section
+     - wired `Help & Support` navigation into the new screen
+   - Updated `lib/services/firestore_service.dart`:
+     - added `createSupportTicket(...)` for normalized support ticket writes
+   - Added tests:
+     - `test/screens/help_support_screen_test.dart`
+     - updated `test/screens/parent_settings_screen_test.dart` with support navigation coverage
+     - updated `test/services/firestore_service_test.dart` with support-ticket write/validation coverage
+   Validation:
+   - `C:\Users\navee\flutter\bin\flutter.bat analyze` passed.
+   - `C:\Users\navee\flutter\bin\flutter.bat test` passed (85/85).
+   - Targeted screen and service tests passed for support flow.
+   Design folder(s) used:
+   - `child_help_&_support_mobile`
+   - `parent_settings_mobile_light`
+   - `design_system_tokens_spec`
+   Design assets checked:
+   - `screen.png`, `code.html`
+   UI fidelity note:
+   - Keeps the existing TrustBridge settings card language and adds clear parent-facing support actions without introducing external dependency friction.
+
+---
+
+## Current Summary (after Day 28)
 
 - Day 1 completed: foundation, naming, structure, git + GitHub.
 - Day 2 completed: dependencies and Provider baseline.
@@ -1232,5 +1271,6 @@ Program goal: replace Child Detail quick-action placeholders with functional pau
 - Day 25 completed in code: Child Device Management editor added with linked-device CRUD and child-detail integration.
 - Day 26 completed in code: Security controls now include a real Change Password workflow with validation and Firebase reauthentication.
 - Day 27 completed in code: Child action center now supports pause/resume internet controls and an in-app activity log with persisted pause metadata.
+- Day 28 completed in code: Parent settings now include a Help & Support center with in-app support ticket submission and FAQ guidance.
 
 Last updated: 2026-02-16
