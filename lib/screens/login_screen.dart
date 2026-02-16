@@ -1,5 +1,4 @@
 import 'package:flutter/material.dart';
-import 'package:trustbridge_app/screens/dashboard_screen.dart';
 import 'package:trustbridge_app/services/auth_service.dart';
 
 class LoginScreen extends StatefulWidget {
@@ -95,9 +94,7 @@ class _LoginScreenState extends State<LoginScreen> {
       return;
     }
 
-    Navigator.of(context).pushReplacement(
-      MaterialPageRoute(builder: (_) => const DashboardScreen()),
-    );
+    Navigator.of(context).pushReplacementNamed('/dashboard');
   }
 
   Future<void> _showEmailAuthSheet() async {
@@ -166,9 +163,7 @@ class _LoginScreenState extends State<LoginScreen> {
                 sheetNavigator.pop();
               }
 
-              rootNavigator.pushReplacement(
-                MaterialPageRoute(builder: (_) => const DashboardScreen()),
-              );
+              rootNavigator.pushReplacementNamed('/dashboard');
             }
 
             final bottomInset = MediaQuery.of(context).viewInsets.bottom;

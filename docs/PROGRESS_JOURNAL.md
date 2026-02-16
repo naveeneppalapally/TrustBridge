@@ -401,7 +401,48 @@ Program goal: implement child CRUD in `FirestoreService` with automated service 
 
 ---
 
-## Current Summary (after Day 8)
+## Day 9 - Dashboard Screen (Week 2 Day 4)
+
+Program goal: implement dashboard UI with real-time child stream, auth wrapper routing, and login-to-dashboard navigation updates.
+
+### Commit entries
+
+1. **2026-02-16 11:52:57 +05:30**  
+   Commit: `(this commit - see latest git log)`  
+   Message: `Implement Day 9 dashboard with real-time Firestore [design: parent_dashboard_mobile_light]`  
+   Changes:
+   - Replaced `lib/screens/dashboard_screen.dart` placeholder with a real StreamBuilder dashboard:
+     - loading state
+     - error state with retry
+     - empty state with Day 10 CTA placeholders
+     - real-time list/grid of `ChildCard` widgets from `getChildrenStream(...)`
+     - summary metrics card (profiles, blocked categories, schedules)
+     - logout and settings actions
+     - responsive behavior for mobile/tablet and system dark/light mode support
+   - Updated `lib/main.dart`:
+     - added `AuthWrapper` to route by auth state
+     - added named routes: `/login`, `/dashboard`
+     - set `home` to `AuthWrapper`
+   - Updated `lib/screens/login_screen.dart`:
+     - navigate with `pushReplacementNamed('/dashboard')` after successful OTP/email auth
+   - Added `test/screens/dashboard_screen_test.dart` with basic dashboard and card rendering coverage.
+   Validation:
+   - `C:\Users\navee\flutter\bin\flutter.bat analyze` passed.
+   - `C:\Users\navee\flutter\bin\flutter.bat test` passed.
+   - `C:\Users\navee\flutter\bin\flutter.bat run -d emulator-5554 --no-resident` built and installed successfully.
+   Design folder(s) used:
+   - `parent_dashboard_mobile_light`
+   - `parent_dashboard_mobile_dark`
+   - `parent_dashboard_tablet_light_1`
+   - `design_system_tokens_spec`
+   Design assets checked:
+   - `screen.png`, `code.html`
+   UI fidelity note:
+   - Kept dashboard hierarchy and card-first interaction model from parent dashboard designs while mapping current Day 9 scope to real Firestore data states and deriving dark/tablet behavior from available design variants.
+
+---
+
+## Current Summary (after Day 9)
 
 - Day 1 completed: foundation, naming, structure, git + GitHub.
 - Day 2 completed: dependencies and Provider baseline.
@@ -413,5 +454,6 @@ Program goal: implement child CRUD in `FirestoreService` with automated service 
 - Day 7 follow-up completed in code: email fallback auth and diagnostics added while preserving login design structure.
 - Day 7 compatibility fix completed in code: Firebase packages upgraded to resolve runtime auth plugin cast mismatch.
 - Day 8 completed in code: child CRUD Firestore service and automated backend tests added.
+- Day 9 completed in code: dashboard UI wired to real-time Firestore children stream with auth wrapper and named-route navigation.
 
 Last updated: 2026-02-16
