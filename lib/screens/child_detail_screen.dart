@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:intl/intl.dart';
 import 'package:trustbridge_app/models/child_profile.dart';
 import 'package:trustbridge_app/models/schedule.dart';
+import 'package:trustbridge_app/screens/child_devices_screen.dart';
 import 'package:trustbridge_app/screens/edit_child_screen.dart';
 import 'package:trustbridge_app/screens/policy_overview_screen.dart';
 import 'package:trustbridge_app/services/auth_service.dart';
@@ -421,44 +422,86 @@ class ChildDetailScreen extends StatelessWidget {
   }
 
   Widget _buildDevicesCard(BuildContext context) {
+    final devices = child.deviceIds;
     return Card(
       elevation: 0,
       shape: RoundedRectangleBorder(
         borderRadius: BorderRadius.circular(16),
       ),
-      child: Padding(
-        padding: const EdgeInsets.all(16),
-        child: Column(
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            Row(
-              children: [
-                const Icon(Icons.devices_outlined, color: Colors.blue),
-                const SizedBox(width: 8),
+      child: InkWell(
+        borderRadius: BorderRadius.circular(16),
+        onTap: () => _openManageDevices(context),
+        child: Padding(
+          padding: const EdgeInsets.all(16),
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Row(
+                children: [
+                  const Icon(Icons.devices_outlined, color: Colors.blue),
+                  const SizedBox(width: 8),
+                  Expanded(
+                    child: Text(
+                      'Devices',
+                      style: Theme.of(context).textTheme.titleMedium?.copyWith(
+                            fontWeight: FontWeight.w700,
+                          ),
+                    ),
+                  ),
+                  Icon(Icons.chevron_right, color: Colors.grey.shade600),
+                ],
+              ),
+              const SizedBox(height: 12),
+              if (devices.isEmpty)
                 Text(
-                  'Devices',
-                  style: Theme.of(context).textTheme.titleMedium?.copyWith(
-                        fontWeight: FontWeight.w700,
+                  'No linked devices. Tap to add a device ID.',
+                  style: Theme.of(context).textTheme.bodySmall?.copyWith(
+                        color: Colors.grey.shade600,
+                      ),
+                )
+              else ...[
+                Text(
+                  '${devices.length} ${devices.length == 1 ? 'device' : 'devices'} linked',
+                  style: Theme.of(context).textTheme.bodySmall?.copyWith(
+                        color: Colors.grey.shade700,
+                        fontWeight: FontWeight.w600,
                       ),
                 ),
-              ],
-            ),
-            const SizedBox(height: 12),
-            Row(
-              children: [
-                Icon(Icons.info_outline, size: 16, color: Colors.grey.shade600),
-                const SizedBox(width: 8),
-                Expanded(
-                  child: Text(
-                    'Device management coming in Week 5.',
+                const SizedBox(height: 8),
+                ...devices.take(3).map(
+                      (deviceId) => Padding(
+                        padding: const EdgeInsets.only(bottom: 4),
+                        child: Row(
+                          children: [
+                            Icon(
+                              Icons.smartphone,
+                              size: 16,
+                              color: Colors.grey.shade600,
+                            ),
+                            const SizedBox(width: 8),
+                            Expanded(
+                              child: Text(
+                                deviceId,
+                                style: Theme.of(context)
+                                    .textTheme
+                                    .bodySmall
+                                    ?.copyWith(fontFamily: 'monospace'),
+                              ),
+                            ),
+                          ],
+                        ),
+                      ),
+                    ),
+                if (devices.length > 3)
+                  Text(
+                    '+${devices.length - 3} more',
                     style: Theme.of(context).textTheme.bodySmall?.copyWith(
                           color: Colors.grey.shade600,
                         ),
                   ),
-                ),
               ],
-            ),
-          ],
+            ],
+          ),
         ),
       ),
     );
@@ -618,6 +661,22 @@ class ChildDetailScreen extends StatelessWidget {
     await Navigator.of(context).push(
       MaterialPageRoute(
         builder: (_) => PolicyOverviewScreen(child: child),
+      ),
+    );
+  }
+
+  Future<void> _openManageDevices(BuildContext context) async {
+    final updatedChild = await Navigator.of(context).push<ChildProfile>(
+      MaterialPageRoute(
+        builder: (_) => ChildDevicesScreen(child: child),
+      ),
+    );
+    if (!context.mounted || updatedChild == null) {
+      return;
+    }
+    Navigator.of(context).pushReplacement(
+      MaterialPageRoute(
+        builder: (_) => ChildDetailScreen(child: updatedChild),
       ),
     );
   }

@@ -78,13 +78,14 @@ class ChildProfile {
   ChildProfile copyWith({
     String? nickname,
     AgeBand? ageBand,
+    List<String>? deviceIds,
     Policy? policy,
   }) {
     return ChildProfile(
       id: id,
       nickname: nickname ?? this.nickname,
       ageBand: ageBand ?? this.ageBand,
-      deviceIds: deviceIds,
+      deviceIds: deviceIds ?? this.deviceIds,
       policy: policy ?? this.policy,
       createdAt: createdAt,
       updatedAt: DateTime.now(),

@@ -1070,7 +1070,49 @@ Program goal: replace settings stubs with functional privacy/security controls b
 
 ---
 
-## Current Summary (after Day 24)
+## Day 25 - Child Device Management (Week 5 Day 5)
+
+Program goal: replace the child-detail device placeholder with a real device linking flow backed by Firestore.
+
+### Commit entries
+
+1. **2026-02-17 07:00:00 +05:30**  
+   Commit: `(this commit - see latest git log)`  
+   Message: `Implement Day 25 child device management editor [design: family_management_light]`  
+   Changes:
+   - Created `lib/screens/child_devices_screen.dart`:
+     - device ID add/remove editor for each child profile
+     - inline validation for empty, duplicate, and overlong IDs
+     - save-on-change app bar action
+     - Firestore persistence through `FirestoreService.updateChild(...)`
+     - returns updated `ChildProfile` back to caller on successful save
+   - Updated `lib/screens/child_detail_screen.dart`:
+     - replaced Week 5 device placeholder with interactive devices card
+     - shows linked device count and preview list
+     - added navigation into `ChildDevicesScreen`
+     - refreshes detail screen with updated child after device save
+   - Updated `lib/models/child_profile.dart`:
+     - extended `copyWith(...)` to support immutable `deviceIds` updates
+   - Added tests:
+     - `test/screens/child_devices_screen_test.dart` for render/add/save/duplicate validation
+     - updated `test/screens/child_detail_screen_test.dart` for device card content
+   Validation:
+   - `C:\Users\navee\flutter\bin\flutter.bat analyze` passed.
+   - `C:\Users\navee\flutter\bin\flutter.bat test` passed (73/73).
+   - `C:\Users\navee\flutter\bin\flutter.bat run -d emulator-5554 --no-resident` passed (build/install).
+   Design folder(s) used:
+   - `family_management_light`
+   - `child_detail_mobile_light`
+   - `child_detail_mobile_dark`
+   - `design_system_tokens_spec`
+   Design assets checked:
+   - `screen.png`, `code.html`
+   UI fidelity note:
+   - Device management follows existing TrustBridge card/list visual language while introducing a simple device-linking workflow.
+
+---
+
+## Current Summary (after Day 25)
 
 - Day 1 completed: foundation, naming, structure, git + GitHub.
 - Day 2 completed: dependencies and Provider baseline.
@@ -1098,5 +1140,6 @@ Program goal: replace settings stubs with functional privacy/security controls b
 - Day 22 completed in code: Age Preset reapply flow added with current-vs-recommended preview, confirmation, and Firestore persistence.
 - Day 23 completed in code: Parent Settings screen added with persisted account preferences and dashboard settings navigation.
 - Day 24 completed in code: Privacy Center and Security Controls are now functional with persisted parent preference updates.
+- Day 25 completed in code: Child Device Management editor added with linked-device CRUD and child-detail integration.
 
 Last updated: 2026-02-17

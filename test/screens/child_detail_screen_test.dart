@@ -81,6 +81,28 @@ void main() {
       expect(find.text('Delete'), findsOneWidget);
     });
 
+    testWidgets('shows devices card with manage hint', (tester) async {
+      await tester.binding.setSurfaceSize(const Size(430, 1400));
+      addTearDown(() => tester.binding.setSurfaceSize(null));
+
+      await tester.pumpWidget(
+        MaterialApp(
+          home: ChildDetailScreen(child: testChild),
+        ),
+      );
+
+      await tester.scrollUntilVisible(
+        find.text('Devices'),
+        300,
+        scrollable: find.byType(Scrollable).first,
+      );
+      await tester.pumpAndSettle();
+
+      expect(find.text('Devices'), findsOneWidget);
+      expect(find.text('No linked devices. Tap to add a device ID.'),
+          findsOneWidget);
+    });
+
     testWidgets('delete button shows confirmation dialog', (tester) async {
       await tester.binding.setSurfaceSize(const Size(430, 1400));
       addTearDown(() => tester.binding.setSurfaceSize(null));
