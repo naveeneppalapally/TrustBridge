@@ -986,7 +986,7 @@ Program goal: replace the dashboard settings stub with a real parent account set
 ### Commit entries
 
 1. **2026-02-17 03:20:00 +05:30**  
-   Commit: `(this commit - see latest git log)`  
+   Commit: `10c0631`  
    Message: `Implement Day 23 parent settings screen and preference persistence [design: parent_settings_mobile_light]`  
    Changes:
    - Created `lib/screens/parent_settings_screen.dart`:
