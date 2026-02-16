@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:intl/intl.dart';
 import 'package:trustbridge_app/models/child_profile.dart';
 import 'package:trustbridge_app/models/schedule.dart';
+import 'package:trustbridge_app/screens/edit_child_screen.dart';
 
 class ChildDetailScreen extends StatelessWidget {
   const ChildDetailScreen({
@@ -30,12 +31,8 @@ class ChildDetailScreen extends StatelessWidget {
           IconButton(
             icon: const Icon(Icons.edit_outlined),
             tooltip: 'Edit Child',
-            onPressed: () {
-              ScaffoldMessenger.of(context).showSnackBar(
-                const SnackBar(
-                  content: Text('Edit screen coming in Day 14!'),
-                ),
-              );
+            onPressed: () async {
+              await _openEditScreen(context);
             },
           ),
           IconButton(
@@ -483,12 +480,8 @@ class ChildDetailScreen extends StatelessWidget {
                 children: [
                   Expanded(
                     child: FilledButton.icon(
-                      onPressed: () {
-                        ScaffoldMessenger.of(context).showSnackBar(
-                          const SnackBar(
-                            content: Text('Edit coming in Day 14!'),
-                          ),
-                        );
+                      onPressed: () async {
+                        await _openEditScreen(context);
                       },
                       icon: const Icon(Icons.edit_outlined),
                       label: const Text('Edit Profile'),
@@ -514,12 +507,8 @@ class ChildDetailScreen extends StatelessWidget {
                 SizedBox(
                   width: double.infinity,
                   child: FilledButton.icon(
-                    onPressed: () {
-                      ScaffoldMessenger.of(context).showSnackBar(
-                        const SnackBar(
-                          content: Text('Edit coming in Day 14!'),
-                        ),
-                      );
+                    onPressed: () async {
+                      await _openEditScreen(context);
                     },
                     icon: const Icon(Icons.edit_outlined),
                     label: const Text('Edit Profile'),
@@ -584,6 +573,20 @@ class ChildDetailScreen extends StatelessWidget {
         );
       },
     );
+  }
+
+  Future<void> _openEditScreen(BuildContext context) async {
+    final didUpdate = await Navigator.of(context).push<bool>(
+      MaterialPageRoute(
+        builder: (_) => EditChildScreen(child: child),
+      ),
+    );
+    if (!context.mounted) {
+      return;
+    }
+    if (didUpdate == true) {
+      Navigator.of(context).pop();
+    }
   }
 
   void _showDeleteConfirmation(BuildContext context) {

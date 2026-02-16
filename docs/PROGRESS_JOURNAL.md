@@ -609,7 +609,52 @@ Program goal: replace the child detail stub with a complete, readable policy bre
 
 ---
 
-## Current Summary (after Day 13)
+## Day 14 - Edit Child Functionality (Week 3 Day 4)
+
+Program goal: implement child profile editing with safe age-band updates and Firestore persistence.
+
+### Commit entries
+
+1. **2026-02-16 15:28:11 +05:30**  
+   Commit: `(this commit - see latest git log)`  
+   Message: `Implement Day 14 edit child functionality [design: edit_child_mobile_light]`  
+   Changes:
+   - Created `lib/screens/edit_child_screen.dart`:
+     - pre-populated nickname + age-band form
+     - nickname validation (required, 2-20 chars)
+     - age-band selector with `Current` indicator
+     - warning banner and policy-change preview when age band changes
+     - age-band change confirmation dialog before save
+     - Firestore save flow via `FirestoreService.updateChild(...)`
+     - loading/error states and no-change guard
+   - Updated `lib/screens/child_detail_screen.dart`:
+     - wired AppBar Edit action to open `EditChildScreen`
+     - wired Quick Actions Edit button to open `EditChildScreen`
+     - on successful update, detail screen returns to dashboard
+   - Added `test/screens/edit_child_screen_test.dart`:
+     - pre-populated rendering test
+     - age-band warning + policy preview test
+     - no-change snackbar test
+     - nickname validation test
+   Validation:
+   - `C:\Users\navee\flutter\bin\flutter.bat analyze` passed.
+   - `C:\Users\navee\flutter\bin\flutter.bat test` passed (39/39).
+   Design folder(s) used:
+   - `add_child_mobile_light`
+   - `add_child_mobile_dark`
+   - `child_detail_mobile_light`
+   - `child_detail_mobile_dark`
+   - `child_detail_tablet_light_1`
+   - `child_detail_tablet_light_2`
+   - `design_system_tokens_spec`
+   Design assets checked:
+   - `screen.png`, `code.html`
+   UI fidelity note:
+   - No exact `edit_child_mobile_light` folder exists in `app_design`; implemented the edit flow as a derived screen using add-child form patterns + child-detail visual language while preserving dark/light and tablet responsiveness.
+
+---
+
+## Current Summary (after Day 14)
 
 - Day 1 completed: foundation, naming, structure, git + GitHub.
 - Day 2 completed: dependencies and Provider baseline.
@@ -626,5 +671,6 @@ Program goal: replace the child detail stub with a complete, readable policy bre
 - Day 11 completed in code: Add Child form is functional with Firestore create flow, policy preview, and validation tests.
 - Day 12 completed in code: Age Band Guide info screen added with comparison/rationale content and navigation from Add Child.
 - Day 13 completed in code: Child Detail screen implemented with policy/schedule cards, quick actions, and full widget test coverage.
+- Day 14 completed in code: Edit Child flow added with safe age-band change confirmation, Firestore updates, and real-time path back to dashboard.
 
 Last updated: 2026-02-16
