@@ -32,10 +32,10 @@ dependencies:
     sdk: flutter
 
   # Firebase - Backend services
-  firebase_core: ^2.24.2
-  firebase_auth: ^4.15.3
-  cloud_firestore: ^4.13.6
-  firebase_messaging: ^14.7.9
+  firebase_core: ^4.4.0
+  firebase_auth: ^6.1.4
+  cloud_firestore: ^6.1.2
+  firebase_messaging: ^16.1.1
 
   # State Management
   provider: ^6.1.1

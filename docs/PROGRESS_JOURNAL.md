@@ -341,6 +341,33 @@ Program goal: unblock authentication progress without phone verification brandin
 
 ---
 
+## Day 7 - Auth Runtime Compatibility Fix
+
+Program goal: resolve runtime Firebase Auth `PigeonUserDetails` cast failure in email login flow.
+
+### Commit entries
+
+1. **2026-02-16 10:57:41 +05:30**  
+   Commit: `(this commit - see latest git log)`  
+   Message: `Upgrade Firebase packages to fix auth runtime cast error`  
+   Changes:
+   - Updated Firebase dependencies in `pubspec.yaml` to latest compatible major lines:
+     - `firebase_core: ^4.4.0`
+     - `firebase_auth: ^6.1.4`
+     - `cloud_firestore: ^6.1.2`
+     - `firebase_messaging: ^16.1.1`
+   - Regenerated `pubspec.lock` with updated FlutterFire platform/interface packages.
+   Validation:
+   - `C:\Users\navee\flutter\bin\flutter.bat analyze` passed.
+   - `C:\Users\navee\flutter\bin\flutter.bat test` passed.
+   - `C:\Users\navee\flutter\bin\flutter.bat clean` + `pub get` completed.
+   - `C:\Users\navee\flutter\bin\flutter.bat run -d emulator-5554 --no-resident` built and installed successfully.
+   Notes:
+   - Non-UI commit (design fields not applicable).
+   - Manual email login verification pending in running emulator session.
+
+---
+
 ## Current Summary (after Day 7 follow-up)
 
 - Day 1 completed: foundation, naming, structure, git + GitHub.
@@ -351,5 +378,6 @@ Program goal: unblock authentication progress without phone verification brandin
 - Day 6 completed in code and infra: Firestore database/rules/indexes configured, parent profile repository added, and auth integration refactored.
 - Day 7 completed in code: essential data models and tests added for child, policy, and schedule domains.
 - Day 7 follow-up completed in code: email fallback auth and diagnostics added while preserving login design structure.
+- Day 7 compatibility fix completed in code: Firebase packages upgraded to resolve runtime auth plugin cast mismatch.
 
 Last updated: 2026-02-16
