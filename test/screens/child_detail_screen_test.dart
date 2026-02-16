@@ -102,13 +102,70 @@ void main() {
       await tester.pumpAndSettle();
 
       expect(find.text('Delete Child Profile'), findsOneWidget);
+      expect(find.text('This action cannot be undone'), findsOneWidget);
       expect(
         find.text(
-          'Are you sure you want to delete Test Child\'s profile? This action cannot be undone.',
+          'Are you sure you want to delete Test Child\'s profile?',
         ),
         findsOneWidget,
       );
+      expect(find.text('- Child profile'), findsOneWidget);
+      expect(find.text('- Content filters'), findsOneWidget);
+      expect(find.text('- Time restrictions'), findsOneWidget);
+      expect(find.text('- All settings'), findsOneWidget);
       expect(find.text('Cancel'), findsOneWidget);
+      expect(find.text('Delete Profile'), findsOneWidget);
+    });
+
+    testWidgets('delete confirmation has cancel and delete buttons',
+        (tester) async {
+      await tester.binding.setSurfaceSize(const Size(430, 1400));
+      addTearDown(() => tester.binding.setSurfaceSize(null));
+
+      await tester.pumpWidget(
+        MaterialApp(
+          home: ChildDetailScreen(child: testChild),
+        ),
+      );
+
+      await tester.scrollUntilVisible(
+        find.widgetWithText(OutlinedButton, 'Delete'),
+        300,
+        scrollable: find.byType(Scrollable).first,
+      );
+      await tester.pumpAndSettle();
+
+      await tester.tap(find.widgetWithText(OutlinedButton, 'Delete'));
+      await tester.pumpAndSettle();
+
+      expect(find.text('Cancel'), findsOneWidget);
+      expect(find.text('Delete Profile'), findsOneWidget);
+    });
+
+    testWidgets('cancel button closes delete dialog', (tester) async {
+      await tester.binding.setSurfaceSize(const Size(430, 1400));
+      addTearDown(() => tester.binding.setSurfaceSize(null));
+
+      await tester.pumpWidget(
+        MaterialApp(
+          home: ChildDetailScreen(child: testChild),
+        ),
+      );
+
+      await tester.scrollUntilVisible(
+        find.widgetWithText(OutlinedButton, 'Delete'),
+        300,
+        scrollable: find.byType(Scrollable).first,
+      );
+      await tester.pumpAndSettle();
+
+      await tester.tap(find.widgetWithText(OutlinedButton, 'Delete'));
+      await tester.pumpAndSettle();
+
+      await tester.tap(find.text('Cancel'));
+      await tester.pumpAndSettle();
+
+      expect(find.text('Delete Child Profile'), findsNothing);
     });
   });
 }

@@ -654,7 +654,58 @@ Program goal: implement child profile editing with safe age-band updates and Fir
 
 ---
 
-## Current Summary (after Day 14)
+## Day 15 - Delete Child Functionality (Week 3 Day 5)
+
+Program goal: complete child lifecycle management by wiring actual delete flow from detail screen to Firestore.
+
+### Commit entries
+
+1. **2026-02-16 18:01:26 +05:30**  
+   Commit: `(this commit - see latest git log)`  
+   Message: `Implement Day 15 delete child functionality [design: child_detail_mobile_light]`  
+   Changes:
+   - Updated `lib/screens/child_detail_screen.dart` delete flow:
+     - replaced stub confirmation with enhanced warning dialog
+     - added explicit irreversible-action notice and deletion scope list
+     - added red `Delete Profile` action button
+     - implemented `_deleteChild(...)`:
+       - non-dismissible loading dialog while deleting
+       - Firestore delete call via `FirestoreService.deleteChild(...)`
+       - success snackbar with child name
+       - navigate back to dashboard after success
+       - error dialog with failure details and retry guidance
+   - Updated `test/screens/child_detail_screen_test.dart`:
+     - confirmation dialog warning content assertions
+     - cancel/delete button presence test
+     - cancel action closes dialog test
+   Validation:
+   - `C:\Users\navee\flutter\bin\flutter.bat analyze` passed.
+   - `C:\Users\navee\flutter\bin\flutter.bat test` passed (41/41).
+   Design folder(s) used:
+   - `child_detail_mobile_light`
+   - `child_detail_mobile_dark`
+   - `child_detail_tablet_light_1`
+   - `child_detail_tablet_light_2`
+   - `design_system_tokens_spec`
+   Design assets checked:
+   - `screen.png`, `code.html`
+   UI fidelity note:
+   - Retained child-detail visual hierarchy while introducing high-risk action safeguards and clear destructive-copy patterns aligned with existing TrustBridge UI tone.
+
+---
+
+## Week 3 Complete
+
+**Week 3 goals achieved:**
+- Add child via UI with validation and presets (Day 11)
+- Age-band guidance and rationale screen (Day 12)
+- Child detail policy/schedule view (Day 13)
+- Edit child flow with safe policy reset confirmation (Day 14)
+- Delete child flow with destructive-action safeguards (Day 15)
+
+---
+
+## Current Summary (after Day 15)
 
 - Day 1 completed: foundation, naming, structure, git + GitHub.
 - Day 2 completed: dependencies and Provider baseline.
@@ -672,5 +723,6 @@ Program goal: implement child profile editing with safe age-band updates and Fir
 - Day 12 completed in code: Age Band Guide info screen added with comparison/rationale content and navigation from Add Child.
 - Day 13 completed in code: Child Detail screen implemented with policy/schedule cards, quick actions, and full widget test coverage.
 - Day 14 completed in code: Edit Child flow added with safe age-band change confirmation, Firestore updates, and real-time path back to dashboard.
+- Day 15 completed in code: Delete Child flow implemented with warning dialog, Firestore delete call, success/error handling, and dashboard return.
 
 Last updated: 2026-02-16

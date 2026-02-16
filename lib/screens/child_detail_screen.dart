@@ -3,6 +3,8 @@ import 'package:intl/intl.dart';
 import 'package:trustbridge_app/models/child_profile.dart';
 import 'package:trustbridge_app/models/schedule.dart';
 import 'package:trustbridge_app/screens/edit_child_screen.dart';
+import 'package:trustbridge_app/services/auth_service.dart';
+import 'package:trustbridge_app/services/firestore_service.dart';
 
 class ChildDetailScreen extends StatelessWidget {
   const ChildDetailScreen({
@@ -594,9 +596,66 @@ class ChildDetailScreen extends StatelessWidget {
       context: context,
       builder: (context) {
         return AlertDialog(
-          title: const Text('Delete Child Profile'),
-          content: Text(
-            'Are you sure you want to delete ${child.nickname}\'s profile? This action cannot be undone.',
+          title: Row(
+            children: [
+              Icon(Icons.warning_amber, color: Colors.red.shade700),
+              const SizedBox(width: 10),
+              const Expanded(
+                child: Text('Delete Child Profile'),
+              ),
+            ],
+          ),
+          content: Column(
+            mainAxisSize: MainAxisSize.min,
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Text(
+                'Are you sure you want to delete ${child.nickname}\'s profile?',
+                style: const TextStyle(fontWeight: FontWeight.w700),
+              ),
+              const SizedBox(height: 14),
+              Container(
+                padding: const EdgeInsets.all(12),
+                decoration: BoxDecoration(
+                  color: Colors.red.shade50,
+                  borderRadius: BorderRadius.circular(8),
+                  border: Border.all(color: Colors.red.shade200),
+                ),
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Row(
+                      children: [
+                        Icon(Icons.info_outline,
+                            size: 16, color: Colors.red.shade700),
+                        const SizedBox(width: 8),
+                        const Expanded(
+                          child: Text(
+                            'This action cannot be undone',
+                            style: TextStyle(fontWeight: FontWeight.w700),
+                          ),
+                        ),
+                      ],
+                    ),
+                    const SizedBox(height: 8),
+                    const Text('The following will be deleted:'),
+                    const SizedBox(height: 4),
+                    const Text('- Child profile'),
+                    const Text('- Content filters'),
+                    const Text('- Time restrictions'),
+                    const Text('- All settings'),
+                  ],
+                ),
+              ),
+              const SizedBox(height: 14),
+              Text(
+                'This will not affect other children or your account.',
+                style: TextStyle(
+                  fontSize: 12,
+                  color: Colors.grey.shade600,
+                ),
+              ),
+            ],
           ),
           actions: [
             TextButton(
@@ -605,22 +664,109 @@ class ChildDetailScreen extends StatelessWidget {
               },
               child: const Text('Cancel'),
             ),
-            TextButton(
+            FilledButton(
               onPressed: () {
                 Navigator.of(context).pop();
-                ScaffoldMessenger.of(context).showSnackBar(
-                  const SnackBar(
-                    content: Text('Delete functionality coming in Day 15!'),
-                  ),
-                );
+                _deleteChild(context);
               },
-              style: TextButton.styleFrom(foregroundColor: Colors.red),
-              child: const Text('Delete'),
+              style: FilledButton.styleFrom(
+                backgroundColor: Colors.red,
+                foregroundColor: Colors.white,
+              ),
+              child: const Text('Delete Profile'),
             ),
           ],
         );
       },
     );
+  }
+
+  Future<void> _deleteChild(BuildContext context) async {
+    showDialog<void>(
+      context: context,
+      barrierDismissible: false,
+      builder: (_) {
+        return const AlertDialog(
+          content: Row(
+            children: [
+              SizedBox(
+                width: 20,
+                height: 20,
+                child: CircularProgressIndicator(strokeWidth: 2),
+              ),
+              SizedBox(width: 16),
+              Text('Deleting...'),
+            ],
+          ),
+        );
+      },
+    );
+
+    try {
+      final authService = AuthService();
+      final firestoreService = FirestoreService();
+      final user = authService.currentUser;
+      if (user == null) {
+        throw Exception('Not logged in');
+      }
+
+      await firestoreService.deleteChild(
+        parentId: user.uid,
+        childId: child.id,
+      );
+
+      if (!context.mounted) {
+        return;
+      }
+      Navigator.of(context).pop();
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text('${child.nickname}\'s profile has been deleted'),
+          backgroundColor: Colors.green,
+        ),
+      );
+      Navigator.of(context).pop();
+    } catch (error) {
+      if (!context.mounted) {
+        return;
+      }
+      Navigator.of(context).pop();
+      showDialog<void>(
+        context: context,
+        builder: (context) {
+          return AlertDialog(
+            title: const Text('Delete Failed'),
+            content: Column(
+              mainAxisSize: MainAxisSize.min,
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                const Text('Failed to delete child profile:'),
+                const SizedBox(height: 8),
+                Text(
+                  error.toString(),
+                  style: const TextStyle(
+                    fontFamily: 'monospace',
+                    fontSize: 12,
+                  ),
+                ),
+                const SizedBox(height: 12),
+                const Text(
+                  'Please try again or contact support if the problem persists.',
+                ),
+              ],
+            ),
+            actions: [
+              TextButton(
+                onPressed: () {
+                  Navigator.of(context).pop();
+                },
+                child: const Text('OK'),
+              ),
+            ],
+          );
+        },
+      );
+    }
   }
 
   Color _getAvatarColor(AgeBand ageBand) {
