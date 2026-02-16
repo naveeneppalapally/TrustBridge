@@ -267,7 +267,47 @@ Program goal: enable Firestore backend with strict owner-only rules and wire par
 
 ---
 
-## Current Summary (after Day 6)
+## Day 7 - Data Models (Week 2 Day 2)
+
+Program goal: implement essential child/policy/schedule data models with Firestore serialization and basic tests.
+
+### Commit entries
+
+1. **2026-02-16 08:36:15 +05:30**  
+   Commit: `(this commit - see latest git log)`  
+   Message: `Implement Day 7 essential data models`  
+   Changes:
+   - Created `lib/models/child_profile.dart` with:
+     - `ChildProfile` model
+     - `AgeBand` enum (`6-9`, `10-13`, `14-17`)
+     - Firestore serialization (`fromFirestore`, `toFirestore`)
+     - `create(...)` and `copyWith(...)` factories
+   - Created `lib/models/schedule.dart` with:
+     - `Schedule` model
+     - `Day`, `ScheduleType`, `ScheduleAction` enums
+     - Bedtime and school factory constructors
+     - Firestore serialization (`fromMap`, `toMap`)
+   - Created `lib/models/policy.dart` with:
+     - `Policy` model
+     - age-based presets for young/middle/teen
+     - Firestore serialization (`fromMap`, `toMap`)
+     - `copyWith(...)`
+   - Added `test/models_test.dart` with 6 pragmatic tests covering:
+     - child creation
+     - policy presets
+     - schedule factories
+     - serialization shape checks
+   Validation:
+   - `flutter analyze` passed.
+   - `flutter test test/models_test.dart` passed (6/6).
+   - All three models support Firestore round-trip serialization maps.
+   Notes:
+   - Non-UI commit (design fields not applicable).
+   - Complex schedule/time logic intentionally deferred.
+
+---
+
+## Current Summary (after Day 7)
 
 - Day 1 completed: foundation, naming, structure, git + GitHub.
 - Day 2 completed: dependencies and Provider baseline.
@@ -275,5 +315,6 @@ Program goal: enable Firestore backend with strict owner-only rules and wire par
 - Day 4 implementation completed in code; real-device OTP validation pending.
 - Day 5 completed in code: login screen UI, OTP interaction wiring, dark/tablet derived variants, and app-entry integration.
 - Day 6 completed in code and infra: Firestore database/rules/indexes configured, parent profile repository added, and auth integration refactored.
+- Day 7 completed in code: essential data models and tests added for child, policy, and schedule domains.
 
-Last updated: 2026-02-15
+Last updated: 2026-02-16
