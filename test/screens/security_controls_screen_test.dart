@@ -78,5 +78,36 @@ void main() {
           snapshot.data()!['preferences'] as Map<String, dynamic>;
       expect(preferences['biometricLoginEnabled'], true);
     });
+
+    testWidgets('change password opens change password screen', (tester) async {
+      await tester.binding.setSurfaceSize(const Size(430, 1400));
+      addTearDown(() => tester.binding.setSurfaceSize(null));
+
+      const parentId = 'parent-security-c';
+      await fakeFirestore.collection('parents').doc(parentId).set({
+        'parentId': parentId,
+        'email': 'parent@test.com',
+        'preferences': {
+          'biometricLoginEnabled': false,
+          'incognitoModeEnabled': false,
+        },
+      });
+
+      await tester.pumpWidget(
+        MaterialApp(
+          home: SecurityControlsScreen(
+            parentIdOverride: parentId,
+            firestoreService: firestoreService,
+          ),
+        ),
+      );
+      await tester.pumpAndSettle();
+
+      await tester.tap(find.widgetWithText(OutlinedButton, 'Change Password'));
+      await tester.pumpAndSettle();
+
+      expect(find.text('Update Account Password'), findsOneWidget);
+      expect(find.byKey(const Key('current_password_input')), findsOneWidget);
+    });
   });
 }

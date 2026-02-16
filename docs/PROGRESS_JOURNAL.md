@@ -1112,7 +1112,47 @@ Program goal: replace the child-detail device placeholder with a real device lin
 
 ---
 
-## Current Summary (after Day 25)
+## Day 26 - Change Password Flow (Week 6 Day 1)
+
+Program goal: replace the security password-change placeholder with a real password update workflow for email accounts.
+
+### Commit entries
+
+1. **2026-02-17 08:10:00 +05:30**  
+   Commit: `(this commit - see latest git log)`  
+   Message: `Implement Day 26 change password flow [design: security_settings_light]`  
+   Changes:
+   - Created `lib/screens/change_password_screen.dart`:
+     - current/new/confirm password form
+     - validation rules (length, letter+number, mismatch, same-as-current)
+     - loading/error/success handling
+     - compatibility behavior for non-email accounts (informational state)
+     - injectable submit callback for testability
+   - Updated `lib/screens/security_controls_screen.dart`:
+     - replaced "coming soon" password action with navigation to `ChangePasswordScreen`
+     - passes account email context into password flow
+   - Updated `lib/services/auth_service.dart`:
+     - added `changePassword(...)` with reauthentication via current password
+     - integrates Firebase password update and standardized error capture/logging
+   - Added tests:
+     - `test/screens/change_password_screen_test.dart`
+     - updated `test/screens/security_controls_screen_test.dart` for password-screen navigation
+   Validation:
+   - `C:\Users\navee\flutter\bin\flutter.bat analyze` passed.
+   - `C:\Users\navee\flutter\bin\flutter.bat test` passed (77/77).
+   - `C:\Users\navee\flutter\bin\flutter.bat run -d emulator-5554 --no-resident` passed (build/install).
+   Design folder(s) used:
+   - `security_settings_light`
+   - `parent_settings_mobile_light`
+   - `design_system_tokens_spec`
+   Design assets checked:
+   - `screen.png`, `code.html`
+   UI fidelity note:
+   - Change-password UX extends existing settings card/typography patterns while introducing secure credential-update behavior.
+
+---
+
+## Current Summary (after Day 26)
 
 - Day 1 completed: foundation, naming, structure, git + GitHub.
 - Day 2 completed: dependencies and Provider baseline.
@@ -1141,5 +1181,6 @@ Program goal: replace the child-detail device placeholder with a real device lin
 - Day 23 completed in code: Parent Settings screen added with persisted account preferences and dashboard settings navigation.
 - Day 24 completed in code: Privacy Center and Security Controls are now functional with persisted parent preference updates.
 - Day 25 completed in code: Child Device Management editor added with linked-device CRUD and child-detail integration.
+- Day 26 completed in code: Security controls now include a real Change Password workflow with validation and Firebase reauthentication.
 
 Last updated: 2026-02-17

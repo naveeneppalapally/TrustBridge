@@ -210,6 +210,39 @@ class AuthService {
     }
   }
 
+  Future<void> changePassword({
+    required String currentPassword,
+    required String newPassword,
+  }) async {
+    _lastErrorMessage = null;
+    final user = _auth.currentUser;
+    if (user == null) {
+      throw StateError('Not logged in');
+    }
+    final email = user.email;
+    if (email == null || email.trim().isEmpty) {
+      throw StateError('Password change is only available for email accounts.');
+    }
+
+    try {
+      final credential = EmailAuthProvider.credential(
+        email: email.trim(),
+        password: currentPassword,
+      );
+      await user.reauthenticateWithCredential(credential);
+      await user.updatePassword(newPassword);
+      _log('Password updated successfully');
+    } catch (error, stackTrace) {
+      _lastErrorMessage = _extractErrorCode(error);
+      _log(
+        'Password update failed',
+        error: error,
+        stackTrace: stackTrace,
+      );
+      rethrow;
+    }
+  }
+
   Future<void> _ensureParentProfile(User user) async {
     // Ensure a fresh auth token is available before Firestore write.
     await user.getIdToken(true);

@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import 'package:trustbridge_app/screens/change_password_screen.dart';
 import 'package:trustbridge_app/services/auth_service.dart';
 import 'package:trustbridge_app/services/firestore_service.dart';
 
@@ -109,6 +110,10 @@ class _SecurityControlsScreenState extends State<SecurityControlsScreen> {
 
           final profile = snapshot.data;
           _hydrateFromProfile(profile);
+          final accountEmail = _extractString(profile, 'email') ??
+              (widget.parentIdOverride == null
+                  ? _resolvedAuthService.currentUser?.email
+                  : null);
 
           return ListView(
             padding: const EdgeInsets.fromLTRB(16, 8, 16, 28),
@@ -174,7 +179,7 @@ class _SecurityControlsScreenState extends State<SecurityControlsScreen> {
               OutlinedButton.icon(
                 onPressed: _isSaving
                     ? null
-                    : () => _showInfo('Password change flow coming soon.'),
+                    : () => _openChangePassword(context, accountEmail),
                 icon: const Icon(Icons.lock_outline),
                 label: const Text('Change Password'),
               ),
@@ -304,5 +309,24 @@ class _SecurityControlsScreenState extends State<SecurityControlsScreen> {
     ScaffoldMessenger.of(context).showSnackBar(
       SnackBar(content: Text(message)),
     );
+  }
+
+  Future<void> _openChangePassword(BuildContext context, String? email) async {
+    await Navigator.of(context).push(
+      MaterialPageRoute(
+        builder: (_) => ChangePasswordScreen(
+          authService: widget.authService,
+          emailOverride: email,
+        ),
+      ),
+    );
+  }
+
+  String? _extractString(Map<String, dynamic>? map, String key) {
+    final value = map?[key];
+    if (value is String && value.trim().isNotEmpty) {
+      return value.trim();
+    }
+    return null;
   }
 }
