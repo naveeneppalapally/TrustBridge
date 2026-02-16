@@ -3,6 +3,7 @@ import 'package:intl/intl.dart';
 import 'package:trustbridge_app/models/child_profile.dart';
 import 'package:trustbridge_app/models/schedule.dart';
 import 'package:trustbridge_app/screens/edit_child_screen.dart';
+import 'package:trustbridge_app/screens/policy_overview_screen.dart';
 import 'package:trustbridge_app/services/auth_service.dart';
 import 'package:trustbridge_app/services/firestore_service.dart';
 
@@ -478,26 +479,39 @@ class ChildDetailScreen extends StatelessWidget {
           builder: (context, constraints) {
             final wide = constraints.maxWidth >= 460;
             if (wide) {
-              return Row(
+              return Column(
                 children: [
-                  Expanded(
-                    child: FilledButton.icon(
-                      onPressed: () async {
-                        await _openEditScreen(context);
-                      },
-                      icon: const Icon(Icons.edit_outlined),
-                      label: const Text('Edit Profile'),
-                    ),
-                  ),
-                  const SizedBox(width: 12),
-                  Expanded(
-                    child: OutlinedButton.icon(
-                      onPressed: () => _showDeleteConfirmation(context),
-                      icon: const Icon(Icons.delete_outline),
-                      label: const Text('Delete'),
-                      style: OutlinedButton.styleFrom(
-                        foregroundColor: Colors.red,
+                  Row(
+                    children: [
+                      Expanded(
+                        child: FilledButton.icon(
+                          onPressed: () async {
+                            await _openEditScreen(context);
+                          },
+                          icon: const Icon(Icons.edit_outlined),
+                          label: const Text('Edit Profile'),
+                        ),
                       ),
+                      const SizedBox(width: 12),
+                      Expanded(
+                        child: OutlinedButton.icon(
+                          onPressed: () => _showDeleteConfirmation(context),
+                          icon: const Icon(Icons.delete_outline),
+                          label: const Text('Delete'),
+                          style: OutlinedButton.styleFrom(
+                            foregroundColor: Colors.red,
+                          ),
+                        ),
+                      ),
+                    ],
+                  ),
+                  const SizedBox(height: 10),
+                  SizedBox(
+                    width: double.infinity,
+                    child: OutlinedButton.icon(
+                      onPressed: () => _openPolicyOverview(context),
+                      icon: const Icon(Icons.policy_outlined),
+                      label: const Text('Manage Policy'),
                     ),
                   ),
                 ],
@@ -526,6 +540,15 @@ class ChildDetailScreen extends StatelessWidget {
                     style: OutlinedButton.styleFrom(
                       foregroundColor: Colors.red,
                     ),
+                  ),
+                ),
+                const SizedBox(height: 10),
+                SizedBox(
+                  width: double.infinity,
+                  child: OutlinedButton.icon(
+                    onPressed: () => _openPolicyOverview(context),
+                    icon: const Icon(Icons.policy_outlined),
+                    label: const Text('Manage Policy'),
                   ),
                 ),
               ],
@@ -589,6 +612,14 @@ class ChildDetailScreen extends StatelessWidget {
     if (didUpdate == true) {
       Navigator.of(context).pop();
     }
+  }
+
+  Future<void> _openPolicyOverview(BuildContext context) async {
+    await Navigator.of(context).push(
+      MaterialPageRoute(
+        builder: (_) => PolicyOverviewScreen(child: child),
+      ),
+    );
   }
 
   void _showDeleteConfirmation(BuildContext context) {

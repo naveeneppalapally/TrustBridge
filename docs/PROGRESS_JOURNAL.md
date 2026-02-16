@@ -705,7 +705,52 @@ Program goal: complete child lifecycle management by wiring actual delete flow f
 
 ---
 
-## Current Summary (after Day 15)
+## Day 16 - Policy Overview Screen (Week 4 Day 1)
+
+Program goal: start policy management by introducing a parent-friendly overview of active filtering controls.
+
+### Commit entries
+
+1. **2026-02-16 18:14:58 +05:30**  
+   Commit: `(this commit - see latest git log)`  
+   Message: `Implement Day 16 policy overview screen [design: policy_overview_mobile_light]`  
+   Changes:
+   - Created `lib/screens/policy_overview_screen.dart`:
+     - policy summary dashboard with quick stats
+     - blocked categories overview with chip preview
+     - time restrictions overview with schedule preview
+     - safe search status section with Day 17 stub interaction
+     - custom domains overview with preview list
+     - section-level stub navigation messages for upcoming policy editors
+   - Updated `lib/screens/child_detail_screen.dart`:
+     - added `Manage Policy` quick action button
+     - wired navigation into `PolicyOverviewScreen`
+   - Added `test/screens/policy_overview_screen_test.dart` with render, stats, and section coverage.
+   Validation:
+   - `C:\Users\navee\flutter\bin\flutter.bat analyze` passed.
+   - `C:\Users\navee\flutter\bin\flutter.bat test` passed (44/44).
+   Design folder(s) used:
+   - `child_detail_mobile_light`
+   - `child_detail_mobile_dark`
+   - `child_detail_tablet_light_1`
+   - `child_detail_tablet_light_2`
+   - `category_blocking_mobile_light`
+   - `category_blocking_mobile_dark`
+   - `category_blocking_tablet_light_1`
+   - `category_blocking_tablet_light_2`
+   - `schedule_editor_mobile_light`
+   - `schedule_editor_mobile_dark`
+   - `schedule_editor_tablet_light_1`
+   - `schedule_editor_tablet_light_2`
+   - `design_system_tokens_spec`
+   Design assets checked:
+   - `screen.png`, `code.html`
+   UI fidelity note:
+   - No exact `policy_overview_mobile_light` folder exists in `app_design`; the overview screen is derived from child-detail/category/schedule references while preserving the TrustBridge card hierarchy and dark/light/tablet behavior.
+
+---
+
+## Current Summary (after Day 16)
 
 - Day 1 completed: foundation, naming, structure, git + GitHub.
 - Day 2 completed: dependencies and Provider baseline.
@@ -724,5 +769,6 @@ Program goal: complete child lifecycle management by wiring actual delete flow f
 - Day 13 completed in code: Child Detail screen implemented with policy/schedule cards, quick actions, and full widget test coverage.
 - Day 14 completed in code: Edit Child flow added with safe age-band change confirmation, Firestore updates, and real-time path back to dashboard.
 - Day 15 completed in code: Delete Child flow implemented with warning dialog, Firestore delete call, success/error handling, and dashboard return.
+- Day 16 completed in code: Policy Overview screen added with sectioned stats/breakdowns and navigation entry from Child Detail.
 
 Last updated: 2026-02-16
