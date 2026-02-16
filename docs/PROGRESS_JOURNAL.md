@@ -940,7 +940,46 @@ Program goal: replace the Safe Search stub with a real persisted policy control 
 
 ---
 
-## Current Summary (after Day 21)
+## Day 22 - Age Preset Reapply Flow (Week 5 Day 2)
+
+Program goal: let parents reapply age-recommended policy baselines with clear impact preview and safe persistence.
+
+### Commit entries
+
+1. **2026-02-17 01:52:00 +05:30**  
+   Commit: `3f935fa`  
+   Message: `Implement Day 22 age preset reapply flow [design: policy_overview_mobile_light]`  
+   Changes:
+   - Created `lib/screens/age_preset_policy_screen.dart`:
+     - age-band baseline policy summary
+     - current vs recommended delta card
+     - blocked-category preview
+     - apply confirmation dialog
+     - Firestore persistence via `FirestoreService.updateChild()`
+     - preserves existing custom blocked domains while resetting categories/schedules/safe-search
+   - Updated `lib/screens/policy_overview_screen.dart`:
+     - added `Age Preset` card in policy overview
+     - wired navigation to `AgePresetPolicyScreen`
+     - refreshes local child policy after applying preset
+   - Added tests:
+     - `test/screens/age_preset_policy_screen_test.dart`
+     - updated `test/screens/policy_overview_screen_test.dart` to include `Age Preset` section assertion
+   Validation:
+   - `C:\Users\navee\flutter\bin\flutter.bat analyze` passed.
+   - `C:\Users\navee\flutter\bin\flutter.bat test` passed (59/59).
+   - `C:\Users\navee\flutter\bin\flutter.bat run -d emulator-5554 --no-resident` passed (build/install).
+   Design folder(s) used:
+   - `policy_overview_mobile_light`
+   - `age_preset` (derived from existing policy cards where no dedicated folder exists)
+   - `design_system_tokens_spec`
+   Design assets checked:
+   - `screen.png`, `code.html`
+   UI fidelity note:
+   - Maintains existing TrustBridge policy-card visual language while adding an explicit, reversible-by-choice reset flow.
+
+---
+
+## Current Summary (after Day 22)
 
 - Day 1 completed: foundation, naming, structure, git + GitHub.
 - Day 2 completed: dependencies and Provider baseline.
@@ -965,5 +1004,6 @@ Program goal: replace the Safe Search stub with a real persisted policy control 
 - Day 19 completed in code: Schedule Creator editor added with template/custom schedule controls, day/time editing, and Firestore persistence.
 - Day 20 completed in code: Quick Modes added for one-tap policy presets with confirmation, preview, and Firestore persistence.
 - Day 21 completed in code: Safe Search in Policy Overview now persists to Firestore with optimistic updates, rollback-on-error, and widget-level persistence tests.
+- Day 22 completed in code: Age Preset reapply flow added with current-vs-recommended preview, confirmation, and Firestore persistence.
 
 Last updated: 2026-02-17
