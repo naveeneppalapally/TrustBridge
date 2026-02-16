@@ -1295,7 +1295,48 @@ Program goal: establish Android VPN service plumbing (Kotlin + Flutter bridge) a
 
 ---
 
-## Current Summary (after Day 29)
+## Day 30 - DNS Filter Core Engine (Week 6 Day 5)
+
+Program goal: implement DNS query parsing and block decision foundations to support upcoming on-device enforcement.
+
+### Commit entries
+
+1. **2026-02-16 22:16:54 +05:30**  
+   Commit: `a17d32d`  
+   Message: `Implement Day 30 DNS parser and filter engine foundation [design: security_settings_light]`  
+   Changes:
+   - Added `lib/services/dns_packet_parser.dart`:
+     - DNS query domain extraction from raw packets
+     - DNS query packet builder for deterministic test inputs
+     - NXDOMAIN response packet builder for blocked-domain pathways
+   - Added `lib/services/dns_filter_engine.dart`:
+     - domain normalization
+     - exact/subdomain block decision logic
+     - packet-level decision evaluation (`blocked` / `allowed` / `parseError`)
+     - default seed blocklist domains for social-network checks
+   - Updated `lib/screens/vpn_protection_screen.dart`:
+     - added `DNS Engine Self-check` card
+     - self-check action validates parser + decision pipeline with sample query (`m.facebook.com`)
+     - result rendering for operator visibility in-app
+   - Added tests:
+     - `test/services/dns_packet_parser_test.dart`
+     - `test/services/dns_filter_engine_test.dart`
+     - updated `test/screens/vpn_protection_screen_test.dart` for self-check behavior
+   Validation:
+   - `C:\Users\navee\flutter\bin\flutter.bat analyze` passed.
+   - `C:\Users\navee\flutter\bin\flutter.bat test` passed (100/100).
+   - `C:\Users\navee\flutter\bin\flutter.bat build apk --debug` passed.
+   Design folder(s) used:
+   - `security_settings_light`
+   - `design_system_tokens_spec`
+   Design assets checked:
+   - `screen.png`, `code.html`
+   UI fidelity note:
+   - DNS diagnostics were added as an extension of the existing VPN protection surface to keep operational controls centralized.
+
+---
+
+## Current Summary (after Day 30)
 
 - Day 1 completed: foundation, naming, structure, git + GitHub.
 - Day 2 completed: dependencies and Provider baseline.
@@ -1328,5 +1369,6 @@ Program goal: establish Android VPN service plumbing (Kotlin + Flutter bridge) a
 - Day 27 completed in code: Child action center now supports pause/resume internet controls and an in-app activity log with persisted pause metadata.
 - Day 28 completed in code: Parent settings now include a Help & Support center with in-app support ticket submission and FAQ guidance.
 - Day 29 completed in code: Android VPN service foundation, Flutter bridge controls, and Security screen integration are now implemented and build-verified.
+- Day 30 completed in code: DNS packet parser and filter decision engine are implemented with in-app VPN self-check diagnostics.
 
 Last updated: 2026-02-16
