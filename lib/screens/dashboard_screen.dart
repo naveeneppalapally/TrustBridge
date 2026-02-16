@@ -460,11 +460,22 @@ class ChildCard extends StatelessWidget {
   Widget _buildPolicyChips(ChildProfile child) {
     final blockedCount = child.policy.blockedCategories.length;
     final scheduleCount = child.policy.schedules.length;
+    final paused =
+        child.pausedUntil != null && child.pausedUntil!.isAfter(DateTime.now());
 
     return Wrap(
       spacing: 8,
       runSpacing: 8,
       children: [
+        if (paused)
+          Chip(
+            label: const Text('Paused'),
+            avatar: const Icon(Icons.pause_circle_outline, size: 15),
+            visualDensity: VisualDensity.compact,
+            backgroundColor: Colors.red.shade50,
+            side: BorderSide(color: Colors.red.shade200),
+            labelStyle: TextStyle(color: Colors.red.shade900),
+          ),
         if (blockedCount > 0)
           Chip(
             label: Text('$blockedCount categories blocked'),

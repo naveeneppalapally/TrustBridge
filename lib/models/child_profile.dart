@@ -24,6 +24,7 @@ class ChildProfile {
   final Policy policy;
   final DateTime createdAt;
   final DateTime updatedAt;
+  final DateTime? pausedUntil;
 
   ChildProfile({
     required this.id,
@@ -33,6 +34,7 @@ class ChildProfile {
     required this.policy,
     required this.createdAt,
     required this.updatedAt,
+    this.pausedUntil,
   });
 
   factory ChildProfile.create({
@@ -48,6 +50,7 @@ class ChildProfile {
       policy: Policy.presetForAgeBand(ageBand),
       createdAt: now,
       updatedAt: now,
+      pausedUntil: null,
     );
   }
 
@@ -61,11 +64,12 @@ class ChildProfile {
       policy: Policy.fromMap(_asMap(data['policy'])),
       createdAt: _toDateTime(data['createdAt']),
       updatedAt: _toDateTime(data['updatedAt']),
+      pausedUntil: _toNullableDateTime(data['pausedUntil']),
     );
   }
 
   Map<String, dynamic> toFirestore() {
-    return {
+    final map = <String, dynamic>{
       'nickname': nickname,
       'ageBand': ageBand.value,
       'deviceIds': deviceIds,
@@ -73,6 +77,10 @@ class ChildProfile {
       'createdAt': Timestamp.fromDate(createdAt),
       'updatedAt': Timestamp.fromDate(updatedAt),
     };
+    if (pausedUntil != null) {
+      map['pausedUntil'] = Timestamp.fromDate(pausedUntil!);
+    }
+    return map;
   }
 
   ChildProfile copyWith({
@@ -80,6 +88,8 @@ class ChildProfile {
     AgeBand? ageBand,
     List<String>? deviceIds,
     Policy? policy,
+    DateTime? pausedUntil,
+    bool clearPausedUntil = false,
   }) {
     return ChildProfile(
       id: id,
@@ -89,6 +99,7 @@ class ChildProfile {
       policy: policy ?? this.policy,
       createdAt: createdAt,
       updatedAt: DateTime.now(),
+      pausedUntil: clearPausedUntil ? null : (pausedUntil ?? this.pausedUntil),
     );
   }
 
@@ -100,6 +111,19 @@ class ChildProfile {
       return rawValue;
     }
     return DateTime.fromMillisecondsSinceEpoch(0);
+  }
+
+  static DateTime? _toNullableDateTime(Object? rawValue) {
+    if (rawValue == null) {
+      return null;
+    }
+    if (rawValue is Timestamp) {
+      return rawValue.toDate();
+    }
+    if (rawValue is DateTime) {
+      return rawValue;
+    }
+    return null;
   }
 
   static Map<String, dynamic> _asMap(Object? rawValue) {

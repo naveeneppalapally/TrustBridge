@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:intl/intl.dart';
 import 'package:trustbridge_app/models/child_profile.dart';
 import 'package:trustbridge_app/models/schedule.dart';
+import 'package:trustbridge_app/screens/child_activity_log_screen.dart';
 import 'package:trustbridge_app/screens/child_devices_screen.dart';
 import 'package:trustbridge_app/screens/edit_child_screen.dart';
 import 'package:trustbridge_app/screens/policy_overview_screen.dart';
@@ -12,9 +13,21 @@ class ChildDetailScreen extends StatelessWidget {
   const ChildDetailScreen({
     super.key,
     required this.child,
+    this.authService,
+    this.firestoreService,
+    this.parentIdOverride,
   });
 
   final ChildProfile child;
+  final AuthService? authService;
+  final FirestoreService? firestoreService;
+  final String? parentIdOverride;
+
+  AuthService get _resolvedAuthService => authService ?? AuthService();
+  FirestoreService get _resolvedFirestoreService =>
+      firestoreService ?? FirestoreService();
+  String? get _resolvedParentId =>
+      parentIdOverride ?? _resolvedAuthService.currentUser?.uid;
 
   @override
   Widget build(BuildContext context) {
@@ -102,6 +115,18 @@ class ChildDetailScreen extends StatelessWidget {
               label: Text('Age: ${child.ageBand.value}'),
               avatar: Icon(_getAgeBandIcon(child.ageBand), size: 16),
             ),
+            if (_isPausedNow(child.pausedUntil)) ...[
+              const SizedBox(height: 8),
+              Chip(
+                label: Text(
+                  'Paused until ${_formatTime(child.pausedUntil!)}',
+                ),
+                avatar: const Icon(Icons.pause_circle_outline, size: 16),
+                backgroundColor: Colors.red.shade50,
+                side: BorderSide(color: Colors.red.shade200),
+                labelStyle: TextStyle(color: Colors.red.shade900),
+              ),
+            ],
             const SizedBox(height: 14),
             Row(
               mainAxisAlignment: MainAxisAlignment.center,
@@ -606,27 +631,47 @@ class ChildDetailScreen extends StatelessWidget {
     showModalBottomSheet<void>(
       context: context,
       builder: (context) {
+        final paused = _isPausedNow(child.pausedUntil);
         return SafeArea(
           child: Column(
             mainAxisSize: MainAxisSize.min,
             children: [
-              const ListTile(
-                leading: Icon(Icons.pause_circle_outline),
-                title: Text('Pause Device'),
-                subtitle: Text('Coming in Week 7'),
-                enabled: false,
+              ListTile(
+                leading: Icon(paused
+                    ? Icons.play_circle_outline
+                    : Icons.pause_circle_outline),
+                title: Text(paused ? 'Resume Internet' : 'Pause Internet'),
+                subtitle: Text(
+                  paused
+                      ? 'Currently paused until ${_formatTime(child.pausedUntil!)}'
+                      : 'Temporarily block internet access for this child',
+                ),
+                onTap: () async {
+                  Navigator.of(context).pop();
+                  if (paused) {
+                    await _resumeInternet(context);
+                  } else {
+                    await _showPauseDurationPicker(context);
+                  }
+                },
               ),
-              const ListTile(
-                leading: Icon(Icons.history),
-                title: Text('View Activity Log'),
-                subtitle: Text('Coming in Week 8'),
-                enabled: false,
+              ListTile(
+                leading: const Icon(Icons.history),
+                title: const Text('View Activity Log'),
+                subtitle: const Text('Profile and policy timeline'),
+                onTap: () async {
+                  Navigator.of(context).pop();
+                  await _openActivityLog(context);
+                },
               ),
-              const ListTile(
-                leading: Icon(Icons.settings_outlined),
-                title: Text('Advanced Settings'),
-                subtitle: Text('Coming in Week 4'),
-                enabled: false,
+              ListTile(
+                leading: const Icon(Icons.settings_outlined),
+                title: const Text('Advanced Settings'),
+                subtitle: const Text('Manage policy and safety controls'),
+                onTap: () async {
+                  Navigator.of(context).pop();
+                  await _openPolicyOverview(context);
+                },
               ),
               const Divider(height: 1),
               ListTile(
@@ -646,7 +691,12 @@ class ChildDetailScreen extends StatelessWidget {
   Future<void> _openEditScreen(BuildContext context) async {
     final didUpdate = await Navigator.of(context).push<bool>(
       MaterialPageRoute(
-        builder: (_) => EditChildScreen(child: child),
+        builder: (_) => EditChildScreen(
+          child: child,
+          authService: authService,
+          firestoreService: firestoreService,
+          parentIdOverride: parentIdOverride,
+        ),
       ),
     );
     if (!context.mounted) {
@@ -660,7 +710,12 @@ class ChildDetailScreen extends StatelessWidget {
   Future<void> _openPolicyOverview(BuildContext context) async {
     await Navigator.of(context).push(
       MaterialPageRoute(
-        builder: (_) => PolicyOverviewScreen(child: child),
+        builder: (_) => PolicyOverviewScreen(
+          child: child,
+          authService: authService,
+          firestoreService: firestoreService,
+          parentIdOverride: parentIdOverride,
+        ),
       ),
     );
   }
@@ -668,7 +723,12 @@ class ChildDetailScreen extends StatelessWidget {
   Future<void> _openManageDevices(BuildContext context) async {
     final updatedChild = await Navigator.of(context).push<ChildProfile>(
       MaterialPageRoute(
-        builder: (_) => ChildDevicesScreen(child: child),
+        builder: (_) => ChildDevicesScreen(
+          child: child,
+          authService: authService,
+          firestoreService: firestoreService,
+          parentIdOverride: parentIdOverride,
+        ),
       ),
     );
     if (!context.mounted || updatedChild == null) {
@@ -676,9 +736,152 @@ class ChildDetailScreen extends StatelessWidget {
     }
     Navigator.of(context).pushReplacement(
       MaterialPageRoute(
-        builder: (_) => ChildDetailScreen(child: updatedChild),
+        builder: (_) => ChildDetailScreen(
+          child: updatedChild,
+          authService: authService,
+          firestoreService: firestoreService,
+          parentIdOverride: parentIdOverride,
+        ),
       ),
     );
+  }
+
+  Future<void> _openActivityLog(BuildContext context) async {
+    await Navigator.of(context).push(
+      MaterialPageRoute(
+        builder: (_) => ChildActivityLogScreen(child: child),
+      ),
+    );
+  }
+
+  Future<void> _showPauseDurationPicker(BuildContext context) async {
+    final duration = await showModalBottomSheet<Duration>(
+      context: context,
+      builder: (context) {
+        return SafeArea(
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              const ListTile(
+                title: Text(
+                  'Pause Internet For',
+                  style: TextStyle(fontWeight: FontWeight.w700),
+                ),
+              ),
+              ListTile(
+                leading: const Icon(Icons.timer_outlined),
+                title: const Text('15 minutes'),
+                onTap: () => Navigator.of(context).pop(
+                  const Duration(minutes: 15),
+                ),
+              ),
+              ListTile(
+                leading: const Icon(Icons.timer_outlined),
+                title: const Text('30 minutes'),
+                onTap: () => Navigator.of(context).pop(
+                  const Duration(minutes: 30),
+                ),
+              ),
+              ListTile(
+                leading: const Icon(Icons.timer_outlined),
+                title: const Text('1 hour'),
+                onTap: () => Navigator.of(context).pop(
+                  const Duration(hours: 1),
+                ),
+              ),
+              const SizedBox(height: 8),
+            ],
+          ),
+        );
+      },
+    );
+
+    if (duration == null) {
+      return;
+    }
+    if (!context.mounted) {
+      return;
+    }
+    await _pauseInternetForDuration(context, duration);
+  }
+
+  Future<void> _pauseInternetForDuration(
+    BuildContext context,
+    Duration duration,
+  ) async {
+    final parentId = _resolvedParentId;
+    if (parentId == null) {
+      _showMessage(context, 'Not logged in');
+      return;
+    }
+
+    final pausedUntil = DateTime.now().add(duration);
+    final updatedChild = child.copyWith(pausedUntil: pausedUntil);
+
+    try {
+      await _resolvedFirestoreService.updateChild(
+        parentId: parentId,
+        child: updatedChild,
+      );
+      if (!context.mounted) {
+        return;
+      }
+      _showMessage(
+        context,
+        'Internet paused until ${_formatTime(pausedUntil)}',
+        success: true,
+      );
+      Navigator.of(context).pushReplacement(
+        MaterialPageRoute(
+          builder: (_) => ChildDetailScreen(
+            child: updatedChild,
+            authService: authService,
+            firestoreService: firestoreService,
+            parentIdOverride: parentIdOverride,
+          ),
+        ),
+      );
+    } catch (error) {
+      if (!context.mounted) {
+        return;
+      }
+      _showMessage(context, 'Unable to pause internet: $error');
+    }
+  }
+
+  Future<void> _resumeInternet(BuildContext context) async {
+    final parentId = _resolvedParentId;
+    if (parentId == null) {
+      _showMessage(context, 'Not logged in');
+      return;
+    }
+
+    final updatedChild = child.copyWith(clearPausedUntil: true);
+    try {
+      await _resolvedFirestoreService.updateChild(
+        parentId: parentId,
+        child: updatedChild,
+      );
+      if (!context.mounted) {
+        return;
+      }
+      _showMessage(context, 'Internet resumed', success: true);
+      Navigator.of(context).pushReplacement(
+        MaterialPageRoute(
+          builder: (_) => ChildDetailScreen(
+            child: updatedChild,
+            authService: authService,
+            firestoreService: firestoreService,
+            parentIdOverride: parentIdOverride,
+          ),
+        ),
+      );
+    } catch (error) {
+      if (!context.mounted) {
+        return;
+      }
+      _showMessage(context, 'Unable to resume internet: $error');
+    }
   }
 
   void _showDeleteConfirmation(BuildContext context) {
@@ -793,15 +996,13 @@ class ChildDetailScreen extends StatelessWidget {
     );
 
     try {
-      final authService = AuthService();
-      final firestoreService = FirestoreService();
-      final user = authService.currentUser;
-      if (user == null) {
+      final parentId = _resolvedParentId;
+      if (parentId == null) {
         throw Exception('Not logged in');
       }
 
-      await firestoreService.deleteChild(
-        parentId: user.uid,
+      await _resolvedFirestoreService.deleteChild(
+        parentId: parentId,
         childId: child.id,
       );
 
@@ -857,6 +1058,27 @@ class ChildDetailScreen extends StatelessWidget {
         },
       );
     }
+  }
+
+  bool _isPausedNow(DateTime? pausedUntil) {
+    return pausedUntil != null && pausedUntil.isAfter(DateTime.now());
+  }
+
+  String _formatTime(DateTime dateTime) {
+    return DateFormat('h:mm a').format(dateTime);
+  }
+
+  void _showMessage(
+    BuildContext context,
+    String message, {
+    bool success = false,
+  }) {
+    ScaffoldMessenger.of(context).showSnackBar(
+      SnackBar(
+        content: Text(message),
+        backgroundColor: success ? Colors.green : null,
+      ),
+    );
   }
 
   Color _getAvatarColor(AgeBand ageBand) {

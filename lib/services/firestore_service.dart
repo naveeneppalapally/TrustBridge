@@ -219,6 +219,9 @@ class FirestoreService {
       'ageBand': child.ageBand.value,
       'deviceIds': child.deviceIds,
       'policy': child.policy.toMap(),
+      'pausedUntil': child.pausedUntil != null
+          ? Timestamp.fromDate(child.pausedUntil!)
+          : null,
       'updatedAt': Timestamp.fromDate(DateTime.now()),
     });
   }

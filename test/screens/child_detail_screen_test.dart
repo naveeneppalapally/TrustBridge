@@ -103,6 +103,24 @@ void main() {
           findsOneWidget);
     });
 
+    testWidgets('more options sheet shows real actions', (tester) async {
+      await tester.binding.setSurfaceSize(const Size(430, 1400));
+      addTearDown(() => tester.binding.setSurfaceSize(null));
+
+      await tester.pumpWidget(
+        MaterialApp(
+          home: ChildDetailScreen(child: testChild),
+        ),
+      );
+
+      await tester.tap(find.byIcon(Icons.more_vert));
+      await tester.pumpAndSettle();
+
+      expect(find.text('Pause Internet'), findsOneWidget);
+      expect(find.text('View Activity Log'), findsOneWidget);
+      expect(find.text('Advanced Settings'), findsOneWidget);
+    });
+
     testWidgets('delete button shows confirmation dialog', (tester) async {
       await tester.binding.setSurfaceSize(const Size(430, 1400));
       addTearDown(() => tester.binding.setSurfaceSize(null));

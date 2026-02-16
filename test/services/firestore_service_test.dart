@@ -138,6 +138,7 @@ void main() {
         policy: Policy.presetForAgeBand(AgeBand.teen),
         createdAt: created.createdAt,
         updatedAt: created.updatedAt,
+        pausedUntil: DateTime(2026, 2, 16, 12, 0),
       );
 
       await firestoreService.updateChild(
@@ -153,6 +154,7 @@ void main() {
       expect(data['ageBand'], AgeBand.teen.value);
       expect(data['deviceIds'], ['device-1']);
       expect(data['parentId'], 'parentA');
+      expect(data['pausedUntil'], isA<Timestamp>());
 
       final updatedAt = (data['updatedAt'] as Timestamp).toDate();
       final createdAt = (data['createdAt'] as Timestamp).toDate();
