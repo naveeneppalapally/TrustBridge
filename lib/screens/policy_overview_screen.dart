@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:trustbridge_app/models/child_profile.dart';
 import 'package:trustbridge_app/models/policy.dart';
 import 'package:trustbridge_app/models/schedule.dart';
+import 'package:trustbridge_app/screens/age_preset_policy_screen.dart';
 import 'package:trustbridge_app/screens/block_categories_screen.dart';
 import 'package:trustbridge_app/screens/custom_domains_screen.dart';
 import 'package:trustbridge_app/screens/quick_modes_screen.dart';
@@ -89,6 +90,8 @@ class _PolicyOverviewScreenState extends State<PolicyOverviewScreen> {
           ),
           const SizedBox(height: 20),
           _buildQuickStatsCard(context, policy),
+          const SizedBox(height: 12),
+          _buildAgePresetCard(context),
           const SizedBox(height: 12),
           _buildQuickModesCard(context, policy),
           const SizedBox(height: 12),
@@ -286,6 +289,56 @@ class _PolicyOverviewScreenState extends State<PolicyOverviewScreen> {
                       ),
                 ),
               ],
+            ],
+          ),
+        ),
+      ),
+    );
+  }
+
+  Widget _buildAgePresetCard(BuildContext context) {
+    return Card(
+      elevation: 0,
+      shape: RoundedRectangleBorder(
+        borderRadius: BorderRadius.circular(16),
+      ),
+      child: InkWell(
+        borderRadius: BorderRadius.circular(16),
+        onTap: () async => _openAgePreset(context),
+        child: Padding(
+          padding: const EdgeInsets.all(16),
+          child: Row(
+            children: [
+              Container(
+                padding: const EdgeInsets.all(8),
+                decoration: BoxDecoration(
+                  color: Colors.teal.shade100,
+                  borderRadius: BorderRadius.circular(8),
+                ),
+                child: Icon(Icons.auto_fix_high, color: Colors.teal.shade700),
+              ),
+              const SizedBox(width: 12),
+              Expanded(
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Text(
+                      'Age Preset',
+                      style: Theme.of(context).textTheme.titleMedium?.copyWith(
+                            fontWeight: FontWeight.w700,
+                          ),
+                    ),
+                    const SizedBox(height: 3),
+                    Text(
+                      'Reapply recommended baseline for age ${_child.ageBand.value}',
+                      style: Theme.of(context).textTheme.bodySmall?.copyWith(
+                            color: Colors.grey.shade600,
+                          ),
+                    ),
+                  ],
+                ),
+              ),
+              Icon(Icons.chevron_right, color: Colors.grey.shade600),
             ],
           ),
         ),
@@ -696,6 +749,25 @@ class _PolicyOverviewScreenState extends State<PolicyOverviewScreen> {
     final updatedChild = await Navigator.of(context).push<ChildProfile>(
       MaterialPageRoute(
         builder: (_) => BlockCategoriesScreen(
+          child: _child,
+          authService: widget.authService,
+          firestoreService: widget.firestoreService,
+          parentIdOverride: widget.parentIdOverride,
+        ),
+      ),
+    );
+
+    if (updatedChild != null && mounted) {
+      setState(() {
+        _child = updatedChild;
+      });
+    }
+  }
+
+  Future<void> _openAgePreset(BuildContext context) async {
+    final updatedChild = await Navigator.of(context).push<ChildProfile>(
+      MaterialPageRoute(
+        builder: (_) => AgePresetPolicyScreen(
           child: _child,
           authService: widget.authService,
           firestoreService: widget.firestoreService,

@@ -59,8 +59,15 @@ void main() {
       expect(find.text('Blocked Content Categories'), findsOneWidget);
       expect(find.text('Time Restrictions'), findsOneWidget);
       expect(find.text('Safe Search'), findsOneWidget);
-      expect(find.text('Custom Blocked Domains'), findsOneWidget);
       expect(find.text('Quick Modes'), findsOneWidget);
+      expect(find.text('Age Preset'), findsOneWidget);
+
+      await tester.scrollUntilVisible(
+        find.text('Custom Blocked Domains'),
+        200,
+        scrollable: find.byType(Scrollable).first,
+      );
+      expect(find.text('Custom Blocked Domains'), findsOneWidget);
     });
 
     testWidgets('safe search toggle updates Firestore policy', (tester) async {
