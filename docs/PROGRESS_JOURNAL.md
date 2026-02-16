@@ -1077,7 +1077,7 @@ Program goal: replace the child-detail device placeholder with a real device lin
 ### Commit entries
 
 1. **2026-02-17 07:00:00 +05:30**  
-   Commit: `(this commit - see latest git log)`  
+   Commit: `1810f47`  
    Message: `Implement Day 25 child device management editor [design: family_management_light]`  
    Changes:
    - Created `lib/screens/child_devices_screen.dart`:
