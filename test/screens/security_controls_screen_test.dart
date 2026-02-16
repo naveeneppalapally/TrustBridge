@@ -46,6 +46,7 @@ void main() {
           find.byKey(const Key('security_biometric_switch')), findsOneWidget);
       expect(
           find.byKey(const Key('security_incognito_switch')), findsOneWidget);
+      expect(find.byKey(const Key('security_vpn_button')), findsOneWidget);
     });
 
     testWidgets('saves biometric toggle to firestore', (tester) async {
@@ -108,6 +109,30 @@ void main() {
 
       expect(find.text('Update Account Password'), findsOneWidget);
       expect(find.byKey(const Key('current_password_input')), findsOneWidget);
+    });
+
+    testWidgets('vpn button opens vpn protection screen', (tester) async {
+      await tester.binding.setSurfaceSize(const Size(430, 1400));
+      addTearDown(() => tester.binding.setSurfaceSize(null));
+
+      const parentId = 'parent-security-d';
+      await seedParent(parentId);
+
+      await tester.pumpWidget(
+        MaterialApp(
+          home: SecurityControlsScreen(
+            parentIdOverride: parentId,
+            firestoreService: firestoreService,
+          ),
+        ),
+      );
+      await tester.pumpAndSettle();
+
+      await tester.tap(find.byKey(const Key('security_vpn_button')));
+      await tester.pumpAndSettle();
+
+      expect(find.text('VPN Protection Engine'), findsWidgets);
+      expect(find.byKey(const Key('vpn_status_label')), findsOneWidget);
     });
   });
 }

@@ -33,6 +33,7 @@ class FirestoreService {
           'personalizedTipsEnabled': true,
           'biometricLoginEnabled': false,
           'incognitoModeEnabled': false,
+          'vpnProtectionEnabled': false,
         },
         'fcmToken': null,
       },
@@ -65,6 +66,7 @@ class FirestoreService {
     bool? personalizedTipsEnabled,
     bool? biometricLoginEnabled,
     bool? incognitoModeEnabled,
+    bool? vpnProtectionEnabled,
   }) async {
     if (parentId.trim().isEmpty) {
       throw ArgumentError.value(parentId, 'parentId', 'Parent ID is required.');
@@ -100,6 +102,9 @@ class FirestoreService {
     }
     if (incognitoModeEnabled != null) {
       preferenceUpdates['incognitoModeEnabled'] = incognitoModeEnabled;
+    }
+    if (vpnProtectionEnabled != null) {
+      preferenceUpdates['vpnProtectionEnabled'] = vpnProtectionEnabled;
     }
 
     if (preferenceUpdates.isEmpty) {

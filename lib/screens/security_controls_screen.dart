@@ -1,18 +1,22 @@
 import 'package:flutter/material.dart';
 import 'package:trustbridge_app/screens/change_password_screen.dart';
+import 'package:trustbridge_app/screens/vpn_protection_screen.dart';
 import 'package:trustbridge_app/services/auth_service.dart';
 import 'package:trustbridge_app/services/firestore_service.dart';
+import 'package:trustbridge_app/services/vpn_service.dart';
 
 class SecurityControlsScreen extends StatefulWidget {
   const SecurityControlsScreen({
     super.key,
     this.authService,
     this.firestoreService,
+    this.vpnService,
     this.parentIdOverride,
   });
 
   final AuthService? authService;
   final FirestoreService? firestoreService;
+  final VpnServiceBase? vpnService;
   final String? parentIdOverride;
 
   @override
@@ -183,6 +187,13 @@ class _SecurityControlsScreenState extends State<SecurityControlsScreen> {
                 icon: const Icon(Icons.lock_outline),
                 label: const Text('Change Password'),
               ),
+              const SizedBox(height: 10),
+              OutlinedButton.icon(
+                key: const Key('security_vpn_button'),
+                onPressed: _isSaving ? null : () => _openVpnProtection(context),
+                icon: const Icon(Icons.shield_outlined),
+                label: const Text('VPN Protection Engine'),
+              ),
               const SizedBox(height: 16),
               Container(
                 padding: const EdgeInsets.all(12),
@@ -317,6 +328,19 @@ class _SecurityControlsScreenState extends State<SecurityControlsScreen> {
         builder: (_) => ChangePasswordScreen(
           authService: widget.authService,
           emailOverride: email,
+        ),
+      ),
+    );
+  }
+
+  Future<void> _openVpnProtection(BuildContext context) async {
+    await Navigator.of(context).push(
+      MaterialPageRoute(
+        builder: (_) => VpnProtectionScreen(
+          authService: widget.authService,
+          firestoreService: widget.firestoreService,
+          vpnService: widget.vpnService,
+          parentIdOverride: widget.parentIdOverride,
         ),
       ),
     );

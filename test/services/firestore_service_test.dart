@@ -259,6 +259,7 @@ void main() {
         personalizedTipsEnabled: false,
         biometricLoginEnabled: true,
         incognitoModeEnabled: true,
+        vpnProtectionEnabled: true,
       );
 
       final snapshot =
@@ -271,6 +272,7 @@ void main() {
       expect(preferences['personalizedTipsEnabled'], false);
       expect(preferences['biometricLoginEnabled'], true);
       expect(preferences['incognitoModeEnabled'], true);
+      expect(preferences['vpnProtectionEnabled'], true);
     });
 
     test('updateParentPreferences throws ArgumentError for empty parentId', () {
