@@ -825,7 +825,47 @@ Program goal: enable direct website-level blocking with a simple add/remove work
 
 ---
 
-## Current Summary (after Day 18)
+## Day 19 - Schedule Creator (Week 4 Day 4)
+
+Program goal: provide a complete schedule management editor for time-based restrictions.
+
+### Commit entries
+
+1. **2026-02-16 23:58:00 +05:30**  
+   Commit: `(this commit - see latest git log)`  
+   Message: `Implement Day 19 schedule creator editor [design: schedule_editor_mobile_light]`  
+   Changes:
+   - Created `lib/screens/schedule_creator_screen.dart`:
+     - list of active schedules with type icons and day/time summary
+     - enable/disable switch per schedule
+     - quick template actions (Bedtime, School, Homework)
+     - custom schedule creation/edit bottom sheet
+     - time picker inputs for start/end times
+     - day-selector chips (Mon-Sun)
+     - delete confirmation per schedule
+     - save-on-change action to persist schedule list to Firestore
+   - Updated `lib/screens/policy_overview_screen.dart`:
+     - replaced Day 19 stub with real navigation to `ScheduleCreatorScreen`
+     - updates local overview counts after saved schedule edits
+   - Added `test/screens/schedule_creator_screen_test.dart` with render, quick-add, and delete-dialog coverage.
+   Validation:
+   - `C:\Users\navee\flutter\bin\flutter.bat analyze` passed.
+   - `C:\Users\navee\flutter\bin\flutter.bat test` passed (53/53).
+   - `C:\Users\navee\flutter\bin\flutter.bat run -d emulator-5554 --no-resident` passed (build/install).
+   Design folder(s) used:
+   - `schedule_editor_mobile_light`
+   - `schedule_editor_mobile_dark`
+   - `schedule_editor_tablet_light_1`
+   - `schedule_editor_tablet_light_2`
+   - `design_system_tokens_spec`
+   Design assets checked:
+   - `screen.png`, `code.html`
+   UI fidelity note:
+   - Schedule editor patterns were adapted into the existing TrustBridge card/action system while preserving current typography and spacing tokens.
+
+---
+
+## Current Summary (after Day 19)
 
 - Day 1 completed: foundation, naming, structure, git + GitHub.
 - Day 2 completed: dependencies and Provider baseline.
@@ -847,5 +887,6 @@ Program goal: enable direct website-level blocking with a simple add/remove work
 - Day 16 completed in code: Policy Overview screen added with sectioned stats/breakdowns and navigation entry from Child Detail.
 - Day 17 completed in code: Category Blocking editor added with risk-based toggles, select/clear quick actions, Firestore save flow, and Policy Overview integration.
 - Day 18 completed in code: Custom Domain editor added with input validation, add/remove actions, Firestore save flow, and Policy Overview integration.
+- Day 19 completed in code: Schedule Creator editor added with template/custom schedule controls, day/time editing, and Firestore persistence.
 
 Last updated: 2026-02-16

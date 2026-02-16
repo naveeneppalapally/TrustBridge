@@ -4,6 +4,7 @@ import 'package:trustbridge_app/models/policy.dart';
 import 'package:trustbridge_app/models/schedule.dart';
 import 'package:trustbridge_app/screens/block_categories_screen.dart';
 import 'package:trustbridge_app/screens/custom_domains_screen.dart';
+import 'package:trustbridge_app/screens/schedule_creator_screen.dart';
 
 class PolicyOverviewScreen extends StatefulWidget {
   const PolicyOverviewScreen({
@@ -273,10 +274,7 @@ class _PolicyOverviewScreenState extends State<PolicyOverviewScreen> {
       ),
       child: InkWell(
         borderRadius: BorderRadius.circular(16),
-        onTap: () => _showComingSoon(
-          context,
-          'Schedule Creator coming in Day 19!',
-        ),
+        onTap: () async => _openScheduleCreator(context),
         child: Padding(
           padding: const EdgeInsets.all(16),
           child: Column(
@@ -553,6 +551,20 @@ class _PolicyOverviewScreenState extends State<PolicyOverviewScreen> {
     final updatedChild = await Navigator.of(context).push<ChildProfile>(
       MaterialPageRoute(
         builder: (_) => CustomDomainsScreen(child: _child),
+      ),
+    );
+
+    if (updatedChild != null && mounted) {
+      setState(() {
+        _child = updatedChild;
+      });
+    }
+  }
+
+  Future<void> _openScheduleCreator(BuildContext context) async {
+    final updatedChild = await Navigator.of(context).push<ChildProfile>(
+      MaterialPageRoute(
+        builder: (_) => ScheduleCreatorScreen(child: _child),
       ),
     );
 
