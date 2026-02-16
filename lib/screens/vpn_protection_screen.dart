@@ -1,5 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:trustbridge_app/services/auth_service.dart';
+import 'package:trustbridge_app/services/dns_filter_engine.dart';
+import 'package:trustbridge_app/services/dns_packet_parser.dart';
 import 'package:trustbridge_app/services/firestore_service.dart';
 import 'package:trustbridge_app/services/vpn_service.dart';
 
@@ -25,9 +27,12 @@ class _VpnProtectionScreenState extends State<VpnProtectionScreen> {
   AuthService? _authService;
   FirestoreService? _firestoreService;
   VpnServiceBase? _vpnService;
+  late final DnsFilterEngine _dnsFilterEngine;
 
   VpnStatus _status = const VpnStatus.unsupported();
   bool _isBusy = false;
+  bool _isCheckingDns = false;
+  String? _dnsSelfCheckMessage;
 
   AuthService get _resolvedAuthService {
     _authService ??= widget.authService ?? AuthService();
@@ -51,6 +56,9 @@ class _VpnProtectionScreenState extends State<VpnProtectionScreen> {
   @override
   void initState() {
     super.initState();
+    _dnsFilterEngine = DnsFilterEngine(
+      blockedDomains: DnsFilterEngine.defaultSeedDomains,
+    );
     _refreshStatus();
   }
 
@@ -80,6 +88,8 @@ class _VpnProtectionScreenState extends State<VpnProtectionScreen> {
           _buildStatusCard(context),
           const SizedBox(height: 16),
           _buildActionCard(context),
+          const SizedBox(height: 16),
+          _buildDnsSelfCheckCard(context),
           const SizedBox(height: 16),
           _buildInfoCard(context),
         ],
@@ -250,6 +260,63 @@ class _VpnProtectionScreenState extends State<VpnProtectionScreen> {
               context,
               'Persists VPN enabled state in parent preferences for cross-screen visibility.',
             ),
+            _buildBullet(
+              context,
+              'Includes DNS query parsing and block decision engine self-checks.',
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+
+  Widget _buildDnsSelfCheckCard(BuildContext context) {
+    return Card(
+      elevation: 0,
+      shape: RoundedRectangleBorder(
+        borderRadius: BorderRadius.circular(16),
+      ),
+      child: Padding(
+        padding: const EdgeInsets.all(16),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Text(
+              'DNS Engine Self-check',
+              style: Theme.of(context).textTheme.titleMedium?.copyWith(
+                    fontWeight: FontWeight.w700,
+                  ),
+            ),
+            const SizedBox(height: 6),
+            Text(
+              'Runs a parser + block decision check using sample query: m.facebook.com',
+              style: Theme.of(context).textTheme.bodySmall?.copyWith(
+                    color: Colors.grey.shade600,
+                  ),
+            ),
+            const SizedBox(height: 12),
+            OutlinedButton.icon(
+              key: const Key('vpn_dns_self_check_button'),
+              onPressed: _isCheckingDns ? null : _runDnsSelfCheck,
+              icon: _isCheckingDns
+                  ? const SizedBox(
+                      width: 16,
+                      height: 16,
+                      child: CircularProgressIndicator(strokeWidth: 2),
+                    )
+                  : const Icon(Icons.rule_folder_outlined),
+              label: Text(_isCheckingDns ? 'Running...' : 'Run Self-check'),
+            ),
+            if (_dnsSelfCheckMessage != null) ...[
+              const SizedBox(height: 10),
+              Text(
+                _dnsSelfCheckMessage!,
+                key: const Key('vpn_dns_self_check_result'),
+                style: Theme.of(context).textTheme.bodyMedium?.copyWith(
+                      fontWeight: FontWeight.w600,
+                    ),
+              ),
+            ],
           ],
         ),
       ),
@@ -392,6 +459,36 @@ class _VpnProtectionScreenState extends State<VpnProtectionScreen> {
       parentId: parentId,
       vpnProtectionEnabled: enabled,
     );
+  }
+
+  Future<void> _runDnsSelfCheck() async {
+    setState(() {
+      _isCheckingDns = true;
+      _dnsSelfCheckMessage = null;
+    });
+
+    final queryPacket = DnsPacketParser.buildQueryPacket('m.facebook.com');
+    final decision = _dnsFilterEngine.evaluatePacket(queryPacket);
+    final nxDomainPacket = decision.blocked
+        ? DnsPacketParser.buildNxDomainResponse(queryPacket)
+        : null;
+
+    if (!mounted) {
+      return;
+    }
+
+    final message = decision.parseError
+        ? 'Self-check failed: parser could not decode sample query.'
+        : decision.blocked &&
+                nxDomainPacket != null &&
+                nxDomainPacket.isNotEmpty
+            ? 'Self-check passed: ${decision.domain} -> BLOCKED (NXDOMAIN ready).'
+            : 'Self-check passed: ${decision.domain} -> ALLOWED.';
+
+    setState(() {
+      _isCheckingDns = false;
+      _dnsSelfCheckMessage = message;
+    });
   }
 
   void _showMessage(String message, {bool isError = false}) {

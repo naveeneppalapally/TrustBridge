@@ -93,6 +93,8 @@ void main() {
 
       expect(find.text('VPN Protection Engine'), findsWidgets);
       expect(find.text('Unsupported on this platform'), findsOneWidget);
+      expect(
+          find.byKey(const Key('vpn_dns_self_check_button')), findsOneWidget);
     });
 
     testWidgets('enable protection updates status and preference',
@@ -159,6 +161,35 @@ void main() {
       final preferences =
           snapshot.data()!['preferences'] as Map<String, dynamic>;
       expect(preferences['vpnProtectionEnabled'], false);
+    });
+
+    testWidgets('dns self-check renders blocked decision message',
+        (tester) async {
+      final fakeVpn = _FakeVpnService(
+        supported: true,
+        permissionGranted: true,
+        running: false,
+      );
+
+      await tester.pumpWidget(
+        MaterialApp(
+          home: VpnProtectionScreen(
+            vpnService: fakeVpn,
+            firestoreService: firestoreService,
+            parentIdOverride: 'parent-vpn-d',
+          ),
+        ),
+      );
+      await tester.pumpAndSettle();
+
+      await tester
+          .ensureVisible(find.byKey(const Key('vpn_dns_self_check_button')));
+      await tester.tap(find.byKey(const Key('vpn_dns_self_check_button')));
+      await tester.pumpAndSettle();
+
+      expect(
+          find.byKey(const Key('vpn_dns_self_check_result')), findsOneWidget);
+      expect(find.textContaining('BLOCKED'), findsOneWidget);
     });
   });
 }
