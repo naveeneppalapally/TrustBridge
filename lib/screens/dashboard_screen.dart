@@ -1,5 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:trustbridge_app/models/child_profile.dart';
+import 'package:trustbridge_app/screens/add_child_screen.dart';
+import 'package:trustbridge_app/screens/child_detail_screen.dart';
 import 'package:trustbridge_app/services/auth_service.dart';
 import 'package:trustbridge_app/services/firestore_service.dart';
 
@@ -168,7 +170,11 @@ class _DashboardScreenState extends State<DashboardScreen> {
                     const SizedBox(height: 28),
                     FilledButton.icon(
                       onPressed: () {
-                        _showComingSoon('Add Child screen coming in Day 10!');
+                        Navigator.of(context).push(
+                          MaterialPageRoute(
+                            builder: (_) => const AddChildScreen(),
+                          ),
+                        );
                       },
                       icon: const Icon(Icons.add),
                       label: const Text('Add Child'),
@@ -265,8 +271,12 @@ class _DashboardScreenState extends State<DashboardScreen> {
                             return ChildCard(
                               child: child,
                               onTap: () {
-                                _showComingSoon(
-                                  'Child Detail for ${child.nickname} coming in Week 3!',
+                                Navigator.of(context).push(
+                                  MaterialPageRoute(
+                                    builder: (_) => ChildDetailScreen(
+                                      child: child,
+                                    ),
+                                  ),
                                 );
                               },
                             );
@@ -283,8 +293,12 @@ class _DashboardScreenState extends State<DashboardScreen> {
                               child: ChildCard(
                                 child: child,
                                 onTap: () {
-                                  _showComingSoon(
-                                    'Child Detail for ${child.nickname} coming in Week 3!',
+                                  Navigator.of(context).push(
+                                    MaterialPageRoute(
+                                      builder: (_) => ChildDetailScreen(
+                                        child: child,
+                                      ),
+                                    ),
                                   );
                                 },
                               ),
@@ -300,7 +314,11 @@ class _DashboardScreenState extends State<DashboardScreen> {
       ),
       floatingActionButton: FloatingActionButton(
         onPressed: () {
-          _showComingSoon('Add Child screen coming in Day 10!');
+          Navigator.of(context).push(
+            MaterialPageRoute(
+              builder: (_) => const AddChildScreen(),
+            ),
+          );
         },
         child: const Icon(Icons.add),
       ),

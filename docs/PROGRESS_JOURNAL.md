@@ -442,7 +442,59 @@ Program goal: implement dashboard UI with real-time child stream, auth wrapper r
 
 ---
 
-## Current Summary (after Day 9)
+## Day 10 - Navigation and Week 2 Completion (Week 2 Day 5)
+
+Program goal: complete Week 2 navigation polish, wire dashboard to real stub screens, and prepare Week 3 implementation paths.
+
+### Commit entries
+
+1. **2026-02-16 12:02:04 +05:30**  
+   Commit: `(this commit - see latest git log)`  
+   Message: `Implement Day 10 navigation and Week 3 screen stubs [design: add_child_mobile_light]`  
+   Changes:
+   - Created Week 3 stub screens:
+     - `lib/screens/add_child_screen.dart`
+     - `lib/screens/child_detail_screen.dart`
+   - Updated `lib/screens/dashboard_screen.dart`:
+     - wired empty-state Add Child action to `AddChildScreen`
+     - wired FAB to `AddChildScreen`
+     - wired child-card taps to `ChildDetailScreen(child: child)`
+   - Updated `lib/main.dart`:
+     - added `/add-child` route for navigation completeness
+   - Added `test/navigation_test.dart` with navigation-level widget tests.
+   Validation:
+   - `C:\Users\navee\flutter\bin\flutter.bat analyze` passed.
+   - `C:\Users\navee\flutter\bin\flutter.bat test` passed.
+   - `C:\Users\navee\flutter\bin\flutter.bat run -d emulator-5554 --no-resident` built and installed successfully.
+   - Stub navigation paths verified by automated widget tests.
+   Design folder(s) used:
+   - `add_child_mobile_light`
+   - `add_child_mobile_dark`
+   - `child_detail_mobile_light`
+   - `child_detail_mobile_dark`
+   - `design_system_tokens_spec`
+   Design assets checked:
+   - `screen.png`, `code.html`
+   UI fidelity note:
+   - Implemented pragmatic stubs with TrustBridge token colors and mode responsiveness; full feature fidelity for add/edit/detail flows is intentionally deferred to Week 3.
+
+---
+
+## Week 2 Complete
+
+**Week 2 goals achieved:**
+- Parent can see dashboard.
+- Navigation between core screens works.
+- Firestore child data syncs to dashboard in real time.
+
+**Ready for Week 3:**
+- Implement full Add Child flow using the created stubs.
+- Implement Child Detail with policy/schedule actions.
+- Continue child-management CRUD UX.
+
+---
+
+## Current Summary (after Day 10)
 
 - Day 1 completed: foundation, naming, structure, git + GitHub.
 - Day 2 completed: dependencies and Provider baseline.
@@ -455,5 +507,6 @@ Program goal: implement dashboard UI with real-time child stream, auth wrapper r
 - Day 7 compatibility fix completed in code: Firebase packages upgraded to resolve runtime auth plugin cast mismatch.
 - Day 8 completed in code: child CRUD Firestore service and automated backend tests added.
 - Day 9 completed in code: dashboard UI wired to real-time Firestore children stream with auth wrapper and named-route navigation.
+- Day 10 completed in code: navigation stubs and screen-to-screen routing polish completed for Week 2 closure.
 
 Last updated: 2026-02-16
