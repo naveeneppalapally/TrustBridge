@@ -757,7 +757,7 @@ Program goal: implement editable content-category blocking with risk-based group
 ### Commit entries
 
 1. **2026-02-16 22:24:00 +05:30**  
-   Commit: `(this commit - see latest git log)`  
+   Commit: `105f56a`  
    Message: `Implement Day 17 block categories with toggle switches [design: block_categories_mobile_light]`  
    Changes:
    - Created `lib/models/content_categories.dart`:
