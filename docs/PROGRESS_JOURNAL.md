@@ -750,7 +750,46 @@ Program goal: start policy management by introducing a parent-friendly overview 
 
 ---
 
-## Current Summary (after Day 16)
+## Day 17 - Block Categories UI (Week 4 Day 2)
+
+Program goal: implement editable content-category blocking with risk-based grouping and persistence.
+
+### Commit entries
+
+1. **2026-02-16 22:24:00 +05:30**  
+   Commit: `(this commit - see latest git log)`  
+   Message: `Implement Day 17 block categories with toggle switches [design: block_categories_mobile_light]`  
+   Changes:
+   - Created `lib/models/content_categories.dart`:
+     - defined 13 categories with metadata (name, description, icon)
+     - organized categories into High/Medium/Low risk groups
+     - added unified category lookup/list helpers
+   - Created `lib/screens/block_categories_screen.dart`:
+     - category sections grouped by risk level with visual markers
+     - per-category toggle switches
+     - quick actions: Select All and Clear All
+     - dynamic blocked-category count
+     - save action in app bar when changes are present
+     - Firestore persistence through `FirestoreService.updateChild()`
+     - confirmation dialog for destructive `Clear All`
+   - Updated `lib/screens/policy_overview_screen.dart`:
+     - replaced Day 17 stub with real navigation to `BlockCategoriesScreen`
+     - refreshes overview counts after returning with updated child policy
+   - Added `test/screens/block_categories_screen_test.dart` with section/render/interaction coverage.
+   Validation:
+   - `C:\Users\navee\flutter\bin\flutter.bat analyze` passed.
+   - `C:\Users\navee\flutter\bin\flutter.bat test` passed (47/47).
+   - `C:\Users\navee\flutter\bin\flutter.bat run -d emulator-5554 --no-resident` passed (build/install).
+   Design folder(s) used:
+   - `category_blocking_mobile_light`
+   Design assets checked:
+   - `screen.png`, `code.html`
+   UI fidelity note:
+   - Existing TrustBridge card spacing, typography scale, and day/night palette conventions were preserved while introducing the risk-grouped toggle layout.
+
+---
+
+## Current Summary (after Day 17)
 
 - Day 1 completed: foundation, naming, structure, git + GitHub.
 - Day 2 completed: dependencies and Provider baseline.
@@ -770,5 +809,6 @@ Program goal: start policy management by introducing a parent-friendly overview 
 - Day 14 completed in code: Edit Child flow added with safe age-band change confirmation, Firestore updates, and real-time path back to dashboard.
 - Day 15 completed in code: Delete Child flow implemented with warning dialog, Firestore delete call, success/error handling, and dashboard return.
 - Day 16 completed in code: Policy Overview screen added with sectioned stats/breakdowns and navigation entry from Child Detail.
+- Day 17 completed in code: Category Blocking editor added with risk-based toggles, select/clear quick actions, Firestore save flow, and Policy Overview integration.
 
 Last updated: 2026-02-16

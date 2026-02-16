@@ -2,8 +2,9 @@ import 'package:flutter/material.dart';
 import 'package:trustbridge_app/models/child_profile.dart';
 import 'package:trustbridge_app/models/policy.dart';
 import 'package:trustbridge_app/models/schedule.dart';
+import 'package:trustbridge_app/screens/block_categories_screen.dart';
 
-class PolicyOverviewScreen extends StatelessWidget {
+class PolicyOverviewScreen extends StatefulWidget {
   const PolicyOverviewScreen({
     super.key,
     required this.child,
@@ -12,8 +13,21 @@ class PolicyOverviewScreen extends StatelessWidget {
   final ChildProfile child;
 
   @override
+  State<PolicyOverviewScreen> createState() => _PolicyOverviewScreenState();
+}
+
+class _PolicyOverviewScreenState extends State<PolicyOverviewScreen> {
+  late ChildProfile _child;
+
+  @override
+  void initState() {
+    super.initState();
+    _child = widget.child;
+  }
+
+  @override
   Widget build(BuildContext context) {
-    final policy = child.policy;
+    final policy = _child.policy;
     final isDark = Theme.of(context).brightness == Brightness.dark;
     final pageWidth = MediaQuery.sizeOf(context).width;
     final isTablet = pageWidth >= 700;
@@ -23,7 +37,7 @@ class PolicyOverviewScreen extends StatelessWidget {
     return Scaffold(
       backgroundColor: backgroundColor,
       appBar: AppBar(
-        title: Text('${child.nickname}\'s Policy'),
+        title: Text('${_child.nickname}\'s Policy'),
         centerTitle: false,
         backgroundColor: Colors.transparent,
         elevation: 0,
@@ -40,7 +54,7 @@ class PolicyOverviewScreen extends StatelessWidget {
           ),
           const SizedBox(height: 8),
           Text(
-            'Manage what ${child.nickname} can access and when.',
+            'Manage what ${_child.nickname} can access and when.',
             style: Theme.of(context).textTheme.bodyMedium?.copyWith(
                   color: Colors.grey.shade600,
                 ),
@@ -162,10 +176,7 @@ class PolicyOverviewScreen extends StatelessWidget {
       ),
       child: InkWell(
         borderRadius: BorderRadius.circular(16),
-        onTap: () => _showComingSoon(
-          context,
-          'Block Categories screen coming in Day 17!',
-        ),
+        onTap: () async => _openBlockCategories(context),
         child: Padding(
           padding: const EdgeInsets.all(16),
           child: Column(
@@ -524,6 +535,20 @@ class PolicyOverviewScreen extends StatelessWidget {
     ScaffoldMessenger.of(context).showSnackBar(
       SnackBar(content: Text(message)),
     );
+  }
+
+  Future<void> _openBlockCategories(BuildContext context) async {
+    final updatedChild = await Navigator.of(context).push<ChildProfile>(
+      MaterialPageRoute(
+        builder: (_) => BlockCategoriesScreen(child: _child),
+      ),
+    );
+
+    if (updatedChild != null && mounted) {
+      setState(() {
+        _child = updatedChild;
+      });
+    }
   }
 
   String _formatCategoryName(String category) {
