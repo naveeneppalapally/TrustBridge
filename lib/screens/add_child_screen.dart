@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:trustbridge_app/models/child_profile.dart';
 import 'package:trustbridge_app/models/policy.dart';
+import 'package:trustbridge_app/screens/age_band_presets_screen.dart';
 import 'package:trustbridge_app/services/auth_service.dart';
 import 'package:trustbridge_app/services/firestore_service.dart';
 
@@ -60,6 +61,19 @@ class _AddChildScreenState extends State<AddChildScreen> {
     return Scaffold(
       appBar: AppBar(
         title: const Text('Add Child'),
+        actions: [
+          IconButton(
+            icon: const Icon(Icons.info_outline),
+            tooltip: 'Age Band Guide',
+            onPressed: () {
+              Navigator.of(context).push(
+                MaterialPageRoute(
+                  builder: (_) => const AgeBandPresetsScreen(),
+                ),
+              );
+            },
+          ),
+        ],
       ),
       body: Form(
         key: _formKey,
@@ -123,9 +137,47 @@ class _AddChildScreenState extends State<AddChildScreen> {
                           },
                         ),
                         const SizedBox(height: 24),
-                        Text(
-                          'Age Group',
-                          style: Theme.of(context).textTheme.titleMedium,
+                        LayoutBuilder(
+                          builder: (context, constraints) {
+                            final isCompact = constraints.maxWidth < 370;
+                            return Row(
+                              children: [
+                                Expanded(
+                                  child: Text(
+                                    'Age Group',
+                                    style:
+                                        Theme.of(context).textTheme.titleMedium,
+                                  ),
+                                ),
+                                if (isCompact)
+                                  IconButton(
+                                    icon: const Icon(Icons.help_outline),
+                                    tooltip: 'Which age band?',
+                                    onPressed: () {
+                                      Navigator.of(context).push(
+                                        MaterialPageRoute(
+                                          builder: (_) =>
+                                              const AgeBandPresetsScreen(),
+                                        ),
+                                      );
+                                    },
+                                  )
+                                else
+                                  TextButton.icon(
+                                    onPressed: () {
+                                      Navigator.of(context).push(
+                                        MaterialPageRoute(
+                                          builder: (_) =>
+                                              const AgeBandPresetsScreen(),
+                                        ),
+                                      );
+                                    },
+                                    icon: const Icon(Icons.help_outline, size: 16),
+                                    label: const Text('Which age band?'),
+                                  ),
+                              ],
+                            );
+                          },
                         ),
                         const SizedBox(height: 12),
                         RadioGroup<AgeBand>(

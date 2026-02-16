@@ -533,7 +533,42 @@ Program goal: replace Add Child stub with a functional form that creates real ch
 
 ---
 
-## Current Summary (after Day 11)
+## Day 12 - Age Band Presets Info Screen (Week 3 Day 2)
+
+Program goal: add an educational age-band preset explanation screen and connect it from Add Child flow.
+
+### Commit entries
+
+1. **2026-02-16 13:08:37 +05:30**  
+   Commit: `(this commit - see latest git log)`  
+   Message: `Implement Day 12 age band presets information screen [design: add_child_mobile_light]`  
+   Changes:
+   - Created `lib/screens/age_band_presets_screen.dart`:
+     - side-by-side quick comparison table for all 3 age bands
+     - expandable age-band cards with blocked content and schedule details
+     - rationale section (`Why these restrictions?`) per age band
+     - philosophy section to explain the preset strategy to parents
+     - dark/light-safe color mapping and scroll-safe layout
+   - Updated `lib/screens/add_child_screen.dart`:
+     - added AppBar info action to open Age Band Guide
+     - added inline "Which age band?" helper action near age selector
+   - Added `test/screens/age_band_presets_screen_test.dart` with render/expand/scroll assertions.
+   Validation:
+   - `C:\Users\navee\flutter\bin\flutter.bat analyze` passed.
+   - `C:\Users\navee\flutter\bin\flutter.bat test` passed.
+   - UI navigation from Add Child -> Age Band Guide verified.
+   Design folder(s) used:
+   - `add_child_mobile_light`
+   - `add_child_mobile_dark`
+   - `design_system_tokens_spec`
+   Design assets checked:
+   - `screen.png`, `code.html`
+   UI fidelity note:
+   - No exact dedicated age-band-guide design folder exists in `app_design`; implemented as a derived guidance screen using TrustBridge tokens and add-child visual language while keeping mobile/tablet readability and dark/light compatibility.
+
+---
+
+## Current Summary (after Day 12)
 
 - Day 1 completed: foundation, naming, structure, git + GitHub.
 - Day 2 completed: dependencies and Provider baseline.
@@ -548,5 +583,6 @@ Program goal: replace Add Child stub with a functional form that creates real ch
 - Day 9 completed in code: dashboard UI wired to real-time Firestore children stream with auth wrapper and named-route navigation.
 - Day 10 completed in code: navigation stubs and screen-to-screen routing polish completed for Week 2 closure.
 - Day 11 completed in code: Add Child form is functional with Firestore create flow, policy preview, and validation tests.
+- Day 12 completed in code: Age Band Guide info screen added with comparison/rationale content and navigation from Add Child.
 
 Last updated: 2026-02-16
