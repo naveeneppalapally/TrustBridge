@@ -1240,7 +1240,62 @@ Program goal: add an in-app support flow for parents with FAQs, contact tools, a
 
 ---
 
-## Current Summary (after Day 28)
+## Day 29 - Android VPN Foundation (Week 6 Day 4)
+
+Program goal: establish Android VPN service plumbing (Kotlin + Flutter bridge) and parent controls to start/stop protection.
+
+### Commit entries
+
+1. **2026-02-16 22:10:13 +05:30**  
+   Commit: `c1adba7`  
+   Message: `Implement Day 29 Android VPN service foundation [design: security_settings_light]`  
+   Changes:
+   - Implemented `lib/services/vpn_service.dart`:
+     - typed VPN status model (`VpnStatus`)
+     - platform channel bridge (`trustbridge/vpn`) for status/permission/start/stop
+     - safe fallback behavior on unsupported platforms or missing plugin wiring
+   - Created `lib/screens/vpn_protection_screen.dart`:
+     - VPN status dashboard (`Unsupported`, `Permission required`, `Ready`, `Running`)
+     - enable/disable protection controls
+     - status refresh and explanatory guidance
+     - persistence hook to parent preferences (`vpnProtectionEnabled`)
+   - Updated `lib/screens/security_controls_screen.dart`:
+     - added `VPN Protection Engine` action button
+     - navigation into VPN setup/control screen
+     - dependency injection support for `VpnServiceBase` testability
+   - Updated Android native layer:
+     - `android/app/src/main/kotlin/com/navee/trustbridge/MainActivity.kt`
+       - method channel handler for `getStatus`, `requestPermission`, `startVpn`, `stopVpn`
+       - VPN permission result handling via `onActivityResult`
+     - added `android/app/src/main/kotlin/com/navee/trustbridge/TrustBridgeVpnService.kt`
+       - minimal foreground VPN service lifecycle shell (start/stop/status)
+       - notification channel and ongoing foreground notification
+     - updated `android/app/src/main/AndroidManifest.xml`
+       - foreground service permissions
+       - `TrustBridgeVpnService` declaration with VPN permission binding
+   - Updated Firestore preferences:
+     - `lib/services/firestore_service.dart` now supports `vpnProtectionEnabled`
+       defaults and updates
+   - Added tests:
+     - `test/screens/vpn_protection_screen_test.dart`
+     - `test/services/vpn_service_test.dart`
+     - updated `test/screens/security_controls_screen_test.dart`
+     - updated `test/services/firestore_service_test.dart`
+   Validation:
+   - `C:\Users\navee\flutter\bin\flutter.bat analyze` passed.
+   - `C:\Users\navee\flutter\bin\flutter.bat test` passed (91/91).
+   - `C:\Users\navee\flutter\bin\flutter.bat build apk --debug` passed.
+   Design folder(s) used:
+   - `security_settings_light`
+   - `design_system_tokens_spec`
+   Design assets checked:
+   - `screen.png`, `code.html`
+   UI fidelity note:
+   - VPN controls were integrated into the existing Security Controls visual system to avoid introducing a parallel settings style.
+
+---
+
+## Current Summary (after Day 29)
 
 - Day 1 completed: foundation, naming, structure, git + GitHub.
 - Day 2 completed: dependencies and Provider baseline.
@@ -1272,5 +1327,6 @@ Program goal: add an in-app support flow for parents with FAQs, contact tools, a
 - Day 26 completed in code: Security controls now include a real Change Password workflow with validation and Firebase reauthentication.
 - Day 27 completed in code: Child action center now supports pause/resume internet controls and an in-app activity log with persisted pause metadata.
 - Day 28 completed in code: Parent settings now include a Help & Support center with in-app support ticket submission and FAQ guidance.
+- Day 29 completed in code: Android VPN service foundation, Flutter bridge controls, and Security screen integration are now implemented and build-verified.
 
 Last updated: 2026-02-16
