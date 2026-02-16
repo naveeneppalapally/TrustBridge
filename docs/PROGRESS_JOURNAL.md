@@ -568,7 +568,48 @@ Program goal: add an educational age-band preset explanation screen and connect 
 
 ---
 
-## Current Summary (after Day 12)
+## Day 13 - Child Detail Screen Implementation (Week 3 Day 3)
+
+Program goal: replace the child detail stub with a complete, readable policy breakdown screen for parents.
+
+### Commit entries
+
+1. **2026-02-16 15:16:34 +05:30**  
+   Commit: `(this commit - see latest git log)`  
+   Message: `Implement Day 13 complete child detail screen [design: child_detail_mobile_light]`  
+   Changes:
+   - Replaced `lib/screens/child_detail_screen.dart` stub with complete implementation:
+     - child information card (avatar, nickname, age chip, relative created date)
+     - protection overview metrics card (blocked categories, schedules, safe search)
+     - blocked categories card with formatted chips
+     - schedule list card with type icon, time range, day labels, and enabled state
+     - devices placeholder card for upcoming Week 5 scope
+     - quick actions area with Edit and Delete actions
+     - more-options bottom sheet and delete confirmation dialog
+     - responsive layout behavior for mobile/tablet and dark/light compatibility
+   - Added `test/screens/child_detail_screen_test.dart`:
+     - child info rendering
+     - policy summary metrics rendering
+     - blocked category chip rendering
+     - quick action visibility
+     - delete-confirmation dialog behavior
+   Validation:
+   - `C:\Users\navee\flutter\bin\flutter.bat analyze` passed.
+   - `C:\Users\navee\flutter\bin\flutter.bat test` passed (35/35).
+   Design folder(s) used:
+   - `child_detail_mobile_light`
+   - `child_detail_mobile_dark`
+   - `child_detail_tablet_light_1`
+   - `child_detail_tablet_light_2`
+   - `design_system_tokens_spec`
+   Design assets checked:
+   - `screen.png`, `code.html`
+   UI fidelity note:
+   - Preserved the child-detail card hierarchy and action-first layout while adapting it to current data availability (policy and schedules only) and maintaining TrustBridge token consistency across dark/light and tablet widths.
+
+---
+
+## Current Summary (after Day 13)
 
 - Day 1 completed: foundation, naming, structure, git + GitHub.
 - Day 2 completed: dependencies and Provider baseline.
@@ -584,5 +625,6 @@ Program goal: add an educational age-band preset explanation screen and connect 
 - Day 10 completed in code: navigation stubs and screen-to-screen routing polish completed for Week 2 closure.
 - Day 11 completed in code: Add Child form is functional with Firestore create flow, policy preview, and validation tests.
 - Day 12 completed in code: Age Band Guide info screen added with comparison/rationale content and navigation from Add Child.
+- Day 13 completed in code: Child Detail screen implemented with policy/schedule cards, quick actions, and full widget test coverage.
 
 Last updated: 2026-02-16
