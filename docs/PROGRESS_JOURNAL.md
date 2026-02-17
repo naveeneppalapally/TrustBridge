@@ -1959,7 +1959,8 @@ Program goal: build the primary screen children see on their device, showing cur
    - `C:\Users\navee\flutter\bin\flutter.bat test` passed (133/133).
    - `C:\Users\navee\flutter\bin\flutter.bat build apk --debug` passed.
    Design folder(s) used:
-   - `child_status_mobile_light`
+   - `child_home_mobile_light`
+   - `child_request_status_mobile_light`
    Design assets checked:
    - `screen.png`, `code.html`
    UI fidelity note:
