@@ -2335,7 +2335,7 @@ Program goal: ensure NextDNS takes effect automatically from Firestore parent pr
 ### Commit entries
 
 1. **2026-02-18 00:40:00 +05:30**  
-   Commit: `pending (local changes)`  
+   Commit: `c5f2544`  
    Message: `Implement Day 54 NextDNS auto-apply on VPN start/restart/sync`  
    Changes:
    - Updated `lib/services/vpn_service.dart`:
