@@ -45,6 +45,7 @@ class _FakeVpnService implements VpnServiceBase {
   Future<bool> startVpn({
     List<String> blockedCategories = const <String>[],
     List<String> blockedDomains = const <String>[],
+    String? upstreamDns,
   }) async =>
       true;
 
@@ -52,6 +53,7 @@ class _FakeVpnService implements VpnServiceBase {
   Future<bool> restartVpn({
     List<String> blockedCategories = const <String>[],
     List<String> blockedDomains = const <String>[],
+    String? upstreamDns,
   }) async =>
       true;
 

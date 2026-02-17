@@ -31,6 +31,9 @@ class _FakeVpnService implements VpnServiceBase {
   int clearRuleCacheCalls = 0;
   List<String> lastUpdatedCategories = const [];
   List<String> lastUpdatedDomains = const [];
+  String? lastStartUpstreamDns;
+  String? lastRestartUpstreamDns;
+  String? lastSetUpstreamDns;
   RuleCacheSnapshot ruleCacheSnapshot = const RuleCacheSnapshot(
     categoryCount: 2,
     domainCount: 8,
@@ -69,10 +72,12 @@ class _FakeVpnService implements VpnServiceBase {
   Future<bool> startVpn({
     List<String> blockedCategories = const [],
     List<String> blockedDomains = const [],
+    String? upstreamDns,
   }) async {
     if (startResult) {
       running = true;
     }
+    lastStartUpstreamDns = upstreamDns;
     return startResult;
   }
 
@@ -88,10 +93,12 @@ class _FakeVpnService implements VpnServiceBase {
   Future<bool> restartVpn({
     List<String> blockedCategories = const [],
     List<String> blockedDomains = const [],
+    String? upstreamDns,
   }) async {
     if (restartResult) {
       running = true;
     }
+    lastRestartUpstreamDns = upstreamDns;
     return restartResult;
   }
 
@@ -108,6 +115,7 @@ class _FakeVpnService implements VpnServiceBase {
 
   @override
   Future<bool> setUpstreamDns({String? upstreamDns}) async {
+    lastSetUpstreamDns = upstreamDns;
     return true;
   }
 
@@ -180,11 +188,17 @@ void main() {
       firestoreService = FirestoreService(firestore: fakeFirestore);
     });
 
-    Future<void> seedParent(String parentId) {
+    Future<void> seedParent(
+      String parentId, {
+      bool nextDnsEnabled = false,
+      String? nextDnsProfileId,
+    }) {
       return fakeFirestore.collection('parents').doc(parentId).set({
         'parentId': parentId,
         'preferences': {
           'vpnProtectionEnabled': false,
+          'nextDnsEnabled': nextDnsEnabled,
+          'nextDnsProfileId': nextDnsProfileId,
         },
       });
     }
@@ -244,6 +258,39 @@ void main() {
       final preferences =
           snapshot.data()!['preferences'] as Map<String, dynamic>;
       expect(preferences['vpnProtectionEnabled'], true);
+    });
+
+    testWidgets(
+        'enable protection applies upstream DNS from parent NextDNS preference',
+        (tester) async {
+      const parentId = 'parent-vpn-nextdns-start';
+      await seedParent(
+        parentId,
+        nextDnsEnabled: true,
+        nextDnsProfileId: 'abc123',
+      );
+
+      final fakeVpn = _FakeVpnService(
+        supported: true,
+        permissionGranted: true,
+        running: false,
+      );
+
+      await tester.pumpWidget(
+        MaterialApp(
+          home: VpnProtectionScreen(
+            vpnService: fakeVpn,
+            firestoreService: firestoreService,
+            parentIdOverride: parentId,
+          ),
+        ),
+      );
+      await tester.pumpAndSettle();
+
+      await tester.tap(find.byKey(const Key('vpn_primary_button')));
+      await tester.pumpAndSettle();
+
+      expect(fakeVpn.lastStartUpstreamDns, 'abc123.dns.nextdns.io');
     });
 
     testWidgets('disable protection updates status and preference',

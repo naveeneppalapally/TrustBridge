@@ -15,6 +15,7 @@ void main() {
     test('builds endpoint strings from profile id', () {
       expect(service.dohEndpoint('ABC123'), 'https://dns.nextdns.io/abc123');
       expect(service.dotEndpoint('ABC123'), 'abc123.dns.nextdns.io');
+      expect(service.upstreamDnsHost('ABC123'), 'abc123.dns.nextdns.io');
     });
 
     test('sanitizedProfileIdOrNull handles empty values', () {

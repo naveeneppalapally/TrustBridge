@@ -63,6 +63,9 @@ void main() {
 
     test('permission/start/stop lifecycle methods map bool responses',
         () async {
+      Map<dynamic, dynamic>? startArguments;
+      Map<dynamic, dynamic>? restartArguments;
+
       TestDefaultBinaryMessengerBinding.instance.defaultBinaryMessenger
           .setMockMethodCallHandler(channel, (call) async {
         if (call.method == 'hasVpnPermission') {
@@ -72,9 +75,11 @@ void main() {
           return true;
         }
         if (call.method == 'startVpn') {
+          startArguments = call.arguments as Map<dynamic, dynamic>?;
           return true;
         }
         if (call.method == 'restartVpn') {
+          restartArguments = call.arguments as Map<dynamic, dynamic>?;
           return true;
         }
         if (call.method == 'isVpnRunning') {
@@ -142,6 +147,7 @@ void main() {
         await service.startVpn(
           blockedCategories: const ['social-networks'],
           blockedDomains: const ['facebook.com'],
+          upstreamDns: 'abc123.dns.nextdns.io',
         ),
         isTrue,
       );
@@ -149,6 +155,7 @@ void main() {
         await service.restartVpn(
           blockedCategories: const ['social-networks'],
           blockedDomains: const ['facebook.com'],
+          upstreamDns: 'abc123.dns.nextdns.io',
         ),
         isTrue,
       );
@@ -185,6 +192,8 @@ void main() {
       expect(evaluation.blocked, isTrue);
       expect(evaluation.matchedRule, 'facebook.com');
       expect(await service.stopVpn(), isTrue);
+      expect(startArguments?['upstreamDns'], 'abc123.dns.nextdns.io');
+      expect(restartArguments?['upstreamDns'], 'abc123.dns.nextdns.io');
     });
   });
 }

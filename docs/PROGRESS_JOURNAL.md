@@ -2328,7 +2328,47 @@ Program goal: prevent connectivity breakage when custom upstream DNS is temporar
 
 ---
 
-## Current Summary (after Day 53)
+## Day 54 - NextDNS Auto-Apply from Parent Preferences (Week 11 Day 4)
+
+Program goal: ensure NextDNS takes effect automatically from Firestore parent preferences during VPN enable/restart/sync, without requiring manual visits to the NextDNS settings page on each device.
+
+### Commit entries
+
+1. **2026-02-18 00:40:00 +05:30**  
+   Commit: `pending (local changes)`  
+   Message: `Implement Day 54 NextDNS auto-apply on VPN start/restart/sync`  
+   Changes:
+   - Updated `lib/services/vpn_service.dart`:
+     - extended `startVpn()` and `restartVpn()` with optional `upstreamDns`
+     - passes `upstreamDns` over method channel when provided
+   - Updated `lib/screens/vpn_protection_screen.dart`:
+     - loads parent preferences via Firestore on VPN operations
+     - derives NextDNS upstream from `nextDnsEnabled + nextDnsProfileId`
+     - applies upstream automatically on:
+       - enable protection (`startVpn`)
+       - restart VPN (`restartVpn`)
+       - sync policy rules (`setUpstreamDns + updateFilterRules`)
+     - updated operation success messages to reflect resolver sync state
+   - Updated tests/fakes for new VPN method signatures:
+     - `test/screens/vpn_protection_screen_test.dart`
+     - `test/screens/vpn_test_screen_test.dart`
+     - `test/screens/nextdns_settings_screen_test.dart`
+     - `test/screens/dns_query_log_screen_test.dart`
+     - `test/screens/domain_policy_tester_screen_test.dart`
+     - `test/services/policy_vpn_sync_service_test.dart`
+   - Added coverage:
+     - `test/screens/vpn_protection_screen_test.dart`
+       - verifies enable protection sends `abc123.dns.nextdns.io` when parent NextDNS preference is set
+   - Updated service tests:
+     - `test/services/vpn_service_test.dart` validates upstream DNS payload for start/restart calls
+   - Updated `test/services/nextdns_service_test.dart` for `upstreamDnsHost()` helper assertion
+   Validation:
+   - `C:\Users\navee\flutter\bin\flutter.bat analyze` passed.
+   - `C:\Users\navee\flutter\bin\flutter.bat test` passed (163/163).
+
+---
+
+## Current Summary (after Day 54)
 
 - Day 1 completed: foundation, naming, structure, git + GitHub.
 - Day 2 completed: dependencies and Provider baseline.
@@ -2385,5 +2425,6 @@ Program goal: prevent connectivity breakage when custom upstream DNS is temporar
 - Day 51 completed in code: child status now displays active approved access passes in real time, and Cloud Functions runtime is upgraded to Node.js 22.
 - Day 52 completed in code: NextDNS settings now auto-apply to the native VPN upstream resolver with persisted state and live bridge support.
 - Day 53 completed in code: resolver health is now resilient with automatic fallback to default DNS and visible fallback/failure diagnostics in the VPN screen.
+- Day 54 completed in code: VPN operations now auto-load NextDNS preference from Firestore and apply resolver settings during enable/restart/sync without extra manual steps.
 
 Last updated: 2026-02-17

@@ -6,6 +6,7 @@ import 'package:trustbridge_app/services/auth_service.dart';
 import 'package:trustbridge_app/services/dns_filter_engine.dart';
 import 'package:trustbridge_app/services/dns_packet_parser.dart';
 import 'package:trustbridge_app/services/firestore_service.dart';
+import 'package:trustbridge_app/services/nextdns_service.dart';
 import 'package:trustbridge_app/services/policy_vpn_sync_service.dart';
 import 'package:trustbridge_app/services/vpn_service.dart';
 import 'package:trustbridge_app/screens/dns_query_log_screen.dart';
@@ -35,6 +36,7 @@ class _VpnProtectionScreenState extends State<VpnProtectionScreen> {
   FirestoreService? _firestoreService;
   VpnServiceBase? _vpnService;
   late final DnsFilterEngine _dnsFilterEngine;
+  final NextDnsService _nextDnsService = const NextDnsService();
 
   VpnStatus _status = const VpnStatus.unsupported();
   bool _isBusy = false;
@@ -1262,6 +1264,7 @@ class _VpnProtectionScreenState extends State<VpnProtectionScreen> {
       final started = await _resolvedVpnService.startVpn(
         blockedCategories: rules.blockedCategories,
         blockedDomains: rules.blockedDomains,
+        upstreamDns: rules.upstreamDns,
       );
       if (!mounted) {
         return;
@@ -1311,6 +1314,9 @@ class _VpnProtectionScreenState extends State<VpnProtectionScreen> {
     setState(() => _isSyncingRules = true);
     try {
       final rules = await _loadRulesForVpnStart();
+      final resolverUpdated = await _resolvedVpnService.setUpstreamDns(
+        upstreamDns: rules.upstreamDns,
+      );
       final updated = await _resolvedVpnService.updateFilterRules(
         blockedCategories: rules.blockedCategories,
         blockedDomains: rules.blockedDomains,
@@ -1319,7 +1325,15 @@ class _VpnProtectionScreenState extends State<VpnProtectionScreen> {
         return;
       }
       if (updated) {
-        _showMessage('Policy rules synced to active VPN.');
+        if (rules.upstreamDns != null) {
+          _showMessage(
+            resolverUpdated
+                ? 'Policy rules and NextDNS resolver synced to active VPN.'
+                : 'Policy rules synced. Resolver update not confirmed.',
+          );
+        } else {
+          _showMessage('Policy rules synced to active VPN.');
+        }
       } else {
         _showMessage('Unable to sync VPN policy rules.', isError: true);
       }
@@ -1342,12 +1356,17 @@ class _VpnProtectionScreenState extends State<VpnProtectionScreen> {
       final restarted = await _resolvedVpnService.restartVpn(
         blockedCategories: rules.blockedCategories,
         blockedDomains: rules.blockedDomains,
+        upstreamDns: rules.upstreamDns,
       );
       if (!mounted) {
         return;
       }
       if (restarted) {
-        _showMessage('VPN service restarted with latest policy rules.');
+        _showMessage(
+          rules.upstreamDns == null
+              ? 'VPN service restarted with latest policy rules.'
+              : 'VPN service restarted with latest policy rules and NextDNS resolver.',
+        );
       } else {
         _showMessage('Unable to restart VPN service.', isError: true);
       }
@@ -1374,19 +1393,35 @@ class _VpnProtectionScreenState extends State<VpnProtectionScreen> {
     );
   }
 
-  Future<_VpnFilterRules> _loadRulesForVpnStart() async {
+  Future<_VpnStartConfig> _loadRulesForVpnStart() async {
     final blockedCategories = <String>{'social-networks', 'adult-content'};
     final blockedDomains = <String>{...DnsFilterEngine.defaultSeedDomains};
+    String? upstreamDns;
     final parentId = _parentId;
 
     if (parentId == null) {
-      return _VpnFilterRules(
+      return _VpnStartConfig(
         blockedCategories: blockedCategories.toList()..sort(),
         blockedDomains: blockedDomains.toList()..sort(),
+        upstreamDns: null,
       );
     }
 
     try {
+      final parentProfile =
+          await _resolvedFirestoreService.getParentProfile(parentId);
+      final preferences = _toMap(parentProfile?['preferences']);
+      final nextDnsEnabled = preferences['nextDnsEnabled'] == true;
+      final rawProfileId = preferences['nextDnsProfileId'];
+      final nextDnsProfileId = _nextDnsService.sanitizedProfileIdOrNull(
+        rawProfileId is String ? rawProfileId : null,
+      );
+      if (nextDnsEnabled &&
+          nextDnsProfileId != null &&
+          _nextDnsService.isValidProfileId(nextDnsProfileId)) {
+        upstreamDns = _nextDnsService.upstreamDnsHost(nextDnsProfileId);
+      }
+
       final children = await _resolvedFirestoreService.getChildren(parentId);
       for (final child in children) {
         blockedCategories.addAll(child.policy.blockedCategories);
@@ -1396,10 +1431,23 @@ class _VpnProtectionScreenState extends State<VpnProtectionScreen> {
       // Keep safe defaults when policy fetch fails.
     }
 
-    return _VpnFilterRules(
+    return _VpnStartConfig(
       blockedCategories: blockedCategories.toList()..sort(),
       blockedDomains: blockedDomains.toList()..sort(),
+      upstreamDns: upstreamDns,
     );
+  }
+
+  Map<String, dynamic> _toMap(Object? value) {
+    if (value is Map<String, dynamic>) {
+      return value;
+    }
+    if (value is Map) {
+      return value.map(
+        (key, mapValue) => MapEntry(key.toString(), mapValue),
+      );
+    }
+    return const {};
   }
 
   Future<void> _runDnsSelfCheck() async {
@@ -1664,14 +1712,16 @@ class _VpnProtectionScreenState extends State<VpnProtectionScreen> {
   }
 }
 
-class _VpnFilterRules {
-  const _VpnFilterRules({
+class _VpnStartConfig {
+  const _VpnStartConfig({
     required this.blockedCategories,
     required this.blockedDomains,
+    required this.upstreamDns,
   });
 
   final List<String> blockedCategories;
   final List<String> blockedDomains;
+  final String? upstreamDns;
 }
 
 class _ReadinessCheckItem {

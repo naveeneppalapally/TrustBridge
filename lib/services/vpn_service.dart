@@ -218,11 +218,13 @@ abstract class VpnServiceBase {
   Future<bool> startVpn({
     List<String> blockedCategories,
     List<String> blockedDomains,
+    String? upstreamDns,
   });
 
   Future<bool> restartVpn({
     List<String> blockedCategories,
     List<String> blockedDomains,
+    String? upstreamDns,
   });
 
   Future<bool> stopVpn();
@@ -342,6 +344,7 @@ class VpnService implements VpnServiceBase {
   Future<bool> startVpn({
     List<String> blockedCategories = const [],
     List<String> blockedDomains = const [],
+    String? upstreamDns,
   }) async {
     if (!_supported) {
       return false;
@@ -353,6 +356,8 @@ class VpnService implements VpnServiceBase {
             {
               'blockedCategories': blockedCategories,
               'blockedDomains': blockedDomains,
+              if (upstreamDns != null && upstreamDns.trim().isNotEmpty)
+                'upstreamDns': upstreamDns.trim(),
             },
           ) ??
           false;
@@ -382,6 +387,7 @@ class VpnService implements VpnServiceBase {
   Future<bool> restartVpn({
     List<String> blockedCategories = const [],
     List<String> blockedDomains = const [],
+    String? upstreamDns,
   }) async {
     if (!_supported) {
       return false;
@@ -393,6 +399,8 @@ class VpnService implements VpnServiceBase {
             {
               'blockedCategories': blockedCategories,
               'blockedDomains': blockedDomains,
+              if (upstreamDns != null && upstreamDns.trim().isNotEmpty)
+                'upstreamDns': upstreamDns.trim(),
             },
           ) ??
           false;
