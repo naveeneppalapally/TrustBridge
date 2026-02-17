@@ -103,6 +103,86 @@ class VpnStatus {
   }
 }
 
+class VpnTelemetry {
+  const VpnTelemetry({
+    required this.queriesIntercepted,
+    required this.queriesBlocked,
+    required this.queriesAllowed,
+    this.upstreamFailureCount = 0,
+    this.fallbackQueryCount = 0,
+    this.activeUpstreamDns,
+    required this.isRunning,
+  });
+
+  final int queriesIntercepted;
+  final int queriesBlocked;
+  final int queriesAllowed;
+  final int upstreamFailureCount;
+  final int fallbackQueryCount;
+  final String? activeUpstreamDns;
+  final bool isRunning;
+
+  factory VpnTelemetry.empty() {
+    return const VpnTelemetry(
+      queriesIntercepted: 0,
+      queriesBlocked: 0,
+      queriesAllowed: 0,
+      isRunning: false,
+    );
+  }
+
+  factory VpnTelemetry.fromMap(Map<String, dynamic> map) {
+    return VpnTelemetry(
+      queriesIntercepted: _readInt(map['queriesIntercepted']),
+      queriesBlocked: _readInt(map['queriesBlocked']),
+      queriesAllowed: _readInt(map['queriesAllowed']),
+      upstreamFailureCount: _readInt(map['upstreamFailureCount']),
+      fallbackQueryCount: _readInt(map['fallbackQueryCount']),
+      activeUpstreamDns: _readNullableString(map['activeUpstreamDns']),
+      isRunning: map['isRunning'] == true,
+    );
+  }
+
+  factory VpnTelemetry.fromStatus(VpnStatus status) {
+    return VpnTelemetry(
+      queriesIntercepted: status.queriesProcessed,
+      queriesBlocked: status.queriesBlocked,
+      queriesAllowed: status.queriesAllowed,
+      upstreamFailureCount: status.upstreamFailureCount,
+      fallbackQueryCount: status.fallbackQueryCount,
+      activeUpstreamDns: status.upstreamDns,
+      isRunning: status.isRunning,
+    );
+  }
+
+  double get blockRate {
+    if (queriesIntercepted <= 0) {
+      return 0;
+    }
+    return queriesBlocked / queriesIntercepted;
+  }
+
+  static int _readInt(dynamic value) {
+    if (value is int) {
+      return value;
+    }
+    if (value is num) {
+      return value.toInt();
+    }
+    return 0;
+  }
+
+  static String? _readNullableString(dynamic value) {
+    if (value is String) {
+      final normalized = value.trim();
+      if (normalized.isNotEmpty) {
+        return normalized;
+      }
+    }
+    return null;
+  }
+}
+
 class DnsQueryLogEntry {
   const DnsQueryLogEntry({
     required this.domain,
@@ -267,6 +347,36 @@ class VpnService implements VpnServiceBase {
   final bool? _forceSupported;
 
   bool get _supported => _forceSupported ?? Platform.isAndroid;
+
+  Future<VpnTelemetry> getVpnTelemetry() async {
+    if (!_supported) {
+      return VpnTelemetry.empty();
+    }
+    try {
+      final result =
+          await _channel.invokeMapMethod<dynamic, dynamic>('getStatus');
+      if (result != null) {
+        return VpnTelemetry.fromMap(<String, dynamic>{
+          'queriesIntercepted': VpnStatus._toInt(result['queriesProcessed']),
+          'queriesBlocked': VpnStatus._toInt(result['queriesBlocked']),
+          'queriesAllowed': VpnStatus._toInt(result['queriesAllowed']),
+          'upstreamFailureCount':
+              VpnStatus._toInt(result['upstreamFailureCount']),
+          'fallbackQueryCount': VpnStatus._toInt(result['fallbackQueryCount']),
+          'activeUpstreamDns': VpnStatus._toNullableString(
+            result['upstreamDns'],
+          ),
+          'isRunning': result['isRunning'] == true,
+        });
+      }
+      final status = await getStatus();
+      return VpnTelemetry.fromStatus(status);
+    } on PlatformException {
+      return VpnTelemetry.empty();
+    } on MissingPluginException {
+      return VpnTelemetry.empty();
+    }
+  }
 
   @override
   Future<VpnStatus> getStatus() async {

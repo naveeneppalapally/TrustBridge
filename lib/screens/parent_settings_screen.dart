@@ -191,6 +191,9 @@ class _ParentSettingsScreenState extends State<ParentSettingsScreen> {
               const SizedBox(height: 16),
               _buildSectionHeader('Security & Privacy'),
               _buildSecurityCard(context),
+              const SizedBox(height: 16),
+              _buildSectionHeader('Analytics'),
+              _buildAnalyticsCard(context),
               const SizedBox(height: 24),
               _buildSectionHeader('Support'),
               _buildSupportCard(context),
@@ -573,6 +576,22 @@ class _ParentSettingsScreenState extends State<ParentSettingsScreen> {
         subtitle: const Text('FAQs, troubleshooting, and contact support'),
         trailing: const Icon(Icons.chevron_right),
         onTap: () async => _openHelpSupport(context),
+      ),
+    );
+  }
+
+  Widget _buildAnalyticsCard(BuildContext context) {
+    return Card(
+      elevation: 0,
+      shape: RoundedRectangleBorder(
+        borderRadius: BorderRadius.circular(16),
+      ),
+      child: ListTile(
+        leading: Icon(Icons.bar_chart_outlined, color: Colors.teal.shade700),
+        title: const Text('Protection Analytics'),
+        subtitle: const Text('Blocked queries and policy summary'),
+        trailing: const Icon(Icons.chevron_right),
+        onTap: () => Navigator.of(context).pushNamed('/dns-analytics'),
       ),
     );
   }

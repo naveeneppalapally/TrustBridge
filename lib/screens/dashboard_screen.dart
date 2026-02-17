@@ -158,6 +158,14 @@ class _DashboardScreenState extends State<DashboardScreen>
         actions: [
           _buildRequestsAction(parentId),
           IconButton(
+            key: const Key('dashboard_analytics_button'),
+            icon: const Icon(Icons.bar_chart_outlined),
+            tooltip: 'Protection Analytics',
+            onPressed: () {
+              Navigator.of(context).pushNamed('/dns-analytics');
+            },
+          ),
+          IconButton(
             icon: const Icon(Icons.settings_outlined),
             onPressed: _openSettings,
           ),

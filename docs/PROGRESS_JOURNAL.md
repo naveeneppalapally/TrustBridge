@@ -2428,3 +2428,48 @@ Program goal: ensure NextDNS takes effect automatically from Firestore parent pr
 - Day 54 completed in code: VPN operations now auto-load NextDNS preference from Firestore and apply resolver settings during enable/restart/sync without extra manual steps.
 
 Last updated: 2026-02-17
+
+## Day 55 - DNS Analytics Dashboard (Week 11 Day 5)
+
+Program goal: give parents visibility into DNS protection outcomes with privacy-preserving analytics sourced from on-device VPN telemetry and local DNS logs.
+
+### Commit entries
+
+1. **2026-02-17 20:58:53 +05:30**  
+   Commit: `(this commit - see latest git log)`  
+   Message: `Implement Day 55 DNS analytics dashboard [design: usage_reports_mobile_light]`  
+   Changes:
+   - Updated `lib/services/vpn_service.dart`:
+     - added `VpnTelemetry` model (`empty`, `fromMap`, `fromStatus`, `blockRate`)
+     - added `getVpnTelemetry()` helper in `VpnService`
+   - Updated `lib/services/firestore_service.dart`:
+     - added `getParentPreferences()` one-shot fetch
+   - Created `lib/screens/dns_analytics_screen.dart`:
+     - hero telemetry stats (blocked/intercepted/allowed/block rate)
+     - VPN-off banner
+     - traffic breakdown bar
+     - top blocked domains from local DNS logs
+     - category breakdown across child policies
+     - per-child policy summary
+     - NextDNS analytics card with dashboard deep link
+     - resolver health card and always-on privacy note
+   - Updated `lib/main.dart`:
+     - added `/dns-analytics` route
+   - Updated `lib/screens/parent_settings_screen.dart`:
+     - added `Protection Analytics` navigation tile
+   - Updated `lib/screens/dashboard_screen.dart`:
+     - added analytics AppBar action
+   - Added tests:
+     - `test/screens/dns_analytics_screen_test.dart`
+   Validation:
+   - `flutter analyze` passed.
+   - `flutter test` passed (170/170).
+   - `flutter build apk --debug` passed.
+   Design folder(s) used:
+   - `usage_reports_mobile_light`
+   Design assets checked:
+   - `screen.png`, `code.html`
+   UI fidelity note:
+   - Implemented card-based analytics layout with a privacy-first emphasis and lightweight visual hierarchy aligned to current app styling.
+
+---

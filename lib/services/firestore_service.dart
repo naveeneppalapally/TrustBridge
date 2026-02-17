@@ -51,6 +51,30 @@ class FirestoreService {
     return snapshot.data();
   }
 
+  /// One-shot fetch of parent preferences.
+  Future<Map<String, dynamic>?> getParentPreferences(String parentId) async {
+    if (parentId.trim().isEmpty) {
+      throw ArgumentError.value(parentId, 'parentId', 'Parent ID is required.');
+    }
+
+    final snapshot = await _firestore.collection('parents').doc(parentId).get();
+    if (!snapshot.exists) {
+      return null;
+    }
+
+    final data = snapshot.data();
+    final rawPreferences = data?['preferences'];
+    if (rawPreferences is Map<String, dynamic>) {
+      return rawPreferences;
+    }
+    if (rawPreferences is Map) {
+      return rawPreferences.map(
+        (key, value) => MapEntry(key.toString(), value),
+      );
+    }
+    return null;
+  }
+
   /// Save parent's FCM token for push notifications.
   Future<void> saveFcmToken(String parentId, String token) async {
     if (parentId.trim().isEmpty) {

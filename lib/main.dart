@@ -10,6 +10,7 @@ import 'package:trustbridge_app/screens/add_child_screen.dart';
 import 'package:trustbridge_app/screens/child_requests_screen.dart';
 import 'package:trustbridge_app/screens/child_status_screen.dart';
 import 'package:trustbridge_app/screens/dashboard_screen.dart';
+import 'package:trustbridge_app/screens/dns_analytics_screen.dart';
 import 'package:trustbridge_app/screens/login_screen.dart';
 import 'package:trustbridge_app/screens/parent_requests_screen.dart';
 import 'package:trustbridge_app/services/auth_service.dart';
@@ -66,6 +67,7 @@ class MyApp extends StatelessWidget {
           '/dashboard': (context) => const DashboardScreen(),
           '/add-child': (context) => const AddChildScreen(),
           '/parent-requests': (context) => const ParentRequestsScreen(),
+          '/dns-analytics': (context) => const DnsAnalyticsScreen(),
           '/child-status': (context) {
             final child =
                 ModalRoute.of(context)!.settings.arguments as ChildProfile;
