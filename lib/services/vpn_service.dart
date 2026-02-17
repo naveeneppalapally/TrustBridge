@@ -10,6 +10,8 @@ class VpnStatus {
     this.queriesProcessed = 0,
     this.queriesBlocked = 0,
     this.queriesAllowed = 0,
+    this.upstreamFailureCount = 0,
+    this.fallbackQueryCount = 0,
     this.blockedCategoryCount = 0,
     this.blockedDomainCount = 0,
     this.startedAt,
@@ -24,6 +26,8 @@ class VpnStatus {
         queriesProcessed = 0,
         queriesBlocked = 0,
         queriesAllowed = 0,
+        upstreamFailureCount = 0,
+        fallbackQueryCount = 0,
         blockedCategoryCount = 0,
         blockedDomainCount = 0,
         startedAt = null,
@@ -36,6 +40,8 @@ class VpnStatus {
   final int queriesProcessed;
   final int queriesBlocked;
   final int queriesAllowed;
+  final int upstreamFailureCount;
+  final int fallbackQueryCount;
   final int blockedCategoryCount;
   final int blockedDomainCount;
   final DateTime? startedAt;
@@ -60,6 +66,8 @@ class VpnStatus {
       queriesProcessed: _toInt(map['queriesProcessed']),
       queriesBlocked: _toInt(map['queriesBlocked']),
       queriesAllowed: _toInt(map['queriesAllowed']),
+      upstreamFailureCount: _toInt(map['upstreamFailureCount']),
+      fallbackQueryCount: _toInt(map['fallbackQueryCount']),
       blockedCategoryCount: _toInt(map['blockedCategoryCount']),
       blockedDomainCount: _toInt(map['blockedDomainCount']),
       startedAt: _toDateTime(map['startedAtEpochMs']),

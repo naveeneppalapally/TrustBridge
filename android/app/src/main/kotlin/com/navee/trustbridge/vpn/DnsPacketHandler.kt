@@ -16,6 +16,7 @@ class DnsPacketHandler(
     companion object {
         private const val TAG = "DnsPacketHandler"
         private const val DNS_PORT = 53
+        private const val FALLBACK_DNS = "8.8.8.8"
         private const val TIMEOUT_MS = 5_000
         private const val MAX_QUERY_LOG_ENTRIES = 250
     }
@@ -34,12 +35,20 @@ class DnsPacketHandler(
     @Volatile
     private var allowedQueries: Long = 0
 
+    @Volatile
+    private var upstreamFailures: Long = 0
+
+    @Volatile
+    private var fallbackQueries: Long = 0
+
     private val recentQueries = ArrayDeque<QueryLogEntry>()
 
     data class PacketStats(
         val processedQueries: Long,
         val blockedQueries: Long,
-        val allowedQueries: Long
+        val allowedQueries: Long,
+        val upstreamFailures: Long,
+        val fallbackQueries: Long
     )
 
     data class QueryLogEntry(
@@ -126,7 +135,9 @@ class DnsPacketHandler(
         return PacketStats(
             processedQueries = processedQueries,
             blockedQueries = blockedQueries,
-            allowedQueries = allowedQueries
+            allowedQueries = allowedQueries,
+            upstreamFailures = upstreamFailures,
+            fallbackQueries = fallbackQueries
         )
     }
 
@@ -212,8 +223,37 @@ class DnsPacketHandler(
     }
 
     private fun forwardToUpstreamDns(query: ByteArray): ByteArray {
+        val primaryResponse = queryUpstream(upstreamDns, query)
+        if (primaryResponse != null) {
+            return primaryResponse
+        }
+
+        incrementUpstreamFailure()
+
+        val useFallback = !upstreamDns.equals(FALLBACK_DNS, ignoreCase = true)
+        if (useFallback) {
+            incrementFallbackQuery()
+            val fallbackResponse = queryUpstream(FALLBACK_DNS, query)
+            if (fallbackResponse != null) {
+                Log.w(
+                    TAG,
+                    "Primary upstream DNS failed for '$upstreamDns'. Served via fallback '$FALLBACK_DNS'."
+                )
+                return fallbackResponse
+            }
+        }
+
+        Log.e(
+            TAG,
+            "Failed to resolve via primary upstream '$upstreamDns'" +
+                if (useFallback) " and fallback '$FALLBACK_DNS'" else ""
+        )
+        return createBlockedResponse(query)
+    }
+
+    private fun queryUpstream(host: String, query: ByteArray): ByteArray? {
         return try {
-            val upstreamAddress = InetAddress.getByName(upstreamDns)
+            val upstreamAddress = InetAddress.getByName(host)
             val outboundPacket = DatagramPacket(query, query.size, upstreamAddress, DNS_PORT)
             upstreamSocket.send(outboundPacket)
 
@@ -222,9 +262,8 @@ class DnsPacketHandler(
             upstreamSocket.receive(inboundPacket)
 
             receiveBuffer.copyOf(inboundPacket.length)
-        } catch (error: Exception) {
-            Log.e(TAG, "Failed to forward DNS query. Falling back to blocked response.", error)
-            createBlockedResponse(query)
+        } catch (_: Exception) {
+            null
         }
     }
 
@@ -328,5 +367,15 @@ class DnsPacketHandler(
                 timestampEpochMs = System.currentTimeMillis()
             )
         )
+    }
+
+    @Synchronized
+    private fun incrementUpstreamFailure() {
+        upstreamFailures += 1
+    }
+
+    @Synchronized
+    private fun incrementFallbackQuery() {
+        fallbackQueries += 1
     }
 }

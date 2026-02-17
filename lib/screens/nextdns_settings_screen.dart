@@ -242,7 +242,7 @@ class _NextDnsSettingsScreenState extends State<NextDnsSettingsScreen> {
                       const SizedBox(width: 10),
                       Expanded(
                         child: Text(
-                          'Saving now also updates VPN upstream resolver settings. If VPN is active, resolver changes are applied immediately.',
+                          'Saving now also updates VPN upstream resolver settings. If VPN is active, resolver changes are applied immediately. If NextDNS is temporarily unreachable, VPN auto-falls back to default DNS.',
                           style:
                               Theme.of(context).textTheme.bodySmall?.copyWith(
                                     color: Colors.blue.shade900,

@@ -49,6 +49,12 @@ class DnsVpnService : VpnService() {
         private var queriesAllowed: Long = 0
 
         @Volatile
+        private var upstreamFailureCount: Long = 0
+
+        @Volatile
+        private var fallbackQueryCount: Long = 0
+
+        @Volatile
         private var blockedCategoryCount: Int = 0
 
         @Volatile
@@ -74,6 +80,8 @@ class DnsVpnService : VpnService() {
                 "queriesProcessed" to queriesProcessed,
                 "queriesBlocked" to queriesBlocked,
                 "queriesAllowed" to queriesAllowed,
+                "upstreamFailureCount" to upstreamFailureCount,
+                "fallbackQueryCount" to fallbackQueryCount,
                 "blockedCategoryCount" to blockedCategoryCount,
                 "blockedDomainCount" to blockedDomainCount,
                 "startedAtEpochMs" to startedAtEpochMs,
@@ -88,6 +96,8 @@ class DnsVpnService : VpnService() {
             queriesProcessed = stats.processedQueries
             queriesBlocked = stats.blockedQueries
             queriesAllowed = stats.allowedQueries
+            upstreamFailureCount = stats.upstreamFailures
+            fallbackQueryCount = stats.fallbackQueries
         }
 
         @Synchronized
@@ -259,6 +269,8 @@ class DnsVpnService : VpnService() {
             queriesProcessed = 0
             queriesBlocked = 0
             queriesAllowed = 0
+            upstreamFailureCount = 0
+            fallbackQueryCount = 0
             clearRecentQueryLogs()
             packetHandler?.clearRecentQueries()
             currentUpstreamDns = lastAppliedUpstreamDns

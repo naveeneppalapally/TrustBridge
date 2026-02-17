@@ -629,6 +629,12 @@ class _VpnProtectionScreenState extends State<VpnProtectionScreen> {
             ),
             _buildMetricRow(
               context,
+              label: 'Resolver Failures / Fallbacks',
+              value:
+                  '${_status.upstreamFailureCount} / ${_status.fallbackQueryCount}',
+            ),
+            _buildMetricRow(
+              context,
               label: 'Block Rate',
               value: '$blockRate%',
             ),
@@ -693,6 +699,10 @@ class _VpnProtectionScreenState extends State<VpnProtectionScreen> {
             _buildBullet(
               context,
               'Use Sync Policy Rules after changing blocked categories or custom domains.',
+            ),
+            _buildBullet(
+              context,
+              'If NextDNS upstream is unreachable, VPN now auto-falls back to default DNS to keep internet working.',
             ),
             _buildBullet(
               context,

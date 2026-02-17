@@ -2292,7 +2292,43 @@ Program goal: remove the manual gap between saved NextDNS settings and actual DN
 
 ---
 
-## Current Summary (after Day 52)
+## Day 53 - NextDNS Resolver Health Fallback (Week 11 Day 3)
+
+Program goal: prevent connectivity breakage when custom upstream DNS is temporarily unavailable by adding resolver fallback behavior and surfacing resolver health counters in diagnostics.
+
+### Commit entries
+
+1. **2026-02-18 00:20:00 +05:30**  
+   Commit: `pending (local changes)`  
+   Message: `Implement Day 53 resolver fallback health metrics for NextDNS`  
+   Changes:
+   - Updated `android/app/src/main/kotlin/com/navee/trustbridge/vpn/DnsPacketHandler.kt`:
+     - added primary resolver failure tracking
+     - added fallback DNS query tracking
+     - added automatic fallback from configured upstream to default DNS (`8.8.8.8`)
+     - keeps blocking behavior only when both primary and fallback resolution fail
+   - Updated `android/app/src/main/kotlin/com/navee/trustbridge/vpn/DnsVpnService.kt`:
+     - added resolver metrics to service status snapshot:
+       - `upstreamFailureCount`
+       - `fallbackQueryCount`
+     - reset metrics on VPN start
+   - Updated `lib/services/vpn_service.dart`:
+     - extended `VpnStatus` model with resolver health counters
+   - Updated `lib/screens/vpn_protection_screen.dart`:
+     - added diagnostic metric row for resolver failures/fallback usage
+     - updated troubleshooting copy to explain automatic fallback behavior
+   - Updated `lib/screens/nextdns_settings_screen.dart`:
+     - updated info message to communicate fallback behavior to users
+   - Updated `test/services/vpn_service_test.dart`:
+     - validated new status fields parsing
+     - validated `setUpstreamDns` channel path in lifecycle test
+   Validation:
+   - `C:\Users\navee\flutter\bin\flutter.bat analyze` passed.
+   - `C:\Users\navee\flutter\bin\flutter.bat test` passed (162/162).
+
+---
+
+## Current Summary (after Day 53)
 
 - Day 1 completed: foundation, naming, structure, git + GitHub.
 - Day 2 completed: dependencies and Provider baseline.
@@ -2348,5 +2384,6 @@ Program goal: remove the manual gap between saved NextDNS settings and actual DN
 - Day 50 completed in code: approved access requests now auto-expire via scheduled Cloud Function, with updated history rendering for expired decisions.
 - Day 51 completed in code: child status now displays active approved access passes in real time, and Cloud Functions runtime is upgraded to Node.js 22.
 - Day 52 completed in code: NextDNS settings now auto-apply to the native VPN upstream resolver with persisted state and live bridge support.
+- Day 53 completed in code: resolver health is now resilient with automatic fallback to default DNS and visible fallback/failure diagnostics in the VPN screen.
 
 Last updated: 2026-02-17

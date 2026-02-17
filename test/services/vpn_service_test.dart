@@ -33,10 +33,13 @@ void main() {
             'queriesProcessed': 12,
             'queriesBlocked': 5,
             'queriesAllowed': 7,
+            'upstreamFailureCount': 2,
+            'fallbackQueryCount': 2,
             'blockedCategoryCount': 3,
             'blockedDomainCount': 42,
             'startedAtEpochMs': 1708147200000,
             'lastRuleUpdateEpochMs': 1708147205000,
+            'upstreamDns': 'abc123.dns.nextdns.io',
           };
         }
         return null;
@@ -49,10 +52,13 @@ void main() {
       expect(status.queriesProcessed, 12);
       expect(status.queriesBlocked, 5);
       expect(status.queriesAllowed, 7);
+      expect(status.upstreamFailureCount, 2);
+      expect(status.fallbackQueryCount, 2);
       expect(status.blockedCategoryCount, 3);
       expect(status.blockedDomainCount, 42);
       expect(status.startedAt, isNotNull);
       expect(status.lastRuleUpdateAt, isNotNull);
+      expect(status.upstreamDns, 'abc123.dns.nextdns.io');
     });
 
     test('permission/start/stop lifecycle methods map bool responses',
@@ -78,6 +84,9 @@ void main() {
           return true;
         }
         if (call.method == 'updateFilterRules') {
+          return true;
+        }
+        if (call.method == 'setUpstreamDns') {
           return true;
         }
         if (call.method == 'isIgnoringBatteryOptimizations') {
@@ -148,6 +157,12 @@ void main() {
         await service.updateFilterRules(
           blockedCategories: const ['adult-content'],
           blockedDomains: const ['example.com'],
+        ),
+        isTrue,
+      );
+      expect(
+        await service.setUpstreamDns(
+          upstreamDns: 'abc123.dns.nextdns.io',
         ),
         isTrue,
       );
