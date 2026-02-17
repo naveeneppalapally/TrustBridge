@@ -21,6 +21,40 @@ enum _TicketSourceFilter {
   }
 }
 
+enum _TicketSortOrder {
+  newestFirst,
+  oldestFirst,
+  highestSeverity;
+
+  String get label {
+    switch (this) {
+      case _TicketSortOrder.newestFirst:
+        return 'Newest';
+      case _TicketSortOrder.oldestFirst:
+        return 'Oldest';
+      case _TicketSortOrder.highestSeverity:
+        return 'Severity';
+    }
+  }
+}
+
+enum _AttentionFilter {
+  all,
+  attention,
+  stale;
+
+  String get label {
+    switch (this) {
+      case _AttentionFilter.all:
+        return 'All urgency';
+      case _AttentionFilter.attention:
+        return 'Needs attention';
+      case _AttentionFilter.stale:
+        return 'Stale 72h+';
+    }
+  }
+}
+
 class BetaFeedbackHistoryScreen extends StatefulWidget {
   const BetaFeedbackHistoryScreen({
     super.key,
@@ -48,6 +82,9 @@ class _BetaFeedbackHistoryScreenState extends State<BetaFeedbackHistoryScreen> {
 
   _TicketSourceFilter _sourceFilter = _TicketSourceFilter.beta;
   SupportTicketStatus? _statusFilter;
+  SupportTicketSeverity? _severityFilter;
+  _AttentionFilter _attentionFilter = _AttentionFilter.all;
+  _TicketSortOrder _sortOrder = _TicketSortOrder.newestFirst;
   String _searchQuery = '';
 
   AuthService get _resolvedAuthService {
@@ -136,7 +173,7 @@ class _BetaFeedbackHistoryScreenState extends State<BetaFeedbackHistoryScreen> {
             padding: const EdgeInsets.fromLTRB(16, 12, 16, 100),
             children: [
               _buildFilterCard(
-                totalCount: tickets.length,
+                tickets: tickets,
                 filteredCount: filteredTickets.length,
               ),
               const SizedBox(height: 12),
@@ -164,8 +201,9 @@ class _BetaFeedbackHistoryScreenState extends State<BetaFeedbackHistoryScreen> {
 
   List<SupportTicket> _applyFilters(List<SupportTicket> tickets) {
     final query = _searchQuery.trim().toLowerCase();
+    final now = DateTime.now();
 
-    return tickets.where((ticket) {
+    final filtered = tickets.where((ticket) {
       switch (_sourceFilter) {
         case _TicketSourceFilter.beta:
           if (!ticket.isBetaFeedback) {
@@ -185,6 +223,25 @@ class _BetaFeedbackHistoryScreenState extends State<BetaFeedbackHistoryScreen> {
         return false;
       }
 
+      if (_severityFilter != null && ticket.severity != _severityFilter) {
+        return false;
+      }
+
+      switch (_attentionFilter) {
+        case _AttentionFilter.all:
+          break;
+        case _AttentionFilter.attention:
+          if (!ticket.needsAttention(now: now)) {
+            return false;
+          }
+          break;
+        case _AttentionFilter.stale:
+          if (!ticket.isStale(now: now)) {
+            return false;
+          }
+          break;
+      }
+
       if (query.isNotEmpty) {
         final subject = ticket.subject.toLowerCase();
         final message = ticket.message.toLowerCase();
@@ -198,12 +255,47 @@ class _BetaFeedbackHistoryScreenState extends State<BetaFeedbackHistoryScreen> {
 
       return true;
     }).toList();
+
+    switch (_sortOrder) {
+      case _TicketSortOrder.newestFirst:
+        filtered.sort((a, b) => b.createdAt.compareTo(a.createdAt));
+        break;
+      case _TicketSortOrder.oldestFirst:
+        filtered.sort((a, b) => a.createdAt.compareTo(b.createdAt));
+        break;
+      case _TicketSortOrder.highestSeverity:
+        filtered.sort((a, b) {
+          final severityComparison = a.severity.rank.compareTo(b.severity.rank);
+          if (severityComparison != 0) {
+            return severityComparison;
+          }
+          return b.createdAt.compareTo(a.createdAt);
+        });
+        break;
+    }
+
+    return filtered;
   }
 
   Widget _buildFilterCard({
-    required int totalCount,
+    required List<SupportTicket> tickets,
     required int filteredCount,
   }) {
+    final now = DateTime.now();
+    final openCount = tickets
+        .where((ticket) => ticket.status == SupportTicketStatus.open)
+        .length;
+    final inProgressCount = tickets
+        .where((ticket) => ticket.status == SupportTicketStatus.inProgress)
+        .length;
+    final criticalCount = tickets
+        .where((ticket) => ticket.severity == SupportTicketSeverity.critical)
+        .length;
+    final attentionCount =
+        tickets.where((ticket) => ticket.needsAttention(now: now)).length;
+    final staleCount =
+        tickets.where((ticket) => ticket.isStale(now: now)).length;
+
     return Card(
       elevation: 0,
       shape: RoundedRectangleBorder(
@@ -219,6 +311,38 @@ class _BetaFeedbackHistoryScreenState extends State<BetaFeedbackHistoryScreen> {
               style: Theme.of(context).textTheme.titleMedium?.copyWith(
                     fontWeight: FontWeight.w700,
                   ),
+            ),
+            const SizedBox(height: 10),
+            Wrap(
+              spacing: 8,
+              runSpacing: 8,
+              children: [
+                _buildMetricPill(
+                  label: 'Open',
+                  value: '$openCount',
+                  color: Colors.orange.shade700,
+                ),
+                _buildMetricPill(
+                  label: 'In Progress',
+                  value: '$inProgressCount',
+                  color: Colors.blue.shade700,
+                ),
+                _buildMetricPill(
+                  label: 'Critical',
+                  value: '$criticalCount',
+                  color: Colors.red.shade700,
+                ),
+                _buildMetricPill(
+                  label: 'Attention',
+                  value: '$attentionCount',
+                  color: Colors.deepPurple.shade700,
+                ),
+                _buildMetricPill(
+                  label: 'Stale 72h+',
+                  value: '$staleCount',
+                  color: Colors.brown.shade700,
+                ),
+              ],
             ),
             const SizedBox(height: 10),
             Wrap(
@@ -273,6 +397,74 @@ class _BetaFeedbackHistoryScreenState extends State<BetaFeedbackHistoryScreen> {
               ],
             ),
             const SizedBox(height: 10),
+            Wrap(
+              spacing: 8,
+              runSpacing: 8,
+              children: [
+                ChoiceChip(
+                  key: const Key('feedback_history_severity_all'),
+                  label: const Text('All severities'),
+                  selected: _severityFilter == null,
+                  onSelected: (_) {
+                    setState(() {
+                      _severityFilter = null;
+                    });
+                  },
+                ),
+                ...[
+                  SupportTicketSeverity.critical,
+                  SupportTicketSeverity.high,
+                  SupportTicketSeverity.medium,
+                  SupportTicketSeverity.low,
+                ].map((severity) {
+                  return ChoiceChip(
+                    key: Key('feedback_history_severity_${severity.name}'),
+                    label: Text(severity.label),
+                    selected: _severityFilter == severity,
+                    onSelected: (_) {
+                      setState(() {
+                        _severityFilter = severity;
+                      });
+                    },
+                  );
+                }),
+              ],
+            ),
+            const SizedBox(height: 10),
+            Wrap(
+              spacing: 8,
+              runSpacing: 8,
+              children: _AttentionFilter.values.map((filter) {
+                return ChoiceChip(
+                  key: Key('feedback_history_attention_${filter.name}'),
+                  label: Text(filter.label),
+                  selected: _attentionFilter == filter,
+                  onSelected: (_) {
+                    setState(() {
+                      _attentionFilter = filter;
+                    });
+                  },
+                );
+              }).toList(),
+            ),
+            const SizedBox(height: 10),
+            Wrap(
+              spacing: 8,
+              runSpacing: 8,
+              children: _TicketSortOrder.values.map((order) {
+                return ChoiceChip(
+                  key: Key('feedback_history_sort_${order.name}'),
+                  label: Text(order.label),
+                  selected: _sortOrder == order,
+                  onSelected: (_) {
+                    setState(() {
+                      _sortOrder = order;
+                    });
+                  },
+                );
+              }).toList(),
+            ),
+            const SizedBox(height: 10),
             TextField(
               key: const Key('feedback_history_search_input'),
               controller: _searchController,
@@ -301,7 +493,7 @@ class _BetaFeedbackHistoryScreenState extends State<BetaFeedbackHistoryScreen> {
             ),
             const SizedBox(height: 8),
             Text(
-              'Showing $filteredCount of $totalCount tickets',
+              'Showing $filteredCount of ${tickets.length} tickets',
               style: Theme.of(context).textTheme.bodySmall?.copyWith(
                     color: Colors.grey.shade600,
                   ),
@@ -408,6 +600,9 @@ class _BetaFeedbackHistoryScreenState extends State<BetaFeedbackHistoryScreen> {
                 setState(() {
                   _sourceFilter = _TicketSourceFilter.beta;
                   _statusFilter = null;
+                  _severityFilter = null;
+                  _attentionFilter = _AttentionFilter.all;
+                  _sortOrder = _TicketSortOrder.newestFirst;
                   _searchQuery = '';
                 });
               },
@@ -463,6 +658,21 @@ class _BetaFeedbackHistoryScreenState extends State<BetaFeedbackHistoryScreen> {
               Row(
                 children: [
                   _buildSourceChip(ticket),
+                  if (ticket.severity != SupportTicketSeverity.unknown) ...[
+                    const SizedBox(width: 8),
+                    _buildSeverityChip(ticket.severity),
+                  ],
+                  if (ticket.isStale()) ...[
+                    const SizedBox(width: 8),
+                    _buildAgingChip(
+                        label: 'Stale', color: Colors.brown.shade700),
+                  ] else if (ticket.needsAttention()) ...[
+                    const SizedBox(width: 8),
+                    _buildAgingChip(
+                      label: 'Needs attention',
+                      color: Colors.deepPurple.shade700,
+                    ),
+                  ],
                   const SizedBox(width: 8),
                   Icon(Icons.schedule, size: 16, color: Colors.grey.shade500),
                   const SizedBox(width: 6),
@@ -535,6 +745,68 @@ class _BetaFeedbackHistoryScreenState extends State<BetaFeedbackHistoryScreen> {
     );
   }
 
+  Widget _buildSeverityChip(SupportTicketSeverity severity) {
+    final color = _severityColor(severity);
+    return Container(
+      padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
+      decoration: BoxDecoration(
+        color: color.withValues(alpha: 0.12),
+        borderRadius: BorderRadius.circular(20),
+      ),
+      child: Text(
+        severity.label,
+        style: TextStyle(
+          fontSize: 11,
+          fontWeight: FontWeight.w700,
+          color: color,
+        ),
+      ),
+    );
+  }
+
+  Widget _buildMetricPill({
+    required String label,
+    required String value,
+    required Color color,
+  }) {
+    return Container(
+      padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 5),
+      decoration: BoxDecoration(
+        color: color.withValues(alpha: 0.12),
+        borderRadius: BorderRadius.circular(20),
+      ),
+      child: Text(
+        '$label: $value',
+        style: TextStyle(
+          color: color,
+          fontWeight: FontWeight.w700,
+          fontSize: 12,
+        ),
+      ),
+    );
+  }
+
+  Widget _buildAgingChip({
+    required String label,
+    required Color color,
+  }) {
+    return Container(
+      padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
+      decoration: BoxDecoration(
+        color: color.withValues(alpha: 0.12),
+        borderRadius: BorderRadius.circular(20),
+      ),
+      child: Text(
+        label,
+        style: TextStyle(
+          fontSize: 11,
+          fontWeight: FontWeight.w700,
+          color: color,
+        ),
+      ),
+    );
+  }
+
   Future<void> _openTicketDetails(SupportTicket ticket) async {
     await showModalBottomSheet<void>(
       context: context,
@@ -571,7 +843,28 @@ class _BetaFeedbackHistoryScreenState extends State<BetaFeedbackHistoryScreen> {
                     ],
                   ),
                   const SizedBox(height: 10),
-                  _buildSourceChip(ticket),
+                  Row(
+                    children: [
+                      _buildSourceChip(ticket),
+                      if (ticket.severity != SupportTicketSeverity.unknown) ...[
+                        const SizedBox(width: 8),
+                        _buildSeverityChip(ticket.severity),
+                      ],
+                      if (ticket.isStale()) ...[
+                        const SizedBox(width: 8),
+                        _buildAgingChip(
+                          label: 'Stale',
+                          color: Colors.brown.shade700,
+                        ),
+                      ] else if (ticket.needsAttention()) ...[
+                        const SizedBox(width: 8),
+                        _buildAgingChip(
+                          label: 'Needs attention',
+                          color: Colors.deepPurple.shade700,
+                        ),
+                      ],
+                    ],
+                  ),
                   const SizedBox(height: 14),
                   Text(
                     'Created: ${_formatTimestamp(ticket.createdAt)}',
@@ -635,6 +928,21 @@ class _BetaFeedbackHistoryScreenState extends State<BetaFeedbackHistoryScreen> {
       case SupportTicketStatus.closed:
         return Colors.green.shade700;
       case SupportTicketStatus.unknown:
+        return Colors.grey.shade700;
+    }
+  }
+
+  Color _severityColor(SupportTicketSeverity severity) {
+    switch (severity) {
+      case SupportTicketSeverity.critical:
+        return Colors.red.shade700;
+      case SupportTicketSeverity.high:
+        return Colors.deepOrange.shade700;
+      case SupportTicketSeverity.medium:
+        return Colors.amber.shade800;
+      case SupportTicketSeverity.low:
+        return Colors.teal.shade700;
+      case SupportTicketSeverity.unknown:
         return Colors.grey.shade700;
     }
   }

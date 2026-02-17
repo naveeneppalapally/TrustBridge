@@ -174,5 +174,152 @@ void main() {
       expect(find.text('Policy Question'), findsOneWidget);
       expect(find.text('[Beta][Low] Minor spacing issue'), findsNothing);
     });
+
+    testWidgets('applies severity filter and severity sort',
+        (WidgetTester tester) async {
+      await tester.binding.setSurfaceSize(const Size(430, 1400));
+      addTearDown(() => tester.binding.setSurfaceSize(null));
+
+      await fakeFirestore.collection('supportTickets').doc('ticket-low').set({
+        'parentId': 'parent-history-priority',
+        'subject': '[Beta][Low] Minor copy issue',
+        'message': 'Text typo in settings subtitle.',
+        'status': 'open',
+        'createdAt': DateTime(2026, 2, 17, 12, 0),
+        'updatedAt': DateTime(2026, 2, 17, 12, 5),
+      });
+      await fakeFirestore
+          .collection('supportTickets')
+          .doc('ticket-critical')
+          .set({
+        'parentId': 'parent-history-priority',
+        'subject': '[Beta][Critical] VPN crash',
+        'message': 'VPN crashes when enabling from onboarding.',
+        'status': 'open',
+        'createdAt': DateTime(2026, 2, 17, 11, 0),
+        'updatedAt': DateTime(2026, 2, 17, 11, 5),
+      });
+      await fakeFirestore.collection('supportTickets').doc('ticket-high').set({
+        'parentId': 'parent-history-priority',
+        'subject': '[Beta][High] Sync delay',
+        'message': 'Policy sync takes too long after save.',
+        'status': 'open',
+        'createdAt': DateTime(2026, 2, 17, 13, 0),
+        'updatedAt': DateTime(2026, 2, 17, 13, 5),
+      });
+
+      await tester.pumpWidget(
+        MaterialApp(
+          home: BetaFeedbackHistoryScreen(
+            parentIdOverride: 'parent-history-priority',
+            firestoreService: firestoreService,
+          ),
+        ),
+      );
+      await tester.pumpAndSettle();
+
+      await tester
+          .tap(find.byKey(const Key('feedback_history_severity_critical')));
+      await tester.pumpAndSettle();
+      expect(find.text('[Beta][Critical] VPN crash'), findsOneWidget);
+      expect(find.text('[Beta][Low] Minor copy issue'), findsNothing);
+
+      await tester.tap(find.byKey(const Key('feedback_history_severity_all')));
+      await tester.pumpAndSettle();
+      await tester
+          .tap(find.byKey(const Key('feedback_history_sort_highestSeverity')));
+      await tester.pumpAndSettle();
+
+      final criticalY =
+          tester.getTopLeft(find.text('[Beta][Critical] VPN crash')).dy;
+      final lowY =
+          tester.getTopLeft(find.text('[Beta][Low] Minor copy issue')).dy;
+      expect(criticalY, lessThan(lowY));
+    });
+
+    testWidgets('applies attention and stale filters',
+        (WidgetTester tester) async {
+      await tester.binding.setSurfaceSize(const Size(430, 1400));
+      addTearDown(() => tester.binding.setSurfaceSize(null));
+
+      final now = DateTime.now();
+
+      await fakeFirestore.collection('supportTickets').doc('ticket-fresh').set({
+        'parentId': 'parent-history-aging',
+        'subject': '[Beta][Medium] Fresh report',
+        'message': 'Just submitted and should not be marked stale.',
+        'status': 'open',
+        'createdAt': now.subtract(const Duration(hours: 2)),
+        'updatedAt': now.subtract(const Duration(hours: 2)),
+      });
+      await fakeFirestore.collection('supportTickets').doc('ticket-attn').set({
+        'parentId': 'parent-history-aging',
+        'subject': '[Beta][High] Waiting reply',
+        'message': 'Open for over a day, should need attention.',
+        'status': 'open',
+        'createdAt': now.subtract(const Duration(hours: 30)),
+        'updatedAt': now.subtract(const Duration(hours: 30)),
+      });
+      await fakeFirestore.collection('supportTickets').doc('ticket-stale').set({
+        'parentId': 'parent-history-aging',
+        'subject': '[Beta][High] Stale unresolved issue',
+        'message': 'Open for multiple days.',
+        'status': 'open',
+        'createdAt': now.subtract(const Duration(hours: 90)),
+        'updatedAt': now.subtract(const Duration(hours: 60)),
+      });
+      await fakeFirestore
+          .collection('supportTickets')
+          .doc('ticket-resolved-old')
+          .set({
+        'parentId': 'parent-history-aging',
+        'subject': '[Beta][Low] Old but resolved',
+        'message': 'Resolved tickets should not count as attention.',
+        'status': 'resolved',
+        'createdAt': now.subtract(const Duration(hours: 120)),
+        'updatedAt': now.subtract(const Duration(hours: 110)),
+      });
+
+      await tester.pumpWidget(
+        MaterialApp(
+          home: BetaFeedbackHistoryScreen(
+            parentIdOverride: 'parent-history-aging',
+            firestoreService: firestoreService,
+          ),
+        ),
+      );
+      await tester.pumpAndSettle();
+
+      await tester
+          .tap(find.byKey(const Key('feedback_history_attention_attention')));
+      await tester.pumpAndSettle();
+      expect(find.byKey(const Key('feedback_history_ticket_ticket-attn')),
+          findsOneWidget);
+      await tester.scrollUntilVisible(
+        find.byKey(const Key('feedback_history_ticket_ticket-stale')),
+        240,
+        scrollable: find.byType(Scrollable).first,
+      );
+      expect(find.byKey(const Key('feedback_history_ticket_ticket-stale')),
+          findsOneWidget);
+      expect(find.byKey(const Key('feedback_history_ticket_ticket-fresh')),
+          findsNothing);
+      expect(
+          find.byKey(const Key('feedback_history_ticket_ticket-resolved-old')),
+          findsNothing);
+
+      await tester
+          .tap(find.byKey(const Key('feedback_history_attention_stale')));
+      await tester.pumpAndSettle();
+      await tester.scrollUntilVisible(
+        find.byKey(const Key('feedback_history_ticket_ticket-stale')),
+        240,
+        scrollable: find.byType(Scrollable).first,
+      );
+      expect(find.byKey(const Key('feedback_history_ticket_ticket-stale')),
+          findsOneWidget);
+      expect(find.byKey(const Key('feedback_history_ticket_ticket-attn')),
+          findsNothing);
+    });
   });
 }

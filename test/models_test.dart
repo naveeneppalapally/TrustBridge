@@ -112,5 +112,56 @@ void main() {
       expect(betaTicket.source, SupportTicketSource.betaFeedback);
       expect(supportTicket.source, SupportTicketSource.helpSupport);
     });
+
+    test('severity parser detects beta severity token', () {
+      final criticalTicket = SupportTicket(
+        id: '1',
+        parentId: 'parent',
+        subject: '[Beta][Critical] VPN crash on enable',
+        message: 'details',
+        status: SupportTicketStatus.open,
+        createdAt: DateTime(2026, 2, 17),
+        updatedAt: DateTime(2026, 2, 17),
+      );
+      final supportTicket = SupportTicket(
+        id: '2',
+        parentId: 'parent',
+        subject: 'Need help with onboarding',
+        message: 'details',
+        status: SupportTicketStatus.open,
+        createdAt: DateTime(2026, 2, 17),
+        updatedAt: DateTime(2026, 2, 17),
+      );
+
+      expect(criticalTicket.severity, SupportTicketSeverity.critical);
+      expect(supportTicket.severity, SupportTicketSeverity.unknown);
+    });
+
+    test('attention and stale helpers are derived from age and status', () {
+      final staleOpenTicket = SupportTicket(
+        id: '1',
+        parentId: 'parent',
+        subject: '[Beta][High] Old unresolved ticket',
+        message: 'details',
+        status: SupportTicketStatus.open,
+        createdAt: DateTime(2026, 2, 10, 8, 0),
+        updatedAt: DateTime(2026, 2, 10, 8, 0),
+      );
+      final resolvedTicket = SupportTicket(
+        id: '2',
+        parentId: 'parent',
+        subject: '[Beta][High] Already fixed',
+        message: 'details',
+        status: SupportTicketStatus.resolved,
+        createdAt: DateTime(2026, 2, 10, 8, 0),
+        updatedAt: DateTime(2026, 2, 10, 8, 0),
+      );
+      final referenceNow = DateTime(2026, 2, 17, 8, 0);
+
+      expect(staleOpenTicket.needsAttention(now: referenceNow), isTrue);
+      expect(staleOpenTicket.isStale(now: referenceNow), isTrue);
+      expect(resolvedTicket.needsAttention(now: referenceNow), isFalse);
+      expect(resolvedTicket.isStale(now: referenceNow), isFalse);
+    });
   });
 }

@@ -31,6 +31,67 @@ UI commit message convention:
 
 ---
 
+## Day 65 - Feedback Aging & Escalation Signals (Week 13 Day 5)
+
+Program goal: make triage response-time aware by surfacing stale tickets and
+adding urgency filters so unresolved issues are addressed first.
+
+### Commit entries
+
+1. **2026-02-17**  
+   Commit: `(this commit - see latest git log)`  
+   Message: `Implement Day 65 feedback aging escalation signals`  
+   Changes:
+   - Updated `lib/models/support_ticket.dart`:
+     - added unresolved lifecycle helpers:
+       - `isResolved`
+       - `needsAttention()` (24h+ unresolved)
+       - `isStale()` (72h+ unresolved)
+   - Updated `lib/screens/beta_feedback_history_screen.dart`:
+     - added urgency filter chips (All urgency / Needs attention / Stale 72h+)
+     - added triage metric pills for `Attention` and `Stale 72h+`
+     - added aging badges on ticket cards and detail sheet
+     - integrated urgency filtering with existing source/status/severity/search
+   - Updated tests:
+     - expanded `test/models_test.dart` with lifecycle helper coverage
+     - expanded `test/screens/beta_feedback_history_screen_test.dart`
+       with attention/stale filter behavior
+   Validation:
+   - `flutter analyze` passed.
+   - `flutter test` passed.
+
+---
+
+## Day 64 - Feedback Priority Insights (Week 13 Day 4)
+
+Program goal: speed up beta triage by adding severity-aware filtering/sorting
+and quick at-a-glance ticket health metrics in feedback history.
+
+### Commit entries
+
+1. **2026-02-17**  
+   Commit: `(this commit - see latest git log)`  
+   Message: `Implement Day 64 feedback priority insights`  
+   Changes:
+   - Updated `lib/models/support_ticket.dart`:
+     - added `SupportTicketSeverity` enum
+     - added severity parsing from `[Beta][Severity]` subject token
+     - added `severity` getter with rank metadata for sort priority
+   - Updated `lib/screens/beta_feedback_history_screen.dart`:
+     - added triage metric pills (Open, In Progress, Critical)
+     - added severity filter chips (All/Critical/High/Medium/Low)
+     - added sort controls (Newest/Oldest/Severity priority)
+     - added severity chips on ticket cards and details sheet
+   - Updated tests:
+     - expanded `test/screens/beta_feedback_history_screen_test.dart`
+       with severity filter/sort coverage
+     - expanded `test/models_test.dart` with severity parsing checks
+   Validation:
+   - `flutter analyze` passed.
+   - `flutter test` passed.
+
+---
+
 ## Day 63 - Feedback Inbox Triage Filters (Week 13 Day 3)
 
 Program goal: make beta triage faster by adding filtering and search controls

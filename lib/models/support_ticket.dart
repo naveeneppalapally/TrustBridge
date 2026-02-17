@@ -53,6 +53,65 @@ enum SupportTicketSource {
   }
 }
 
+enum SupportTicketSeverity {
+  critical,
+  high,
+  medium,
+  low,
+  unknown;
+
+  static SupportTicketSeverity fromSubject(String subject) {
+    final normalized = subject.trim();
+    final match = RegExp(
+      r'^\[Beta\]\[(Critical|High|Medium|Low)\]',
+      caseSensitive: false,
+    ).firstMatch(normalized);
+    final raw = match?.group(1)?.toLowerCase();
+    switch (raw) {
+      case 'critical':
+        return SupportTicketSeverity.critical;
+      case 'high':
+        return SupportTicketSeverity.high;
+      case 'medium':
+        return SupportTicketSeverity.medium;
+      case 'low':
+        return SupportTicketSeverity.low;
+      default:
+        return SupportTicketSeverity.unknown;
+    }
+  }
+
+  String get label {
+    switch (this) {
+      case SupportTicketSeverity.critical:
+        return 'Critical';
+      case SupportTicketSeverity.high:
+        return 'High';
+      case SupportTicketSeverity.medium:
+        return 'Medium';
+      case SupportTicketSeverity.low:
+        return 'Low';
+      case SupportTicketSeverity.unknown:
+        return 'Unknown';
+    }
+  }
+
+  int get rank {
+    switch (this) {
+      case SupportTicketSeverity.critical:
+        return 0;
+      case SupportTicketSeverity.high:
+        return 1;
+      case SupportTicketSeverity.medium:
+        return 2;
+      case SupportTicketSeverity.low:
+        return 3;
+      case SupportTicketSeverity.unknown:
+        return 4;
+    }
+  }
+}
+
 class SupportTicket {
   const SupportTicket({
     required this.id,
@@ -80,6 +139,34 @@ class SupportTicket {
     return isBetaFeedback
         ? SupportTicketSource.betaFeedback
         : SupportTicketSource.helpSupport;
+  }
+
+  SupportTicketSeverity get severity {
+    return SupportTicketSeverity.fromSubject(subject);
+  }
+
+  bool get isResolved {
+    return status == SupportTicketStatus.resolved ||
+        status == SupportTicketStatus.closed;
+  }
+
+  Duration age({DateTime? now}) {
+    final reference = now ?? DateTime.now();
+    return reference.difference(createdAt);
+  }
+
+  bool needsAttention({DateTime? now}) {
+    if (isResolved) {
+      return false;
+    }
+    return age(now: now).inHours >= 24;
+  }
+
+  bool isStale({DateTime? now}) {
+    if (isResolved) {
+      return false;
+    }
+    return age(now: now).inHours >= 72;
   }
 
   factory SupportTicket.fromFirestore(
