@@ -1878,7 +1878,53 @@ Program goal: make VPN permission recovery explicit and fast by separating permi
 
 ---
 
-## Current Summary (after Day 42)
+## Day 43 - Policy-to-VPN Auto-Sync (Week 9 Day 3)
+
+Program goal: bridge Firestore policy updates to the active VPN filter engine automatically so policy edits apply without manual restart.
+
+### Commit entries
+
+1. **2026-02-17 16:49:12 +05:30**  
+   Commit: `pending (local changes)`  
+   Message: `Implement Day 43 policy-to-VPN auto-sync service`  
+   Changes:
+   - Added `lib/services/policy_vpn_sync_service.dart`:
+     - listens to Firestore child policy stream
+     - merges blocked categories/domains across children
+     - pushes rules to active VPN via `updateFilterRules(...)`
+     - exposes sync state/result for diagnostics
+     - includes manual `syncNow()` trigger
+   - Updated `lib/services/firestore_service.dart`:
+     - added one-shot `getChildrenOnce(parentId)` fetch
+   - Updated `lib/main.dart`:
+     - registered `PolicyVpnSyncService` in provider tree
+     - wired auth transition hooks to start/stop sync listener
+   - Updated `lib/screens/dashboard_screen.dart`:
+     - added foreground-resume sync trigger via `WidgetsBindingObserver`
+   - Updated `lib/screens/vpn_protection_screen.dart`:
+     - added Policy Sync status card
+     - added manual `Sync Now` button
+     - added sync counters and last-sync relative time
+   - Added tests:
+     - `test/services/policy_vpn_sync_service_test.dart`
+       - sync skip when VPN stopped
+       - merge logic across children
+       - clear rules on empty children
+       - listener-driven auto-sync
+   Validation:
+   - `C:\Users\navee\flutter\bin\flutter.bat analyze` passed.
+   - `C:\Users\navee\flutter\bin\flutter.bat test` passed (128/128).
+   - `C:\Users\navee\flutter\bin\flutter.bat build apk --debug` passed.
+   Design folder(s) used:
+   - `security_settings_light`
+   Design assets checked:
+   - `screen.png`, `code.html`
+   UI fidelity note:
+   - Sync card follows existing VPN diagnostics visual language and spacing.
+
+---
+
+## Current Summary (after Day 43)
 
 - Day 1 completed: foundation, naming, structure, git + GitHub.
 - Day 2 completed: dependencies and Provider baseline.
@@ -1924,5 +1970,6 @@ Program goal: make VPN permission recovery explicit and fast by separating permi
 - Day 40 completed in code: VPN boot recovery now restores protection after reboot using persisted native state and rules.
 - Day 41 completed in code: diagnostics now include direct shortcuts to VPN and Private DNS system settings for faster recovery.
 - Day 42 completed in code: VPN permission recovery is now a dedicated flow in the protection screen with explicit grant action and feedback.
+- Day 43 completed in code: Firestore child-policy updates now auto-sync to active VPN rules, with foreground/manual sync controls and diagnostics.
 
 Last updated: 2026-02-17

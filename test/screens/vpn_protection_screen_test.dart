@@ -1,9 +1,12 @@
+import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:fake_cloud_firestore/fake_cloud_firestore.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
+import 'package:provider/provider.dart';
 import 'package:trustbridge_app/screens/domain_policy_tester_screen.dart';
 import 'package:trustbridge_app/screens/vpn_protection_screen.dart';
 import 'package:trustbridge_app/services/firestore_service.dart';
+import 'package:trustbridge_app/services/policy_vpn_sync_service.dart';
 import 'package:trustbridge_app/services/vpn_service.dart';
 
 class _FakeVpnService implements VpnServiceBase {
@@ -556,6 +559,62 @@ void main() {
 
       expect(fakeVpn.permissionGranted, isTrue);
       expect(find.text('VPN permission granted'), findsOneWidget);
+    });
+
+    testWidgets('policy sync card syncs rules via PolicyVpnSyncService',
+        (tester) async {
+      const parentId = 'parent-vpn-sync';
+      await seedParent(parentId);
+      await fakeFirestore.collection('children').doc('child-sync-1').set({
+        'parentId': parentId,
+        'nickname': 'Sync Child',
+        'ageBand': '6-9',
+        'deviceIds': <String>[],
+        'policy': {
+          'blockedCategories': <String>['social-networks'],
+          'blockedDomains': <String>['reddit.com'],
+          'schedules': <Map<String, dynamic>>[],
+          'safeSearchEnabled': true,
+        },
+        'createdAt': Timestamp.fromDate(DateTime(2026, 2, 17, 16, 0)),
+        'updatedAt': Timestamp.fromDate(DateTime(2026, 2, 17, 16, 0)),
+      });
+
+      final fakeVpn = _FakeVpnService(
+        supported: true,
+        permissionGranted: true,
+        running: true,
+      );
+      final syncService = PolicyVpnSyncService(
+        firestoreService: firestoreService,
+        vpnService: fakeVpn,
+        parentIdResolver: () => parentId,
+      );
+      addTearDown(syncService.dispose);
+
+      await tester.pumpWidget(
+        ChangeNotifierProvider<PolicyVpnSyncService>.value(
+          value: syncService,
+          child: MaterialApp(
+            home: VpnProtectionScreen(
+              vpnService: fakeVpn,
+              firestoreService: firestoreService,
+              parentIdOverride: parentId,
+            ),
+          ),
+        ),
+      );
+      await tester.pumpAndSettle();
+
+      expect(find.byKey(const Key('vpn_policy_sync_card')), findsOneWidget);
+      expect(find.text('Policy Sync'), findsOneWidget);
+
+      await tester.tap(find.byKey(const Key('vpn_policy_sync_now_button')));
+      await tester.pumpAndSettle();
+
+      expect(fakeVpn.updateFilterRulesCalls, greaterThanOrEqualTo(1));
+      expect(find.text('Children synced'), findsOneWidget);
+      expect(find.text('Domains blocked'), findsOneWidget);
     });
   });
 }

@@ -1,10 +1,12 @@
 import 'dart:async';
 
 import 'package:flutter/material.dart';
+import 'package:provider/provider.dart';
 import 'package:trustbridge_app/services/auth_service.dart';
 import 'package:trustbridge_app/services/dns_filter_engine.dart';
 import 'package:trustbridge_app/services/dns_packet_parser.dart';
 import 'package:trustbridge_app/services/firestore_service.dart';
+import 'package:trustbridge_app/services/policy_vpn_sync_service.dart';
 import 'package:trustbridge_app/services/vpn_service.dart';
 import 'package:trustbridge_app/screens/dns_query_log_screen.dart';
 import 'package:trustbridge_app/screens/domain_policy_tester_screen.dart';
@@ -114,6 +116,8 @@ class _VpnProtectionScreenState extends State<VpnProtectionScreen> {
           const SizedBox(height: 16),
           _buildStatusCard(context),
           const SizedBox(height: 16),
+          _buildSyncStatusCard(context),
+          const SizedBox(height: 16),
           _buildPermissionRecoveryCard(context),
           const SizedBox(height: 16),
           _buildActionCard(context),
@@ -191,6 +195,130 @@ class _VpnProtectionScreenState extends State<VpnProtectionScreen> {
             ),
           ],
         ),
+      ),
+    );
+  }
+
+  Widget _buildSyncStatusCard(BuildContext context) {
+    final syncService = context.watch<PolicyVpnSyncService?>();
+    if (syncService == null) {
+      return const SizedBox.shrink();
+    }
+
+    final result = syncService.lastSyncResult;
+    final isSyncing = syncService.isSyncing;
+    final iconColor = isSyncing
+        ? Colors.blue
+        : result?.success == false
+            ? Colors.red
+            : Colors.green;
+
+    return Card(
+      key: const Key('vpn_policy_sync_card'),
+      elevation: 0,
+      shape: RoundedRectangleBorder(
+        borderRadius: BorderRadius.circular(16),
+      ),
+      child: Padding(
+        padding: const EdgeInsets.all(16),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Row(
+              children: [
+                Icon(Icons.sync, color: iconColor),
+                const SizedBox(width: 8),
+                Text(
+                  'Policy Sync',
+                  style: Theme.of(context).textTheme.titleMedium?.copyWith(
+                        fontWeight: FontWeight.w700,
+                      ),
+                ),
+                const Spacer(),
+                TextButton(
+                  key: const Key('vpn_policy_sync_now_button'),
+                  onPressed: isSyncing ? null : syncService.syncNow,
+                  child: isSyncing
+                      ? const SizedBox(
+                          width: 16,
+                          height: 16,
+                          child: CircularProgressIndicator(strokeWidth: 2),
+                        )
+                      : const Text('Sync Now'),
+                ),
+              ],
+            ),
+            const SizedBox(height: 10),
+            if (result == null)
+              Text(
+                'Not yet synced.',
+                style: Theme.of(context).textTheme.bodySmall?.copyWith(
+                      color: Colors.grey.shade600,
+                    ),
+              )
+            else if (!result.success)
+              Text(
+                'Sync failed: ${result.error ?? 'Unknown error'}',
+                style: Theme.of(context).textTheme.bodySmall?.copyWith(
+                      color: Colors.red.shade700,
+                    ),
+              )
+            else ...[
+              _buildSyncMetricRow(
+                context,
+                icon: Icons.people_outline,
+                label: 'Children synced',
+                value: '${result.childrenSynced}',
+              ),
+              _buildSyncMetricRow(
+                context,
+                icon: Icons.block,
+                label: 'Categories blocked',
+                value: '${result.totalCategories}',
+              ),
+              _buildSyncMetricRow(
+                context,
+                icon: Icons.domain,
+                label: 'Domains blocked',
+                value: '${result.totalDomains}',
+              ),
+              _buildSyncMetricRow(
+                context,
+                icon: Icons.access_time,
+                label: 'Last synced',
+                value: _formatSyncTime(result.timestamp),
+              ),
+            ],
+          ],
+        ),
+      ),
+    );
+  }
+
+  Widget _buildSyncMetricRow(
+    BuildContext context, {
+    required IconData icon,
+    required String label,
+    required String value,
+  }) {
+    return Padding(
+      padding: const EdgeInsets.only(bottom: 6),
+      child: Row(
+        children: [
+          Icon(icon, size: 16, color: Colors.grey.shade600),
+          const SizedBox(width: 8),
+          Text(
+            label,
+            style: Theme.of(context).textTheme.bodySmall,
+          ),
+          const Spacer(),
+          Text(
+            value,
+            style: Theme.of(context).textTheme.bodySmall?.copyWith(
+                  fontWeight: FontWeight.w700,
+                ),
+          ),
+        ],
       ),
     );
   }
@@ -1018,6 +1146,20 @@ class _VpnProtectionScreenState extends State<VpnProtectionScreen> {
       return '${diff.inMinutes}m ago';
     }
     if (diff.inDays < 1) {
+      return '${diff.inHours}h ago';
+    }
+    return '${diff.inDays}d ago';
+  }
+
+  String _formatSyncTime(DateTime time) {
+    final diff = DateTime.now().difference(time);
+    if (diff.inSeconds < 60) {
+      return 'just now';
+    }
+    if (diff.inMinutes < 60) {
+      return '${diff.inMinutes}m ago';
+    }
+    if (diff.inHours < 24) {
       return '${diff.inHours}h ago';
     }
     return '${diff.inDays}d ago';

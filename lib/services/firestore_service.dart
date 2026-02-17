@@ -253,6 +253,11 @@ class FirestoreService {
     return children;
   }
 
+  /// One-shot fetch of all children without subscribing to stream updates.
+  Future<List<ChildProfile>> getChildrenOnce(String parentId) {
+    return getChildren(parentId);
+  }
+
   Future<ChildProfile?> getChild({
     required String parentId,
     required String childId,
