@@ -31,6 +31,36 @@ UI commit message convention:
 
 ---
 
+## Day 63 - Feedback Inbox Triage Filters (Week 13 Day 3)
+
+Program goal: make beta triage faster by adding filtering and search controls
+to the feedback inbox so reports can be processed in seconds.
+
+### Commit entries
+
+1. **2026-02-17**  
+   Commit: `(this commit - see latest git log)`  
+   Message: `Implement Day 63 feedback inbox triage filters`  
+   Changes:
+   - Updated `lib/models/support_ticket.dart`:
+     - added `SupportTicketSource` classification (`betaFeedback`, `helpSupport`)
+     - added ticket-level source detection (`[Beta]` subject prefix)
+   - Updated `lib/screens/beta_feedback_history_screen.dart`:
+     - added source filter chips (Beta / Support / All)
+     - added status filter chips (All, Open, In Progress, Resolved, Closed)
+     - added search input (subject/message/child id)
+     - added filtered-empty state with reset action
+     - kept details bottom sheet + send feedback CTA
+   - Added/updated tests:
+     - expanded `test/screens/beta_feedback_history_screen_test.dart`
+       with filter/search coverage
+     - expanded `test/models_test.dart` with support-ticket source/status checks
+   Validation:
+   - `flutter analyze` passed.
+   - `flutter test` passed.
+
+---
+
 ## Day 62 - Beta Feedback History (Week 13 Day 2)
 
 Program goal: give parents a real-time view of submitted beta/support reports

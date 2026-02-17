@@ -102,5 +102,77 @@ void main() {
       expect(
           find.byKey(const Key('beta_feedback_submit_button')), findsOneWidget);
     });
+
+    testWidgets('applies source, status, and search filters',
+        (WidgetTester tester) async {
+      await tester.binding.setSurfaceSize(const Size(430, 1400));
+      addTearDown(() => tester.binding.setSurfaceSize(null));
+
+      await fakeFirestore
+          .collection('supportTickets')
+          .doc('ticket-beta-open')
+          .set({
+        'parentId': 'parent-history-filters',
+        'subject': '[Beta][High] Crash in dashboard',
+        'message': 'Dashboard crashed after toggling mode quickly.',
+        'status': 'open',
+        'createdAt': DateTime(2026, 2, 17, 10, 0),
+        'updatedAt': DateTime(2026, 2, 17, 10, 5),
+      });
+      await fakeFirestore
+          .collection('supportTickets')
+          .doc('ticket-support-resolved')
+          .set({
+        'parentId': 'parent-history-filters',
+        'subject': 'Policy Question',
+        'message': 'Need help with schedule overlap behavior.',
+        'status': 'resolved',
+        'createdAt': DateTime(2026, 2, 17, 11, 0),
+        'updatedAt': DateTime(2026, 2, 17, 11, 15),
+      });
+      await fakeFirestore
+          .collection('supportTickets')
+          .doc('ticket-beta-resolved')
+          .set({
+        'parentId': 'parent-history-filters',
+        'subject': '[Beta][Low] Minor spacing issue',
+        'message': 'Padding is slightly off in request details card.',
+        'status': 'resolved',
+        'createdAt': DateTime(2026, 2, 17, 12, 0),
+        'updatedAt': DateTime(2026, 2, 17, 12, 10),
+      });
+
+      await tester.pumpWidget(
+        MaterialApp(
+          home: BetaFeedbackHistoryScreen(
+            parentIdOverride: 'parent-history-filters',
+            firestoreService: firestoreService,
+          ),
+        ),
+      );
+      await tester.pumpAndSettle();
+
+      // Default source filter is Beta.
+      expect(find.text('[Beta][High] Crash in dashboard'), findsOneWidget);
+      expect(find.text('Policy Question'), findsNothing);
+
+      await tester.tap(find.byKey(const Key('feedback_history_source_all')));
+      await tester.pumpAndSettle();
+      expect(find.text('Policy Question'), findsOneWidget);
+
+      await tester
+          .tap(find.byKey(const Key('feedback_history_status_resolved')));
+      await tester.pumpAndSettle();
+      expect(find.text('[Beta][High] Crash in dashboard'), findsNothing);
+      expect(find.text('Policy Question'), findsOneWidget);
+
+      await tester.enterText(
+        find.byKey(const Key('feedback_history_search_input')),
+        'policy',
+      );
+      await tester.pumpAndSettle();
+      expect(find.text('Policy Question'), findsOneWidget);
+      expect(find.text('[Beta][Low] Minor spacing issue'), findsNothing);
+    });
   });
 }

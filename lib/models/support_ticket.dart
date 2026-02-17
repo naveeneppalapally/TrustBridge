@@ -39,6 +39,20 @@ enum SupportTicketStatus {
   }
 }
 
+enum SupportTicketSource {
+  betaFeedback,
+  helpSupport;
+
+  String get label {
+    switch (this) {
+      case SupportTicketSource.betaFeedback:
+        return 'Beta';
+      case SupportTicketSource.helpSupport:
+        return 'Support';
+    }
+  }
+}
+
 class SupportTicket {
   const SupportTicket({
     required this.id,
@@ -59,6 +73,14 @@ class SupportTicket {
   final SupportTicketStatus status;
   final DateTime createdAt;
   final DateTime updatedAt;
+
+  bool get isBetaFeedback => subject.startsWith('[Beta]');
+
+  SupportTicketSource get source {
+    return isBetaFeedback
+        ? SupportTicketSource.betaFeedback
+        : SupportTicketSource.helpSupport;
+  }
 
   factory SupportTicket.fromFirestore(
     DocumentSnapshot<Map<String, dynamic>> snapshot,

@@ -4,6 +4,23 @@ import 'package:trustbridge_app/screens/beta_feedback_screen.dart';
 import 'package:trustbridge_app/services/auth_service.dart';
 import 'package:trustbridge_app/services/firestore_service.dart';
 
+enum _TicketSourceFilter {
+  beta,
+  support,
+  all;
+
+  String get label {
+    switch (this) {
+      case _TicketSourceFilter.beta:
+        return 'Beta';
+      case _TicketSourceFilter.support:
+        return 'Support';
+      case _TicketSourceFilter.all:
+        return 'All';
+    }
+  }
+}
+
 class BetaFeedbackHistoryScreen extends StatefulWidget {
   const BetaFeedbackHistoryScreen({
     super.key,
@@ -27,6 +44,12 @@ class _BetaFeedbackHistoryScreenState extends State<BetaFeedbackHistoryScreen> {
   Stream<List<SupportTicket>>? _ticketStream;
   String? _streamParentId;
 
+  final TextEditingController _searchController = TextEditingController();
+
+  _TicketSourceFilter _sourceFilter = _TicketSourceFilter.beta;
+  SupportTicketStatus? _statusFilter;
+  String _searchQuery = '';
+
   AuthService get _resolvedAuthService {
     _authService ??= widget.authService ?? AuthService();
     return _authService!;
@@ -48,6 +71,12 @@ class _BetaFeedbackHistoryScreenState extends State<BetaFeedbackHistoryScreen> {
           _resolvedFirestoreService.getSupportTicketsStream(parentId);
     }
     return _ticketStream!;
+  }
+
+  @override
+  void dispose() {
+    _searchController.dispose();
+    super.dispose();
   }
 
   void _refreshStream() {
@@ -98,17 +127,29 @@ class _BetaFeedbackHistoryScreenState extends State<BetaFeedbackHistoryScreen> {
 
           final tickets = snapshot.data ?? const <SupportTicket>[];
           if (tickets.isEmpty) {
-            return _buildEmptyState();
+            return _buildEmptyState(hasAnyTickets: false);
           }
 
-          return ListView.separated(
+          final filteredTickets = _applyFilters(tickets);
+
+          return ListView(
             padding: const EdgeInsets.fromLTRB(16, 12, 16, 100),
-            itemCount: tickets.length,
-            separatorBuilder: (_, __) => const SizedBox(height: 12),
-            itemBuilder: (BuildContext context, int index) {
-              final ticket = tickets[index];
-              return _buildTicketCard(ticket);
-            },
+            children: [
+              _buildFilterCard(
+                totalCount: tickets.length,
+                filteredCount: filteredTickets.length,
+              ),
+              const SizedBox(height: 12),
+              if (filteredTickets.isEmpty)
+                _buildEmptyState(hasAnyTickets: true)
+              else
+                ...filteredTickets.map((ticket) {
+                  return Padding(
+                    padding: const EdgeInsets.only(bottom: 12),
+                    child: _buildTicketCard(ticket),
+                  );
+                }),
+            ],
           );
         },
       ),
@@ -117,6 +158,156 @@ class _BetaFeedbackHistoryScreenState extends State<BetaFeedbackHistoryScreen> {
         onPressed: _openFeedbackForm,
         icon: const Icon(Icons.add_comment_outlined),
         label: const Text('Send Feedback'),
+      ),
+    );
+  }
+
+  List<SupportTicket> _applyFilters(List<SupportTicket> tickets) {
+    final query = _searchQuery.trim().toLowerCase();
+
+    return tickets.where((ticket) {
+      switch (_sourceFilter) {
+        case _TicketSourceFilter.beta:
+          if (!ticket.isBetaFeedback) {
+            return false;
+          }
+          break;
+        case _TicketSourceFilter.support:
+          if (ticket.isBetaFeedback) {
+            return false;
+          }
+          break;
+        case _TicketSourceFilter.all:
+          break;
+      }
+
+      if (_statusFilter != null && ticket.status != _statusFilter) {
+        return false;
+      }
+
+      if (query.isNotEmpty) {
+        final subject = ticket.subject.toLowerCase();
+        final message = ticket.message.toLowerCase();
+        final childId = (ticket.childId ?? '').toLowerCase();
+        if (!subject.contains(query) &&
+            !message.contains(query) &&
+            !childId.contains(query)) {
+          return false;
+        }
+      }
+
+      return true;
+    }).toList();
+  }
+
+  Widget _buildFilterCard({
+    required int totalCount,
+    required int filteredCount,
+  }) {
+    return Card(
+      elevation: 0,
+      shape: RoundedRectangleBorder(
+        borderRadius: BorderRadius.circular(16),
+      ),
+      child: Padding(
+        padding: const EdgeInsets.all(14),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Text(
+              'Triage',
+              style: Theme.of(context).textTheme.titleMedium?.copyWith(
+                    fontWeight: FontWeight.w700,
+                  ),
+            ),
+            const SizedBox(height: 10),
+            Wrap(
+              spacing: 8,
+              runSpacing: 8,
+              children: _TicketSourceFilter.values.map((filter) {
+                final selected = _sourceFilter == filter;
+                return ChoiceChip(
+                  key: Key('feedback_history_source_${filter.name}'),
+                  label: Text(filter.label),
+                  selected: selected,
+                  onSelected: (_) {
+                    setState(() {
+                      _sourceFilter = filter;
+                    });
+                  },
+                );
+              }).toList(),
+            ),
+            const SizedBox(height: 10),
+            Wrap(
+              spacing: 8,
+              runSpacing: 8,
+              children: [
+                ChoiceChip(
+                  key: const Key('feedback_history_status_all'),
+                  label: const Text('All statuses'),
+                  selected: _statusFilter == null,
+                  onSelected: (_) {
+                    setState(() {
+                      _statusFilter = null;
+                    });
+                  },
+                ),
+                ...[
+                  SupportTicketStatus.open,
+                  SupportTicketStatus.inProgress,
+                  SupportTicketStatus.resolved,
+                  SupportTicketStatus.closed,
+                ].map((status) {
+                  return ChoiceChip(
+                    key: Key('feedback_history_status_${status.name}'),
+                    label: Text(status.label),
+                    selected: _statusFilter == status,
+                    onSelected: (_) {
+                      setState(() {
+                        _statusFilter = status;
+                      });
+                    },
+                  );
+                }),
+              ],
+            ),
+            const SizedBox(height: 10),
+            TextField(
+              key: const Key('feedback_history_search_input'),
+              controller: _searchController,
+              textInputAction: TextInputAction.search,
+              onChanged: (value) {
+                setState(() {
+                  _searchQuery = value;
+                });
+              },
+              decoration: InputDecoration(
+                hintText: 'Search subject, details, or child id',
+                prefixIcon: const Icon(Icons.search),
+                suffixIcon: _searchQuery.trim().isEmpty
+                    ? null
+                    : IconButton(
+                        onPressed: () {
+                          _searchController.clear();
+                          setState(() {
+                            _searchQuery = '';
+                          });
+                        },
+                        icon: const Icon(Icons.clear),
+                      ),
+                border: const OutlineInputBorder(),
+              ),
+            ),
+            const SizedBox(height: 8),
+            Text(
+              'Showing $filteredCount of $totalCount tickets',
+              style: Theme.of(context).textTheme.bodySmall?.copyWith(
+                    color: Colors.grey.shade600,
+                  ),
+            ),
+          ],
+        ),
       ),
     );
   }
@@ -150,31 +341,77 @@ class _BetaFeedbackHistoryScreenState extends State<BetaFeedbackHistoryScreen> {
     );
   }
 
-  Widget _buildEmptyState() {
-    return Center(
+  Widget _buildEmptyState({required bool hasAnyTickets}) {
+    if (!hasAnyTickets) {
+      return Center(
+        child: Padding(
+          padding: const EdgeInsets.symmetric(horizontal: 28),
+          child: Column(
+            mainAxisAlignment: MainAxisAlignment.center,
+            children: [
+              const Icon(
+                Icons.forum_outlined,
+                size: 64,
+                color: Colors.blueGrey,
+              ),
+              const SizedBox(height: 16),
+              const Text(
+                'No feedback yet',
+                style: TextStyle(fontSize: 22, fontWeight: FontWeight.w700),
+                textAlign: TextAlign.center,
+              ),
+              const SizedBox(height: 8),
+              Text(
+                'Send your first feedback to help improve TrustBridge before beta.',
+                style: TextStyle(color: Colors.grey.shade600, fontSize: 14),
+                textAlign: TextAlign.center,
+              ),
+              const SizedBox(height: 20),
+              FilledButton(
+                key: const Key('feedback_history_empty_cta'),
+                onPressed: _openFeedbackForm,
+                child: const Text('Send your first feedback'),
+              ),
+            ],
+          ),
+        ),
+      );
+    }
+
+    return Card(
+      elevation: 0,
+      shape: RoundedRectangleBorder(
+        borderRadius: BorderRadius.circular(16),
+      ),
       child: Padding(
-        padding: const EdgeInsets.symmetric(horizontal: 28),
+        padding: const EdgeInsets.all(16),
         child: Column(
-          mainAxisAlignment: MainAxisAlignment.center,
           children: [
-            const Icon(Icons.forum_outlined, size: 64, color: Colors.blueGrey),
-            const SizedBox(height: 16),
+            const Icon(Icons.filter_alt_off, size: 40, color: Colors.blueGrey),
+            const SizedBox(height: 10),
             const Text(
-              'No feedback yet',
-              style: TextStyle(fontSize: 22, fontWeight: FontWeight.w700),
+              'No tickets match these filters',
+              style: TextStyle(fontSize: 16, fontWeight: FontWeight.w700),
               textAlign: TextAlign.center,
             ),
-            const SizedBox(height: 8),
+            const SizedBox(height: 6),
             Text(
-              'Send your first feedback to help improve TrustBridge before beta.',
-              style: TextStyle(color: Colors.grey.shade600, fontSize: 14),
+              'Try a different status, source, or search term.',
+              style: TextStyle(color: Colors.grey.shade600),
               textAlign: TextAlign.center,
             ),
-            const SizedBox(height: 20),
-            FilledButton(
-              key: const Key('feedback_history_empty_cta'),
-              onPressed: _openFeedbackForm,
-              child: const Text('Send your first feedback'),
+            const SizedBox(height: 10),
+            TextButton(
+              key: const Key('feedback_history_clear_filters'),
+              onPressed: () {
+                _searchController.clear();
+                setState(() {
+                  _sourceFilter = _TicketSourceFilter.beta;
+                  _statusFilter = null;
+                  _searchQuery = '';
+                });
+              },
+              child: const Text('Reset filters'),
             ),
           ],
         ),
@@ -225,6 +462,8 @@ class _BetaFeedbackHistoryScreenState extends State<BetaFeedbackHistoryScreen> {
               const SizedBox(height: 10),
               Row(
                 children: [
+                  _buildSourceChip(ticket),
+                  const SizedBox(width: 8),
                   Icon(Icons.schedule, size: 16, color: Colors.grey.shade500),
                   const SizedBox(width: 6),
                   Expanded(
@@ -252,6 +491,27 @@ class _BetaFeedbackHistoryScreenState extends State<BetaFeedbackHistoryScreen> {
               ),
             ],
           ),
+        ),
+      ),
+    );
+  }
+
+  Widget _buildSourceChip(SupportTicket ticket) {
+    final isBeta = ticket.isBetaFeedback;
+    final color = isBeta ? Colors.teal : Colors.indigo;
+
+    return Container(
+      padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
+      decoration: BoxDecoration(
+        color: color.withValues(alpha: 0.12),
+        borderRadius: BorderRadius.circular(20),
+      ),
+      child: Text(
+        ticket.source.label,
+        style: TextStyle(
+          fontSize: 11,
+          fontWeight: FontWeight.w700,
+          color: color,
         ),
       ),
     );
@@ -310,6 +570,8 @@ class _BetaFeedbackHistoryScreenState extends State<BetaFeedbackHistoryScreen> {
                       _buildStatusChip(ticket.status, color),
                     ],
                   ),
+                  const SizedBox(height: 10),
+                  _buildSourceChip(ticket),
                   const SizedBox(height: 14),
                   Text(
                     'Created: ${_formatTimestamp(ticket.createdAt)}',

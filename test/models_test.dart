@@ -2,6 +2,7 @@ import 'package:flutter_test/flutter_test.dart';
 import 'package:trustbridge_app/models/child_profile.dart';
 import 'package:trustbridge_app/models/policy.dart';
 import 'package:trustbridge_app/models/schedule.dart';
+import 'package:trustbridge_app/models/support_ticket.dart';
 
 void main() {
   group('ChildProfile', () {
@@ -68,6 +69,48 @@ void main() {
 
       expect(schedule.type, ScheduleType.school);
       expect(schedule.days.length, 5);
+    });
+  });
+
+  group('SupportTicket', () {
+    test('status parser handles known and unknown values', () {
+      expect(SupportTicketStatus.fromRaw('open'), SupportTicketStatus.open);
+      expect(
+        SupportTicketStatus.fromRaw('in_progress'),
+        SupportTicketStatus.inProgress,
+      );
+      expect(
+        SupportTicketStatus.fromRaw('resolved'),
+        SupportTicketStatus.resolved,
+      );
+      expect(
+        SupportTicketStatus.fromRaw('invalid'),
+        SupportTicketStatus.unknown,
+      );
+    });
+
+    test('source detects beta feedback by subject prefix', () {
+      final betaTicket = SupportTicket(
+        id: '1',
+        parentId: 'parent',
+        subject: '[Beta][High] VPN issue',
+        message: 'details',
+        status: SupportTicketStatus.open,
+        createdAt: DateTime(2026, 2, 17),
+        updatedAt: DateTime(2026, 2, 17),
+      );
+      final supportTicket = SupportTicket(
+        id: '2',
+        parentId: 'parent',
+        subject: 'Policy Question',
+        message: 'details',
+        status: SupportTicketStatus.open,
+        createdAt: DateTime(2026, 2, 17),
+        updatedAt: DateTime(2026, 2, 17),
+      );
+
+      expect(betaTicket.source, SupportTicketSource.betaFeedback);
+      expect(supportTicket.source, SupportTicketSource.helpSupport);
     });
   });
 }
