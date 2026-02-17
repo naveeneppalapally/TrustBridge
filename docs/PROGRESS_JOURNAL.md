@@ -1968,7 +1968,50 @@ Program goal: build the primary screen children see on their device, showing cur
 
 ---
 
-## Current Summary (after Day 44)
+## Day 45 - Child Request Access Screen (Week 9 Day 5)
+
+Program goal: replace the Day 44 stub with a complete request workflow so children can ask for temporary access in a clear, respectful way.
+
+### Commit entries
+
+1. **2026-02-17 17:46:37 +05:30**  
+   Commit: `pending (local changes)`  
+   Message: `Implement Day 45 child request access screen [design: child_request_mobile_light]`  
+   Changes:
+   - Created `lib/models/access_request.dart`:
+     - `AccessRequest` model with Firestore serialization/deserialization
+     - `RequestStatus` enum (`pending`, `approved`, `denied`, `expired`)
+     - `RequestDuration` enum with labels and duration minute mapping
+   - Updated `lib/services/firestore_service.dart`:
+     - added `submitAccessRequest()`
+     - added `getPendingRequestsStream()`
+     - added `getChildRequestsStream()`
+   - Replaced stub `lib/screens/child_request_screen.dart` with full screen:
+     - app/site input with child-friendly hinting
+     - animated duration chips
+     - optional reason text field
+     - live "Your request:" preview card
+     - Firestore submit flow with loading + error states
+     - positive success state after request send
+     - injectable service dependencies for testability
+   - Added/updated tests:
+     - new `test/screens/child_request_screen_test.dart` (5 widget tests)
+     - updated `test/screens/child_status_screen_test.dart` navigation assertion for real Day 45 screen
+     - updated `test/services/firestore_service_test.dart` with access-request Firestore tests
+   Validation:
+   - `C:\Users\navee\flutter\bin\flutter.bat analyze` passed.
+   - `C:\Users\navee\flutter\bin\flutter.bat test` passed (141/141).
+   - `C:\Users\navee\flutter\bin\flutter.bat build apk --debug` passed.
+   Design folder(s) used:
+   - `child_request_mobile_light`
+   Design assets checked:
+   - `screen.png`, `code.html`
+   UI fidelity note:
+   - Duration chip selection uses animated spring-like transition and request preview follows the reference’s friendly, non-punitive tone.
+
+---
+
+## Current Summary (after Day 45)
 
 - Day 1 completed: foundation, naming, structure, git + GitHub.
 - Day 2 completed: dependencies and Provider baseline.
@@ -2016,5 +2059,6 @@ Program goal: build the primary screen children see on their device, showing cur
 - Day 42 completed in code: VPN permission recovery is now a dedicated flow in the protection screen with explicit grant action and feedback.
 - Day 43 completed in code: Firestore child-policy updates now auto-sync to active VPN rules, with foreground/manual sync controls and diagnostics.
 - Day 44 completed in code: child-facing status screen now shows active mode, supportive paused-content messaging, and Ask for Access entry.
+- Day 45 completed in code: child request access flow now saves structured requests to Firestore with duration/reason preview and success feedback.
 
 Last updated: 2026-02-17

@@ -83,7 +83,7 @@ void main() {
       await tester.pump();
       await tester.pump(const Duration(milliseconds: 400));
 
-      expect(find.text('Coming in Day 45!'), findsOneWidget);
+      expect(find.text('What do you need?'), findsOneWidget);
     });
   });
 }

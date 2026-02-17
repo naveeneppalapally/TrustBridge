@@ -1,6 +1,7 @@
 import 'dart:developer' as developer;
 
 import 'package:cloud_firestore/cloud_firestore.dart';
+import 'package:trustbridge_app/models/access_request.dart';
 import 'package:trustbridge_app/models/child_profile.dart';
 
 class FirestoreService {
@@ -327,5 +328,84 @@ class FirestoreService {
     }
 
     await _firestore.collection('children').doc(childId).delete();
+  }
+
+  /// Submit a new access request from child profile.
+  Future<String> submitAccessRequest(AccessRequest request) async {
+    if (request.parentId.trim().isEmpty) {
+      throw ArgumentError.value(
+        request.parentId,
+        'request.parentId',
+        'Parent ID is required.',
+      );
+    }
+    if (request.childId.trim().isEmpty) {
+      throw ArgumentError.value(
+        request.childId,
+        'request.childId',
+        'Child ID is required.',
+      );
+    }
+    if (request.appOrSite.trim().isEmpty) {
+      throw ArgumentError.value(
+        request.appOrSite,
+        'request.appOrSite',
+        'App/site is required.',
+      );
+    }
+
+    final docRef = await _firestore
+        .collection('parents')
+        .doc(request.parentId)
+        .collection('access_requests')
+        .add(request.toFirestore());
+    return docRef.id;
+  }
+
+  /// Stream pending access requests for parent dashboard actions.
+  Stream<List<AccessRequest>> getPendingRequestsStream(String parentId) {
+    if (parentId.trim().isEmpty) {
+      throw ArgumentError.value(parentId, 'parentId', 'Parent ID is required.');
+    }
+
+    return _firestore
+        .collection('parents')
+        .doc(parentId)
+        .collection('access_requests')
+        .where('status', isEqualTo: RequestStatus.pending.name)
+        .orderBy('requestedAt', descending: true)
+        .snapshots()
+        .map(
+          (snapshot) => snapshot.docs
+              .map((doc) => AccessRequest.fromFirestore(doc))
+              .toList(),
+        );
+  }
+
+  /// Stream recent access requests for a specific child profile.
+  Stream<List<AccessRequest>> getChildRequestsStream({
+    required String parentId,
+    required String childId,
+  }) {
+    if (parentId.trim().isEmpty) {
+      throw ArgumentError.value(parentId, 'parentId', 'Parent ID is required.');
+    }
+    if (childId.trim().isEmpty) {
+      throw ArgumentError.value(childId, 'childId', 'Child ID is required.');
+    }
+
+    return _firestore
+        .collection('parents')
+        .doc(parentId)
+        .collection('access_requests')
+        .where('childId', isEqualTo: childId)
+        .orderBy('requestedAt', descending: true)
+        .limit(20)
+        .snapshots()
+        .map(
+          (snapshot) => snapshot.docs
+              .map((doc) => AccessRequest.fromFirestore(doc))
+              .toList(),
+        );
   }
 }

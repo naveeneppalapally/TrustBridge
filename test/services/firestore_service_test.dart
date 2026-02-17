@@ -1,6 +1,7 @@
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:fake_cloud_firestore/fake_cloud_firestore.dart';
 import 'package:flutter_test/flutter_test.dart';
+import 'package:trustbridge_app/models/access_request.dart';
 import 'package:trustbridge_app/models/child_profile.dart';
 import 'package:trustbridge_app/models/policy.dart';
 import 'package:trustbridge_app/services/firestore_service.dart';
@@ -345,6 +346,93 @@ void main() {
         ),
         throwsA(isA<ArgumentError>()),
       );
+    });
+  });
+
+  group('FirestoreService access request operations', () {
+    late FakeFirebaseFirestore fakeFirestore;
+    late FirestoreService firestoreService;
+
+    setUp(() {
+      fakeFirestore = FakeFirebaseFirestore();
+      firestoreService = FirestoreService(firestore: fakeFirestore);
+    });
+
+    test('submitAccessRequest stores request under parent subcollection',
+        () async {
+      final request = AccessRequest.create(
+        childId: 'child-a',
+        parentId: 'parent-a',
+        childNickname: 'Aarav',
+        appOrSite: 'instagram.com',
+        duration: RequestDuration.thirtyMin,
+        reason: 'Need for project',
+      );
+
+      final id = await firestoreService.submitAccessRequest(request);
+      final snapshot = await fakeFirestore
+          .collection('parents')
+          .doc('parent-a')
+          .collection('access_requests')
+          .doc(id)
+          .get();
+
+      expect(snapshot.exists, isTrue);
+      expect(snapshot.data()!['childId'], 'child-a');
+      expect(snapshot.data()!['status'], RequestStatus.pending.name);
+    });
+
+    test('getPendingRequestsStream returns only pending requests', () async {
+      final pending = AccessRequest.create(
+        childId: 'child-a',
+        parentId: 'parent-a',
+        childNickname: 'Aarav',
+        appOrSite: 'youtube.com',
+        duration: RequestDuration.oneHour,
+      );
+      await firestoreService.submitAccessRequest(pending);
+
+      await fakeFirestore
+          .collection('parents')
+          .doc('parent-a')
+          .collection('access_requests')
+          .add({
+        ...pending.toFirestore(),
+        'status': RequestStatus.approved.name,
+      });
+
+      final requests =
+          await firestoreService.getPendingRequestsStream('parent-a').first;
+      expect(requests.length, 1);
+      expect(requests.first.status, RequestStatus.pending);
+    });
+
+    test('getChildRequestsStream filters by child id', () async {
+      final requestA = AccessRequest.create(
+        childId: 'child-a',
+        parentId: 'parent-a',
+        childNickname: 'Aarav',
+        appOrSite: 'minecraft.net',
+        duration: RequestDuration.fifteenMin,
+      );
+      final requestB = AccessRequest.create(
+        childId: 'child-b',
+        parentId: 'parent-a',
+        childNickname: 'Maya',
+        appOrSite: 'roblox.com',
+        duration: RequestDuration.thirtyMin,
+      );
+
+      await firestoreService.submitAccessRequest(requestA);
+      await firestoreService.submitAccessRequest(requestB);
+
+      final requests = await firestoreService
+          .getChildRequestsStream(parentId: 'parent-a', childId: 'child-a')
+          .first;
+
+      expect(requests.length, 1);
+      expect(requests.first.childId, 'child-a');
+      expect(requests.first.appOrSite, 'minecraft.net');
     });
   });
 }
