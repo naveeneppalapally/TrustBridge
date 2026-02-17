@@ -8,12 +8,12 @@ import com.navee.trustbridge.vpn.BlocklistStore
 import com.navee.trustbridge.vpn.DnsFilterEngine
 import com.navee.trustbridge.vpn.DnsVpnService
 import com.navee.trustbridge.vpn.VpnPreferencesStore
-import io.flutter.embedding.android.FlutterActivity
+import io.flutter.embedding.android.FlutterFragmentActivity
 import io.flutter.embedding.engine.FlutterEngine
 import io.flutter.plugin.common.MethodCall
 import io.flutter.plugin.common.MethodChannel
 
-class MainActivity : FlutterActivity() {
+class MainActivity : FlutterFragmentActivity() {
     companion object {
         private const val VPN_PERMISSION_REQUEST_CODE = 44123
         private val CHANNEL_NAMES = listOf(

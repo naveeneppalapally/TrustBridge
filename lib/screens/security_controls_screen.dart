@@ -5,6 +5,7 @@ import 'package:trustbridge_app/screens/vpn_test_screen.dart';
 import 'package:trustbridge_app/services/auth_service.dart';
 import 'package:trustbridge_app/services/firestore_service.dart';
 import 'package:trustbridge_app/services/vpn_service.dart';
+import 'package:trustbridge_app/utils/app_lock_guard.dart';
 
 class SecurityControlsScreen extends StatefulWidget {
   const SecurityControlsScreen({
@@ -341,15 +342,20 @@ class _SecurityControlsScreenState extends State<SecurityControlsScreen> {
   }
 
   Future<void> _openVpnProtection(BuildContext context) async {
-    await Navigator.of(context).push(
-      MaterialPageRoute(
-        builder: (_) => VpnProtectionScreen(
-          authService: widget.authService,
-          firestoreService: widget.firestoreService,
-          vpnService: widget.vpnService,
-          parentIdOverride: widget.parentIdOverride,
-        ),
-      ),
+    await guardedNavigate(
+      context,
+      () async {
+        await Navigator.of(context).push(
+          MaterialPageRoute(
+            builder: (_) => VpnProtectionScreen(
+              authService: widget.authService,
+              firestoreService: widget.firestoreService,
+              vpnService: widget.vpnService,
+              parentIdOverride: widget.parentIdOverride,
+            ),
+          ),
+        );
+      },
     );
   }
 

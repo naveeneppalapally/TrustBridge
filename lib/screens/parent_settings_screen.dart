@@ -1,13 +1,16 @@
 import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 import 'package:firebase_messaging/firebase_messaging.dart';
 import 'package:trustbridge_app/screens/help_support_screen.dart';
 import 'package:trustbridge_app/screens/onboarding_screen.dart';
 import 'package:trustbridge_app/screens/privacy_center_screen.dart';
 import 'package:trustbridge_app/screens/security_controls_screen.dart';
+import 'package:trustbridge_app/services/app_lock_service.dart';
 import 'package:trustbridge_app/services/auth_service.dart';
 import 'package:trustbridge_app/services/firestore_service.dart';
 import 'package:trustbridge_app/services/notification_service.dart';
+import 'package:trustbridge_app/widgets/pin_entry_dialog.dart';
 
 class ParentSettingsScreen extends StatefulWidget {
   const ParentSettingsScreen({
@@ -41,6 +44,7 @@ class _ParentSettingsScreenState extends State<ParentSettingsScreen> {
   AuthService? _authService;
   FirestoreService? _firestoreService;
   NotificationService? _notificationService;
+  AppLockService? _appLockService;
 
   String _language = 'en';
   String _timezone = 'Asia/Kolkata';
@@ -64,6 +68,11 @@ class _ParentSettingsScreenState extends State<ParentSettingsScreen> {
   NotificationService get _resolvedNotificationService {
     _notificationService ??= NotificationService();
     return _notificationService!;
+  }
+
+  AppLockService get _resolvedAppLockService {
+    _appLockService ??= AppLockService();
+    return _appLockService!;
   }
 
   String? get _parentId {
@@ -192,6 +201,8 @@ class _ParentSettingsScreenState extends State<ParentSettingsScreen> {
               const SizedBox(height: 16),
               _buildSectionHeader('Security & Privacy'),
               _buildSecurityCard(context),
+              const SizedBox(height: 16),
+              _buildAppLockCard(context),
               const SizedBox(height: 16),
               _buildSectionHeader('Analytics'),
               _buildAnalyticsCard(context),
@@ -565,6 +576,79 @@ class _ParentSettingsScreenState extends State<ParentSettingsScreen> {
     );
   }
 
+  Widget _buildAppLockCard(BuildContext context) {
+    return FutureBuilder<bool>(
+      future: _resolvedAppLockService.isEnabled(),
+      builder: (BuildContext context, AsyncSnapshot<bool> snapshot) {
+        final enabled = snapshot.data ?? false;
+
+        return Card(
+          elevation: 0,
+          shape: RoundedRectangleBorder(
+            borderRadius: BorderRadius.circular(16),
+          ),
+          child: Padding(
+            padding: const EdgeInsets.all(16),
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: <Widget>[
+                Text(
+                  'App Lock',
+                  style: Theme.of(context).textTheme.titleMedium?.copyWith(
+                        fontWeight: FontWeight.w700,
+                      ),
+                ),
+                const SizedBox(height: 4),
+                Text(
+                  'Require PIN before opening parent controls.',
+                  style: Theme.of(context).textTheme.bodySmall?.copyWith(
+                        color: Colors.grey.shade600,
+                      ),
+                ),
+                const SizedBox(height: 12),
+                SwitchListTile(
+                  key: const Key('settings_app_lock_switch'),
+                  value: enabled,
+                  contentPadding: EdgeInsets.zero,
+                  title:
+                      Text(enabled ? 'PIN lock enabled' : 'PIN lock disabled'),
+                  subtitle:
+                      const Text('Supports fingerprint unlock when available'),
+                  onChanged: (bool value) async {
+                    if (value) {
+                      await _enablePinLock();
+                    } else {
+                      await _disablePinLock();
+                    }
+                    if (mounted) {
+                      setState(() {});
+                    }
+                  },
+                ),
+                if (enabled) ...<Widget>[
+                  const Divider(height: 1),
+                  ListTile(
+                    key: const Key('settings_change_pin_tile'),
+                    contentPadding: EdgeInsets.zero,
+                    leading: const Icon(Icons.pin_outlined, size: 20),
+                    title: const Text('Change PIN'),
+                    trailing: const Icon(Icons.chevron_right, size: 18),
+                    onTap: () async {
+                      await _changePinFlow();
+                      if (mounted) {
+                        setState(() {});
+                      }
+                    },
+                  ),
+                ],
+              ],
+            ),
+          ),
+        );
+      },
+    );
+  }
+
   Widget _buildSupportCard(BuildContext context) {
     return Card(
       elevation: 0,
@@ -750,6 +834,96 @@ class _ParentSettingsScreenState extends State<ParentSettingsScreen> {
     );
   }
 
+  Future<void> _enablePinLock() async {
+    try {
+      final hasPin = await _resolvedAppLockService.hasPin();
+      if (hasPin) {
+        await _resolvedAppLockService.enableLock();
+      } else {
+        final pin = await _showSetPinDialog();
+        if (pin == null) {
+          return;
+        }
+        await _resolvedAppLockService.setPin(pin);
+      }
+
+      if (!mounted) {
+        return;
+      }
+
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('PIN lock enabled')),
+      );
+    } catch (error) {
+      if (!mounted) {
+        return;
+      }
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text('Unable to enable app lock: $error')),
+      );
+    }
+  }
+
+  Future<void> _disablePinLock() async {
+    final unlocked = await showPinEntryDialog(context);
+    if (!unlocked) {
+      return;
+    }
+
+    try {
+      await _resolvedAppLockService.disableLock();
+      if (!mounted) {
+        return;
+      }
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('PIN lock disabled')),
+      );
+    } catch (error) {
+      if (!mounted) {
+        return;
+      }
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text('Unable to disable app lock: $error')),
+      );
+    }
+  }
+
+  Future<void> _changePinFlow() async {
+    final unlocked = await showPinEntryDialog(context);
+    if (!unlocked) {
+      return;
+    }
+
+    final newPin = await _showSetPinDialog();
+    if (newPin == null) {
+      return;
+    }
+
+    try {
+      await _resolvedAppLockService.setPin(newPin);
+      if (!mounted) {
+        return;
+      }
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('PIN changed')),
+      );
+    } catch (error) {
+      if (!mounted) {
+        return;
+      }
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text('Unable to change PIN: $error')),
+      );
+    }
+  }
+
+  Future<String?> _showSetPinDialog() {
+    return showDialog<String>(
+      context: context,
+      builder: (_) => const _SetPinDialog(),
+    );
+  }
+
   void _hydrateFromProfile(Map<String, dynamic>? profile) {
     if (_hasChanges) {
       return;
@@ -817,6 +991,107 @@ class _ParentSettingsScreenState extends State<ParentSettingsScreen> {
   void _showInfo(String message) {
     ScaffoldMessenger.of(context).showSnackBar(
       SnackBar(content: Text(message)),
+    );
+  }
+}
+
+class _SetPinDialog extends StatefulWidget {
+  const _SetPinDialog();
+
+  @override
+  State<_SetPinDialog> createState() => _SetPinDialogState();
+}
+
+class _SetPinDialogState extends State<_SetPinDialog> {
+  final TextEditingController _pinController = TextEditingController();
+  final TextEditingController _confirmPinController = TextEditingController();
+
+  String? _errorText;
+
+  @override
+  void dispose() {
+    _pinController.dispose();
+    _confirmPinController.dispose();
+    super.dispose();
+  }
+
+  void _submit() {
+    final pin = _pinController.text.trim();
+    final confirmPin = _confirmPinController.text.trim();
+
+    if (pin.length != 4 || int.tryParse(pin) == null) {
+      setState(() {
+        _errorText = 'PIN must be exactly 4 digits.';
+      });
+      return;
+    }
+
+    if (pin != confirmPin) {
+      setState(() {
+        _errorText = 'PINs do not match.';
+      });
+      return;
+    }
+
+    Navigator.of(context).pop(pin);
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return AlertDialog(
+      shape: RoundedRectangleBorder(
+        borderRadius: BorderRadius.circular(20),
+      ),
+      title: const Text('Set Parent PIN'),
+      content: Column(
+        mainAxisSize: MainAxisSize.min,
+        children: <Widget>[
+          TextField(
+            controller: _pinController,
+            keyboardType: TextInputType.number,
+            maxLength: 4,
+            obscureText: true,
+            inputFormatters: <TextInputFormatter>[
+              FilteringTextInputFormatter.digitsOnly,
+            ],
+            decoration: const InputDecoration(
+              labelText: 'New 4-digit PIN',
+              counterText: '',
+            ),
+          ),
+          const SizedBox(height: 12),
+          TextField(
+            controller: _confirmPinController,
+            keyboardType: TextInputType.number,
+            maxLength: 4,
+            obscureText: true,
+            inputFormatters: <TextInputFormatter>[
+              FilteringTextInputFormatter.digitsOnly,
+            ],
+            decoration: const InputDecoration(
+              labelText: 'Confirm PIN',
+              counterText: '',
+            ),
+          ),
+          if (_errorText != null) ...<Widget>[
+            const SizedBox(height: 8),
+            Text(
+              _errorText!,
+              style: const TextStyle(color: Colors.red, fontSize: 12),
+            ),
+          ],
+        ],
+      ),
+      actions: <Widget>[
+        TextButton(
+          onPressed: () => Navigator.of(context).pop(),
+          child: const Text('Cancel'),
+        ),
+        FilledButton(
+          onPressed: _submit,
+          child: const Text('Set PIN'),
+        ),
+      ],
     );
   }
 }

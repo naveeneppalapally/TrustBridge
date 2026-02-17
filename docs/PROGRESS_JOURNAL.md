@@ -31,6 +31,58 @@ UI commit message convention:
 
 ---
 
+## Day 57 - App Lock / PIN Protection (Week 12 Day 2)
+
+Program goal: prevent children from opening parent-sensitive controls by requiring a parent PIN with optional biometric unlock.
+
+### Commit entries
+
+1. **2026-02-17 22:04:45 +05:30**  
+   Commit: `(this commit - see latest git log)`  
+   Message: `Implement Day 57 app lock PIN protection [design: security_settings_light]`  
+   Changes:
+   - Added dependencies in `pubspec.yaml`:
+     - `local_auth`
+     - `flutter_secure_storage`
+   - Updated Android configuration:
+     - `android/app/src/main/AndroidManifest.xml` biometric permissions
+     - `android/app/build.gradle.kts` effective `minSdk` bumped to at least 23
+     - `android/app/src/main/kotlin/com/navee/trustbridge/MainActivity.kt` migrated to `FlutterFragmentActivity` for biometric plugin support
+   - Created `lib/services/app_lock_service.dart`:
+     - singleton lock service with secure PIN storage
+     - enable/disable/clear/verify flows
+     - 60-second grace period tracking
+     - biometric capability check + authentication flow
+   - Created `lib/widgets/pin_entry_dialog.dart`:
+     - custom PIN dialog with 4-dot indicator and numpad
+     - biometric unlock action when available
+     - wrong-PIN reset and error message
+   - Created `lib/utils/app_lock_guard.dart`:
+     - `guardedNavigate(...)` wrapper for protected routing
+   - Updated guarded navigation entry points:
+     - `lib/screens/dashboard_screen.dart` parent settings navigation
+     - `lib/screens/security_controls_screen.dart` VPN protection navigation
+     - `lib/screens/child_detail_screen.dart` policy overview navigation
+   - Updated `lib/screens/parent_settings_screen.dart`:
+     - added App Lock management card
+     - PIN enable/disable/change flows
+     - inline Set PIN dialog
+   - Added tests:
+     - `test/services/app_lock_service_test.dart`
+   Validation:
+   - `flutter pub get` passed.
+   - `flutter analyze` passed.
+   - `flutter test` passed (187/187).
+   - `flutter build apk --debug` passed.
+   Design folder(s) used:
+   - `security_settings_light`
+   Design assets checked:
+   - `screen.png`, `code.html`
+   UI fidelity note:
+   - Added a compact security management card to existing settings layout while preserving TrustBridge’s current visual language.
+
+---
+
 ## Day 1 - Foundation
 
 Program goal: project setup, git setup, branding baseline, folder structure.

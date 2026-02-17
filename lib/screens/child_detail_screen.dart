@@ -8,6 +8,7 @@ import 'package:trustbridge_app/screens/edit_child_screen.dart';
 import 'package:trustbridge_app/screens/policy_overview_screen.dart';
 import 'package:trustbridge_app/services/auth_service.dart';
 import 'package:trustbridge_app/services/firestore_service.dart';
+import 'package:trustbridge_app/utils/app_lock_guard.dart';
 
 class ChildDetailScreen extends StatelessWidget {
   const ChildDetailScreen({
@@ -708,15 +709,20 @@ class ChildDetailScreen extends StatelessWidget {
   }
 
   Future<void> _openPolicyOverview(BuildContext context) async {
-    await Navigator.of(context).push(
-      MaterialPageRoute(
-        builder: (_) => PolicyOverviewScreen(
-          child: child,
-          authService: authService,
-          firestoreService: firestoreService,
-          parentIdOverride: parentIdOverride,
-        ),
-      ),
+    await guardedNavigate(
+      context,
+      () async {
+        await Navigator.of(context).push(
+          MaterialPageRoute(
+            builder: (_) => PolicyOverviewScreen(
+              child: child,
+              authService: authService,
+              firestoreService: firestoreService,
+              parentIdOverride: parentIdOverride,
+            ),
+          ),
+        );
+      },
     );
   }
 

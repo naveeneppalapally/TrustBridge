@@ -8,6 +8,7 @@ import 'package:trustbridge_app/screens/parent_settings_screen.dart';
 import 'package:trustbridge_app/services/auth_service.dart';
 import 'package:trustbridge_app/services/firestore_service.dart';
 import 'package:trustbridge_app/services/policy_vpn_sync_service.dart';
+import 'package:trustbridge_app/utils/app_lock_guard.dart';
 
 class DashboardScreen extends StatefulWidget {
   const DashboardScreen({
@@ -73,14 +74,19 @@ class _DashboardScreenState extends State<DashboardScreen>
   }
 
   Future<void> _openSettings() async {
-    await Navigator.of(context).push(
-      MaterialPageRoute(
-        builder: (_) => ParentSettingsScreen(
-          authService: widget.authService,
-          firestoreService: widget.firestoreService,
-          parentIdOverride: widget.parentIdOverride,
-        ),
-      ),
+    await guardedNavigate(
+      context,
+      () async {
+        await Navigator.of(context).push(
+          MaterialPageRoute(
+            builder: (_) => ParentSettingsScreen(
+              authService: widget.authService,
+              firestoreService: widget.firestoreService,
+              parentIdOverride: widget.parentIdOverride,
+            ),
+          ),
+        );
+      },
     );
   }
 
