@@ -1846,7 +1846,39 @@ Program goal: speed up permission/recovery troubleshooting by exposing direct sy
 
 ---
 
-## Current Summary (after Day 41)
+## Day 42 - Dedicated VPN Permission Recovery Flow (Week 9 Day 2)
+
+Program goal: make VPN permission recovery explicit and fast by separating permission grant from VPN start/stop actions.
+
+### Commit entries
+
+1. **2026-02-17 16:09:57 +05:30**  
+   Commit: `pending (local changes)`  
+   Message: `Implement Day 42 dedicated VPN permission recovery flow`  
+   Changes:
+   - Updated `lib/screens/vpn_protection_screen.dart`:
+     - added `Permission Recovery` card
+     - added dedicated `Request Permission` action (without forcing immediate VPN start)
+     - added secondary `VPN Settings` shortcut in the same card
+     - integrated loading states and success/error feedback
+   - Added/updated tests:
+     - updated `test/screens/vpn_protection_screen_test.dart`
+       - added permission recovery interaction test
+     - existing VPN tests remain green with new UI path
+   Validation:
+   - `C:\Users\navee\flutter\bin\flutter.bat analyze` passed.
+   - `C:\Users\navee\flutter\bin\flutter.bat test` passed (121/121).
+   - `C:\Users\navee\flutter\bin\flutter.bat build apk --debug` passed.
+   Design folder(s) used:
+   - `security_settings_light`
+   Design assets checked:
+   - `screen.png`, `code.html`
+   UI fidelity note:
+   - Recovery card follows the same diagnostic card style and spacing system to keep the screen cohesive.
+
+---
+
+## Current Summary (after Day 42)
 
 - Day 1 completed: foundation, naming, structure, git + GitHub.
 - Day 2 completed: dependencies and Provider baseline.
@@ -1891,5 +1923,6 @@ Program goal: speed up permission/recovery troubleshooting by exposing direct sy
 - Day 39 completed in code: one-tap VPN restart is now available through Flutter-native bridge with policy-aware restart behavior.
 - Day 40 completed in code: VPN boot recovery now restores protection after reboot using persisted native state and rules.
 - Day 41 completed in code: diagnostics now include direct shortcuts to VPN and Private DNS system settings for faster recovery.
+- Day 42 completed in code: VPN permission recovery is now a dedicated flow in the protection screen with explicit grant action and feedback.
 
 Last updated: 2026-02-17

@@ -40,6 +40,7 @@ class _VpnProtectionScreenState extends State<VpnProtectionScreen> {
   bool _isCheckingDns = false;
   bool _isSyncingRules = false;
   bool _isRestartingVpn = false;
+  bool _isRequestingPermission = false;
   String? _dnsSelfCheckMessage;
   Timer? _statusAutoRefreshTimer;
   DateTime? _lastStatusRefreshAt;
@@ -112,6 +113,8 @@ class _VpnProtectionScreenState extends State<VpnProtectionScreen> {
           ),
           const SizedBox(height: 16),
           _buildStatusCard(context),
+          const SizedBox(height: 16),
+          _buildPermissionRecoveryCard(context),
           const SizedBox(height: 16),
           _buildActionCard(context),
           const SizedBox(height: 16),
@@ -327,6 +330,92 @@ class _VpnProtectionScreenState extends State<VpnProtectionScreen> {
                       color: Colors.grey.shade600,
                     ),
               ),
+          ],
+        ),
+      ),
+    );
+  }
+
+  Widget _buildPermissionRecoveryCard(BuildContext context) {
+    if (!_status.supported) {
+      return const SizedBox.shrink();
+    }
+
+    final permissionColor = _status.permissionGranted
+        ? Colors.green.shade700
+        : Colors.orange.shade700;
+    final permissionLabel = _status.permissionGranted
+        ? 'VPN permission granted'
+        : 'VPN permission required';
+
+    return Card(
+      elevation: 0,
+      shape: RoundedRectangleBorder(
+        borderRadius: BorderRadius.circular(16),
+      ),
+      child: Padding(
+        padding: const EdgeInsets.all(16),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Row(
+              children: [
+                Icon(
+                  _status.permissionGranted
+                      ? Icons.verified_user
+                      : Icons.warning_amber_rounded,
+                  color: permissionColor,
+                ),
+                const SizedBox(width: 8),
+                Text(
+                  'Permission Recovery',
+                  style: Theme.of(context).textTheme.titleMedium?.copyWith(
+                        fontWeight: FontWeight.w700,
+                      ),
+                ),
+              ],
+            ),
+            const SizedBox(height: 8),
+            Text(
+              permissionLabel,
+              key: const Key('vpn_permission_recovery_label'),
+              style: Theme.of(context).textTheme.bodyMedium?.copyWith(
+                    color: permissionColor,
+                    fontWeight: FontWeight.w600,
+                  ),
+            ),
+            const SizedBox(height: 10),
+            Wrap(
+              spacing: 8,
+              runSpacing: 8,
+              children: [
+                FilledButton.icon(
+                  key: const Key('vpn_request_permission_button'),
+                  onPressed: _isRequestingPermission
+                      ? null
+                      : _requestVpnPermissionOnly,
+                  icon: _isRequestingPermission
+                      ? const SizedBox(
+                          width: 14,
+                          height: 14,
+                          child: CircularProgressIndicator(strokeWidth: 2),
+                        )
+                      : const Icon(Icons.vpn_key_outlined),
+                  label: Text(
+                    _isRequestingPermission
+                        ? 'Requesting...'
+                        : 'Request Permission',
+                  ),
+                ),
+                OutlinedButton.icon(
+                  key: const Key('vpn_open_vpn_settings_secondary_button'),
+                  onPressed:
+                      _isOpeningVpnSettings ? null : _openVpnSettingsShortcut,
+                  icon: const Icon(Icons.settings_ethernet),
+                  label: const Text('VPN Settings'),
+                ),
+              ],
+            ),
           ],
         ),
       ),
@@ -1220,6 +1309,30 @@ class _VpnProtectionScreenState extends State<VpnProtectionScreen> {
         ),
       ),
     );
+  }
+
+  Future<void> _requestVpnPermissionOnly() async {
+    if (!_status.supported) {
+      return;
+    }
+
+    setState(() => _isRequestingPermission = true);
+    try {
+      final granted = await _resolvedVpnService.requestPermission();
+      if (!mounted) {
+        return;
+      }
+      if (granted) {
+        _showMessage('VPN permission granted.');
+      } else {
+        _showMessage('VPN permission not granted.', isError: true);
+      }
+    } finally {
+      await _refreshStatus();
+      if (mounted) {
+        setState(() => _isRequestingPermission = false);
+      }
+    }
   }
 
   Future<void> _openBatteryOptimizationSettings() async {

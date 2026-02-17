@@ -526,5 +526,36 @@ void main() {
       expect(fakeVpn.openVpnSettingsCalls, 1);
       expect(fakeVpn.openPrivateDnsSettingsCalls, 1);
     });
+
+    testWidgets('permission recovery card requests VPN permission',
+        (tester) async {
+      const parentId = 'parent-vpn-k';
+      await seedParent(parentId);
+
+      final fakeVpn = _FakeVpnService(
+        supported: true,
+        permissionGranted: false,
+        running: false,
+      );
+
+      await tester.pumpWidget(
+        MaterialApp(
+          home: VpnProtectionScreen(
+            vpnService: fakeVpn,
+            firestoreService: firestoreService,
+            parentIdOverride: parentId,
+          ),
+        ),
+      );
+      await tester.pumpAndSettle();
+
+      expect(find.byKey(const Key('vpn_permission_recovery_label')),
+          findsOneWidget);
+      await tester.tap(find.byKey(const Key('vpn_request_permission_button')));
+      await tester.pumpAndSettle();
+
+      expect(fakeVpn.permissionGranted, isTrue);
+      expect(find.text('VPN permission granted'), findsOneWidget);
+    });
   });
 }
