@@ -2,6 +2,7 @@ import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:firebase_messaging/firebase_messaging.dart';
+import 'package:trustbridge_app/screens/beta_feedback_screen.dart';
 import 'package:trustbridge_app/screens/help_support_screen.dart';
 import 'package:trustbridge_app/screens/onboarding_screen.dart';
 import 'package:trustbridge_app/screens/privacy_center_screen.dart';
@@ -666,6 +667,15 @@ class _ParentSettingsScreenState extends State<ParentSettingsScreen> {
           ),
           const Divider(height: 1),
           ListTile(
+            key: const Key('settings_beta_feedback_tile'),
+            leading: Icon(Icons.science_outlined, color: Colors.teal.shade700),
+            title: const Text('Beta Feedback'),
+            subtitle: const Text('Report alpha issues and suggestions'),
+            trailing: const Icon(Icons.chevron_right),
+            onTap: () async => _openBetaFeedback(context),
+          ),
+          const Divider(height: 1),
+          ListTile(
             leading: Icon(Icons.support_agent, color: Colors.indigo.shade700),
             title: const Text('Help & Support'),
             subtitle: const Text('FAQs, troubleshooting, and contact support'),
@@ -809,6 +819,18 @@ class _ParentSettingsScreenState extends State<ParentSettingsScreen> {
     await Navigator.of(context).push(
       MaterialPageRoute(
         builder: (_) => HelpSupportScreen(
+          authService: widget.authService,
+          firestoreService: widget.firestoreService,
+          parentIdOverride: widget.parentIdOverride,
+        ),
+      ),
+    );
+  }
+
+  Future<void> _openBetaFeedback(BuildContext context) async {
+    await Navigator.of(context).push(
+      MaterialPageRoute(
+        builder: (_) => BetaFeedbackScreen(
           authService: widget.authService,
           firestoreService: widget.firestoreService,
           parentIdOverride: widget.parentIdOverride,

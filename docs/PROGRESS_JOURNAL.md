@@ -31,6 +31,42 @@ UI commit message convention:
 
 ---
 
+## Day 61 - Beta Feedback Intake (Week 13 Day 1)
+
+Program goal: open a structured feedback channel for alpha/beta testers directly
+inside the app so issues can be triaged quickly after release.
+
+### Commit entries
+
+1. **2026-02-17**  
+   Commit: `(this commit - see latest git log)`  
+   Message: `Implement Day 61 beta feedback intake workflow`  
+   Changes:
+   - Updated `lib/services/firestore_service.dart`:
+     - added `submitBetaFeedback()` with category/severity/title/details validation
+     - routes feedback into secured `supportTickets` using `[Beta]` metadata
+   - Created `lib/screens/beta_feedback_screen.dart`:
+     - category selector
+     - severity chips
+     - optional child selector
+     - title + details fields
+     - submit flow with validation and success/error states
+   - Updated `lib/screens/parent_settings_screen.dart`:
+     - added `Beta Feedback` entry in Support section
+   - Updated `lib/main.dart`:
+     - added `/beta-feedback` route
+   - Added tests:
+     - `test/screens/beta_feedback_screen_test.dart`
+     - expanded `test/screens/parent_settings_screen_test.dart`
+     - expanded `test/services/firestore_service_test.dart`
+   - Added docs:
+     - `docs/BETA_FEEDBACK_WORKFLOW.md`
+   Validation:
+   - `flutter analyze` passed.
+   - `flutter test` passed (199/199).
+
+---
+
 ## Day 60 - Alpha Release Build (Week 12 Day 5)
 
 Program goal: ship TrustBridge Alpha 1 to first real users through a signed release build and Firebase App Distribution.

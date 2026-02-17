@@ -289,6 +289,101 @@ class FirestoreService {
     return ticketRef.id;
   }
 
+  Future<String> submitBetaFeedback({
+    required String parentId,
+    required String category,
+    required String severity,
+    required String title,
+    required String details,
+    String? childId,
+  }) async {
+    const allowedCategories = <String>{
+      'Bug Report',
+      'Blocking Accuracy',
+      'Performance',
+      'UX / Design',
+      'Feature Request',
+      'Other',
+    };
+    const allowedSeverities = <String>{
+      'Low',
+      'Medium',
+      'High',
+      'Critical',
+    };
+
+    if (parentId.trim().isEmpty) {
+      throw ArgumentError.value(parentId, 'parentId', 'Parent ID is required.');
+    }
+
+    final normalizedCategory = category.trim();
+    if (!allowedCategories.contains(normalizedCategory)) {
+      throw ArgumentError.value(
+        category,
+        'category',
+        'Unsupported beta feedback category.',
+      );
+    }
+
+    final normalizedSeverity = severity.trim();
+    if (!allowedSeverities.contains(normalizedSeverity)) {
+      throw ArgumentError.value(
+        severity,
+        'severity',
+        'Unsupported beta feedback severity.',
+      );
+    }
+
+    final normalizedTitle = title.trim();
+    if (normalizedTitle.length < 4 || normalizedTitle.length > 80) {
+      throw ArgumentError.value(
+        title,
+        'title',
+        'Title must be between 4 and 80 characters.',
+      );
+    }
+
+    final normalizedDetails = details.trim();
+    if (normalizedDetails.length < 20 || normalizedDetails.length > 1500) {
+      throw ArgumentError.value(
+        details,
+        'details',
+        'Details must be between 20 and 1500 characters.',
+      );
+    }
+
+    final normalizedChildId = childId?.trim();
+
+    final rawSubject =
+        '[Beta][$normalizedSeverity] $normalizedCategory: $normalizedTitle';
+    final subject =
+        rawSubject.length > 120 ? rawSubject.substring(0, 120) : rawSubject;
+
+    final messageBuffer = StringBuffer()
+      ..writeln('Category: $normalizedCategory')
+      ..writeln('Severity: $normalizedSeverity');
+    if (normalizedChildId != null && normalizedChildId.isNotEmpty) {
+      messageBuffer.writeln('Child ID: $normalizedChildId');
+    }
+    messageBuffer
+      ..writeln()
+      ..write(normalizedDetails)
+      ..writeln()
+      ..writeln()
+      ..write('Submitted from Alpha feedback form.');
+
+    final message = messageBuffer.toString();
+
+    return createSupportTicket(
+      parentId: parentId,
+      subject: subject,
+      message: message.length > 2000 ? message.substring(0, 2000) : message,
+      childId: normalizedChildId == null || normalizedChildId.isEmpty
+          ? null
+          : normalizedChildId,
+    );
+  }
+
   Future<ChildProfile> addChild({
     required String parentId,
     required String nickname,

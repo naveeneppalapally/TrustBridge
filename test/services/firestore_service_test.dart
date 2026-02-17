@@ -348,6 +348,47 @@ void main() {
       );
     });
 
+    test('submitBetaFeedback writes structured ticket to supportTickets',
+        () async {
+      final ticketId = await firestoreService.submitBetaFeedback(
+        parentId: 'parent-beta-a',
+        category: 'Bug Report',
+        severity: 'High',
+        title: 'Policy screen save spinner stuck',
+        details:
+            'Saving policy from child detail gets stuck on spinner after airplane mode '
+            'toggle. Happened twice on Pixel 7 with Android 14.',
+        childId: 'child-beta-1',
+      );
+
+      final snapshot =
+          await fakeFirestore.collection('supportTickets').doc(ticketId).get();
+      expect(snapshot.exists, isTrue);
+
+      final data = snapshot.data()!;
+      expect(data['parentId'], 'parent-beta-a');
+      expect((data['subject'] as String).startsWith('[Beta][High] Bug Report'),
+          isTrue);
+      expect(data['message'], contains('Category: Bug Report'));
+      expect(data['message'], contains('Severity: High'));
+      expect(data['message'], contains('Child ID: child-beta-1'));
+      expect(data['status'], 'open');
+    });
+
+    test('submitBetaFeedback rejects unsupported category', () {
+      expect(
+        () => firestoreService.submitBetaFeedback(
+          parentId: 'parent-beta-b',
+          category: 'Unknown Category',
+          severity: 'Medium',
+          title: 'Sample title',
+          details:
+              'This is long enough details text to pass all minimum validation checks.',
+        ),
+        throwsA(isA<ArgumentError>()),
+      );
+    });
+
     test('saveFcmToken and removeFcmToken update parent document', () async {
       await firestoreService.saveFcmToken('parent-token-a', 'token-abc');
 
