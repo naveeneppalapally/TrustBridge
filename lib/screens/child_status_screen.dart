@@ -1,8 +1,11 @@
 import 'package:flutter/material.dart';
 
+import '../models/access_request.dart';
 import '../models/active_mode.dart';
 import '../models/child_profile.dart';
 import '../models/schedule.dart';
+import '../services/auth_service.dart';
+import '../services/firestore_service.dart';
 import 'child_requests_screen.dart';
 import 'child_request_screen.dart';
 
@@ -10,9 +13,15 @@ class ChildStatusScreen extends StatefulWidget {
   const ChildStatusScreen({
     super.key,
     required this.child,
+    this.authService,
+    this.firestoreService,
+    this.parentIdOverride,
   });
 
   final ChildProfile child;
+  final AuthService? authService;
+  final FirestoreService? firestoreService;
+  final String? parentIdOverride;
 
   @override
   State<ChildStatusScreen> createState() => _ChildStatusScreenState();
@@ -20,8 +29,20 @@ class ChildStatusScreen extends StatefulWidget {
 
 class _ChildStatusScreenState extends State<ChildStatusScreen>
     with SingleTickerProviderStateMixin {
+  AuthService? _authService;
+  FirestoreService? _firestoreService;
   late final AnimationController _pulseController;
   late final Animation<double> _pulseAnimation;
+
+  AuthService get _resolvedAuthService {
+    _authService ??= widget.authService ?? AuthService();
+    return _authService!;
+  }
+
+  FirestoreService get _resolvedFirestoreService {
+    _firestoreService ??= widget.firestoreService ?? FirestoreService();
+    return _firestoreService!;
+  }
 
   ActiveMode get _activeMode {
     final now = TimeOfDay.now();
@@ -104,6 +125,7 @@ class _ChildStatusScreenState extends State<ChildStatusScreen>
     final pausedCategories = _activeMode == ActiveMode.freeTime
         ? <String>[]
         : widget.child.policy.blockedCategories;
+    final parentId = _resolveParentId();
 
     return Scaffold(
       body: SafeArea(
@@ -115,6 +137,10 @@ class _ChildStatusScreenState extends State<ChildStatusScreen>
             const SizedBox(height: 16),
             _buildHeroCard(context, mode, modeColor),
             const SizedBox(height: 16),
+            if (parentId != null && parentId.trim().isNotEmpty) ...[
+              _buildActiveAccessSection(context, parentId),
+              const SizedBox(height: 16),
+            ],
             if (pausedCategories.isNotEmpty) ...[
               _buildPausedCard(context, pausedCategories, mode),
               const SizedBox(height: 16),
@@ -129,6 +155,19 @@ class _ChildStatusScreenState extends State<ChildStatusScreen>
         ),
       ),
     );
+  }
+
+  String? _resolveParentId() {
+    final override = widget.parentIdOverride?.trim();
+    if (override != null && override.isNotEmpty) {
+      return override;
+    }
+
+    try {
+      return _resolvedAuthService.currentUser?.uid;
+    } catch (_) {
+      return null;
+    }
   }
 
   Widget _buildGreeting(BuildContext context) {
@@ -253,6 +292,113 @@ class _ChildStatusScreenState extends State<ChildStatusScreen>
     );
   }
 
+  Widget _buildActiveAccessSection(BuildContext context, String parentId) {
+    return StreamBuilder<List<AccessRequest>>(
+      stream: _resolvedFirestoreService.getChildRequestsStream(
+        parentId: parentId,
+        childId: widget.child.id,
+      ),
+      builder: (context, snapshot) {
+        if (!snapshot.hasData) {
+          return const SizedBox.shrink();
+        }
+
+        final activeRequests = _activeApprovedRequests(snapshot.data!);
+        if (activeRequests.isEmpty) {
+          return const SizedBox.shrink();
+        }
+
+        return Card(
+          key: const Key('child_status_active_access_card'),
+          child: Padding(
+            padding: const EdgeInsets.all(16),
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Text(
+                  'Access available now',
+                  style: Theme.of(context).textTheme.titleMedium?.copyWith(
+                        fontWeight: FontWeight.bold,
+                        color: Colors.green[700],
+                      ),
+                ),
+                const SizedBox(height: 6),
+                Text(
+                  'Approved by your parent. Make good use of it.',
+                  style: Theme.of(context).textTheme.bodySmall?.copyWith(
+                        color: Colors.grey[600],
+                      ),
+                ),
+                const SizedBox(height: 12),
+                ...activeRequests.take(3).map(
+                  (request) => Padding(
+                    padding: const EdgeInsets.only(bottom: 10),
+                    child: _buildActiveAccessRow(context, request),
+                  ),
+                ),
+                if (activeRequests.length > 3)
+                  Text(
+                    '+${activeRequests.length - 3} more active approvals',
+                    style: Theme.of(context).textTheme.bodySmall?.copyWith(
+                          color: Colors.grey[600],
+                        ),
+                  ),
+              ],
+            ),
+          ),
+        );
+      },
+    );
+  }
+
+  Widget _buildActiveAccessRow(BuildContext context, AccessRequest request) {
+    final parentReply = request.parentReply?.trim();
+    return Container(
+      padding: const EdgeInsets.all(10),
+      decoration: BoxDecoration(
+        color: Colors.green.withValues(alpha: 0.08),
+        borderRadius: BorderRadius.circular(10),
+        border: Border.all(color: Colors.green.withValues(alpha: 0.24)),
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Row(
+            children: [
+              const Icon(Icons.check_circle, size: 16, color: Colors.green),
+              const SizedBox(width: 8),
+              Expanded(
+                child: Text(
+                  request.appOrSite,
+                  style: Theme.of(context).textTheme.bodyMedium?.copyWith(
+                        fontWeight: FontWeight.w700,
+                      ),
+                ),
+              ),
+            ],
+          ),
+          const SizedBox(height: 4),
+          Text(
+            _accessWindowLabel(request.expiresAt),
+            style: Theme.of(context).textTheme.bodySmall?.copyWith(
+                  color: Colors.green[800],
+                  fontWeight: FontWeight.w600,
+                ),
+          ),
+          if (parentReply != null && parentReply.isNotEmpty) ...[
+            const SizedBox(height: 4),
+            Text(
+              'Parent note: $parentReply',
+              style: Theme.of(context).textTheme.bodySmall?.copyWith(
+                    color: Colors.grey[700],
+                  ),
+            ),
+          ],
+        ],
+      ),
+    );
+  }
+
   Widget _buildPausedCard(
     BuildContext context,
     List<String> categories,
@@ -332,7 +478,12 @@ class _ChildStatusScreenState extends State<ChildStatusScreen>
         onTap: () {
           Navigator.of(context).push(
             MaterialPageRoute(
-              builder: (_) => ChildRequestScreen(child: widget.child),
+              builder: (_) => ChildRequestScreen(
+                child: widget.child,
+                authService: widget.authService,
+                firestoreService: widget.firestoreService,
+                parentIdOverride: widget.parentIdOverride,
+              ),
             ),
           );
         },
@@ -379,7 +530,12 @@ class _ChildStatusScreenState extends State<ChildStatusScreen>
         onPressed: () {
           Navigator.of(context).push(
             MaterialPageRoute(
-              builder: (_) => ChildRequestsScreen(child: widget.child),
+              builder: (_) => ChildRequestsScreen(
+                child: widget.child,
+                authService: widget.authService,
+                firestoreService: widget.firestoreService,
+                parentIdOverride: widget.parentIdOverride,
+              ),
             ),
           );
         },
@@ -587,6 +743,48 @@ class _ChildStatusScreenState extends State<ChildStatusScreen>
       }
     }
     return nearestMessage ?? 'No schedules coming up today';
+  }
+
+  List<AccessRequest> _activeApprovedRequests(List<AccessRequest> requests) {
+    final now = DateTime.now();
+    final active = requests.where((request) {
+      if (request.status != RequestStatus.approved) {
+        return false;
+      }
+      final expiresAt = request.expiresAt;
+      if (expiresAt == null) {
+        return true;
+      }
+      return expiresAt.isAfter(now);
+    }).toList();
+
+    active.sort((a, b) {
+      final aExpires = a.expiresAt;
+      final bExpires = b.expiresAt;
+      if (aExpires == null && bExpires == null) {
+        return b.requestedAt.compareTo(a.requestedAt);
+      }
+      if (aExpires == null) {
+        return 1;
+      }
+      if (bExpires == null) {
+        return -1;
+      }
+      return aExpires.compareTo(bExpires);
+    });
+    return active;
+  }
+
+  String _accessWindowLabel(DateTime? expiresAt) {
+    if (expiresAt == null) {
+      return 'Available for now';
+    }
+
+    final time = TimeOfDay.fromDateTime(expiresAt);
+    final hour = time.hourOfPeriod == 0 ? 12 : time.hourOfPeriod;
+    final minute = time.minute.toString().padLeft(2, '0');
+    final period = time.period == DayPeriod.am ? 'AM' : 'PM';
+    return 'Ends at $hour:$minute $period';
   }
 
   String _formattedDate() {

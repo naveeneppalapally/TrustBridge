@@ -2193,7 +2193,7 @@ Program goal: ensure temporary approvals close automatically without manual pare
 ### Commit entries
 
 1. **2026-02-17 23:20:00 +05:30**  
-   Commit: `pending (local changes)`  
+   Commit: `db7f951`  
    Message: `Implement Day 50 request auto-expiration and functions dependency upgrade`  
    Changes:
    - Updated `functions/package.json` and lockfile:
@@ -2214,7 +2214,35 @@ Program goal: ensure temporary approvals close automatically without manual pare
 
 ---
 
-## Current Summary (after Day 50)
+## Day 51 - Active Access Passes + Node 22 Runtime Migration (Week 11 Day 1)
+
+Program goal: surface approved access windows directly on the child status screen so children can clearly see what is currently available, and remove runtime deprecation risk by migrating Cloud Functions to Node 22.
+
+### Commit entries
+
+1. **2026-02-17 23:55:00 +05:30**  
+   Commit: `pending (local changes)`  
+   Message: `Migrate functions to Node 22 and implement Day 51 active access passes`  
+   Changes:
+   - Updated `functions/package.json`:
+     - runtime engine migrated from Node `20` to Node `22`
+   - Updated `lib/screens/child_status_screen.dart`:
+     - injected optional auth/firestore overrides for safer testing
+     - added real-time "Access available now" section
+     - shows active approved requests with end time and optional parent note
+   - Updated tests:
+     - `test/screens/child_status_screen_test.dart` now verifies active approved access card rendering
+   Validation:
+   - `C:\Users\navee\flutter\bin\flutter.bat analyze` passed.
+   - `C:\Users\navee\flutter\bin\flutter.bat test` passed (162/162).
+   - `firebase deploy --only functions --force` passed.
+   - Deployed functions now run on Node.js 22:
+     - `sendParentNotificationFromQueue(asia-south1)`
+     - `expireApprovedAccessRequests(asia-south1)`
+
+---
+
+## Current Summary (after Day 51)
 
 - Day 1 completed: foundation, naming, structure, git + GitHub.
 - Day 2 completed: dependencies and Provider baseline.
@@ -2268,5 +2296,6 @@ Program goal: ensure temporary approvals close automatically without manual pare
 - Day 48 completed in code: notification queue documents are now processed by Cloud Functions into real FCM pushes, and a dev test notification button is available in Parent Settings.
 - Day 49 completed in code: child-facing request updates now show real-time request status/history with filters and reply visibility from parent decisions.
 - Day 50 completed in code: approved access requests now auto-expire via scheduled Cloud Function, with updated history rendering for expired decisions.
+- Day 51 completed in code: child status now displays active approved access passes in real time, and Cloud Functions runtime is upgraded to Node.js 22.
 
 Last updated: 2026-02-17
