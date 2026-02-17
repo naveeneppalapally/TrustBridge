@@ -31,6 +31,43 @@ UI commit message convention:
 
 ---
 
+## Day 60 - Alpha Release Build (Week 12 Day 5)
+
+Program goal: ship TrustBridge Alpha 1 to first real users through a signed release build and Firebase App Distribution.
+
+### Commit entries
+
+1. **2026-02-17**  
+   Commit: `(this commit - see latest git log)`  
+   Message: `Day 60 alpha release: version 1.0.0-alpha.1+60`  
+   Changes:
+   - Updated `pubspec.yaml`:
+     - version bumped to `1.0.0-alpha.1+60`
+   - Updated `android/app/build.gradle.kts`:
+     - loaded `key.properties`
+     - added release signing config wiring
+   - Updated `.gitignore`:
+     - added `android/key.properties`
+     - added `android/app/trustbridge-release.jks`
+   - Created release docs:
+     - `docs/ALPHA_RELEASE_NOTES.md`
+     - `docs/ALPHA_SMOKE_TEST_CHECKLIST.md`
+   - Added release milestone test:
+     - `test/version_test.dart`
+   - Generated release signing assets locally (not committed):
+     - `android/app/trustbridge-release.jks`
+     - `android/key.properties`
+   - Built signed release APK with obfuscation and split debug info.
+   - Uploaded APK to Firebase App Distribution group: `alpha-testers`.
+   Validation:
+   - `flutter analyze` passed.
+   - `flutter test` passed (193/193).
+   - `flutter build apk --release --target-platform android-arm64 --obfuscate --split-debug-info=build/debug-info` passed.
+   - APK signing certificate verified with `apksigner verify --print-certs`.
+   - Firebase App Distribution upload command completed successfully.
+
+---
+
 ## Day 59 - Performance Optimization (Week 12 Day 4)
 
 Program goal: reduce startup and runtime overhead before alpha by removing avoidable rebuild/subscription churn and tightening release build configuration.

@@ -65,3 +65,5 @@ app.*.map.json
 # Secrets
 *.env
 secrets/
+android/key.properties
+android/app/trustbridge-release.jks
