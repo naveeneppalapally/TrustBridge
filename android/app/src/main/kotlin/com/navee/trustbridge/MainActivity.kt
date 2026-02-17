@@ -127,6 +127,14 @@ class MainActivity : FlutterActivity() {
                 result.success(openBatteryOptimizationSettings())
             }
 
+            "openVpnSettings" -> {
+                result.success(openVpnSettings())
+            }
+
+            "openPrivateDnsSettings" -> {
+                result.success(openPrivateDnsSettings())
+            }
+
             "getRecentDnsQueries" -> {
                 val limit = call.argument<Int>("limit") ?: 100
                 result.success(DnsVpnService.getRecentQueryLogs(limit = limit))
@@ -272,6 +280,33 @@ class MainActivity : FlutterActivity() {
     private fun openBatteryOptimizationSettings(): Boolean {
         return try {
             val intent = Intent(Settings.ACTION_IGNORE_BATTERY_OPTIMIZATION_SETTINGS).apply {
+                addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
+            }
+            startActivity(intent)
+            true
+        } catch (_: Exception) {
+            false
+        }
+    }
+
+    private fun openVpnSettings(): Boolean {
+        return try {
+            val intent = Intent(Settings.ACTION_VPN_SETTINGS).apply {
+                addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
+            }
+            startActivity(intent)
+            true
+        } catch (_: Exception) {
+            false
+        }
+    }
+
+    private fun openPrivateDnsSettings(): Boolean {
+        if (Build.VERSION.SDK_INT < Build.VERSION_CODES.P) {
+            return false
+        }
+        return try {
+            val intent = Intent("android.settings.PRIVATE_DNS_SETTINGS").apply {
                 addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
             }
             startActivity(intent)

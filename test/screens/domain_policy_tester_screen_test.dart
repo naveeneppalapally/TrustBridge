@@ -51,6 +51,12 @@ class _FakeVpnServiceForDomainTester implements VpnServiceBase {
   Future<bool> openBatteryOptimizationSettings() async => true;
 
   @override
+  Future<bool> openVpnSettings() async => true;
+
+  @override
+  Future<bool> openPrivateDnsSettings() async => true;
+
+  @override
   Future<bool> requestPermission() async => true;
 
   @override

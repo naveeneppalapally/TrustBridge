@@ -22,6 +22,8 @@ class _FakeVpnService implements VpnServiceBase {
   bool stopResult = true;
   bool ignoringBatteryOptimizations = true;
   int openBatterySettingsCalls = 0;
+  int openVpnSettingsCalls = 0;
+  int openPrivateDnsSettingsCalls = 0;
   int updateFilterRulesCalls = 0;
   int clearRuleCacheCalls = 0;
   List<String> lastUpdatedCategories = const [];
@@ -109,6 +111,18 @@ class _FakeVpnService implements VpnServiceBase {
   @override
   Future<bool> openBatteryOptimizationSettings() async {
     openBatterySettingsCalls += 1;
+    return true;
+  }
+
+  @override
+  Future<bool> openVpnSettings() async {
+    openVpnSettingsCalls += 1;
+    return true;
+  }
+
+  @override
+  Future<bool> openPrivateDnsSettings() async {
+    openPrivateDnsSettingsCalls += 1;
     return true;
   }
 
@@ -469,6 +483,48 @@ void main() {
 
       expect(find.text('VPN service restarted with latest policy rules.'),
           findsOneWidget);
+    });
+
+    testWidgets('diagnostic shortcuts open VPN and Private DNS settings',
+        (tester) async {
+      const parentId = 'parent-vpn-j';
+      await seedParent(parentId);
+
+      final fakeVpn = _FakeVpnService(
+        supported: true,
+        permissionGranted: true,
+        running: false,
+      );
+
+      await tester.pumpWidget(
+        MaterialApp(
+          home: VpnProtectionScreen(
+            vpnService: fakeVpn,
+            firestoreService: firestoreService,
+            parentIdOverride: parentId,
+          ),
+        ),
+      );
+      await tester.pumpAndSettle();
+
+      final openVpnButton =
+          find.byKey(const Key('vpn_open_vpn_settings_button'));
+      await tester.dragUntilVisible(
+        openVpnButton,
+        find.byType(ListView),
+        const Offset(0, -220),
+      );
+      await tester.pumpAndSettle();
+      await tester.tap(openVpnButton, warnIfMissed: false);
+      await tester.pumpAndSettle();
+
+      final openPrivateDnsButton =
+          find.byKey(const Key('vpn_open_private_dns_button'));
+      await tester.tap(openPrivateDnsButton, warnIfMissed: false);
+      await tester.pumpAndSettle();
+
+      expect(fakeVpn.openVpnSettingsCalls, 1);
+      expect(fakeVpn.openPrivateDnsSettingsCalls, 1);
     });
   });
 }

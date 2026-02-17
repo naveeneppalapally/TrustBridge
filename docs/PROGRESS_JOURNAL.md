@@ -1804,7 +1804,49 @@ Program goal: ensure VPN protection can recover automatically after device reboo
 
 ---
 
-## Current Summary (after Day 40)
+## Day 41 - VPN Settings Recovery Shortcuts (Week 9 Day 1)
+
+Program goal: speed up permission/recovery troubleshooting by exposing direct system-settings shortcuts from VPN diagnostics.
+
+### Commit entries
+
+1. **2026-02-17 16:05:54 +05:30**  
+   Commit: `pending (local changes)`  
+   Message: `Implement Day 41 VPN and Private DNS settings recovery shortcuts`  
+   Changes:
+   - Updated native method-channel surface:
+     - `android/app/src/main/kotlin/com/navee/trustbridge/MainActivity.kt`
+       - added `openVpnSettings`
+       - added `openPrivateDnsSettings`
+   - Updated Flutter VPN service API:
+     - `lib/services/vpn_service.dart`
+       - added `openVpnSettings()`
+       - added `openPrivateDnsSettings()`
+       - extended `VpnServiceBase` interface
+   - Updated VPN diagnostics UI:
+     - `lib/screens/vpn_protection_screen.dart`
+       - added quick actions under diagnostics card:
+         - `Open VPN Settings`
+         - `Open Private DNS`
+       - added loading states + failure snackbar handling
+   - Added/updated tests:
+     - updated `test/services/vpn_service_test.dart`
+     - updated `test/screens/vpn_protection_screen_test.dart`
+     - updated fake VPN service implementations in related screen tests
+   Validation:
+   - `C:\Users\navee\flutter\bin\flutter.bat analyze` passed.
+   - `C:\Users\navee\flutter\bin\flutter.bat test` passed (120/120).
+   - `C:\Users\navee\flutter\bin\flutter.bat build apk --debug` passed.
+   Design folder(s) used:
+   - `security_settings_light`
+   Design assets checked:
+   - `screen.png`, `code.html`
+   UI fidelity note:
+   - Added shortcuts as secondary controls within the existing diagnostics card to preserve established hierarchy.
+
+---
+
+## Current Summary (after Day 41)
 
 - Day 1 completed: foundation, naming, structure, git + GitHub.
 - Day 2 completed: dependencies and Provider baseline.
@@ -1848,5 +1890,6 @@ Program goal: ensure VPN protection can recover automatically after device reboo
 - Day 38 completed in code: per-domain native policy evaluation is bridged to Flutter with an in-app domain policy tester screen.
 - Day 39 completed in code: one-tap VPN restart is now available through Flutter-native bridge with policy-aware restart behavior.
 - Day 40 completed in code: VPN boot recovery now restores protection after reboot using persisted native state and rules.
+- Day 41 completed in code: diagnostics now include direct shortcuts to VPN and Private DNS system settings for faster recovery.
 
 Last updated: 2026-02-17

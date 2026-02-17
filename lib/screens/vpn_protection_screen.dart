@@ -46,6 +46,8 @@ class _VpnProtectionScreenState extends State<VpnProtectionScreen> {
   bool _ignoringBatteryOptimizations = true;
   bool _isOpeningBatterySettings = false;
   bool _isRunningReadinessTest = false;
+  bool _isOpeningVpnSettings = false;
+  bool _isOpeningPrivateDnsSettings = false;
   List<_ReadinessCheckItem> _readinessItems = const [];
   DateTime? _lastReadinessRunAt;
   RuleCacheSnapshot _ruleCacheSnapshot = const RuleCacheSnapshot.empty();
@@ -473,6 +475,46 @@ class _VpnProtectionScreenState extends State<VpnProtectionScreen> {
             _buildBullet(
               context,
               'Some apps use encrypted DNS that can bypass local VPN DNS filtering. NextDNS integration is planned.',
+            ),
+            const SizedBox(height: 12),
+            Wrap(
+              spacing: 8,
+              runSpacing: 8,
+              children: [
+                OutlinedButton.icon(
+                  key: const Key('vpn_open_vpn_settings_button'),
+                  onPressed:
+                      _isOpeningVpnSettings ? null : _openVpnSettingsShortcut,
+                  icon: _isOpeningVpnSettings
+                      ? const SizedBox(
+                          width: 14,
+                          height: 14,
+                          child: CircularProgressIndicator(strokeWidth: 2),
+                        )
+                      : const Icon(Icons.settings_ethernet),
+                  label: Text(
+                    _isOpeningVpnSettings ? 'Opening...' : 'Open VPN Settings',
+                  ),
+                ),
+                OutlinedButton.icon(
+                  key: const Key('vpn_open_private_dns_button'),
+                  onPressed: _isOpeningPrivateDnsSettings
+                      ? null
+                      : _openPrivateDnsSettingsShortcut,
+                  icon: _isOpeningPrivateDnsSettings
+                      ? const SizedBox(
+                          width: 14,
+                          height: 14,
+                          child: CircularProgressIndicator(strokeWidth: 2),
+                        )
+                      : const Icon(Icons.dns_outlined),
+                  label: Text(
+                    _isOpeningPrivateDnsSettings
+                        ? 'Opening...'
+                        : 'Open Private DNS',
+                  ),
+                ),
+              ],
             ),
           ],
         ),
@@ -1197,6 +1239,40 @@ class _VpnProtectionScreenState extends State<VpnProtectionScreen> {
       await _refreshStatus();
       if (mounted) {
         setState(() => _isOpeningBatterySettings = false);
+      }
+    }
+  }
+
+  Future<void> _openVpnSettingsShortcut() async {
+    setState(() => _isOpeningVpnSettings = true);
+    try {
+      final opened = await _resolvedVpnService.openVpnSettings();
+      if (!mounted) {
+        return;
+      }
+      if (!opened) {
+        _showMessage('Unable to open VPN settings.', isError: true);
+      }
+    } finally {
+      if (mounted) {
+        setState(() => _isOpeningVpnSettings = false);
+      }
+    }
+  }
+
+  Future<void> _openPrivateDnsSettingsShortcut() async {
+    setState(() => _isOpeningPrivateDnsSettings = true);
+    try {
+      final opened = await _resolvedVpnService.openPrivateDnsSettings();
+      if (!mounted) {
+        return;
+      }
+      if (!opened) {
+        _showMessage('Unable to open Private DNS settings.', isError: true);
+      }
+    } finally {
+      if (mounted) {
+        setState(() => _isOpeningPrivateDnsSettings = false);
       }
     }
   }

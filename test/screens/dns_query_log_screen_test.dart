@@ -85,6 +85,16 @@ class _FakeVpnServiceForDnsLogs implements VpnServiceBase {
   }
 
   @override
+  Future<bool> openVpnSettings() async {
+    return true;
+  }
+
+  @override
+  Future<bool> openPrivateDnsSettings() async {
+    return true;
+  }
+
+  @override
   Future<List<DnsQueryLogEntry>> getRecentDnsQueries({int limit = 100}) async {
     return entries.take(limit).toList();
   }

@@ -86,6 +86,12 @@ void main() {
         if (call.method == 'openBatteryOptimizationSettings') {
           return true;
         }
+        if (call.method == 'openVpnSettings') {
+          return true;
+        }
+        if (call.method == 'openPrivateDnsSettings') {
+          return true;
+        }
         if (call.method == 'getRecentDnsQueries') {
           return [
             {
@@ -147,6 +153,8 @@ void main() {
       );
       expect(await service.isIgnoringBatteryOptimizations(), isTrue);
       expect(await service.openBatteryOptimizationSettings(), isTrue);
+      expect(await service.openVpnSettings(), isTrue);
+      expect(await service.openPrivateDnsSettings(), isTrue);
       final queryLogs = await service.getRecentDnsQueries(limit: 10);
       expect(queryLogs, hasLength(1));
       expect(queryLogs.first.domain, 'reddit.com');

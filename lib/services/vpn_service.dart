@@ -216,6 +216,10 @@ abstract class VpnServiceBase {
 
   Future<bool> openBatteryOptimizationSettings();
 
+  Future<bool> openVpnSettings();
+
+  Future<bool> openPrivateDnsSettings();
+
   Future<List<DnsQueryLogEntry>> getRecentDnsQueries({int limit = 100});
 
   Future<bool> clearDnsQueryLogs();
@@ -430,6 +434,37 @@ class VpnService implements VpnServiceBase {
       return await _channel.invokeMethod<bool>(
             'openBatteryOptimizationSettings',
           ) ??
+          false;
+    } on PlatformException {
+      return false;
+    } on MissingPluginException {
+      return false;
+    }
+  }
+
+  @override
+  Future<bool> openVpnSettings() async {
+    if (!_supported) {
+      return false;
+    }
+
+    try {
+      return await _channel.invokeMethod<bool>('openVpnSettings') ?? false;
+    } on PlatformException {
+      return false;
+    } on MissingPluginException {
+      return false;
+    }
+  }
+
+  @override
+  Future<bool> openPrivateDnsSettings() async {
+    if (!_supported) {
+      return false;
+    }
+
+    try {
+      return await _channel.invokeMethod<bool>('openPrivateDnsSettings') ??
           false;
     } on PlatformException {
       return false;
