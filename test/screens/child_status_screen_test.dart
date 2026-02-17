@@ -55,6 +55,7 @@ void main() {
       await tester.pump();
 
       expect(find.text('Ask for Access'), findsOneWidget);
+      expect(find.text('Request Updates'), findsOneWidget);
     });
 
     testWidgets('uses non-punitive wording', (tester) async {

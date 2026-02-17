@@ -3,6 +3,7 @@ import 'package:flutter/material.dart';
 import '../models/active_mode.dart';
 import '../models/child_profile.dart';
 import '../models/schedule.dart';
+import 'child_requests_screen.dart';
 import 'child_request_screen.dart';
 
 class ChildStatusScreen extends StatefulWidget {
@@ -119,6 +120,8 @@ class _ChildStatusScreenState extends State<ChildStatusScreen>
               const SizedBox(height: 16),
             ],
             _buildRequestButton(context),
+            const SizedBox(height: 16),
+            _buildRequestUpdatesButton(context),
             const SizedBox(height: 16),
             _buildActivityFeed(context),
             const SizedBox(height: 32),
@@ -364,6 +367,24 @@ class _ChildStatusScreenState extends State<ChildStatusScreen>
             ],
           ),
         ),
+      ),
+    );
+  }
+
+  Widget _buildRequestUpdatesButton(BuildContext context) {
+    return SizedBox(
+      width: double.infinity,
+      child: OutlinedButton.icon(
+        key: const Key('child_status_request_updates_button'),
+        onPressed: () {
+          Navigator.of(context).push(
+            MaterialPageRoute(
+              builder: (_) => ChildRequestsScreen(child: widget.child),
+            ),
+          );
+        },
+        icon: const Icon(Icons.history),
+        label: const Text('Request Updates'),
       ),
     );
   }

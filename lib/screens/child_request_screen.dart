@@ -4,6 +4,7 @@ import '../models/access_request.dart';
 import '../models/child_profile.dart';
 import '../services/auth_service.dart';
 import '../services/firestore_service.dart';
+import 'child_requests_screen.dart';
 
 class ChildRequestScreen extends StatefulWidget {
   const ChildRequestScreen({
@@ -90,6 +91,23 @@ class _ChildRequestScreenState extends State<ChildRequestScreen> {
             OutlinedButton(
               onPressed: () => Navigator.of(context).pop(),
               child: const Text('Back to Home'),
+            ),
+            const SizedBox(height: 10),
+            TextButton(
+              key: const Key('child_request_view_updates_button'),
+              onPressed: () {
+                Navigator.of(context).pushReplacement(
+                  MaterialPageRoute(
+                    builder: (_) => ChildRequestsScreen(
+                      child: widget.child,
+                      authService: widget.authService,
+                      firestoreService: widget.firestoreService,
+                      parentIdOverride: widget.parentIdOverride,
+                    ),
+                  ),
+                );
+              },
+              child: const Text('View Request Updates'),
             ),
           ],
         ),

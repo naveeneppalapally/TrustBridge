@@ -7,6 +7,7 @@ import 'package:provider/provider.dart';
 import 'package:trustbridge_app/firebase_options.dart';
 import 'package:trustbridge_app/models/child_profile.dart';
 import 'package:trustbridge_app/screens/add_child_screen.dart';
+import 'package:trustbridge_app/screens/child_requests_screen.dart';
 import 'package:trustbridge_app/screens/child_status_screen.dart';
 import 'package:trustbridge_app/screens/dashboard_screen.dart';
 import 'package:trustbridge_app/screens/login_screen.dart';
@@ -69,6 +70,11 @@ class MyApp extends StatelessWidget {
             final child =
                 ModalRoute.of(context)!.settings.arguments as ChildProfile;
             return ChildStatusScreen(child: child);
+          },
+          '/child-requests': (context) {
+            final child =
+                ModalRoute.of(context)!.settings.arguments as ChildProfile;
+            return ChildRequestsScreen(child: child);
           },
         },
       ),

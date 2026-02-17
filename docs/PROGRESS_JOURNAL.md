@@ -2121,7 +2121,7 @@ Program goal: complete the backend delivery path so queued access-request alerts
 ### Commit entries
 
 1. **2026-02-18 00:35:00 +05:30**  
-   Commit: `pending (local changes)`  
+   Commit: `33e13e6`  
    Message: `Implement Day 48 notification queue Cloud Function and dev test action`  
    Changes:
    - Added Firebase Functions backend:
@@ -2157,7 +2157,36 @@ Program goal: complete the backend delivery path so queued access-request alerts
 
 ---
 
-## Current Summary (after Day 48)
+## Day 49 - Child Request Updates Screen (Week 10 Day 4)
+
+Program goal: give children a clear, real-time view of request outcomes so they can track pending, approved, and denied decisions without asking repeatedly.
+
+### Commit entries
+
+1. **2026-02-17 22:20:00 +05:30**  
+   Commit: `pending (local changes)`  
+   Message: `Implement Day 49 child request updates screen`  
+   Changes:
+   - Created `lib/screens/child_requests_screen.dart`:
+     - real-time stream of child access requests via Firestore
+     - request filters: All, Pending, Responded
+     - status cards with app/site, duration, reason, parent reply
+     - approval-expiry message rendering for active approved windows
+   - Updated `lib/screens/child_status_screen.dart`:
+     - added `Request Updates` entry button
+   - Updated `lib/screens/child_request_screen.dart`:
+     - success state now includes `View Request Updates` action
+   - Updated `lib/main.dart`:
+     - added `/child-requests` route
+   - Added tests:
+     - `test/screens/child_requests_screen_test.dart`
+   Validation:
+   - `C:\Users\navee\flutter\bin\flutter.bat analyze` passed.
+   - `C:\Users\navee\flutter\bin\flutter.bat test` passed (160/160).
+
+---
+
+## Current Summary (after Day 49)
 
 - Day 1 completed: foundation, naming, structure, git + GitHub.
 - Day 2 completed: dependencies and Provider baseline.
@@ -2209,5 +2238,6 @@ Program goal: complete the backend delivery path so queued access-request alerts
 - Day 46 completed in code: parent request inbox now supports real-time pending review, approve/deny replies, history tracking, and dashboard badge navigation.
 - Day 47 completed in code: push notification infrastructure now captures parent FCM tokens, queues access-request alerts, and routes notification taps to the parent requests inbox.
 - Day 48 completed in code: notification queue documents are now processed by Cloud Functions into real FCM pushes, and a dev test notification button is available in Parent Settings.
+- Day 49 completed in code: child-facing request updates now show real-time request status/history with filters and reply visibility from parent decisions.
 
-Last updated: 2026-02-18
+Last updated: 2026-02-17
