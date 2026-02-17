@@ -95,6 +95,26 @@ void main() {
         if (call.method == 'clearDnsQueryLogs') {
           return true;
         }
+        if (call.method == 'getRuleCacheSnapshot') {
+          return {
+            'categoryCount': 4,
+            'domainCount': 120,
+            'lastUpdatedAtEpochMs': 1708147220000,
+            'sampleCategories': ['adult-content', 'social-networks'],
+            'sampleDomains': ['facebook.com', 'instagram.com'],
+          };
+        }
+        if (call.method == 'clearRuleCache') {
+          return true;
+        }
+        if (call.method == 'evaluateDomainPolicy') {
+          return {
+            'inputDomain': 'm.facebook.com',
+            'normalizedDomain': 'm.facebook.com',
+            'blocked': true,
+            'matchedRule': 'facebook.com',
+          };
+        }
         return null;
       });
 
@@ -122,6 +142,15 @@ void main() {
       expect(queryLogs.first.domain, 'reddit.com');
       expect(queryLogs.first.blocked, isTrue);
       expect(await service.clearDnsQueryLogs(), isTrue);
+      final cache = await service.getRuleCacheSnapshot(sampleLimit: 2);
+      expect(cache.categoryCount, 4);
+      expect(cache.domainCount, 120);
+      expect(cache.sampleCategories, isNotEmpty);
+      expect(cache.sampleDomains, isNotEmpty);
+      expect(await service.clearRuleCache(), isTrue);
+      final evaluation = await service.evaluateDomainPolicy('m.facebook.com');
+      expect(evaluation.blocked, isTrue);
+      expect(evaluation.matchedRule, 'facebook.com');
       expect(await service.stopVpn(), isTrue);
     });
   });

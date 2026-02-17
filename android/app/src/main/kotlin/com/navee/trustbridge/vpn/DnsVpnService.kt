@@ -334,6 +334,10 @@ class DnsVpnService : VpnService() {
 
     override fun onDestroy() {
         stopVpn()
+        try {
+            filterEngine.close()
+        } catch (_: Exception) {
+        }
         super.onDestroy()
         Log.d(TAG, "DNS VPN service destroyed")
     }

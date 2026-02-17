@@ -73,6 +73,29 @@ class _FakeVpnServiceForTest implements VpnServiceBase {
   Future<bool> clearDnsQueryLogs() async {
     return true;
   }
+
+  @override
+  Future<RuleCacheSnapshot> getRuleCacheSnapshot({int sampleLimit = 5}) async {
+    return const RuleCacheSnapshot.empty();
+  }
+
+  @override
+  Future<bool> clearRuleCache() async {
+    return true;
+  }
+
+  @override
+  Future<DomainPolicyEvaluation> evaluateDomainPolicy(String domain) async {
+    final normalized = domain.trim().toLowerCase();
+    final blocked =
+        normalized == 'facebook.com' || normalized.endsWith('.facebook.com');
+    return DomainPolicyEvaluation(
+      inputDomain: domain,
+      normalizedDomain: normalized,
+      blocked: blocked,
+      matchedRule: blocked ? 'facebook.com' : null,
+    );
+  }
 }
 
 void main() {

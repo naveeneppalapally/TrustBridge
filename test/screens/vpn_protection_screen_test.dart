@@ -1,6 +1,7 @@
 import 'package:fake_cloud_firestore/fake_cloud_firestore.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
+import 'package:trustbridge_app/screens/domain_policy_tester_screen.dart';
 import 'package:trustbridge_app/screens/vpn_protection_screen.dart';
 import 'package:trustbridge_app/services/firestore_service.dart';
 import 'package:trustbridge_app/services/vpn_service.dart';
@@ -21,8 +22,15 @@ class _FakeVpnService implements VpnServiceBase {
   bool ignoringBatteryOptimizations = true;
   int openBatterySettingsCalls = 0;
   int updateFilterRulesCalls = 0;
+  int clearRuleCacheCalls = 0;
   List<String> lastUpdatedCategories = const [];
   List<String> lastUpdatedDomains = const [];
+  RuleCacheSnapshot ruleCacheSnapshot = const RuleCacheSnapshot(
+    categoryCount: 2,
+    domainCount: 8,
+    sampleCategories: ['adult-content', 'social-networks'],
+    sampleDomains: ['facebook.com', 'instagram.com'],
+  );
 
   @override
   Future<VpnStatus> getStatus() async {
@@ -101,6 +109,31 @@ class _FakeVpnService implements VpnServiceBase {
   Future<bool> clearDnsQueryLogs() async {
     return true;
   }
+
+  @override
+  Future<RuleCacheSnapshot> getRuleCacheSnapshot({int sampleLimit = 5}) async {
+    return ruleCacheSnapshot;
+  }
+
+  @override
+  Future<bool> clearRuleCache() async {
+    clearRuleCacheCalls += 1;
+    ruleCacheSnapshot = const RuleCacheSnapshot.empty();
+    return true;
+  }
+
+  @override
+  Future<DomainPolicyEvaluation> evaluateDomainPolicy(String domain) async {
+    final normalized = domain.trim().toLowerCase();
+    final blocked =
+        normalized == 'facebook.com' || normalized.endsWith('.facebook.com');
+    return DomainPolicyEvaluation(
+      inputDomain: domain,
+      normalizedDomain: normalized,
+      blocked: blocked,
+      matchedRule: blocked ? 'facebook.com' : null,
+    );
+  }
 }
 
 void main() {
@@ -143,7 +176,7 @@ void main() {
 
       expect(find.text('VPN Protection Engine'), findsWidgets);
       expect(find.text('Unsupported on this platform'), findsOneWidget);
-      expect(find.text('Live Status'), findsOneWidget);
+      expect(find.byKey(const Key('vpn_status_label')), findsOneWidget);
     });
 
     testWidgets('enable protection updates status and preference',
@@ -230,12 +263,14 @@ void main() {
         ),
       );
       await tester.pumpAndSettle();
-
-      await tester.drag(find.byType(ListView), const Offset(0, -900));
+      final selfCheckButton = find.byKey(const Key('vpn_dns_self_check_button'));
+      await tester.dragUntilVisible(
+        selfCheckButton,
+        find.byType(ListView),
+        const Offset(0, -220),
+      );
       await tester.pumpAndSettle();
-      await tester
-          .ensureVisible(find.byKey(const Key('vpn_dns_self_check_button')));
-      await tester.tap(find.byKey(const Key('vpn_dns_self_check_button')));
+      await tester.tap(selfCheckButton, warnIfMissed: false);
       await tester.pumpAndSettle();
 
       expect(
@@ -309,6 +344,82 @@ void main() {
 
       expect(find.byKey(const Key('vpn_readiness_summary')), findsOneWidget);
       expect(find.textContaining('checks passed'), findsOneWidget);
+    });
+
+    testWidgets('clear rule cache button clears persisted cache',
+        (tester) async {
+      const parentId = 'parent-vpn-g';
+      await seedParent(parentId);
+
+      final fakeVpn = _FakeVpnService(
+        supported: true,
+        permissionGranted: true,
+        running: false,
+      );
+
+      await tester.pumpWidget(
+        MaterialApp(
+          home: VpnProtectionScreen(
+            vpnService: fakeVpn,
+            firestoreService: firestoreService,
+            parentIdOverride: parentId,
+          ),
+        ),
+      );
+      await tester.pumpAndSettle();
+
+      final clearCacheButton =
+          find.byKey(const Key('vpn_clear_rule_cache_button'));
+      await tester.dragUntilVisible(
+        clearCacheButton,
+        find.byType(ListView),
+        const Offset(0, -200),
+      );
+      await tester.pumpAndSettle();
+      await tester.tap(clearCacheButton, warnIfMissed: false);
+      await tester.pumpAndSettle();
+      expect(find.text('Clear VPN Rule Cache?'), findsOneWidget);
+
+      await tester.tap(find.text('Clear'));
+      await tester.pumpAndSettle();
+
+      expect(fakeVpn.clearRuleCacheCalls, 1);
+      expect(find.text('Native rule cache cleared.'), findsOneWidget);
+    });
+
+    testWidgets('domain policy tester button navigates to tester screen',
+        (tester) async {
+      const parentId = 'parent-vpn-h';
+      await seedParent(parentId);
+
+      final fakeVpn = _FakeVpnService(
+        supported: true,
+        permissionGranted: true,
+        running: false,
+      );
+
+      await tester.pumpWidget(
+        MaterialApp(
+          home: VpnProtectionScreen(
+            vpnService: fakeVpn,
+            firestoreService: firestoreService,
+            parentIdOverride: parentId,
+          ),
+        ),
+      );
+      await tester.pumpAndSettle();
+
+      final button = find.byKey(const Key('vpn_domain_tester_button'));
+      await tester.dragUntilVisible(
+        button,
+        find.byType(ListView),
+        const Offset(0, -150),
+      );
+      await tester.pumpAndSettle();
+      await tester.tap(button, warnIfMissed: false);
+      await tester.pumpAndSettle();
+
+      expect(find.byType(DomainPolicyTesterScreen), findsOneWidget);
     });
   });
 }

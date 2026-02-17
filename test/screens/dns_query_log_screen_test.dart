@@ -86,6 +86,25 @@ class _FakeVpnServiceForDnsLogs implements VpnServiceBase {
     entries = const [];
     return true;
   }
+
+  @override
+  Future<RuleCacheSnapshot> getRuleCacheSnapshot({int sampleLimit = 5}) async {
+    return const RuleCacheSnapshot.empty();
+  }
+
+  @override
+  Future<bool> clearRuleCache() async {
+    return true;
+  }
+
+  @override
+  Future<DomainPolicyEvaluation> evaluateDomainPolicy(String domain) async {
+    return DomainPolicyEvaluation(
+      inputDomain: domain,
+      normalizedDomain: domain.trim().toLowerCase(),
+      blocked: false,
+    );
+  }
 }
 
 void main() {

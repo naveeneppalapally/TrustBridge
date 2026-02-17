@@ -7,6 +7,7 @@ import 'package:trustbridge_app/services/dns_packet_parser.dart';
 import 'package:trustbridge_app/services/firestore_service.dart';
 import 'package:trustbridge_app/services/vpn_service.dart';
 import 'package:trustbridge_app/screens/dns_query_log_screen.dart';
+import 'package:trustbridge_app/screens/domain_policy_tester_screen.dart';
 import 'package:trustbridge_app/screens/nextdns_settings_screen.dart';
 
 class VpnProtectionScreen extends StatefulWidget {
@@ -46,6 +47,8 @@ class _VpnProtectionScreenState extends State<VpnProtectionScreen> {
   bool _isRunningReadinessTest = false;
   List<_ReadinessCheckItem> _readinessItems = const [];
   DateTime? _lastReadinessRunAt;
+  RuleCacheSnapshot _ruleCacheSnapshot = const RuleCacheSnapshot.empty();
+  bool _isClearingRuleCache = false;
 
   AuthService get _resolvedAuthService {
     _authService ??= widget.authService ?? AuthService();
@@ -110,6 +113,8 @@ class _VpnProtectionScreenState extends State<VpnProtectionScreen> {
           _buildActionCard(context),
           const SizedBox(height: 16),
           _buildTelemetryCard(context),
+          const SizedBox(height: 16),
+          _buildRuleCacheCard(context),
           const SizedBox(height: 16),
           _buildBatteryCard(context),
           const SizedBox(height: 16),
@@ -262,6 +267,12 @@ class _VpnProtectionScreenState extends State<VpnProtectionScreen> {
               onPressed: _status.supported ? _openNextDnsSettings : null,
               icon: const Icon(Icons.dns_outlined),
               label: const Text('NextDNS Integration'),
+            ),
+            TextButton.icon(
+              key: const Key('vpn_domain_tester_button'),
+              onPressed: _status.supported ? _openDomainTester : null,
+              icon: const Icon(Icons.rule_folder_outlined),
+              label: const Text('Domain Policy Tester'),
             ),
             const SizedBox(height: 10),
             if (!_status.supported)
@@ -440,6 +451,91 @@ class _VpnProtectionScreenState extends State<VpnProtectionScreen> {
             _buildBullet(
               context,
               'Some apps use encrypted DNS that can bypass local VPN DNS filtering. NextDNS integration is planned.',
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+
+  Widget _buildRuleCacheCard(BuildContext context) {
+    final hasRules = _ruleCacheSnapshot.categoryCount > 0 ||
+        _ruleCacheSnapshot.domainCount > 0;
+    final updatedLabel = _ruleCacheSnapshot.lastUpdatedAt == null
+        ? 'Not synced yet'
+        : '${_formatDateTime(_ruleCacheSnapshot.lastUpdatedAt!)} (${_formatRelativeTime(_ruleCacheSnapshot.lastUpdatedAt!)})';
+
+    return Card(
+      elevation: 0,
+      shape: RoundedRectangleBorder(
+        borderRadius: BorderRadius.circular(16),
+      ),
+      child: Padding(
+        padding: const EdgeInsets.all(16),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Row(
+              children: [
+                const Icon(Icons.storage_outlined),
+                const SizedBox(width: 8),
+                Text(
+                  'Rule Cache',
+                  style: Theme.of(context).textTheme.titleMedium?.copyWith(
+                        fontWeight: FontWeight.w700,
+                      ),
+                ),
+              ],
+            ),
+            const SizedBox(height: 10),
+            _buildMetricRow(
+              context,
+              label: 'Persisted Categories',
+              value: '${_ruleCacheSnapshot.categoryCount}',
+            ),
+            _buildMetricRow(
+              context,
+              label: 'Persisted Domains',
+              value: '${_ruleCacheSnapshot.domainCount}',
+            ),
+            _buildMetricRow(
+              context,
+              label: 'Last Cache Update',
+              value: updatedLabel,
+            ),
+            if (_ruleCacheSnapshot.sampleDomains.isNotEmpty) ...[
+              const SizedBox(height: 4),
+              Text(
+                'Sample Domains: ${_ruleCacheSnapshot.sampleDomains.join(', ')}',
+                style: Theme.of(context).textTheme.bodySmall?.copyWith(
+                      color: Colors.grey.shade700,
+                    ),
+              ),
+            ],
+            if (_ruleCacheSnapshot.sampleCategories.isNotEmpty) ...[
+              const SizedBox(height: 4),
+              Text(
+                'Sample Categories: ${_ruleCacheSnapshot.sampleCategories.join(', ')}',
+                style: Theme.of(context).textTheme.bodySmall?.copyWith(
+                      color: Colors.grey.shade700,
+                    ),
+              ),
+            ],
+            const SizedBox(height: 10),
+            OutlinedButton.icon(
+              key: const Key('vpn_clear_rule_cache_button'),
+              onPressed:
+                  _isClearingRuleCache || !hasRules ? null : _clearRuleCache,
+              icon: _isClearingRuleCache
+                  ? const SizedBox(
+                      width: 16,
+                      height: 16,
+                      child: CircularProgressIndicator(strokeWidth: 2),
+                    )
+                  : const Icon(Icons.delete_sweep_outlined),
+              label: Text(
+                _isClearingRuleCache ? 'Clearing...' : 'Clear Rule Cache',
+              ),
             ),
           ],
         ),
@@ -800,10 +896,13 @@ class _VpnProtectionScreenState extends State<VpnProtectionScreen> {
     _isRefreshingStatus = true;
     VpnStatus status = _status;
     var ignoringBatteryOptimizations = _ignoringBatteryOptimizations;
+    var ruleCache = _ruleCacheSnapshot;
     try {
       status = await _resolvedVpnService.getStatus();
       ignoringBatteryOptimizations =
           await _resolvedVpnService.isIgnoringBatteryOptimizations();
+      ruleCache =
+          await _resolvedVpnService.getRuleCacheSnapshot(sampleLimit: 4);
     } finally {
       _isRefreshingStatus = false;
     }
@@ -813,6 +912,7 @@ class _VpnProtectionScreenState extends State<VpnProtectionScreen> {
     setState(() {
       _status = status;
       _ignoringBatteryOptimizations = ignoringBatteryOptimizations;
+      _ruleCacheSnapshot = ruleCache;
       _lastStatusRefreshAt = DateTime.now();
     });
   }
@@ -1020,6 +1120,16 @@ class _VpnProtectionScreenState extends State<VpnProtectionScreen> {
     );
   }
 
+  Future<void> _openDomainTester() async {
+    await Navigator.of(context).push(
+      MaterialPageRoute(
+        builder: (_) => DomainPolicyTesterScreen(
+          vpnService: widget.vpnService,
+        ),
+      ),
+    );
+  }
+
   Future<void> _openBatteryOptimizationSettings() async {
     setState(() => _isOpeningBatterySettings = true);
     try {
@@ -1037,6 +1147,50 @@ class _VpnProtectionScreenState extends State<VpnProtectionScreen> {
       await _refreshStatus();
       if (mounted) {
         setState(() => _isOpeningBatterySettings = false);
+      }
+    }
+  }
+
+  Future<void> _clearRuleCache() async {
+    final shouldClear = await showDialog<bool>(
+      context: context,
+      builder: (dialogContext) => AlertDialog(
+        title: const Text('Clear VPN Rule Cache?'),
+        content: const Text(
+          'This clears persisted domains/categories from native cache. '
+          'If VPN is running, active rules are also reset until next sync.',
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.of(dialogContext).pop(false),
+            child: const Text('Cancel'),
+          ),
+          ElevatedButton(
+            onPressed: () => Navigator.of(dialogContext).pop(true),
+            child: const Text('Clear'),
+          ),
+        ],
+      ),
+    );
+    if (shouldClear != true) {
+      return;
+    }
+
+    setState(() => _isClearingRuleCache = true);
+    try {
+      final cleared = await _resolvedVpnService.clearRuleCache();
+      if (!mounted) {
+        return;
+      }
+      if (cleared) {
+        _showMessage('Native rule cache cleared.');
+      } else {
+        _showMessage('Unable to clear native rule cache.', isError: true);
+      }
+    } finally {
+      await _refreshStatus();
+      if (mounted) {
+        setState(() => _isClearingRuleCache = false);
       }
     }
   }

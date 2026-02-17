@@ -4,6 +4,8 @@ import android.content.Intent
 import android.os.Build
 import android.os.PowerManager
 import android.provider.Settings
+import com.navee.trustbridge.vpn.BlocklistStore
+import com.navee.trustbridge.vpn.DnsFilterEngine
 import com.navee.trustbridge.vpn.DnsVpnService
 import io.flutter.embedding.android.FlutterActivity
 import io.flutter.embedding.engine.FlutterEngine
@@ -20,6 +22,9 @@ class MainActivity : FlutterActivity() {
     }
 
     private var pendingPermissionResult: MethodChannel.Result? = null
+    private val blocklistStore: BlocklistStore by lazy {
+        BlocklistStore(applicationContext)
+    }
 
     override fun configureFlutterEngine(flutterEngine: FlutterEngine) {
         super.configureFlutterEngine(flutterEngine)
@@ -108,6 +113,66 @@ class MainActivity : FlutterActivity() {
                 result.success(true)
             }
 
+            "getRuleCacheSnapshot" -> {
+                val sampleLimit = call.argument<Int>("sampleLimit") ?: 5
+                val metadata = blocklistStore.loadMetadata(sampleLimit = sampleLimit)
+                result.success(
+                    mapOf(
+                        "categoryCount" to metadata.categoryCount,
+                        "domainCount" to metadata.domainCount,
+                        "lastUpdatedAtEpochMs" to metadata.lastUpdatedAtEpochMs,
+                        "sampleCategories" to metadata.sampleCategories,
+                        "sampleDomains" to metadata.sampleDomains
+                    )
+                )
+            }
+
+            "clearRuleCache" -> {
+                blocklistStore.clearRules()
+                if (DnsVpnService.isRunning) {
+                    val serviceIntent = Intent(this, DnsVpnService::class.java).apply {
+                        action = DnsVpnService.ACTION_UPDATE_RULES
+                        putStringArrayListExtra(
+                            DnsVpnService.EXTRA_BLOCKED_CATEGORIES,
+                            arrayListOf()
+                        )
+                        putStringArrayListExtra(
+                            DnsVpnService.EXTRA_BLOCKED_DOMAINS,
+                            arrayListOf()
+                        )
+                    }
+                    startServiceCompat(serviceIntent)
+                }
+                result.success(true)
+            }
+
+            "evaluateDomainPolicy" -> {
+                val domainInput = call.argument<String>("domain")?.trim().orEmpty()
+                if (domainInput.isBlank()) {
+                    result.error(
+                        "invalid_domain",
+                        "A non-empty domain value is required.",
+                        null
+                    )
+                    return
+                }
+
+                val evaluator = DnsFilterEngine(this)
+                try {
+                    val evaluation = evaluator.evaluateDomain(domainInput)
+                    result.success(
+                        mapOf(
+                            "inputDomain" to evaluation.inputDomain,
+                            "normalizedDomain" to evaluation.normalizedDomain,
+                            "blocked" to evaluation.blocked,
+                            "matchedRule" to evaluation.matchedRule
+                        )
+                    )
+                } finally {
+                    evaluator.close()
+                }
+            }
+
             "updateFilterRules" -> {
                 val blockedCategories =
                     call.argument<List<String>>("blockedCategories") ?: emptyList()
@@ -194,5 +259,13 @@ class MainActivity : FlutterActivity() {
             pendingPermissionResult?.success(granted)
             pendingPermissionResult = null
         }
+    }
+
+    override fun onDestroy() {
+        try {
+            blocklistStore.close()
+        } catch (_: Exception) {
+        }
+        super.onDestroy()
     }
 }

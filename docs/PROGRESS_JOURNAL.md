@@ -1601,7 +1601,123 @@ Program goal: harden VPN runtime reliability with battery-optimization checks an
 
 ---
 
-## Current Summary (after Day 35)
+## Day 36 - Native Blocklist Persistence (Week 8 Day 1)
+
+Program goal: make VPN filtering rules durable across service restarts by persisting active blocklist rules in native SQLite.
+
+### Commit entries
+
+1. **2026-02-17 15:29:05 +05:30**  
+   Commit: `pending (local changes)`  
+   Message: `Implement Day 36 native SQLite blocklist persistence for VPN filtering`  
+   Changes:
+   - Added `android/app/src/main/kotlin/com/navee/trustbridge/vpn/BlocklistStore.kt`:
+     - SQLite-backed rule store (`blocked_domains`, `blocked_categories`)
+     - atomic replace transaction for rule updates
+     - snapshot read API used by DNS engine bootstrap
+   - Updated `android/app/src/main/kotlin/com/navee/trustbridge/vpn/DnsFilterEngine.kt`:
+     - replaced in-memory-only bootstrap with disk hydration from `BlocklistStore`
+     - persisted rules on every `updateFilterRules(...)` call
+     - expanded category-domain mapping to cover all current policy categories
+     - improved normalization for wildcard/`www.` inputs
+   - Updated `android/app/src/main/kotlin/com/navee/trustbridge/vpn/DnsVpnService.kt`:
+     - added filter-engine close hook on service destroy for clean SQLite lifecycle
+   Validation:
+   - `C:\Users\navee\flutter\bin\flutter.bat analyze` passed.
+   - `C:\Users\navee\flutter\bin\flutter.bat test` passed (114/114).
+   - `C:\Users\navee\flutter\bin\flutter.bat build apk --debug` passed.
+   Design folder(s) used:
+   - `security_settings_light`
+   Design assets checked:
+   - `screen.png`, `code.html`
+   UI fidelity note:
+   - No visual layout changes; this day is native reliability hardening under existing VPN UI flows.
+
+---
+
+## Day 37 - Rule Cache Diagnostics and Reset (Week 8 Day 2)
+
+Program goal: add native rule-cache observability and reset controls for VPN operations and troubleshooting.
+
+### Commit entries
+
+1. **2026-02-17 15:44:51 +05:30**  
+   Commit: `pending (local changes)`  
+   Message: `Implement Day 37 VPN rule cache diagnostics and reset controls`  
+   Changes:
+   - Updated `android/app/src/main/kotlin/com/navee/trustbridge/vpn/BlocklistStore.kt`:
+     - added cache metadata snapshot API (counts, samples, last update timestamp)
+     - added transactional clear-rules operation
+   - Updated `android/app/src/main/kotlin/com/navee/trustbridge/MainActivity.kt`:
+     - added method-channel handlers:
+       - `getRuleCacheSnapshot`
+       - `clearRuleCache`
+     - when clearing cache while VPN is running, service rules are reset immediately via `ACTION_UPDATE_RULES`
+   - Updated `lib/services/vpn_service.dart`:
+     - added `RuleCacheSnapshot` model
+     - added `getRuleCacheSnapshot(...)` and `clearRuleCache()` API surface
+   - Updated `lib/screens/vpn_protection_screen.dart`:
+     - added `Rule Cache` diagnostics card (persisted categories/domains, last update, samples)
+     - added `Clear Rule Cache` action with confirmation and success/error feedback
+   - Added/updated tests:
+     - updated `test/services/vpn_service_test.dart`
+     - updated `test/screens/vpn_protection_screen_test.dart`
+     - updated fake VPN service implementations in related screen tests
+   Validation:
+   - `C:\Users\navee\flutter\bin\flutter.bat analyze` passed.
+   - `C:\Users\navee\flutter\bin\flutter.bat test` passed (118/118).
+   - `C:\Users\navee\flutter\bin\flutter.bat build apk --debug` passed.
+   Design folder(s) used:
+   - `security_settings_light`
+   Design assets checked:
+   - `screen.png`, `code.html`
+   UI fidelity note:
+   - Added diagnostics inside the existing VPN protection card stack to keep parent UX stable while improving operator visibility.
+
+---
+
+## Day 38 - Native Domain Policy Bridge and Tester (Week 8 Day 3)
+
+Program goal: complete a practical Flutter ↔ native bridge for per-domain policy checks and expose it in-app for debugging.
+
+### Commit entries
+
+1. **2026-02-17 15:44:51 +05:30**  
+   Commit: `pending (local changes)`  
+   Message: `Implement Day 38 native domain policy bridge and tester screen`  
+   Changes:
+   - Updated `android/app/src/main/kotlin/com/navee/trustbridge/vpn/DnsFilterEngine.kt`:
+     - added domain evaluation API with normalized domain and matched-rule metadata
+   - Updated `android/app/src/main/kotlin/com/navee/trustbridge/MainActivity.kt`:
+     - added method-channel handler `evaluateDomainPolicy`
+   - Updated `lib/services/vpn_service.dart`:
+     - added `DomainPolicyEvaluation` model
+     - added `evaluateDomainPolicy(domain)` API
+   - Added `lib/screens/domain_policy_tester_screen.dart`:
+     - input-driven native rule evaluation
+     - quick-check domain chips
+     - result card showing blocked/allowed, normalized domain, and matched rule
+   - Updated `lib/screens/vpn_protection_screen.dart`:
+     - added navigation action to Domain Policy Tester
+   - Added/updated tests:
+     - new `test/screens/domain_policy_tester_screen_test.dart`
+     - updated `test/screens/vpn_protection_screen_test.dart`
+     - updated `test/services/vpn_service_test.dart`
+     - updated fake VPN service implementations in related screen tests
+   Validation:
+   - `C:\Users\navee\flutter\bin\flutter.bat analyze` passed.
+   - `C:\Users\navee\flutter\bin\flutter.bat test` passed (118/118).
+   - `C:\Users\navee\flutter\bin\flutter.bat build apk --debug` passed.
+   Design folder(s) used:
+   - `security_settings_light`
+   Design assets checked:
+   - `screen.png`, `code.html`
+   UI fidelity note:
+   - The tester is additive and isolated to VPN diagnostics; no changes were made to existing parent workflow screens.
+
+---
+
+## Current Summary (after Day 38)
 
 - Day 1 completed: foundation, naming, structure, git + GitHub.
 - Day 2 completed: dependencies and Provider baseline.
@@ -1640,5 +1756,8 @@ Program goal: harden VPN runtime reliability with battery-optimization checks an
 - Day 33 completed in code: DNS query log page and method-channel hooks are now available, with incognito-mode privacy behavior and clear/refresh controls.
 - Day 34 completed in code: NextDNS setup is now available with validated profile persistence, endpoint previews, and VPN-screen navigation for staged managed DNS rollout.
 - Day 35 completed in code: VPN reliability tooling now includes battery-optimization status/actions and an in-app readiness test workflow for operator diagnostics.
+- Day 36 completed in code: native VPN filtering now persists blocked categories/domains in SQLite and restores them on service restart.
+- Day 37 completed in code: native rule-cache diagnostics/reset controls are available via method channel and VPN protection UI.
+- Day 38 completed in code: per-domain native policy evaluation is bridged to Flutter with an in-app domain policy tester screen.
 
 Last updated: 2026-02-17
