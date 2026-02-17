@@ -104,79 +104,83 @@ class _PinEntryDialogState extends State<_PinEntryDialog> {
   @override
   Widget build(BuildContext context) {
     return Dialog(
+      insetPadding: const EdgeInsets.symmetric(horizontal: 16, vertical: 24),
       shape: RoundedRectangleBorder(
         borderRadius: BorderRadius.circular(20),
       ),
-      child: Padding(
-        padding: const EdgeInsets.all(24),
-        child: Column(
-          mainAxisSize: MainAxisSize.min,
-          children: <Widget>[
-            const Text('🔐', style: TextStyle(fontSize: 40)),
-            const SizedBox(height: 12),
-            Text(
-              'Parent PIN',
-              style: Theme.of(context).textTheme.titleLarge?.copyWith(
-                    fontWeight: FontWeight.bold,
-                  ),
-            ),
-            const SizedBox(height: 6),
-            Text(
-              'Enter your 4-digit PIN to continue',
-              style: Theme.of(context).textTheme.bodySmall?.copyWith(
-                    color: Colors.grey[600],
-                  ),
-            ),
-            const SizedBox(height: 24),
-            Row(
-              mainAxisAlignment: MainAxisAlignment.center,
-              children: List<Widget>.generate(4, (int index) {
-                final isFilled = index < _entered.length;
-                return AnimatedContainer(
-                  duration: const Duration(milliseconds: 150),
-                  curve: Curves.easeOutBack,
-                  margin: const EdgeInsets.symmetric(horizontal: 8),
-                  width: 16,
-                  height: 16,
-                  decoration: BoxDecoration(
-                    shape: BoxShape.circle,
-                    color: isFilled
-                        ? Theme.of(context).colorScheme.primary
-                        : Colors.grey.withValues(alpha: 0.32),
-                  ),
-                );
-              }),
-            ),
-            if (_error != null) ...<Widget>[
+      child: SingleChildScrollView(
+        child: Padding(
+          padding: const EdgeInsets.all(20),
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            children: <Widget>[
+              const Icon(Icons.lock_outline, size: 40),
               const SizedBox(height: 12),
               Text(
-                _error!,
-                style: const TextStyle(color: Colors.red, fontSize: 13),
+                'Parent PIN',
+                style: Theme.of(context).textTheme.titleLarge?.copyWith(
+                      fontWeight: FontWeight.bold,
+                    ),
+              ),
+              const SizedBox(height: 6),
+              Text(
+                'Enter your 4-digit PIN to continue',
+                textAlign: TextAlign.center,
+                style: Theme.of(context).textTheme.bodySmall?.copyWith(
+                      color: Colors.grey[600],
+                    ),
+              ),
+              const SizedBox(height: 24),
+              Row(
+                mainAxisAlignment: MainAxisAlignment.center,
+                children: List<Widget>.generate(4, (int index) {
+                  final isFilled = index < _entered.length;
+                  return AnimatedContainer(
+                    duration: const Duration(milliseconds: 150),
+                    curve: Curves.easeOutBack,
+                    margin: const EdgeInsets.symmetric(horizontal: 8),
+                    width: 16,
+                    height: 16,
+                    decoration: BoxDecoration(
+                      shape: BoxShape.circle,
+                      color: isFilled
+                          ? Theme.of(context).colorScheme.primary
+                          : Colors.grey.withValues(alpha: 0.32),
+                    ),
+                  );
+                }),
+              ),
+              if (_error != null) ...<Widget>[
+                const SizedBox(height: 12),
+                Text(
+                  _error!,
+                  style: const TextStyle(color: Colors.red, fontSize: 13),
+                ),
+              ],
+              const SizedBox(height: 24),
+              _PinNumpad(
+                onDigitPressed: _onDigitPressed,
+                onBackspacePressed: _onBackspacePressed,
+              ),
+              if (_biometricAvailable) ...<Widget>[
+                const SizedBox(height: 16),
+                TextButton.icon(
+                  onPressed: _authenticateWithBiometric,
+                  icon: const Icon(Icons.fingerprint),
+                  label: const Text('Use fingerprint'),
+                ),
+              ],
+              const SizedBox(height: 8),
+              TextButton(
+                onPressed:
+                    _isChecking ? null : () => Navigator.of(context).pop(false),
+                child: Text(
+                  'Cancel',
+                  style: TextStyle(color: Colors.grey[500]),
+                ),
               ),
             ],
-            const SizedBox(height: 24),
-            _PinNumpad(
-              onDigitPressed: _onDigitPressed,
-              onBackspacePressed: _onBackspacePressed,
-            ),
-            if (_biometricAvailable) ...<Widget>[
-              const SizedBox(height: 16),
-              TextButton.icon(
-                onPressed: _authenticateWithBiometric,
-                icon: const Icon(Icons.fingerprint),
-                label: const Text('Use fingerprint'),
-              ),
-            ],
-            const SizedBox(height: 8),
-            TextButton(
-              onPressed:
-                  _isChecking ? null : () => Navigator.of(context).pop(false),
-              child: Text(
-                'Cancel',
-                style: TextStyle(color: Colors.grey[500]),
-              ),
-            ),
-          ],
+          ),
         ),
       ),
     );
@@ -196,52 +200,71 @@ class _PinNumpad extends StatelessWidget {
     <String>['1', '2', '3'],
     <String>['4', '5', '6'],
     <String>['7', '8', '9'],
-    <String>['', '0', '⌫'],
+    <String>['', '0', 'backspace'],
   ];
 
   @override
   Widget build(BuildContext context) {
-    return Column(
-      children: _rows.map((List<String> row) {
-        return Row(
-          mainAxisAlignment: MainAxisAlignment.center,
-          children: row.map((String key) {
-            if (key.isEmpty) {
-              return const SizedBox(width: 72, height: 56);
-            }
+    return LayoutBuilder(
+      builder: (BuildContext context, BoxConstraints constraints) {
+        const keyMargin = 4.0;
+        const keyMinWidth = 44.0;
+        const keyMaxWidth = 72.0;
+        const keyHeight = 56.0;
 
-            return Padding(
-              padding: const EdgeInsets.all(4),
-              child: InkWell(
-                borderRadius: BorderRadius.circular(12),
-                onTap: () {
-                  if (key == '⌫') {
-                    onBackspacePressed();
-                  } else {
-                    onDigitPressed(key);
-                  }
-                },
-                child: Ink(
-                  width: 72,
-                  height: 56,
-                  decoration: BoxDecoration(
-                    color: Colors.grey.withValues(alpha: 0.12),
+        final rawWidth = (constraints.maxWidth - (keyMargin * 2 * 3)) / 3;
+        final keyWidth = rawWidth.clamp(keyMinWidth, keyMaxWidth).toDouble();
+        final spacerWidth = keyWidth + (keyMargin * 2);
+
+        return Column(
+          children: _rows.map((List<String> row) {
+            return Row(
+              mainAxisAlignment: MainAxisAlignment.center,
+              children: row.map((String key) {
+                if (key.isEmpty) {
+                  return SizedBox(width: spacerWidth, height: keyHeight);
+                }
+
+                final isBackspace = key == 'backspace';
+                return Padding(
+                  padding: const EdgeInsets.all(keyMargin),
+                  child: InkWell(
                     borderRadius: BorderRadius.circular(12),
-                  ),
-                  child: Center(
-                    child: Text(
-                      key,
-                      style: Theme.of(context).textTheme.titleLarge?.copyWith(
-                            fontWeight: FontWeight.w600,
-                          ),
+                    onTap: () {
+                      if (isBackspace) {
+                        onBackspacePressed();
+                      } else {
+                        onDigitPressed(key);
+                      }
+                    },
+                    child: Ink(
+                      width: keyWidth,
+                      height: keyHeight,
+                      decoration: BoxDecoration(
+                        color: Colors.grey.withValues(alpha: 0.12),
+                        borderRadius: BorderRadius.circular(12),
+                      ),
+                      child: Center(
+                        child: isBackspace
+                            ? const Icon(Icons.backspace_outlined)
+                            : Text(
+                                key,
+                                style: Theme.of(context)
+                                    .textTheme
+                                    .titleLarge
+                                    ?.copyWith(
+                                      fontWeight: FontWeight.w600,
+                                    ),
+                              ),
+                      ),
                     ),
                   ),
-                ),
-              ),
+                );
+              }).toList(),
             );
           }).toList(),
         );
-      }).toList(),
+      },
     );
   }
 }
