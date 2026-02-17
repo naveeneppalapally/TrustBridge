@@ -603,6 +603,39 @@ void main() {
       );
     });
   });
+
+  group('Firestore permission error handling', () {
+    test('getChildrenOnce propagates permission denied failures', () async {
+      final service = _PermissionDeniedFirestoreService();
+
+      expect(
+        service.getChildrenOnce('parent-test'),
+        throwsA(
+          isA<FirebaseException>().having(
+            (error) => error.code,
+            'code',
+            'permission-denied',
+          ),
+        ),
+      );
+    });
+  });
+}
+
+class _PermissionDeniedFirestoreService extends FirestoreService {
+  _PermissionDeniedFirestoreService()
+      : super(firestore: FakeFirebaseFirestore());
+
+  @override
+  Future<List<ChildProfile>> getChildrenOnce(String parentId) {
+    return Future<List<ChildProfile>>.error(
+      FirebaseException(
+        plugin: 'cloud_firestore',
+        code: 'permission-denied',
+        message: 'Simulated permission failure.',
+      ),
+    );
+  }
 }
 
 Map<String, dynamic> _childDocData({

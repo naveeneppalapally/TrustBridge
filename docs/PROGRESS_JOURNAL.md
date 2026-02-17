@@ -31,6 +31,46 @@ UI commit message convention:
 
 ---
 
+## Day 58 - Firestore Security Rules Audit (Week 12 Day 3)
+
+Program goal: harden Firestore security before alpha by enforcing strict owner boundaries, request workflow constraints, and field-level validation.
+
+### Commit entries
+
+1. **2026-02-17 22:31:29 +05:30**  
+   Commit: `(this commit - see latest git log)`  
+   Message: `Implement Day 58 Firestore security rules audit and hardening`  
+   Changes:
+   - Rewrote `firestore.rules` with:
+     - explicit auth/ownership helpers
+     - owner-only access to `parents/{parentId}`
+     - owner-only access to top-level `children/{childId}` by `parentId == auth.uid`
+     - controlled create/update flow for `parents/{parentId}/access_requests/{requestId}`
+     - write-only client access to `notification_queue`
+     - secured `supportTickets` creation/read for owner
+     - global catch-all deny rule
+   - Updated `firestore.indexes.json`:
+     - added `access_requests` indexes for status/requestedAt and childId/requestedAt
+     - added collection-group index for `access_requests` status/expiresAt
+     - added `children` parentId/createdAt index
+     - added `notification_queue` processed/sentAt index
+   - Added rules emulator test suite:
+     - `test/firestore_rules/rules.test.js`
+     - covers parent ownership, child profile access control, request workflow permissions, queue restrictions, and catch-all deny
+   - Added `docs/SECURITY_CHECKLIST.md` with pre-alpha security controls and remaining post-alpha items
+   - Extended `test/services/firestore_service_test.dart` with permission-denied propagation smoke test
+   - Added dev dependency in `functions/package.json`:
+     - `@firebase/rules-unit-testing`
+   Validation:
+   - `flutter analyze` passed.
+   - `flutter test` passed.
+   - Firestore rules emulator tests passed via `firebase emulators:exec --only firestore \"node test/firestore_rules/rules.test.js\"`.
+   - `firebase deploy --only firestore:rules` passed.
+   - `firebase deploy --only firestore:indexes` passed.
+   - `flutter build apk --debug` passed.
+
+---
+
 ## Day 57 - App Lock / PIN Protection (Week 12 Day 2)
 
 Program goal: prevent children from opening parent-sensitive controls by requiring a parent PIN with optional biometric unlock.

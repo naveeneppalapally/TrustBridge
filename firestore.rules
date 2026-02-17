@@ -1,45 +1,210 @@
 rules_version = '2';
 service cloud.firestore {
   match /databases/{database}/documents {
-    function isAuthenticated() {
+    function isAuthed() {
       return request.auth != null;
     }
 
     function isParent(parentId) {
-      return isAuthenticated() && request.auth.uid == parentId;
+      return isAuthed() && request.auth.uid == parentId;
     }
 
-    match /parents/{parentId} {
-      allow create: if isParent(parentId) &&
-        request.resource.data.parentId == request.auth.uid;
-      allow read, update, delete: if isParent(parentId);
+    function hasOnlyKeys(data, allowedKeys) {
+      return data.keys().hasOnly(allowedKeys);
+    }
 
-      // Parent-owned subcollections (access requests, preferences logs, etc.).
-      match /{document=**} {
-        allow read, write: if isParent(parentId);
+    function isRequiredString(data, field, maxLen) {
+      return field in data &&
+        data[field] is string &&
+        data[field].size() > 0 &&
+        data[field].size() <= maxLen;
+    }
+
+    function isOptionalString(data, field, maxLen) {
+      return !(field in data) ||
+        data[field] == null ||
+        (data[field] is string && data[field].size() > 0 && data[field].size() <= maxLen);
+    }
+
+    function isOptionalInt(data, field, min, max) {
+      return !(field in data) ||
+        data[field] == null ||
+        (data[field] is int && data[field] >= min && data[field] <= max);
+    }
+
+    function isRequiredBool(data, field) {
+      return field in data && data[field] is bool;
+    }
+
+    function isRequiredTimestamp(data, field) {
+      return field in data && data[field] is timestamp;
+    }
+
+    function isOptionalTimestamp(data, field) {
+      return !(field in data) || data[field] == null || data[field] is timestamp;
+    }
+
+    function isAllowedAgeBand(data, field) {
+      return field in data &&
+        data[field] is string &&
+        data[field] in ['6-9', '10-13', '14-17'];
+    }
+
+    // Parent profile document.
+    match /parents/{parentId} {
+      allow read: if isParent(parentId);
+
+      allow create: if isParent(parentId) &&
+        isRequiredString(request.resource.data, 'parentId', 128) &&
+        request.resource.data.parentId == parentId &&
+        (!('phone' in request.resource.data) ||
+          request.resource.data.phone == null ||
+          (request.resource.data.phone is string && request.resource.data.phone.size() <= 20)) &&
+        (!('preferences' in request.resource.data) || request.resource.data.preferences is map) &&
+        (!('subscription' in request.resource.data) || request.resource.data.subscription is map) &&
+        isOptionalString(request.resource.data, 'fcmToken', 1024) &&
+        isOptionalTimestamp(request.resource.data, 'createdAt') &&
+        isOptionalTimestamp(request.resource.data, 'updatedAt') &&
+        isOptionalTimestamp(request.resource.data, 'fcmTokenUpdatedAt') &&
+        isOptionalTimestamp(request.resource.data, 'onboardingCompletedAt');
+
+      allow update: if isParent(parentId) &&
+        isRequiredString(request.resource.data, 'parentId', 128) &&
+        request.resource.data.parentId == resource.data.parentId &&
+        request.resource.data.parentId == parentId;
+
+      allow delete: if false;
+
+      // Access requests live under each parent.
+      match /access_requests/{requestId} {
+        allow read: if isParent(parentId);
+
+        allow create: if isParent(parentId) &&
+          hasOnlyKeys(
+            request.resource.data,
+            [
+              'childId',
+              'parentId',
+              'childNickname',
+              'appOrSite',
+              'durationMinutes',
+              'durationLabel',
+              'reason',
+              'status',
+              'parentReply',
+              'requestedAt',
+              'respondedAt',
+              'expiresAt'
+            ]
+          ) &&
+          isRequiredString(request.resource.data, 'childId', 128) &&
+          isRequiredString(request.resource.data, 'parentId', 128) &&
+          request.resource.data.parentId == parentId &&
+          isRequiredString(request.resource.data, 'childNickname', 30) &&
+          isRequiredString(request.resource.data, 'appOrSite', 100) &&
+          isRequiredString(request.resource.data, 'durationLabel', 40) &&
+          isOptionalInt(request.resource.data, 'durationMinutes', 1, 1440) &&
+          isOptionalString(request.resource.data, 'reason', 200) &&
+          request.resource.data.status == 'pending' &&
+          isRequiredTimestamp(request.resource.data, 'requestedAt') &&
+          (!('parentReply' in request.resource.data) || request.resource.data.parentReply == null) &&
+          (!('respondedAt' in request.resource.data) || request.resource.data.respondedAt == null) &&
+          (!('expiresAt' in request.resource.data) || request.resource.data.expiresAt == null);
+
+        allow update: if isParent(parentId) &&
+          resource.data.status == 'pending' &&
+          request.resource.data.diff(resource.data).affectedKeys().hasOnly(
+            ['status', 'parentReply', 'respondedAt', 'expiresAt']
+          ) &&
+          request.resource.data.status in ['approved', 'denied'] &&
+          isOptionalString(request.resource.data, 'parentReply', 200) &&
+          isRequiredTimestamp(request.resource.data, 'respondedAt') &&
+          isOptionalTimestamp(request.resource.data, 'expiresAt');
+
+        allow delete: if isParent(parentId);
       }
     }
 
+    // Child profiles (top-level collection in v1 schema).
     match /children/{childId} {
-      allow create: if isAuthenticated() &&
-        request.resource.data.parentId == request.auth.uid;
-      allow read, update, delete: if isAuthenticated() &&
-        resource.data.parentId == request.auth.uid;
+      allow read: if isAuthed() && resource.data.parentId == request.auth.uid;
+
+      allow create: if isAuthed() &&
+        hasOnlyKeys(
+          request.resource.data,
+          ['nickname', 'ageBand', 'deviceIds', 'policy', 'createdAt', 'updatedAt', 'parentId', 'pausedUntil']
+        ) &&
+        isRequiredString(request.resource.data, 'nickname', 30) &&
+        isAllowedAgeBand(request.resource.data, 'ageBand') &&
+        request.resource.data.deviceIds is list &&
+        request.resource.data.policy is map &&
+        isRequiredTimestamp(request.resource.data, 'createdAt') &&
+        isRequiredTimestamp(request.resource.data, 'updatedAt') &&
+        isRequiredString(request.resource.data, 'parentId', 128) &&
+        request.resource.data.parentId == request.auth.uid &&
+        isOptionalTimestamp(request.resource.data, 'pausedUntil');
+
+      allow update: if isAuthed() &&
+        resource.data.parentId == request.auth.uid &&
+        request.resource.data.parentId == resource.data.parentId &&
+        request.resource.data.diff(resource.data).affectedKeys().hasOnly(
+          ['nickname', 'ageBand', 'deviceIds', 'policy', 'pausedUntil', 'updatedAt']
+        ) &&
+        isRequiredString(request.resource.data, 'nickname', 30) &&
+        isAllowedAgeBand(request.resource.data, 'ageBand') &&
+        request.resource.data.deviceIds is list &&
+        request.resource.data.policy is map &&
+        isRequiredTimestamp(request.resource.data, 'createdAt') &&
+        isRequiredTimestamp(request.resource.data, 'updatedAt') &&
+        isOptionalTimestamp(request.resource.data, 'pausedUntil');
+
+      allow delete: if isAuthed() && resource.data.parentId == request.auth.uid;
     }
 
-    // Queue documents written by parent app and consumed by Cloud Functions.
-    match /notification_queue/{queueId} {
-      allow create: if isAuthenticated() &&
-        request.resource.data.parentId == request.auth.uid &&
-        request.resource.data.processed == false &&
-        request.resource.data.route is string &&
-        request.resource.data.title is string &&
-        request.resource.data.body is string;
+    // Queue used by Cloud Functions (client can write, cannot read).
+    match /notification_queue/{docId} {
+      allow read: if false;
 
-      allow read: if isAuthenticated() &&
-        resource.data.parentId == request.auth.uid;
+      allow create: if isAuthed() &&
+        hasOnlyKeys(
+          request.resource.data,
+          ['parentId', 'title', 'body', 'route', 'processed', 'sentAt']
+        ) &&
+        isRequiredString(request.resource.data, 'parentId', 128) &&
+        request.resource.data.parentId == request.auth.uid &&
+        isRequiredString(request.resource.data, 'title', 100) &&
+        isRequiredString(request.resource.data, 'body', 300) &&
+        isRequiredString(request.resource.data, 'route', 100) &&
+        isRequiredBool(request.resource.data, 'processed') &&
+        request.resource.data.processed == false &&
+        isRequiredTimestamp(request.resource.data, 'sentAt');
 
       allow update, delete: if false;
+    }
+
+    // Parent-submitted support tickets.
+    match /supportTickets/{ticketId} {
+      allow create: if isAuthed() &&
+        hasOnlyKeys(
+          request.resource.data,
+          ['parentId', 'subject', 'message', 'childId', 'status', 'createdAt', 'updatedAt']
+        ) &&
+        isRequiredString(request.resource.data, 'parentId', 128) &&
+        request.resource.data.parentId == request.auth.uid &&
+        isRequiredString(request.resource.data, 'subject', 120) &&
+        isRequiredString(request.resource.data, 'message', 2000) &&
+        isOptionalString(request.resource.data, 'childId', 128) &&
+        request.resource.data.status == 'open' &&
+        isRequiredTimestamp(request.resource.data, 'createdAt') &&
+        isRequiredTimestamp(request.resource.data, 'updatedAt');
+
+      allow read: if isAuthed() && resource.data.parentId == request.auth.uid;
+      allow update, delete: if false;
+    }
+
+    // Deny every non-whitelisted path.
+    match /{document=**} {
+      allow read, write: if false;
     }
   }
 }
