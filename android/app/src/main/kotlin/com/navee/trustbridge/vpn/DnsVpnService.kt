@@ -107,6 +107,7 @@ class DnsVpnService : VpnService() {
     private var packetThread: Thread? = null
     private var packetHandler: DnsPacketHandler? = null
     private lateinit var filterEngine: DnsFilterEngine
+    private lateinit var vpnPreferencesStore: VpnPreferencesStore
     private var lastAppliedCategories: List<String> = emptyList()
     private var lastAppliedDomains: List<String> = emptyList()
 
@@ -115,6 +116,12 @@ class DnsVpnService : VpnService() {
 
     override fun onCreate() {
         super.onCreate()
+        vpnPreferencesStore = VpnPreferencesStore(this)
+        val persisted = vpnPreferencesStore.loadConfig()
+        if (persisted.blockedCategories.isNotEmpty() || persisted.blockedDomains.isNotEmpty()) {
+            lastAppliedCategories = persisted.blockedCategories
+            lastAppliedDomains = persisted.blockedDomains
+        }
         filterEngine = DnsFilterEngine(this)
         blockedCategoryCount = filterEngine.blockedCategoryCount()
         blockedDomainCount = filterEngine.blockedDomainCount()
@@ -129,8 +136,11 @@ class DnsVpnService : VpnService() {
         return when (action) {
             ACTION_START -> {
                 val categories =
-                    intent?.getStringArrayListExtra(EXTRA_BLOCKED_CATEGORIES) ?: arrayListOf()
-                val domains = intent?.getStringArrayListExtra(EXTRA_BLOCKED_DOMAINS) ?: arrayListOf()
+                    intent?.getStringArrayListExtra(EXTRA_BLOCKED_CATEGORIES)?.toList()
+                        ?: lastAppliedCategories
+                val domains =
+                    intent?.getStringArrayListExtra(EXTRA_BLOCKED_DOMAINS)?.toList()
+                        ?: lastAppliedDomains
                 applyFilterRules(categories, domains)
                 startVpn()
                 START_STICKY
@@ -160,7 +170,7 @@ class DnsVpnService : VpnService() {
                     lastAppliedDomains
                 }
 
-                stopVpn(stopService = false)
+                stopVpn(stopService = false, markDisabled = false)
                 applyFilterRules(categories, domains)
                 startVpn()
                 START_STICKY
@@ -173,7 +183,7 @@ class DnsVpnService : VpnService() {
             }
 
             ACTION_STOP -> {
-                stopVpn(stopService = true)
+                stopVpn(stopService = true, markDisabled = true)
                 START_NOT_STICKY
             }
 
@@ -214,6 +224,7 @@ class DnsVpnService : VpnService() {
 
             serviceRunning = true
             isRunning = true
+            vpnPreferencesStore.setEnabled(true)
             startedAtEpochMs = System.currentTimeMillis()
             queriesProcessed = 0
             queriesBlocked = 0
@@ -226,7 +237,7 @@ class DnsVpnService : VpnService() {
             Log.d(TAG, "DNS VPN started")
         } catch (error: Exception) {
             Log.e(TAG, "Failed to start VPN", error)
-            stopVpn(stopService = true)
+            stopVpn(stopService = true, markDisabled = false)
         }
     }
 
@@ -272,14 +283,20 @@ class DnsVpnService : VpnService() {
         }
     }
 
-    private fun stopVpn(stopService: Boolean) {
+    private fun stopVpn(stopService: Boolean, markDisabled: Boolean) {
         if (!serviceRunning && vpnInterface == null) {
+            if (markDisabled) {
+                vpnPreferencesStore.setEnabled(false)
+            }
             return
         }
 
         Log.d(TAG, "Stopping DNS VPN")
         serviceRunning = false
         isRunning = false
+        if (markDisabled) {
+            vpnPreferencesStore.setEnabled(false)
+        }
 
         try {
             packetHandler?.close()
@@ -316,6 +333,7 @@ class DnsVpnService : VpnService() {
     ) {
         lastAppliedCategories = categories
         lastAppliedDomains = domains
+        vpnPreferencesStore.saveRules(categories, domains)
         filterEngine.updateFilterRules(categories, domains)
         blockedCategoryCount = filterEngine.blockedCategoryCount()
         blockedDomainCount = filterEngine.blockedDomainCount()
@@ -358,11 +376,11 @@ class DnsVpnService : VpnService() {
     override fun onRevoke() {
         super.onRevoke()
         Log.d(TAG, "VPN permission revoked")
-        stopVpn(stopService = true)
+        stopVpn(stopService = true, markDisabled = true)
     }
 
     override fun onDestroy() {
-        stopVpn(stopService = false)
+        stopVpn(stopService = false, markDisabled = false)
         try {
             filterEngine.close()
         } catch (_: Exception) {

@@ -1763,7 +1763,48 @@ Program goal: improve operational recovery by adding a native restart command th
 
 ---
 
-## Current Summary (after Day 39)
+## Day 40 - Boot Recovery for VPN Protection (Week 8 Day 5)
+
+Program goal: ensure VPN protection can recover automatically after device reboot using persisted native state and rules.
+
+### Commit entries
+
+1. **2026-02-17 15:58:57 +05:30**  
+   Commit: `pending (local changes)`  
+   Message: `Implement Day 40 VPN boot recovery with persisted native config`  
+   Changes:
+   - Added native persistence store:
+     - `android/app/src/main/kotlin/com/navee/trustbridge/vpn/VpnPreferencesStore.kt`
+       - persists VPN enabled state
+       - persists blocked categories/domains rule payload
+   - Added boot receiver:
+     - `android/app/src/main/kotlin/com/navee/trustbridge/vpn/VpnBootReceiver.kt`
+       - listens for boot-complete broadcasts
+       - restarts VPN service with persisted policy when previously enabled
+   - Updated VPN service lifecycle:
+     - `android/app/src/main/kotlin/com/navee/trustbridge/vpn/DnsVpnService.kt`
+       - initializes from persisted rules
+       - saves rules on apply/update
+       - differentiates explicit disable vs internal restart/service teardown
+       - preserves enabled intent across restart paths
+   - Updated Android manifest:
+     - `android/app/src/main/AndroidManifest.xml`
+       - added `RECEIVE_BOOT_COMPLETED` permission
+       - registered `VpnBootReceiver`
+   Validation:
+   - `C:\Users\navee\flutter\bin\flutter.bat analyze` passed.
+   - `C:\Users\navee\flutter\bin\flutter.bat test` passed (119/119).
+   - `C:\Users\navee\flutter\bin\flutter.bat build apk --debug` passed.
+   Design folder(s) used:
+   - `security_settings_light`
+   Design assets checked:
+   - `screen.png`, `code.html`
+   UI fidelity note:
+   - No parent UI changes; this day is native reliability hardening focused on boot recovery.
+
+---
+
+## Current Summary (after Day 40)
 
 - Day 1 completed: foundation, naming, structure, git + GitHub.
 - Day 2 completed: dependencies and Provider baseline.
@@ -1806,5 +1847,6 @@ Program goal: improve operational recovery by adding a native restart command th
 - Day 37 completed in code: native rule-cache diagnostics/reset controls are available via method channel and VPN protection UI.
 - Day 38 completed in code: per-domain native policy evaluation is bridged to Flutter with an in-app domain policy tester screen.
 - Day 39 completed in code: one-tap VPN restart is now available through Flutter-native bridge with policy-aware restart behavior.
+- Day 40 completed in code: VPN boot recovery now restores protection after reboot using persisted native state and rules.
 
 Last updated: 2026-02-17
