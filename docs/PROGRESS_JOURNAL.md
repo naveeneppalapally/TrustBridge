@@ -2114,7 +2114,50 @@ Program goal: notify parents instantly when a child submits an access request us
 
 ---
 
-## Current Summary (after Day 47)
+## Day 48 - Notification Queue Processor + Dev Test Action (Week 10 Day 3)
+
+Program goal: complete the backend delivery path so queued access-request alerts are sent via FCM, and add a one-tap in-app test action for faster notification verification.
+
+### Commit entries
+
+1. **2026-02-18 00:35:00 +05:30**  
+   Commit: `pending (local changes)`  
+   Message: `Implement Day 48 notification queue Cloud Function and dev test action`  
+   Changes:
+   - Added Firebase Functions backend:
+     - `functions/package.json`
+     - `functions/index.js`
+     - `functions/.gitignore`
+   - Updated `firebase.json`:
+     - added `"functions": { "source": "functions" }`
+   - Added Cloud Function `sendParentNotificationFromQueue`:
+     - triggers on `notification_queue/{queueId}` create
+     - validates payload (`parentId`, `title`, `body`, `route`)
+     - reads parent `fcmToken` from `parents/{parentId}`
+     - sends FCM notification + route data
+     - writes processing outcome back to queue document:
+       - `status: sent | skipped_no_token | invalid_payload | failed`
+       - `processed`, `processedAt`, and error metadata
+   - Updated Firestore rules (`firestore.rules`):
+     - added nested parent subcollection access under `/parents/{parentId}/{document=**}`
+     - added secured `notification_queue` create/read rules for authenticated parent-owned payloads
+   - Updated `lib/services/notification_service.dart`:
+     - added `showLocalTestNotification(...)` for in-app device verification
+   - Updated `lib/screens/parent_settings_screen.dart`:
+     - added debug action button:
+       - `Send test notification (Dev)`
+       - immediately shows local notification and feedback snackbar
+   - Updated tests:
+     - `test/screens/parent_settings_screen_test.dart` to assert dev button presence
+   Validation:
+   - `C:\Users\navee\flutter\bin\flutter.bat analyze` passed.
+   - `C:\Users\navee\flutter\bin\flutter.bat test` passed (156/156).
+   - `C:\Users\navee\flutter\bin\flutter.bat build apk --debug` passed.
+   - `node --check functions/index.js` passed.
+
+---
+
+## Current Summary (after Day 48)
 
 - Day 1 completed: foundation, naming, structure, git + GitHub.
 - Day 2 completed: dependencies and Provider baseline.
@@ -2165,5 +2208,6 @@ Program goal: notify parents instantly when a child submits an access request us
 - Day 45 completed in code: child request access flow now saves structured requests to Firestore with duration/reason preview and success feedback.
 - Day 46 completed in code: parent request inbox now supports real-time pending review, approve/deny replies, history tracking, and dashboard badge navigation.
 - Day 47 completed in code: push notification infrastructure now captures parent FCM tokens, queues access-request alerts, and routes notification taps to the parent requests inbox.
+- Day 48 completed in code: notification queue documents are now processed by Cloud Functions into real FCM pushes, and a dev test notification button is available in Parent Settings.
 
-Last updated: 2026-02-17
+Last updated: 2026-02-18

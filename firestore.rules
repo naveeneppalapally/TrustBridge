@@ -13,6 +13,11 @@ service cloud.firestore {
       allow create: if isParent(parentId) &&
         request.resource.data.parentId == request.auth.uid;
       allow read, update, delete: if isParent(parentId);
+
+      // Parent-owned subcollections (access requests, preferences logs, etc.).
+      match /{document=**} {
+        allow read, write: if isParent(parentId);
+      }
     }
 
     match /children/{childId} {
@@ -20,6 +25,21 @@ service cloud.firestore {
         request.resource.data.parentId == request.auth.uid;
       allow read, update, delete: if isAuthenticated() &&
         resource.data.parentId == request.auth.uid;
+    }
+
+    // Queue documents written by parent app and consumed by Cloud Functions.
+    match /notification_queue/{queueId} {
+      allow create: if isAuthenticated() &&
+        request.resource.data.parentId == request.auth.uid &&
+        request.resource.data.processed == false &&
+        request.resource.data.route is string &&
+        request.resource.data.title is string &&
+        request.resource.data.body is string;
+
+      allow read: if isAuthenticated() &&
+        resource.data.parentId == request.auth.uid;
+
+      allow update, delete: if false;
     }
   }
 }

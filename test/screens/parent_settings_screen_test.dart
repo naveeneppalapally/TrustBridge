@@ -226,6 +226,10 @@ void main() {
         find.byKey(const Key('settings_request_alert_permission_card')),
         findsOneWidget,
       );
+      expect(
+        find.byKey(const Key('settings_send_test_notification_button')),
+        findsOneWidget,
+      );
     });
   });
 }

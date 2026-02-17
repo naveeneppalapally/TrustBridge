@@ -118,6 +118,42 @@ class NotificationService {
 
   Stream<String> get onTokenRefresh => _fcm.onTokenRefresh;
 
+  Future<bool> showLocalTestNotification({
+    String title = 'TrustBridge Test Notification',
+    String body = 'Tap to open Access Requests.',
+    String route = '/parent-requests',
+  }) async {
+    try {
+      if (!_isInitialized) {
+        await initialize();
+      }
+
+      await _localNotifications.show(
+        DateTime.now().millisecondsSinceEpoch ~/ 1000,
+        title,
+        body,
+        const NotificationDetails(
+          android: AndroidNotificationDetails(
+            'trustbridge_requests',
+            'Access Requests',
+            channelDescription: 'Notifications when your child requests access',
+            importance: Importance.high,
+            priority: Priority.high,
+            icon: '@mipmap/ic_launcher',
+          ),
+        ),
+        payload: route,
+      );
+      return true;
+    } on MissingPluginException catch (error) {
+      debugPrint('[FCM] Local test notification unavailable: $error');
+      return false;
+    } catch (error) {
+      debugPrint('[FCM] Local test notification failed: $error');
+      return false;
+    }
+  }
+
   void _onForegroundMessage(RemoteMessage message) {
     debugPrint('[FCM] Foreground message: ${message.messageId}');
 
