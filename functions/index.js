@@ -2,6 +2,7 @@
 const admin = require("firebase-admin");
 const {logger} = require("firebase-functions");
 const {onDocumentCreated} = require("firebase-functions/v2/firestore");
+const {onSchedule} = require("firebase-functions/v2/scheduler");
 
 admin.initializeApp();
 
@@ -132,5 +133,52 @@ exports.sendParentNotificationFromQueue = onDocumentCreated(
         error,
       });
     }
+  },
+);
+
+exports.expireApprovedAccessRequests = onSchedule(
+  {
+    schedule: "every 5 minutes",
+    region: "asia-south1",
+    timeZone: "Asia/Kolkata",
+    retryCount: 0,
+  },
+  async () => {
+    const maxBatchSize = 200;
+    let totalExpired = 0;
+
+    while (true) {
+      const now = admin.firestore.Timestamp.now();
+      const snapshot = await db
+          .collectionGroup("access_requests")
+          .where("status", "==", "approved")
+          .where("expiresAt", "<=", now)
+          .limit(maxBatchSize)
+          .get();
+
+      if (snapshot.empty) {
+        break;
+      }
+
+      const batch = db.batch();
+      for (const doc of snapshot.docs) {
+        batch.update(doc.ref, {
+          status: "expired",
+          expiredAt: admin.firestore.FieldValue.serverTimestamp(),
+          updatedAt: admin.firestore.FieldValue.serverTimestamp(),
+        });
+      }
+
+      await batch.commit();
+      totalExpired += snapshot.size;
+
+      if (snapshot.size < maxBatchSize) {
+        break;
+      }
+    }
+
+    logger.info("Expired access requests sweep complete.", {
+      totalExpired,
+    });
   },
 );

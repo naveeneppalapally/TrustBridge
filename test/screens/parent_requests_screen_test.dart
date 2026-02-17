@@ -49,6 +49,35 @@ void main() {
       expect(find.text('No history yet'), findsOneWidget);
     });
 
+    testWidgets('history tab renders expired requests', (tester) async {
+      await _seedRequest(
+        firestore: fakeFirestore,
+        parentId: 'parent-a',
+        requestId: 'request-expired',
+        childNickname: 'Aarav',
+        appOrSite: 'youtube.com',
+        durationLabel: '30 min',
+        durationMinutes: 30,
+        status: 'expired',
+      );
+
+      await tester.pumpWidget(
+        MaterialApp(
+          home: ParentRequestsScreen(
+            parentIdOverride: 'parent-a',
+            firestoreService: firestoreService,
+          ),
+        ),
+      );
+      await tester.pumpAndSettle();
+
+      await tester.tap(find.text('History'));
+      await tester.pumpAndSettle();
+
+      expect(find.text('Expired'), findsOneWidget);
+      expect(find.text('Aarav -> youtube.com'), findsOneWidget);
+    });
+
     testWidgets('pending card shows child, app, duration, and reason',
         (tester) async {
       await _seedRequest(

@@ -524,8 +524,7 @@ class _HistoryCard extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final isApproved = request.status == RequestStatus.approved;
-    final color = isApproved ? Colors.green : Colors.orange;
+    final color = _statusColor(request.status);
 
     return Container(
       decoration: BoxDecoration(
@@ -592,6 +591,19 @@ class _HistoryCard extends StatelessWidget {
         ],
       ),
     );
+  }
+
+  Color _statusColor(RequestStatus status) {
+    switch (status) {
+      case RequestStatus.pending:
+        return Colors.orange;
+      case RequestStatus.approved:
+        return Colors.green;
+      case RequestStatus.denied:
+        return Colors.orange;
+      case RequestStatus.expired:
+        return Colors.grey;
+    }
   }
 }
 

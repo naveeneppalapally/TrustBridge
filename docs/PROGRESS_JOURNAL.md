@@ -2164,7 +2164,7 @@ Program goal: give children a clear, real-time view of request outcomes so they 
 ### Commit entries
 
 1. **2026-02-17 22:20:00 +05:30**  
-   Commit: `pending (local changes)`  
+   Commit: `5590e55`  
    Message: `Implement Day 49 child request updates screen`  
    Changes:
    - Created `lib/screens/child_requests_screen.dart`:
@@ -2186,7 +2186,35 @@ Program goal: give children a clear, real-time view of request outcomes so they 
 
 ---
 
-## Current Summary (after Day 49)
+## Day 50 - Access Request Auto-Expiration (Week 10 Day 5)
+
+Program goal: ensure temporary approvals close automatically without manual parent action by expiring approved requests as soon as their access window ends.
+
+### Commit entries
+
+1. **2026-02-17 23:20:00 +05:30**  
+   Commit: `pending (local changes)`  
+   Message: `Implement Day 50 request auto-expiration and functions dependency upgrade`  
+   Changes:
+   - Updated `functions/package.json` and lockfile:
+     - upgraded `firebase-functions` to latest (`^7.0.5`)
+     - upgraded `firebase-admin` to latest (`^13.6.1`)
+   - Updated `functions/index.js`:
+     - added scheduled function `expireApprovedAccessRequests` (every 5 minutes, `asia-south1`)
+     - scans `collectionGroup('access_requests')` for approved requests with `expiresAt <= now`
+     - updates status to `expired` in batched writes
+   - Updated `lib/screens/parent_requests_screen.dart`:
+     - history status color now handles `expired` explicitly (grey)
+   - Updated tests:
+     - `test/screens/parent_requests_screen_test.dart` adds expired-history coverage
+   Validation:
+   - `C:\Users\navee\flutter\bin\flutter.bat analyze` passed.
+   - `C:\Users\navee\flutter\bin\flutter.bat test` passed.
+   - `firebase deploy --only functions --force` passed.
+
+---
+
+## Current Summary (after Day 50)
 
 - Day 1 completed: foundation, naming, structure, git + GitHub.
 - Day 2 completed: dependencies and Provider baseline.
@@ -2239,5 +2267,6 @@ Program goal: give children a clear, real-time view of request outcomes so they 
 - Day 47 completed in code: push notification infrastructure now captures parent FCM tokens, queues access-request alerts, and routes notification taps to the parent requests inbox.
 - Day 48 completed in code: notification queue documents are now processed by Cloud Functions into real FCM pushes, and a dev test notification button is available in Parent Settings.
 - Day 49 completed in code: child-facing request updates now show real-time request status/history with filters and reply visibility from parent decisions.
+- Day 50 completed in code: approved access requests now auto-expire via scheduled Cloud Function, with updated history rendering for expired decisions.
 
 Last updated: 2026-02-17
