@@ -1924,7 +1924,50 @@ Program goal: bridge Firestore policy updates to the active VPN filter engine au
 
 ---
 
-## Current Summary (after Day 43)
+## Day 44 - Child Status Screen (Week 9 Day 4)
+
+Program goal: build the primary screen children see on their device, showing current mode, what is paused right now, and a supportive request-access entry point.
+
+### Commit entries
+
+1. **2026-02-17 17:15:53 +05:30**  
+   Commit: `pending (local changes)`  
+   Message: `Implement Day 44 child status screen [design: child_status_mobile_light]`  
+   Changes:
+   - Created `lib/models/active_mode.dart`:
+     - `ActiveMode` enum for `freeTime`, `homework`, `bedtime`, `school`, `custom`
+     - display names, emojis, supportive explanations, and design color tokens
+   - Created `lib/screens/child_status_screen.dart`:
+     - greeting header with child nickname and date
+     - animated hero card with pulse mode icon and supportive explanation
+     - live schedule-based mode detection
+     - "Paused right now" category chips (non-punitive wording)
+     - "Ask for Access" call-to-action
+     - lightweight schedule feed
+   - Created `lib/screens/child_request_screen.dart` as Day 45 stub
+   - Updated `lib/main.dart`:
+     - added `/child-status` route using `ChildProfile` route argument
+   - Added tests:
+     - `test/screens/child_status_screen_test.dart`
+       - greeting render
+       - mode label render
+       - request CTA visibility
+       - non-punitive text checks
+       - tap-to-request navigation
+   Validation:
+   - `C:\Users\navee\flutter\bin\flutter.bat analyze` passed.
+   - `C:\Users\navee\flutter\bin\flutter.bat test` passed (133/133).
+   - `C:\Users\navee\flutter\bin\flutter.bat build apk --debug` passed.
+   Design folder(s) used:
+   - `child_status_mobile_light`
+   Design assets checked:
+   - `screen.png`, `code.html`
+   UI fidelity note:
+   - Hero card uses mode-color gradient tint and pulse animation following the iOS-Motion Hybrid style intent.
+
+---
+
+## Current Summary (after Day 44)
 
 - Day 1 completed: foundation, naming, structure, git + GitHub.
 - Day 2 completed: dependencies and Provider baseline.
@@ -1971,5 +2014,6 @@ Program goal: bridge Firestore policy updates to the active VPN filter engine au
 - Day 41 completed in code: diagnostics now include direct shortcuts to VPN and Private DNS system settings for faster recovery.
 - Day 42 completed in code: VPN permission recovery is now a dedicated flow in the protection screen with explicit grant action and feedback.
 - Day 43 completed in code: Firestore child-policy updates now auto-sync to active VPN rules, with foreground/manual sync controls and diagnostics.
+- Day 44 completed in code: child-facing status screen now shows active mode, supportive paused-content messaging, and Ask for Access entry.
 
 Last updated: 2026-02-17

@@ -3,7 +3,9 @@ import 'package:firebase_core/firebase_core.dart';
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 import 'package:trustbridge_app/firebase_options.dart';
+import 'package:trustbridge_app/models/child_profile.dart';
 import 'package:trustbridge_app/screens/add_child_screen.dart';
+import 'package:trustbridge_app/screens/child_status_screen.dart';
 import 'package:trustbridge_app/screens/dashboard_screen.dart';
 import 'package:trustbridge_app/screens/login_screen.dart';
 import 'package:trustbridge_app/services/auth_service.dart';
@@ -54,6 +56,11 @@ class MyApp extends StatelessWidget {
           '/login': (context) => const LoginScreen(),
           '/dashboard': (context) => const DashboardScreen(),
           '/add-child': (context) => const AddChildScreen(),
+          '/child-status': (context) {
+            final child =
+                ModalRoute.of(context)!.settings.arguments as ChildProfile;
+            return ChildStatusScreen(child: child);
+          },
         },
       ),
     );
