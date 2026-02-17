@@ -31,6 +31,43 @@ UI commit message convention:
 
 ---
 
+## Day 62 - Beta Feedback History (Week 13 Day 2)
+
+Program goal: give parents a real-time view of submitted beta/support reports
+with status visibility and quick access back to the feedback form.
+
+### Commit entries
+
+1. **2026-02-17**  
+   Commit: `(this commit - see latest git log)`  
+   Message: `Implement Day 62 beta feedback history screen`  
+   Changes:
+   - Created `lib/models/support_ticket.dart`:
+     - typed `SupportTicket` model
+     - `SupportTicketStatus` enum with resilient parsing
+   - Updated `lib/services/firestore_service.dart`:
+     - added `getSupportTicketsStream(parentId, {limit})`
+     - filters by parent ownership and sorts newest-first
+   - Created `lib/screens/beta_feedback_history_screen.dart`:
+     - live ticket list from Firestore
+     - empty/error states
+     - status chips and metadata
+     - details bottom sheet per ticket
+     - CTA/FAB to open `BetaFeedbackScreen`
+   - Updated `lib/screens/parent_settings_screen.dart`:
+     - added `Feedback History` tile in Support section
+   - Updated `lib/main.dart`:
+     - added `/beta-feedback-history` route
+   - Added tests:
+     - `test/screens/beta_feedback_history_screen_test.dart`
+     - expanded `test/screens/parent_settings_screen_test.dart`
+     - expanded `test/services/firestore_service_test.dart`
+   Validation:
+   - `flutter analyze` passed.
+   - `flutter test` passed.
+
+---
+
 ## Day 61 - Beta Feedback Intake (Week 13 Day 1)
 
 Program goal: open a structured feedback channel for alpha/beta testers directly

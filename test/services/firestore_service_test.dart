@@ -4,6 +4,7 @@ import 'package:flutter_test/flutter_test.dart';
 import 'package:trustbridge_app/models/access_request.dart';
 import 'package:trustbridge_app/models/child_profile.dart';
 import 'package:trustbridge_app/models/policy.dart';
+import 'package:trustbridge_app/models/support_ticket.dart';
 import 'package:trustbridge_app/services/firestore_service.dart';
 
 void main() {
@@ -387,6 +388,46 @@ void main() {
         ),
         throwsA(isA<ArgumentError>()),
       );
+    });
+
+    test('getSupportTicketsStream returns parent tickets newest first',
+        () async {
+      await fakeFirestore.collection('supportTickets').doc('ticket-old').set({
+        'parentId': 'parent-history-a',
+        'subject': 'Older issue',
+        'message': 'Older issue details text for sorting checks.',
+        'status': 'open',
+        'createdAt': Timestamp.fromDate(DateTime(2026, 2, 17, 9, 30)),
+        'updatedAt': Timestamp.fromDate(DateTime(2026, 2, 17, 9, 35)),
+      });
+      await fakeFirestore.collection('supportTickets').doc('ticket-new').set({
+        'parentId': 'parent-history-a',
+        'subject': 'Newest issue',
+        'message': 'Newest issue details should appear first in history.',
+        'status': 'resolved',
+        'createdAt': Timestamp.fromDate(DateTime(2026, 2, 17, 11, 30)),
+        'updatedAt': Timestamp.fromDate(DateTime(2026, 2, 17, 11, 45)),
+      });
+      await fakeFirestore
+          .collection('supportTickets')
+          .doc('ticket-other-parent')
+          .set({
+        'parentId': 'parent-history-b',
+        'subject': 'Other parent issue',
+        'message': 'Should be filtered out.',
+        'status': 'open',
+        'createdAt': Timestamp.fromDate(DateTime(2026, 2, 17, 12, 0)),
+        'updatedAt': Timestamp.fromDate(DateTime(2026, 2, 17, 12, 0)),
+      });
+
+      final tickets = await firestoreService
+          .getSupportTicketsStream('parent-history-a')
+          .first;
+
+      expect(tickets.length, 2);
+      expect(tickets.map((ticket) => ticket.id), ['ticket-new', 'ticket-old']);
+      expect(tickets.first.status, SupportTicketStatus.resolved);
+      expect(tickets.last.status, SupportTicketStatus.open);
     });
 
     test('saveFcmToken and removeFcmToken update parent document', () async {

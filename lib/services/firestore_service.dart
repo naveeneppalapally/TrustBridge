@@ -3,6 +3,7 @@ import 'dart:developer' as developer;
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:trustbridge_app/models/access_request.dart';
 import 'package:trustbridge_app/models/child_profile.dart';
+import 'package:trustbridge_app/models/support_ticket.dart';
 
 class FirestoreService {
   FirestoreService({FirebaseFirestore? firestore})
@@ -287,6 +288,42 @@ class FirestoreService {
       'updatedAt': Timestamp.fromDate(DateTime.now()),
     });
     return ticketRef.id;
+  }
+
+  Stream<List<SupportTicket>> getSupportTicketsStream(
+    String parentId, {
+    int limit = 50,
+  }) {
+    if (parentId.trim().isEmpty) {
+      throw ArgumentError.value(parentId, 'parentId', 'Parent ID is required.');
+    }
+    if (limit <= 0) {
+      throw ArgumentError.value(
+          limit, 'limit', 'Limit must be greater than 0.');
+    }
+
+    return _firestore
+        .collection('supportTickets')
+        .where('parentId', isEqualTo: parentId)
+        .limit(limit)
+        .snapshots()
+        .map((snapshot) {
+      final tickets = <SupportTicket>[];
+      for (final doc in snapshot.docs) {
+        try {
+          tickets.add(SupportTicket.fromFirestore(doc));
+        } catch (error, stackTrace) {
+          developer.log(
+            'Skipping malformed support ticket document: ${doc.id}',
+            name: 'FirestoreService',
+            error: error,
+            stackTrace: stackTrace,
+          );
+        }
+      }
+      tickets.sort((a, b) => b.createdAt.compareTo(a.createdAt));
+      return tickets;
+    });
   }
 
   Future<String> submitBetaFeedback({

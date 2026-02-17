@@ -73,6 +73,7 @@ void main() {
       expect(find.text('SUPPORT'), findsOneWidget);
       expect(find.text('Setup Guide'), findsOneWidget);
       expect(find.text('Beta Feedback'), findsOneWidget);
+      expect(find.text('Feedback History'), findsOneWidget);
       expect(find.text('Help & Support'), findsOneWidget);
     });
 
@@ -237,6 +238,46 @@ void main() {
       expect(find.text('Help shape TrustBridge Beta'), findsOneWidget);
       expect(
           find.byKey(const Key('beta_feedback_submit_button')), findsOneWidget);
+    });
+
+    testWidgets('navigates to feedback history screen from support card',
+        (tester) async {
+      await tester.binding.setSurfaceSize(const Size(430, 1400));
+      addTearDown(() => tester.binding.setSurfaceSize(null));
+
+      const parentId = 'parent-settings-g';
+      await seedParent(
+        parentId: parentId,
+        preferences: {
+          'language': 'en',
+          'timezone': 'Asia/Kolkata',
+          'pushNotificationsEnabled': true,
+          'weeklySummaryEnabled': true,
+          'securityAlertsEnabled': true,
+        },
+      );
+
+      await tester.pumpWidget(
+        MaterialApp(
+          home: ParentSettingsScreen(
+            parentIdOverride: parentId,
+            firestoreService: firestoreService,
+          ),
+        ),
+      );
+      await tester.pumpAndSettle();
+      await tester.dragUntilVisible(
+        find.text('Feedback History'),
+        find.byType(ListView),
+        const Offset(0, -300),
+      );
+      await tester.pumpAndSettle();
+
+      await tester.tap(find.text('Feedback History'));
+      await tester.pumpAndSettle();
+
+      expect(find.text('Feedback History'), findsOneWidget);
+      expect(find.text('No feedback yet'), findsOneWidget);
     });
 
     testWidgets('shows access request alerts permission card', (tester) async {

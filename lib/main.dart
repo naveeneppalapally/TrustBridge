@@ -8,6 +8,7 @@ import 'package:provider/provider.dart';
 import 'package:trustbridge_app/firebase_options.dart';
 import 'package:trustbridge_app/models/child_profile.dart';
 import 'package:trustbridge_app/screens/add_child_screen.dart';
+import 'package:trustbridge_app/screens/beta_feedback_history_screen.dart';
 import 'package:trustbridge_app/screens/beta_feedback_screen.dart';
 import 'package:trustbridge_app/screens/child_requests_screen.dart';
 import 'package:trustbridge_app/screens/child_status_screen.dart';
@@ -79,6 +80,8 @@ class MyApp extends StatelessWidget {
           '/parent-requests': (context) => const ParentRequestsScreen(),
           '/dns-analytics': (context) => const DnsAnalyticsScreen(),
           '/beta-feedback': (context) => const BetaFeedbackScreen(),
+          '/beta-feedback-history': (context) =>
+              const BetaFeedbackHistoryScreen(),
           '/onboarding': (context) {
             final parentId = ModalRoute.of(context)?.settings.arguments;
             if (parentId is! String || parentId.trim().isEmpty) {
