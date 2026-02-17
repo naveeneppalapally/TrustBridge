@@ -18,6 +18,7 @@ class _FakeVpnService implements VpnServiceBase {
   bool running;
   bool permissionResult = true;
   bool startResult = true;
+  bool restartResult = true;
   bool stopResult = true;
   bool ignoringBatteryOptimizations = true;
   int openBatterySettingsCalls = 0;
@@ -76,6 +77,17 @@ class _FakeVpnService implements VpnServiceBase {
       running = false;
     }
     return stopResult;
+  }
+
+  @override
+  Future<bool> restartVpn({
+    List<String> blockedCategories = const [],
+    List<String> blockedDomains = const [],
+  }) async {
+    if (restartResult) {
+      running = true;
+    }
+    return restartResult;
   }
 
   @override
@@ -263,7 +275,8 @@ void main() {
         ),
       );
       await tester.pumpAndSettle();
-      final selfCheckButton = find.byKey(const Key('vpn_dns_self_check_button'));
+      final selfCheckButton =
+          find.byKey(const Key('vpn_dns_self_check_button'));
       await tester.dragUntilVisible(
         selfCheckButton,
         find.byType(ListView),
@@ -420,6 +433,42 @@ void main() {
       await tester.pumpAndSettle();
 
       expect(find.byType(DomainPolicyTesterScreen), findsOneWidget);
+    });
+
+    testWidgets('restart button restarts vpn with latest rules',
+        (tester) async {
+      const parentId = 'parent-vpn-i';
+      await seedParent(parentId);
+
+      final fakeVpn = _FakeVpnService(
+        supported: true,
+        permissionGranted: true,
+        running: true,
+      );
+
+      await tester.pumpWidget(
+        MaterialApp(
+          home: VpnProtectionScreen(
+            vpnService: fakeVpn,
+            firestoreService: firestoreService,
+            parentIdOverride: parentId,
+          ),
+        ),
+      );
+      await tester.pumpAndSettle();
+
+      final restartButton = find.byKey(const Key('vpn_restart_button'));
+      await tester.dragUntilVisible(
+        restartButton,
+        find.byType(ListView),
+        const Offset(0, -120),
+      );
+      await tester.pumpAndSettle();
+      await tester.tap(restartButton, warnIfMissed: false);
+      await tester.pumpAndSettle();
+
+      expect(find.text('VPN service restarted with latest policy rules.'),
+          findsOneWidget);
     });
   });
 }

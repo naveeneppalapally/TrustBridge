@@ -1717,7 +1717,53 @@ Program goal: complete a practical Flutter ↔ native bridge for per-domain poli
 
 ---
 
-## Current Summary (after Day 38)
+## Day 39 - One-Tap VPN Restart Bridge (Week 8 Day 4)
+
+Program goal: improve operational recovery by adding a native restart command that reboots VPN service with current policy rules.
+
+### Commit entries
+
+1. **2026-02-17 15:52:58 +05:30**  
+   Commit: `pending (local changes)`  
+   Message: `Implement Day 39 one-tap VPN restart bridge and UI control`  
+   Changes:
+   - Updated native service lifecycle:
+     - `android/app/src/main/kotlin/com/navee/trustbridge/vpn/DnsVpnService.kt`
+       - added `ACTION_RESTART`
+       - persisted last applied categories/domains for restart continuity
+       - refactored stop flow to support non-destructive restart (`stopService` flag)
+   - Updated Flutter-native bridge:
+     - `android/app/src/main/kotlin/com/navee/trustbridge/MainActivity.kt`
+       - added method channel handler `restartVpn`
+     - `lib/services/vpn_service.dart`
+       - added `restartVpn(...)` API to `VpnServiceBase` + `VpnService`
+   - Updated VPN controls UI:
+     - `lib/screens/vpn_protection_screen.dart`
+       - added `Restart VPN Service` action button
+       - wired to current rules load + restart bridge call
+       - success/error feedback integrated into existing status workflow
+   - Added/updated tests:
+     - updated `test/services/vpn_service_test.dart`
+     - updated `test/screens/vpn_protection_screen_test.dart`
+     - updated fake VPN service implementations in:
+       - `test/screens/vpn_test_screen_test.dart`
+       - `test/screens/dns_query_log_screen_test.dart`
+       - `test/screens/nextdns_settings_screen_test.dart`
+       - `test/screens/domain_policy_tester_screen_test.dart`
+   Validation:
+   - `C:\Users\navee\flutter\bin\flutter.bat analyze` passed.
+   - `C:\Users\navee\flutter\bin\flutter.bat test` passed (119/119).
+   - `C:\Users\navee\flutter\bin\flutter.bat build apk --debug` passed.
+   Design folder(s) used:
+   - `security_settings_light`
+   Design assets checked:
+   - `screen.png`, `code.html`
+   UI fidelity note:
+   - Restart control was added inside existing VPN action card to preserve navigation and card hierarchy.
+
+---
+
+## Current Summary (after Day 39)
 
 - Day 1 completed: foundation, naming, structure, git + GitHub.
 - Day 2 completed: dependencies and Provider baseline.
@@ -1759,5 +1805,6 @@ Program goal: complete a practical Flutter ↔ native bridge for per-domain poli
 - Day 36 completed in code: native VPN filtering now persists blocked categories/domains in SQLite and restores them on service restart.
 - Day 37 completed in code: native rule-cache diagnostics/reset controls are available via method channel and VPN protection UI.
 - Day 38 completed in code: per-domain native policy evaluation is bridged to Flutter with an in-app domain policy tester screen.
+- Day 39 completed in code: one-tap VPN restart is now available through Flutter-native bridge with policy-aware restart behavior.
 
 Last updated: 2026-02-17

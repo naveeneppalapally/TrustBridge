@@ -39,6 +39,7 @@ class _VpnProtectionScreenState extends State<VpnProtectionScreen> {
   bool _isRefreshingStatus = false;
   bool _isCheckingDns = false;
   bool _isSyncingRules = false;
+  bool _isRestartingVpn = false;
   String? _dnsSelfCheckMessage;
   Timer? _statusAutoRefreshTimer;
   DateTime? _lastStatusRefreshAt;
@@ -196,6 +197,11 @@ class _VpnProtectionScreenState extends State<VpnProtectionScreen> {
         _status.permissionGranted &&
         _status.isRunning &&
         !_isBusy;
+    final canRestartVpn = _status.supported &&
+        _status.permissionGranted &&
+        _status.isRunning &&
+        !_isBusy &&
+        !_isSyncingRules;
 
     return Card(
       elevation: 0,
@@ -253,6 +259,22 @@ class _VpnProtectionScreenState extends State<VpnProtectionScreen> {
                   : const Icon(Icons.sync),
               label: Text(
                 _isSyncingRules ? 'Syncing...' : 'Sync Policy Rules',
+              ),
+            ),
+            const SizedBox(height: 10),
+            OutlinedButton.icon(
+              key: const Key('vpn_restart_button'),
+              onPressed:
+                  _isRestartingVpn || !canRestartVpn ? null : _restartVpnNow,
+              icon: _isRestartingVpn
+                  ? const SizedBox(
+                      width: 18,
+                      height: 18,
+                      child: CircularProgressIndicator(strokeWidth: 2),
+                    )
+                  : const Icon(Icons.restart_alt),
+              label: Text(
+                _isRestartingVpn ? 'Restarting...' : 'Restart VPN Service',
               ),
             ),
             const SizedBox(height: 8),
@@ -1021,6 +1043,34 @@ class _VpnProtectionScreenState extends State<VpnProtectionScreen> {
       await _refreshStatus();
       if (mounted) {
         setState(() => _isSyncingRules = false);
+      }
+    }
+  }
+
+  Future<void> _restartVpnNow() async {
+    setState(() => _isRestartingVpn = true);
+    try {
+      final rules = await _loadRulesForVpnStart();
+      final restarted = await _resolvedVpnService.restartVpn(
+        blockedCategories: rules.blockedCategories,
+        blockedDomains: rules.blockedDomains,
+      );
+      if (!mounted) {
+        return;
+      }
+      if (restarted) {
+        _showMessage('VPN service restarted with latest policy rules.');
+      } else {
+        _showMessage('Unable to restart VPN service.', isError: true);
+      }
+    } catch (_) {
+      if (mounted) {
+        _showMessage('Unable to restart VPN service.', isError: true);
+      }
+    } finally {
+      await _refreshStatus();
+      if (mounted) {
+        setState(() => _isRestartingVpn = false);
       }
     }
   }

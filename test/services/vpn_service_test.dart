@@ -68,6 +68,9 @@ void main() {
         if (call.method == 'startVpn') {
           return true;
         }
+        if (call.method == 'restartVpn') {
+          return true;
+        }
         if (call.method == 'isVpnRunning') {
           return true;
         }
@@ -122,6 +125,13 @@ void main() {
       expect(await service.requestPermission(), isTrue);
       expect(
         await service.startVpn(
+          blockedCategories: const ['social-networks'],
+          blockedDomains: const ['facebook.com'],
+        ),
+        isTrue,
+      );
+      expect(
+        await service.restartVpn(
           blockedCategories: const ['social-networks'],
           blockedDomains: const ['facebook.com'],
         ),

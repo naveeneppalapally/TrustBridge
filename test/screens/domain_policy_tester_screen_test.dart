@@ -61,6 +61,13 @@ class _FakeVpnServiceForDomainTester implements VpnServiceBase {
       true;
 
   @override
+  Future<bool> restartVpn({
+    List<String> blockedCategories = const [],
+    List<String> blockedDomains = const [],
+  }) async =>
+      true;
+
+  @override
   Future<bool> stopVpn() async => true;
 
   @override

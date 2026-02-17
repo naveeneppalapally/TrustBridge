@@ -200,6 +200,11 @@ abstract class VpnServiceBase {
     List<String> blockedDomains,
   });
 
+  Future<bool> restartVpn({
+    List<String> blockedCategories,
+    List<String> blockedDomains,
+  });
+
   Future<bool> stopVpn();
 
   Future<bool> updateFilterRules({
@@ -340,6 +345,31 @@ class VpnService implements VpnServiceBase {
 
     try {
       return await _channel.invokeMethod<bool>('stopVpn') ?? false;
+    } on PlatformException {
+      return false;
+    } on MissingPluginException {
+      return false;
+    }
+  }
+
+  @override
+  Future<bool> restartVpn({
+    List<String> blockedCategories = const [],
+    List<String> blockedDomains = const [],
+  }) async {
+    if (!_supported) {
+      return false;
+    }
+
+    try {
+      return await _channel.invokeMethod<bool>(
+            'restartVpn',
+            {
+              'blockedCategories': blockedCategories,
+              'blockedDomains': blockedDomains,
+            },
+          ) ??
+          false;
     } on PlatformException {
       return false;
     } on MissingPluginException {

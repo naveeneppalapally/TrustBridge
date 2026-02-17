@@ -26,6 +26,7 @@ class DnsVpnService : VpnService() {
 
         const val ACTION_START = "com.navee.trustbridge.vpn.START"
         const val ACTION_STOP = "com.navee.trustbridge.vpn.STOP"
+        const val ACTION_RESTART = "com.navee.trustbridge.vpn.RESTART"
         const val ACTION_UPDATE_RULES = "com.navee.trustbridge.vpn.UPDATE_RULES"
         const val ACTION_CLEAR_QUERY_LOGS = "com.navee.trustbridge.vpn.CLEAR_QUERY_LOGS"
         const val EXTRA_BLOCKED_CATEGORIES = "blockedCategories"
@@ -106,6 +107,8 @@ class DnsVpnService : VpnService() {
     private var packetThread: Thread? = null
     private var packetHandler: DnsPacketHandler? = null
     private lateinit var filterEngine: DnsFilterEngine
+    private var lastAppliedCategories: List<String> = emptyList()
+    private var lastAppliedDomains: List<String> = emptyList()
 
     @Volatile
     private var serviceRunning: Boolean = false
@@ -141,6 +144,28 @@ class DnsVpnService : VpnService() {
                 START_STICKY
             }
 
+            ACTION_RESTART -> {
+                val hasCategories = intent?.hasExtra(EXTRA_BLOCKED_CATEGORIES) == true
+                val hasDomains = intent?.hasExtra(EXTRA_BLOCKED_DOMAINS) == true
+                val categories = if (hasCategories) {
+                    intent?.getStringArrayListExtra(EXTRA_BLOCKED_CATEGORIES)
+                        ?.toList() ?: emptyList()
+                } else {
+                    lastAppliedCategories
+                }
+                val domains = if (hasDomains) {
+                    intent?.getStringArrayListExtra(EXTRA_BLOCKED_DOMAINS)
+                        ?.toList() ?: emptyList()
+                } else {
+                    lastAppliedDomains
+                }
+
+                stopVpn(stopService = false)
+                applyFilterRules(categories, domains)
+                startVpn()
+                START_STICKY
+            }
+
             ACTION_CLEAR_QUERY_LOGS -> {
                 clearRecentQueryLogs()
                 packetHandler?.clearRecentQueries()
@@ -148,7 +173,7 @@ class DnsVpnService : VpnService() {
             }
 
             ACTION_STOP -> {
-                stopVpn()
+                stopVpn(stopService = true)
                 START_NOT_STICKY
             }
 
@@ -201,7 +226,7 @@ class DnsVpnService : VpnService() {
             Log.d(TAG, "DNS VPN started")
         } catch (error: Exception) {
             Log.e(TAG, "Failed to start VPN", error)
-            stopVpn()
+            stopVpn(stopService = true)
         }
     }
 
@@ -247,7 +272,7 @@ class DnsVpnService : VpnService() {
         }
     }
 
-    private fun stopVpn() {
+    private fun stopVpn(stopService: Boolean) {
         if (!serviceRunning && vpnInterface == null) {
             return
         }
@@ -280,13 +305,17 @@ class DnsVpnService : VpnService() {
             stopForeground(true)
         }
 
-        stopSelf()
+        if (stopService) {
+            stopSelf()
+        }
     }
 
     private fun applyFilterRules(
         categories: List<String>,
         domains: List<String>
     ) {
+        lastAppliedCategories = categories
+        lastAppliedDomains = domains
         filterEngine.updateFilterRules(categories, domains)
         blockedCategoryCount = filterEngine.blockedCategoryCount()
         blockedDomainCount = filterEngine.blockedDomainCount()
@@ -329,11 +358,11 @@ class DnsVpnService : VpnService() {
     override fun onRevoke() {
         super.onRevoke()
         Log.d(TAG, "VPN permission revoked")
-        stopVpn()
+        stopVpn(stopService = true)
     }
 
     override fun onDestroy() {
-        stopVpn()
+        stopVpn(stopService = false)
         try {
             filterEngine.close()
         } catch (_: Exception) {

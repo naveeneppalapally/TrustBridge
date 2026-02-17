@@ -79,6 +79,36 @@ class MainActivity : FlutterActivity() {
                 result.success(true)
             }
 
+            "restartVpn" -> {
+                if (!hasVpnPermission()) {
+                    result.error(
+                        "permission_required",
+                        "VPN permission is required before restarting.",
+                        null
+                    )
+                    return
+                }
+
+                val blockedCategories =
+                    call.argument<List<String>>("blockedCategories") ?: emptyList()
+                val blockedDomains =
+                    call.argument<List<String>>("blockedDomains") ?: emptyList()
+
+                val serviceIntent = Intent(this, DnsVpnService::class.java).apply {
+                    action = DnsVpnService.ACTION_RESTART
+                    putStringArrayListExtra(
+                        DnsVpnService.EXTRA_BLOCKED_CATEGORIES,
+                        ArrayList(blockedCategories)
+                    )
+                    putStringArrayListExtra(
+                        DnsVpnService.EXTRA_BLOCKED_DOMAINS,
+                        ArrayList(blockedDomains)
+                    )
+                }
+                startServiceCompat(serviceIntent)
+                result.success(true)
+            }
+
             "stopVpn" -> {
                 val serviceIntent = Intent(this, DnsVpnService::class.java).apply {
                     action = DnsVpnService.ACTION_STOP
