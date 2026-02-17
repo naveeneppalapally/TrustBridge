@@ -1,9 +1,11 @@
 import 'package:flutter/material.dart';
+import 'package:firebase_messaging/firebase_messaging.dart';
 import 'package:trustbridge_app/screens/help_support_screen.dart';
 import 'package:trustbridge_app/screens/privacy_center_screen.dart';
 import 'package:trustbridge_app/screens/security_controls_screen.dart';
 import 'package:trustbridge_app/services/auth_service.dart';
 import 'package:trustbridge_app/services/firestore_service.dart';
+import 'package:trustbridge_app/services/notification_service.dart';
 
 class ParentSettingsScreen extends StatefulWidget {
   const ParentSettingsScreen({
@@ -36,6 +38,7 @@ class _ParentSettingsScreenState extends State<ParentSettingsScreen> {
 
   AuthService? _authService;
   FirestoreService? _firestoreService;
+  NotificationService? _notificationService;
 
   String _language = 'en';
   String _timezone = 'Asia/Kolkata';
@@ -54,6 +57,11 @@ class _ParentSettingsScreenState extends State<ParentSettingsScreen> {
   FirestoreService get _resolvedFirestoreService {
     _firestoreService ??= widget.firestoreService ?? FirestoreService();
     return _firestoreService!;
+  }
+
+  NotificationService get _resolvedNotificationService {
+    _notificationService ??= NotificationService();
+    return _notificationService!;
   }
 
   String? get _parentId {
@@ -177,6 +185,8 @@ class _ParentSettingsScreenState extends State<ParentSettingsScreen> {
               const SizedBox(height: 16),
               _buildSectionHeader('Notifications'),
               _buildNotificationsCard(context),
+              const SizedBox(height: 10),
+              _buildRequestAlertPermissionCard(context),
               const SizedBox(height: 16),
               _buildSectionHeader('Security & Privacy'),
               _buildSecurityCard(context),
@@ -408,6 +418,78 @@ class _ParentSettingsScreenState extends State<ParentSettingsScreen> {
           ),
         ],
       ),
+    );
+  }
+
+  Widget _buildRequestAlertPermissionCard(BuildContext context) {
+    return FutureBuilder<AuthorizationStatus>(
+      future: _resolvedNotificationService.getAuthorizationStatus(),
+      builder:
+          (BuildContext context, AsyncSnapshot<AuthorizationStatus> snapshot) {
+        final status = snapshot.data ?? AuthorizationStatus.notDetermined;
+        final granted = status == AuthorizationStatus.authorized ||
+            status == AuthorizationStatus.provisional;
+        final loading = snapshot.connectionState == ConnectionState.waiting;
+
+        return Card(
+          key: const Key('settings_request_alert_permission_card'),
+          elevation: 0,
+          shape: RoundedRectangleBorder(
+            borderRadius: BorderRadius.circular(16),
+          ),
+          child: Padding(
+            padding: const EdgeInsets.all(16),
+            child: Row(
+              children: <Widget>[
+                Icon(
+                  Icons.notifications_active_outlined,
+                  color: granted ? Colors.green : Colors.orange,
+                ),
+                const SizedBox(width: 12),
+                Expanded(
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: <Widget>[
+                      const Text('Access request alerts'),
+                      const SizedBox(height: 2),
+                      Text(
+                        loading
+                            ? 'Checking status...'
+                            : granted
+                                ? 'Enabled'
+                                : 'Tap to enable',
+                        style: Theme.of(context).textTheme.bodySmall?.copyWith(
+                              color: granted ? Colors.green : Colors.orange,
+                              fontWeight: FontWeight.w600,
+                            ),
+                      ),
+                    ],
+                  ),
+                ),
+                if (loading)
+                  const SizedBox(
+                    width: 20,
+                    height: 20,
+                    child: CircularProgressIndicator(strokeWidth: 2),
+                  )
+                else if (granted)
+                  const Icon(Icons.check_circle, color: Colors.green, size: 20)
+                else
+                  TextButton(
+                    key: const Key('settings_enable_request_alerts_button'),
+                    onPressed: () async {
+                      await _resolvedNotificationService.requestPermission();
+                      if (mounted) {
+                        setState(() {});
+                      }
+                    },
+                    child: const Text('Enable'),
+                  ),
+              ],
+            ),
+          ),
+        );
+      },
     );
   }
 

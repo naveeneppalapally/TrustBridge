@@ -471,6 +471,14 @@ class _ChildRequestScreenState extends State<ChildRequestScreen> {
       );
 
       await _resolvedFirestoreService.submitAccessRequest(request);
+      await _resolvedFirestoreService.queueParentNotification(
+        parentId: parentId,
+        title: '\u{1F4F1} ${widget.child.nickname} wants access',
+        body:
+            '${widget.child.nickname} is requesting access to ${_appOrSite.trim()} '
+            'for ${_selectedDuration.label}',
+        route: '/parent-requests',
+      );
 
       if (!mounted) {
         return;

@@ -347,6 +347,42 @@ void main() {
         throwsA(isA<ArgumentError>()),
       );
     });
+
+    test('saveFcmToken and removeFcmToken update parent document', () async {
+      await firestoreService.saveFcmToken('parent-token-a', 'token-abc');
+
+      final savedSnapshot =
+          await fakeFirestore.collection('parents').doc('parent-token-a').get();
+      expect(savedSnapshot.exists, isTrue);
+      expect(savedSnapshot.data()!['fcmToken'], 'token-abc');
+      expect(savedSnapshot.data()!['fcmTokenUpdatedAt'], isA<Timestamp>());
+
+      await firestoreService.removeFcmToken('parent-token-a');
+
+      final removedSnapshot =
+          await fakeFirestore.collection('parents').doc('parent-token-a').get();
+      expect(removedSnapshot.data()!.containsKey('fcmToken'), isFalse);
+    });
+
+    test('queueParentNotification writes queued notification payload',
+        () async {
+      await firestoreService.queueParentNotification(
+        parentId: 'parent-notify-a',
+        title: 'New request',
+        body: 'Aarav requested youtube.com for 30 min',
+        route: '/parent-requests',
+      );
+
+      final queue = await fakeFirestore.collection('notification_queue').get();
+      expect(queue.docs.length, 1);
+
+      final data = queue.docs.first.data();
+      expect(data['parentId'], 'parent-notify-a');
+      expect(data['title'], 'New request');
+      expect(data['route'], '/parent-requests');
+      expect(data['processed'], false);
+      expect(data['sentAt'], isA<Timestamp>());
+    });
   });
 
   group('FirestoreService access request operations', () {

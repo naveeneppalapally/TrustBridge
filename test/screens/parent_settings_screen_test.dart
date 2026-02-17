@@ -60,6 +60,14 @@ void main() {
       expect(find.text('Account & Preferences'), findsOneWidget);
       expect(find.text('PREFERENCES'), findsOneWidget);
       expect(find.text('NOTIFICATIONS'), findsOneWidget);
+
+      await tester.dragUntilVisible(
+        find.text('SUPPORT'),
+        find.byType(ListView),
+        const Offset(0, -300),
+      );
+      await tester.pumpAndSettle();
+
       expect(find.text('SECURITY & PRIVACY'), findsOneWidget);
       expect(find.text('SUPPORT'), findsOneWidget);
       expect(find.text('Help & Support'), findsOneWidget);
@@ -173,12 +181,51 @@ void main() {
         ),
       );
       await tester.pumpAndSettle();
+      await tester.dragUntilVisible(
+        find.text('Help & Support'),
+        find.byType(ListView),
+        const Offset(0, -300),
+      );
+      await tester.pumpAndSettle();
 
       await tester.tap(find.text('Help & Support'));
       await tester.pumpAndSettle();
 
       expect(find.text('Get Help Quickly'), findsOneWidget);
       expect(find.text('Send Support Request'), findsOneWidget);
+    });
+
+    testWidgets('shows access request alerts permission card', (tester) async {
+      await tester.binding.setSurfaceSize(const Size(430, 1400));
+      addTearDown(() => tester.binding.setSurfaceSize(null));
+
+      const parentId = 'parent-settings-e';
+      await seedParent(
+        parentId: parentId,
+        preferences: {
+          'language': 'en',
+          'timezone': 'Asia/Kolkata',
+          'pushNotificationsEnabled': true,
+          'weeklySummaryEnabled': true,
+          'securityAlertsEnabled': true,
+        },
+      );
+
+      await tester.pumpWidget(
+        MaterialApp(
+          home: ParentSettingsScreen(
+            parentIdOverride: parentId,
+            firestoreService: firestoreService,
+          ),
+        ),
+      );
+      await tester.pumpAndSettle();
+
+      expect(find.text('Access request alerts'), findsOneWidget);
+      expect(
+        find.byKey(const Key('settings_request_alert_permission_card')),
+        findsOneWidget,
+      );
     });
   });
 }

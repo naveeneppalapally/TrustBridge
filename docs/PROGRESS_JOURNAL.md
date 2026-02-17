@@ -2056,7 +2056,65 @@ Program goal: build the parent-facing request inbox so parents can approve or de
 
 ---
 
-## Current Summary (after Day 46)
+## Day 47 - Push Notifications (Week 10 Day 2)
+
+Program goal: notify parents instantly when a child submits an access request using Firebase Cloud Messaging and local notification presentation.
+
+### Commit entries
+
+1. **2026-02-17 23:05:00 +05:30**  
+   Commit: `pending (local changes)`  
+   Message: `Implement Day 47 FCM push notifications for access requests`  
+   Changes:
+   - Updated dependencies:
+     - `pubspec.yaml`: added `flutter_local_notifications`
+     - `pubspec.lock`: resolved new notification packages
+   - Updated Android config:
+     - `android/app/src/main/AndroidManifest.xml`
+       - default FCM notification channel metadata
+       - default notification icon metadata
+     - `android/app/build.gradle.kts`
+       - enabled core library desugaring
+       - added `desugar_jdk_libs` dependency required by local notifications
+   - Added `lib/services/notification_service.dart`:
+     - singleton notification service
+     - background message handler registration
+     - foreground FCM -> local notification display
+     - notification tap routing to app routes via navigator key
+     - permission and token APIs
+     - token refresh stream exposure
+   - Updated `lib/services/firestore_service.dart`:
+     - `saveFcmToken()`
+     - `removeFcmToken()`
+     - `queueParentNotification()`
+   - Updated `lib/main.dart`:
+     - initializes `NotificationService` in `main()`
+     - provides `navigatorKey` to `MaterialApp`
+     - auth state now triggers FCM token save/remove flows
+     - token refresh listener writes updated token to Firestore
+   - Updated `lib/screens/child_request_screen.dart`:
+     - queues parent notification after access request submit
+   - Updated `lib/screens/parent_settings_screen.dart`:
+     - added access-request alert permission status card
+     - added "Enable" action to request notification permission
+   - Added/updated tests:
+     - new `test/services/notification_service_test.dart`
+     - updated `test/services/firestore_service_test.dart` for token + queue APIs
+     - updated `test/screens/parent_settings_screen_test.dart` for new permission card
+   Validation:
+   - `C:\Users\navee\flutter\bin\flutter.bat analyze` passed.
+   - `C:\Users\navee\flutter\bin\flutter.bat test` passed (156/156).
+   - `C:\Users\navee\flutter\bin\flutter.bat build apk --debug` passed.
+   Design folder(s) used:
+   - `parent_request_approval_mobile_light` (notification additions follow existing settings UI style)
+   Design assets checked:
+   - no dedicated `parent_request_approval_mobile_light` folder found in local `app_design`
+   UI fidelity note:
+   - notification permission card is integrated into existing notifications section with compact status/action treatment.
+
+---
+
+## Current Summary (after Day 47)
 
 - Day 1 completed: foundation, naming, structure, git + GitHub.
 - Day 2 completed: dependencies and Provider baseline.
@@ -2106,5 +2164,6 @@ Program goal: build the parent-facing request inbox so parents can approve or de
 - Day 44 completed in code: child-facing status screen now shows active mode, supportive paused-content messaging, and Ask for Access entry.
 - Day 45 completed in code: child request access flow now saves structured requests to Firestore with duration/reason preview and success feedback.
 - Day 46 completed in code: parent request inbox now supports real-time pending review, approve/deny replies, history tracking, and dashboard badge navigation.
+- Day 47 completed in code: push notification infrastructure now captures parent FCM tokens, queues access-request alerts, and routes notification taps to the parent requests inbox.
 
 Last updated: 2026-02-17

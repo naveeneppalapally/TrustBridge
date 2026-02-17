@@ -1,3 +1,5 @@
+import 'dart:async';
+
 import 'package:firebase_auth/firebase_auth.dart';
 import 'package:firebase_core/firebase_core.dart';
 import 'package:flutter/material.dart';
@@ -10,6 +12,8 @@ import 'package:trustbridge_app/screens/dashboard_screen.dart';
 import 'package:trustbridge_app/screens/login_screen.dart';
 import 'package:trustbridge_app/screens/parent_requests_screen.dart';
 import 'package:trustbridge_app/services/auth_service.dart';
+import 'package:trustbridge_app/services/firestore_service.dart';
+import 'package:trustbridge_app/services/notification_service.dart';
 import 'package:trustbridge_app/services/policy_vpn_sync_service.dart';
 
 Future<void> main() async {
@@ -17,6 +21,8 @@ Future<void> main() async {
   await Firebase.initializeApp(
     options: DefaultFirebaseOptions.currentPlatform,
   );
+  NotificationService.navigatorKey = GlobalKey<NavigatorState>();
+  await NotificationService().initialize();
   runApp(const MyApp());
 }
 
@@ -34,6 +40,7 @@ class MyApp extends StatelessWidget {
         ),
       ],
       child: MaterialApp(
+        navigatorKey: NotificationService.navigatorKey,
         title: 'TrustBridge',
         theme: ThemeData(
           colorScheme: ColorScheme.fromSeed(
@@ -78,7 +85,11 @@ class AuthWrapper extends StatefulWidget {
 
 class _AuthWrapperState extends State<AuthWrapper> {
   final AuthService _authService = AuthService();
+  final FirestoreService _firestoreService = FirestoreService();
+  final NotificationService _notificationService = NotificationService();
   String? _lastSyncUserId;
+  String? _lastNotificationUserId;
+  StreamSubscription<String>? _tokenRefreshSubscription;
 
   void _schedulePolicySyncUpdate(User? user) {
     final nextUserId = user?.uid;
@@ -103,12 +114,70 @@ class _AuthWrapperState extends State<AuthWrapper> {
     });
   }
 
+  void _scheduleNotificationSyncUpdate(User? user) {
+    final nextUserId = user?.uid;
+    if (_lastNotificationUserId == nextUserId) {
+      return;
+    }
+
+    final previousUserId = _lastNotificationUserId;
+    _lastNotificationUserId = nextUserId;
+
+    WidgetsBinding.instance.addPostFrameCallback((_) async {
+      if (!mounted) {
+        return;
+      }
+
+      if (previousUserId != null && previousUserId != nextUserId) {
+        try {
+          await _firestoreService.removeFcmToken(previousUserId);
+        } catch (error) {
+          debugPrint('[FCM] Failed removing token: $error');
+        }
+      }
+
+      await _tokenRefreshSubscription?.cancel();
+      _tokenRefreshSubscription = null;
+
+      if (nextUserId == null) {
+        return;
+      }
+
+      await _notificationService.requestPermission();
+
+      final token = await _notificationService.getToken();
+      if (token != null && token.trim().isNotEmpty) {
+        try {
+          await _firestoreService.saveFcmToken(nextUserId, token);
+        } catch (error) {
+          debugPrint('[FCM] Failed saving token: $error');
+        }
+      }
+
+      _tokenRefreshSubscription =
+          _notificationService.onTokenRefresh.listen((String refreshedToken) {
+        final trimmedToken = refreshedToken.trim();
+        if (trimmedToken.isEmpty) {
+          return;
+        }
+        unawaited(_firestoreService.saveFcmToken(nextUserId, trimmedToken));
+      });
+    });
+  }
+
+  @override
+  void dispose() {
+    _tokenRefreshSubscription?.cancel();
+    super.dispose();
+  }
+
   @override
   Widget build(BuildContext context) {
     return StreamBuilder<User?>(
       stream: _authService.authStateChanges,
       builder: (context, snapshot) {
         _schedulePolicySyncUpdate(snapshot.data);
+        _scheduleNotificationSyncUpdate(snapshot.data);
 
         if (snapshot.connectionState == ConnectionState.waiting) {
           return const Scaffold(

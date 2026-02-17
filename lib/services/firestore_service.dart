@@ -51,6 +51,66 @@ class FirestoreService {
     return snapshot.data();
   }
 
+  /// Save parent's FCM token for push notifications.
+  Future<void> saveFcmToken(String parentId, String token) async {
+    if (parentId.trim().isEmpty) {
+      throw ArgumentError.value(parentId, 'parentId', 'Parent ID is required.');
+    }
+    if (token.trim().isEmpty) {
+      throw ArgumentError.value(token, 'token', 'FCM token is required.');
+    }
+
+    await _firestore.collection('parents').doc(parentId).set(
+      {
+        'fcmToken': token.trim(),
+        'fcmTokenUpdatedAt': FieldValue.serverTimestamp(),
+      },
+      SetOptions(merge: true),
+    );
+  }
+
+  /// Remove parent's FCM token on logout or account switch.
+  Future<void> removeFcmToken(String parentId) async {
+    if (parentId.trim().isEmpty) {
+      throw ArgumentError.value(parentId, 'parentId', 'Parent ID is required.');
+    }
+
+    await _firestore.collection('parents').doc(parentId).set(
+      <String, dynamic>{'fcmToken': FieldValue.delete()},
+      SetOptions(merge: true),
+    );
+  }
+
+  /// Queue a parent push notification payload for backend processing.
+  Future<void> queueParentNotification({
+    required String parentId,
+    required String title,
+    required String body,
+    required String route,
+  }) async {
+    if (parentId.trim().isEmpty) {
+      throw ArgumentError.value(parentId, 'parentId', 'Parent ID is required.');
+    }
+    if (title.trim().isEmpty) {
+      throw ArgumentError.value(title, 'title', 'Title is required.');
+    }
+    if (body.trim().isEmpty) {
+      throw ArgumentError.value(body, 'body', 'Body is required.');
+    }
+    if (route.trim().isEmpty) {
+      throw ArgumentError.value(route, 'route', 'Route is required.');
+    }
+
+    await _firestore.collection('notification_queue').add({
+      'parentId': parentId.trim(),
+      'title': title.trim(),
+      'body': body.trim(),
+      'route': route.trim(),
+      'sentAt': FieldValue.serverTimestamp(),
+      'processed': false,
+    });
+  }
+
   Stream<Map<String, dynamic>?> watchParentProfile(String parentId) {
     return _firestore
         .collection('parents')
