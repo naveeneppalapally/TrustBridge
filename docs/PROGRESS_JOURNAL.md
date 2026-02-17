@@ -2221,7 +2221,7 @@ Program goal: surface approved access windows directly on the child status scree
 ### Commit entries
 
 1. **2026-02-17 23:55:00 +05:30**  
-   Commit: `pending (local changes)`  
+   Commit: `6aaceff`  
    Message: `Migrate functions to Node 22 and implement Day 51 active access passes`  
    Changes:
    - Updated `functions/package.json`:
