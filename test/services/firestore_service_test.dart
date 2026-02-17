@@ -383,6 +383,36 @@ void main() {
       expect(data['processed'], false);
       expect(data['sentAt'], isA<Timestamp>());
     });
+
+    test('completeOnboarding persists completion state', () async {
+      await firestoreService.completeOnboarding('parent-onboarding-a');
+
+      final snapshot = await fakeFirestore
+          .collection('parents')
+          .doc('parent-onboarding-a')
+          .get();
+      expect(snapshot.exists, isTrue);
+      expect(snapshot.data()!['onboardingComplete'], isTrue);
+      expect(snapshot.data()!['onboardingCompletedAt'], isA<Timestamp>());
+    });
+
+    test('isOnboardingComplete returns false for new parent profile', () async {
+      await fakeFirestore.collection('parents').doc('parent-onboarding-b').set({
+        'parentId': 'parent-onboarding-b',
+        'preferences': {'language': 'en'},
+      });
+
+      final completed =
+          await firestoreService.isOnboardingComplete('parent-onboarding-b');
+      expect(completed, isFalse);
+    });
+
+    test('isOnboardingComplete returns true after completion', () async {
+      await firestoreService.completeOnboarding('parent-onboarding-c');
+      final completed =
+          await firestoreService.isOnboardingComplete('parent-onboarding-c');
+      expect(completed, isTrue);
+    });
   });
 
   group('FirestoreService access request operations', () {

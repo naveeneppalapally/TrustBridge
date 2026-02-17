@@ -2473,3 +2473,49 @@ Program goal: give parents visibility into DNS protection outcomes with privacy-
    - Implemented card-based analytics layout with a privacy-first emphasis and lightweight visual hierarchy aligned to current app styling.
 
 ---
+
+## Day 56 - Onboarding Flow (Week 12 Day 1)
+
+Program goal: guide first-time parents through setup with a 3-step onboarding flow instead of landing immediately on an empty dashboard.
+
+### Commit entries
+
+1. **2026-02-17 21:17:54 +05:30**  
+   Commit: `(this commit - see latest git log)`  
+   Message: `Implement Day 56 onboarding flow [design: onboarding_mobile_light]`  
+   Changes:
+   - Updated `lib/services/firestore_service.dart`:
+     - added `completeOnboarding()`
+     - added `isOnboardingComplete()`
+     - updated `getParentPreferences()` to include onboarding flags
+     - set default `onboardingComplete: false` in `ensureParentProfile()`
+   - Updated `lib/main.dart`:
+     - added `/onboarding` route
+     - updated `AuthWrapper` to gate logged-in users through onboarding status
+     - routes first-time parents to `OnboardingScreen`
+   - Created `lib/screens/onboarding_screen.dart`:
+     - 3-step `PageView` (Welcome, Add Child, Enable Protection)
+     - animated step indicator dots
+     - skip action (marks onboarding complete)
+     - deep-link to `AddChildScreen`
+     - deep-link to `VpnProtectionScreen`
+     - finish action marks complete and enters dashboard
+     - `isRevisit` mode for settings re-entry
+   - Updated `lib/screens/parent_settings_screen.dart`:
+     - added `Setup Guide` tile to reopen onboarding in revisit mode
+   - Added tests:
+     - `test/screens/onboarding_screen_test.dart`
+     - expanded `test/services/firestore_service_test.dart` onboarding coverage
+     - updated `test/screens/parent_settings_screen_test.dart` section expectations
+   Validation:
+   - `flutter analyze` passed.
+   - `flutter test` passed (180/180).
+   - `flutter build apk --debug` passed.
+   Design folder(s) used:
+   - `onboarding_mobile_light`
+   Design assets checked:
+   - `screen.png`, `code.html`
+   UI fidelity note:
+   - Implemented a step-based first-run flow with persistent completion state and re-entry from settings while keeping current app visual language.
+
+---

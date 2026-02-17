@@ -40,6 +40,7 @@ class FirestoreService {
           'nextDnsEnabled': false,
           'nextDnsProfileId': null,
         },
+        'onboardingComplete': false,
         'fcmToken': null,
       },
       SetOptions(merge: true),
@@ -51,7 +52,7 @@ class FirestoreService {
     return snapshot.data();
   }
 
-  /// One-shot fetch of parent preferences.
+  /// One-shot fetch of parent preferences plus onboarding status fields.
   Future<Map<String, dynamic>?> getParentPreferences(String parentId) async {
     if (parentId.trim().isEmpty) {
       throw ArgumentError.value(parentId, 'parentId', 'Parent ID is required.');
@@ -63,16 +64,53 @@ class FirestoreService {
     }
 
     final data = snapshot.data();
+    final mergedPreferences = <String, dynamic>{};
+
     final rawPreferences = data?['preferences'];
     if (rawPreferences is Map<String, dynamic>) {
-      return rawPreferences;
+      mergedPreferences.addAll(rawPreferences);
     }
     if (rawPreferences is Map) {
-      return rawPreferences.map(
-        (key, value) => MapEntry(key.toString(), value),
+      mergedPreferences.addAll(
+        rawPreferences.map(
+          (key, value) => MapEntry(key.toString(), value),
+        ),
       );
     }
-    return null;
+    if (data != null) {
+      if (data.containsKey('onboardingComplete')) {
+        mergedPreferences['onboardingComplete'] =
+            data['onboardingComplete'] == true;
+      }
+      if (data.containsKey('onboardingCompletedAt')) {
+        mergedPreferences['onboardingCompletedAt'] =
+            data['onboardingCompletedAt'];
+      }
+    }
+    return mergedPreferences.isEmpty ? null : mergedPreferences;
+  }
+
+  /// Mark onboarding as complete for a parent.
+  Future<void> completeOnboarding(String parentId) async {
+    if (parentId.trim().isEmpty) {
+      throw ArgumentError.value(parentId, 'parentId', 'Parent ID is required.');
+    }
+    await _firestore.collection('parents').doc(parentId).set(
+      {
+        'onboardingComplete': true,
+        'onboardingCompletedAt': FieldValue.serverTimestamp(),
+      },
+      SetOptions(merge: true),
+    );
+  }
+
+  /// Check if onboarding is complete for a parent.
+  Future<bool> isOnboardingComplete(String parentId) async {
+    if (parentId.trim().isEmpty) {
+      throw ArgumentError.value(parentId, 'parentId', 'Parent ID is required.');
+    }
+    final preferences = await getParentPreferences(parentId);
+    return (preferences?['onboardingComplete'] as bool?) == true;
   }
 
   /// Save parent's FCM token for push notifications.

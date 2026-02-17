@@ -12,6 +12,7 @@ import 'package:trustbridge_app/screens/child_status_screen.dart';
 import 'package:trustbridge_app/screens/dashboard_screen.dart';
 import 'package:trustbridge_app/screens/dns_analytics_screen.dart';
 import 'package:trustbridge_app/screens/login_screen.dart';
+import 'package:trustbridge_app/screens/onboarding_screen.dart';
 import 'package:trustbridge_app/screens/parent_requests_screen.dart';
 import 'package:trustbridge_app/services/auth_service.dart';
 import 'package:trustbridge_app/services/firestore_service.dart';
@@ -68,6 +69,13 @@ class MyApp extends StatelessWidget {
           '/add-child': (context) => const AddChildScreen(),
           '/parent-requests': (context) => const ParentRequestsScreen(),
           '/dns-analytics': (context) => const DnsAnalyticsScreen(),
+          '/onboarding': (context) {
+            final parentId = ModalRoute.of(context)?.settings.arguments;
+            if (parentId is! String || parentId.trim().isEmpty) {
+              return const LoginScreen();
+            }
+            return OnboardingScreen(parentId: parentId);
+          },
           '/child-status': (context) {
             final child =
                 ModalRoute.of(context)!.settings.arguments as ChildProfile;
@@ -196,7 +204,31 @@ class _AuthWrapperState extends State<AuthWrapper> {
         }
 
         if (snapshot.hasData) {
-          return const DashboardScreen();
+          return FutureBuilder<bool>(
+            key: ValueKey<String>('onboarding-${snapshot.data!.uid}'),
+            future: _firestoreService.isOnboardingComplete(snapshot.data!.uid),
+            builder: (context, onboardingSnapshot) {
+              if (onboardingSnapshot.connectionState ==
+                  ConnectionState.waiting) {
+                return const Scaffold(
+                  body: Center(
+                    child: CircularProgressIndicator(),
+                  ),
+                );
+              }
+
+              if (onboardingSnapshot.hasError) {
+                return const DashboardScreen();
+              }
+
+              final onboardingComplete = onboardingSnapshot.data ?? false;
+              if (!onboardingComplete) {
+                return OnboardingScreen(parentId: snapshot.data!.uid);
+              }
+
+              return const DashboardScreen();
+            },
+          );
         }
 
         return const LoginScreen();

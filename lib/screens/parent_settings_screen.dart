@@ -2,6 +2,7 @@ import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 import 'package:firebase_messaging/firebase_messaging.dart';
 import 'package:trustbridge_app/screens/help_support_screen.dart';
+import 'package:trustbridge_app/screens/onboarding_screen.dart';
 import 'package:trustbridge_app/screens/privacy_center_screen.dart';
 import 'package:trustbridge_app/screens/security_controls_screen.dart';
 import 'package:trustbridge_app/services/auth_service.dart';
@@ -570,12 +571,24 @@ class _ParentSettingsScreenState extends State<ParentSettingsScreen> {
       shape: RoundedRectangleBorder(
         borderRadius: BorderRadius.circular(16),
       ),
-      child: ListTile(
-        leading: Icon(Icons.support_agent, color: Colors.indigo.shade700),
-        title: const Text('Help & Support'),
-        subtitle: const Text('FAQs, troubleshooting, and contact support'),
-        trailing: const Icon(Icons.chevron_right),
-        onTap: () async => _openHelpSupport(context),
+      child: Column(
+        children: [
+          ListTile(
+            leading: Icon(Icons.help_outline, color: Colors.blueGrey.shade700),
+            title: const Text('Setup Guide'),
+            subtitle: const Text('Revisit the onboarding walkthrough'),
+            trailing: const Icon(Icons.chevron_right),
+            onTap: () async => _openSetupGuide(context),
+          ),
+          const Divider(height: 1),
+          ListTile(
+            leading: Icon(Icons.support_agent, color: Colors.indigo.shade700),
+            title: const Text('Help & Support'),
+            subtitle: const Text('FAQs, troubleshooting, and contact support'),
+            trailing: const Icon(Icons.chevron_right),
+            onTap: () async => _openHelpSupport(context),
+          ),
+        ],
       ),
     );
   }
@@ -715,6 +728,23 @@ class _ParentSettingsScreenState extends State<ParentSettingsScreen> {
           authService: widget.authService,
           firestoreService: widget.firestoreService,
           parentIdOverride: widget.parentIdOverride,
+        ),
+      ),
+    );
+  }
+
+  Future<void> _openSetupGuide(BuildContext context) async {
+    final parentId = _parentId;
+    if (parentId == null || parentId.trim().isEmpty) {
+      _showInfo('Not logged in');
+      return;
+    }
+    await Navigator.of(context).push(
+      MaterialPageRoute(
+        builder: (_) => OnboardingScreen(
+          parentId: parentId,
+          isRevisit: true,
+          firestoreService: widget.firestoreService,
         ),
       ),
     );

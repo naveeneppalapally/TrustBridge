@@ -69,7 +69,9 @@ void main() {
       await tester.pumpAndSettle();
 
       expect(find.text('SECURITY & PRIVACY'), findsOneWidget);
+      expect(find.text('ANALYTICS'), findsOneWidget);
       expect(find.text('SUPPORT'), findsOneWidget);
+      expect(find.text('Setup Guide'), findsOneWidget);
       expect(find.text('Help & Support'), findsOneWidget);
     });
 
