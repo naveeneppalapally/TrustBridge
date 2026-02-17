@@ -108,7 +108,6 @@ class NotificationService {
   Future<String?> getToken() async {
     try {
       final token = await _fcm.getToken();
-      debugPrint('[FCM] Token: $token');
       return token;
     } catch (error) {
       debugPrint('[FCM] Token error: $error');
