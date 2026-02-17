@@ -2,6 +2,8 @@ package com.navee.trustbridge
 
 import android.content.Intent
 import android.os.Build
+import android.os.PowerManager
+import android.provider.Settings
 import com.navee.trustbridge.vpn.DnsVpnService
 import io.flutter.embedding.android.FlutterActivity
 import io.flutter.embedding.engine.FlutterEngine
@@ -35,11 +37,7 @@ class MainActivity : FlutterActivity() {
     private fun handleMethodCall(call: MethodCall, result: MethodChannel.Result) {
         when (call.method) {
             "getStatus" -> result.success(
-                mapOf(
-                    "supported" to true,
-                    "permissionGranted" to hasVpnPermission(),
-                    "isRunning" to DnsVpnService.isRunning
-                )
+                DnsVpnService.statusSnapshot(permissionGranted = hasVpnPermission())
             )
 
             "hasVpnPermission" -> result.success(hasVpnPermission())
@@ -85,6 +83,30 @@ class MainActivity : FlutterActivity() {
             }
 
             "isVpnRunning" -> result.success(DnsVpnService.isRunning)
+
+            "isIgnoringBatteryOptimizations" -> {
+                result.success(isIgnoringBatteryOptimizations())
+            }
+
+            "openBatteryOptimizationSettings" -> {
+                result.success(openBatteryOptimizationSettings())
+            }
+
+            "getRecentDnsQueries" -> {
+                val limit = call.argument<Int>("limit") ?: 100
+                result.success(DnsVpnService.getRecentQueryLogs(limit = limit))
+            }
+
+            "clearDnsQueryLogs" -> {
+                DnsVpnService.clearRecentQueryLogs()
+                if (DnsVpnService.isRunning) {
+                    val serviceIntent = Intent(this, DnsVpnService::class.java).apply {
+                        action = DnsVpnService.ACTION_CLEAR_QUERY_LOGS
+                    }
+                    startServiceCompat(serviceIntent)
+                }
+                result.success(true)
+            }
 
             "updateFilterRules" -> {
                 val blockedCategories =
@@ -141,6 +163,26 @@ class MainActivity : FlutterActivity() {
             startForegroundService(intent)
         } else {
             startService(intent)
+        }
+    }
+
+    private fun isIgnoringBatteryOptimizations(): Boolean {
+        if (Build.VERSION.SDK_INT < Build.VERSION_CODES.M) {
+            return true
+        }
+        val powerManager = getSystemService(PowerManager::class.java)
+        return powerManager?.isIgnoringBatteryOptimizations(packageName) == true
+    }
+
+    private fun openBatteryOptimizationSettings(): Boolean {
+        return try {
+            val intent = Intent(Settings.ACTION_IGNORE_BATTERY_OPTIMIZATION_SETTINGS).apply {
+                addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
+            }
+            startActivity(intent)
+            true
+        } catch (_: Exception) {
+            false
         }
     }
 

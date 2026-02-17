@@ -18,6 +18,7 @@ class AuthService {
 
   final FirebaseAuth _auth;
   final FirestoreService _firestoreService;
+  static const Duration _authRequestTimeout = Duration(seconds: 20);
 
   String? _verificationId;
   int? _resendToken;
@@ -54,7 +55,7 @@ class AuthService {
             final user = userCredential.user;
             if (user != null &&
                 (userCredential.additionalUserInfo?.isNewUser ?? false)) {
-              await _ensureParentProfile(user);
+              await _ensureParentProfileSafely(user);
             }
             if (!completer.isCompleted) {
               completer.complete(true);
@@ -130,12 +131,14 @@ class AuthService {
         smsCode: sanitizedOtp,
       );
 
-      final userCredential = await _auth.signInWithCredential(credential);
+      final userCredential = await _auth
+          .signInWithCredential(credential)
+          .timeout(_authRequestTimeout);
       final user = userCredential.user;
 
       if (user != null &&
           (userCredential.additionalUserInfo?.isNewUser ?? false)) {
-        await _ensureParentProfile(user);
+        unawaited(_ensureParentProfileSafely(user));
       }
 
       _log('OTP verification succeeded');
@@ -165,10 +168,10 @@ class AuthService {
       final credential = await _auth.signInWithEmailAndPassword(
         email: email.trim(),
         password: password,
-      );
+      ).timeout(_authRequestTimeout);
       final user = credential.user;
-      if (user != null) {
-        await _ensureParentProfile(user);
+      if (user != null && (credential.additionalUserInfo?.isNewUser ?? false)) {
+        unawaited(_ensureParentProfileSafely(user));
       }
       _log('Email sign-in succeeded');
       return user;
@@ -192,10 +195,10 @@ class AuthService {
       final credential = await _auth.createUserWithEmailAndPassword(
         email: email.trim(),
         password: password,
-      );
+      ).timeout(_authRequestTimeout);
       final user = credential.user;
       if (user != null) {
-        await _ensureParentProfile(user);
+        unawaited(_ensureParentProfileSafely(user));
       }
       _log('Email sign-up succeeded');
       return user;
@@ -244,13 +247,23 @@ class AuthService {
   }
 
   Future<void> _ensureParentProfile(User user) async {
-    // Ensure a fresh auth token is available before Firestore write.
-    await user.getIdToken(true);
     await _firestoreService.ensureParentProfile(
       parentId: user.uid,
       phoneNumber: user.phoneNumber,
     );
     _log('Parent profile ensured for ${user.uid}');
+  }
+
+  Future<void> _ensureParentProfileSafely(User user) async {
+    try {
+      await _ensureParentProfile(user);
+    } catch (error, stackTrace) {
+      _log(
+        'Parent profile ensure failed; continuing authenticated session',
+        error: error,
+        stackTrace: stackTrace,
+      );
+    }
   }
 
   String? _normalizePhoneNumber(String input) {
@@ -276,6 +289,9 @@ class AuthService {
   }
 
   String _extractErrorCode(Object error) {
+    if (error is TimeoutException) {
+      return 'network-timeout';
+    }
     if (error is FirebaseAuthException) {
       return error.code;
     }

@@ -1405,7 +1405,203 @@ Program goal: complete the DNS-based VPN integration loop with native packet han
 
 ---
 
-## Current Summary (after Day 31)
+## Day 32 - VPN UI Controls and Status (Week 7 Day 2)
+
+Program goal: improve VPN operator UX with richer live status telemetry, rule-sync controls, and diagnostics guidance.
+
+### Commit entries
+
+1. **2026-02-17 10:59:39 +05:30**  
+   Commit: `pending (local changes)`  
+   Message: `Implement Day 32 VPN status UI and rule-sync controls [design: security_settings_light]`  
+   Changes:
+   - Updated native VPN telemetry flow:
+     - `android/app/src/main/kotlin/com/navee/trustbridge/vpn/DnsPacketHandler.kt`
+       - added per-query counters (processed/blocked/allowed)
+       - exposed packet stats snapshot for status reporting
+     - `android/app/src/main/kotlin/com/navee/trustbridge/vpn/DnsFilterEngine.kt`
+       - added blocked category count accessor
+     - `android/app/src/main/kotlin/com/navee/trustbridge/vpn/DnsVpnService.kt`
+       - added status snapshot payload (query counters, rule counts, timestamps)
+       - tracked uptime/rule-sync timestamps
+       - published packet counters to service status surface
+     - `android/app/src/main/kotlin/com/navee/trustbridge/MainActivity.kt`
+       - `getStatus` now returns enriched VPN status snapshot
+   - Updated `lib/services/vpn_service.dart`:
+     - extended `VpnStatus` with telemetry fields:
+       - query totals
+       - blocked/allowed totals
+       - rules counts
+       - started/rules-sync timestamps
+       - block-rate helper
+     - maintained backward compatibility for existing callers
+   - Updated `lib/screens/vpn_protection_screen.dart`:
+     - added `Live Status` card with runtime counters and sync metadata
+     - added `Sync Policy Rules` action for running VPN sessions
+     - added operator diagnostics card for Private DNS / DoH troubleshooting
+     - added periodic status auto-refresh while screen is open
+   - Updated tests:
+     - `test/services/vpn_service_test.dart` now validates enriched status mapping
+     - `test/screens/vpn_protection_screen_test.dart` now validates sync-rules action path
+   Validation:
+   - `C:\Users\navee\flutter\bin\flutter.bat analyze` passed.
+   - `C:\Users\navee\flutter\bin\flutter.bat test` passed (104/104).
+   Design folder(s) used:
+   - `security_settings_light`
+   - `design_system_tokens_spec`
+   Design assets checked:
+   - `screen.png`, `code.html`
+   UI fidelity note:
+   - Extended the existing security visual language with operational telemetry and diagnostics, avoiding new interaction patterns.
+
+---
+
+## Day 33 - DNS Query Logging Screen (Week 7 Day 3)
+
+Program goal: add operator-facing DNS query visibility with privacy-mode behavior for VPN troubleshooting.
+
+### Commit entries
+
+1. **2026-02-17 11:39:46 +05:30**  
+   Commit: `pending (local changes)`  
+   Message: `Implement Day 33 DNS query logging page and channel hooks [design: security_settings_light]`  
+   Changes:
+   - Added native DNS query log capture and channel hooks:
+     - `android/app/src/main/kotlin/com/navee/trustbridge/vpn/DnsPacketHandler.kt`
+       - captures recent domain decisions (blocked/allowed + timestamp)
+       - exposes snapshots and clear operation
+     - `android/app/src/main/kotlin/com/navee/trustbridge/vpn/DnsVpnService.kt`
+       - stores recent query-log snapshot in service status memory
+       - added clear-query-logs action wiring
+     - `android/app/src/main/kotlin/com/navee/trustbridge/MainActivity.kt`
+       - added method channel methods:
+         - `getRecentDnsQueries`
+         - `clearDnsQueryLogs`
+   - Updated `lib/services/vpn_service.dart`:
+     - added `DnsQueryLogEntry` model
+     - extended `VpnServiceBase` with:
+       - `getRecentDnsQueries(...)`
+       - `clearDnsQueryLogs()`
+     - implemented new methods in concrete `VpnService`
+   - Added `lib/screens/dns_query_log_screen.dart`:
+     - query-log list UI with blocked/allowed labeling
+     - refresh and clear controls
+     - session summary card
+     - privacy-mode behavior:
+       - when `incognitoModeEnabled` is true, logs are hidden and replaced with guidance
+   - Updated `lib/screens/vpn_protection_screen.dart`:
+     - added navigation button to `DNS Query Log` page
+   - Added/updated tests:
+     - new `test/screens/dns_query_log_screen_test.dart`
+     - updated `test/services/vpn_service_test.dart`
+     - updated `test/screens/vpn_protection_screen_test.dart`
+     - updated `test/screens/vpn_test_screen_test.dart` for interface compatibility
+   Validation:
+   - `C:\Users\navee\flutter\bin\flutter.bat analyze` passed.
+   - `C:\Users\navee\flutter\bin\flutter.bat test` passed (107/107).
+   Design folder(s) used:
+   - `security_settings_light`
+   - `design_system_tokens_spec`
+   Design assets checked:
+   - `screen.png`, `code.html`
+   UI fidelity note:
+   - Kept the same security-card visual system and added a diagnostics-focused log page without changing primary parent navigation patterns.
+
+---
+
+## Day 34 - NextDNS Integration Setup (Week 7 Day 4)
+
+Program goal: add a parent-facing NextDNS setup flow and persist profile configuration for staged VPN integration.
+
+### Commit entries
+
+1. **2026-02-17 14:57:57 +05:30**  
+   Commit: `pending (local changes)`  
+   Message: `Implement Day 34 NextDNS setup flow and persistence [design: security_settings_light]`  
+   Changes:
+   - Added `lib/services/nextdns_service.dart`:
+     - profile-id normalization and validation
+     - endpoint builders (`DoH`, `DoT`) for preview UI
+   - Updated `lib/services/firestore_service.dart`:
+     - added parent preference defaults:
+       - `nextDnsEnabled`
+       - `nextDnsProfileId`
+     - extended `updateParentPreferences(...)` with NextDNS fields
+   - Added `lib/screens/nextdns_settings_screen.dart`:
+     - enable/disable NextDNS toggle
+     - profile-id entry with validation and inline errors
+     - endpoint preview for valid profile ids
+     - persisted save flow to Firestore preferences
+     - VPN-running contextual hint
+   - Updated `lib/screens/vpn_protection_screen.dart`:
+     - added `NextDNS Integration` action entry
+     - wired navigation into NextDNS setup screen
+   - Added/updated tests:
+     - new `test/services/nextdns_service_test.dart`
+     - new `test/screens/nextdns_settings_screen_test.dart`
+     - updated `test/services/firestore_service_test.dart` for NextDNS preference persistence
+     - updated `test/screens/vpn_protection_screen_test.dart` for new navigation action
+   Validation:
+   - `C:\Users\navee\flutter\bin\flutter.bat analyze` passed.
+   - `C:\Users\navee\flutter\bin\flutter.bat test` passed (113/113).
+   Design folder(s) used:
+   - `security_settings_light`
+   - `design_system_tokens_spec`
+   Design assets checked:
+   - `screen.png`, `code.html`
+   UI fidelity note:
+   - Preserved the existing security-control visual language while adding a scoped setup page for optional managed DNS.
+
+---
+
+## Day 35 - VPN Reliability and Battery Optimization (Week 7 Day 5)
+
+Program goal: harden VPN runtime reliability with battery-optimization checks and in-app readiness diagnostics.
+
+### Commit entries
+
+1. **2026-02-17 15:11:19 +05:30**  
+   Commit: `pending (local changes)`  
+   Message: `Implement Day 35 VPN reliability and battery optimization checks [design: security_settings_light]`  
+   Changes:
+   - Updated Android method-channel support:
+     - `android/app/src/main/kotlin/com/navee/trustbridge/MainActivity.kt`
+       - added `isIgnoringBatteryOptimizations`
+       - added `openBatteryOptimizationSettings`
+   - Updated `lib/services/vpn_service.dart`:
+     - extended `VpnServiceBase` and `VpnService` with:
+       - `isIgnoringBatteryOptimizations()`
+       - `openBatteryOptimizationSettings()`
+   - Updated `lib/screens/vpn_protection_screen.dart`:
+     - added Battery Optimization card:
+       - runtime status label
+       - one-tap open battery settings action
+     - added VPN Readiness Test card:
+       - multi-check diagnostics (platform, permission, running state, battery optimization, rules loaded, recent traffic)
+       - pass-count summary and last-run marker
+     - tuned status auto-refresh interval for lower UI polling frequency
+   - Added/updated tests:
+     - updated `test/services/vpn_service_test.dart` for battery method-channel calls
+     - updated `test/screens/vpn_protection_screen_test.dart` with readiness test coverage
+     - updated VPN fake implementations in:
+       - `test/screens/vpn_test_screen_test.dart`
+       - `test/screens/dns_query_log_screen_test.dart`
+       - `test/screens/nextdns_settings_screen_test.dart`
+   Validation:
+   - `C:\Users\navee\flutter\bin\flutter.bat analyze` passed.
+   - `C:\Users\navee\flutter\bin\flutter.bat test` passed (114/114).
+   - `C:\Users\navee\flutter\bin\flutter.bat run -d aae47d3e --target lib/main.dart --no-resident` succeeded.
+   Design folder(s) used:
+   - `security_settings_light`
+   - `design_system_tokens_spec`
+   Design assets checked:
+   - `screen.png`, `code.html`
+   UI fidelity note:
+   - Reliability diagnostics were added within the existing VPN protection card stack to preserve established navigation and visual hierarchy.
+
+---
+
+## Current Summary (after Day 35)
 
 - Day 1 completed: foundation, naming, structure, git + GitHub.
 - Day 2 completed: dependencies and Provider baseline.
@@ -1440,5 +1636,9 @@ Program goal: complete the DNS-based VPN integration loop with native packet han
 - Day 29 completed in code: Android VPN service foundation, Flutter bridge controls, and Security screen integration are now implemented and build-verified.
 - Day 30 completed in code: DNS packet parser and filter decision engine are implemented with in-app VPN self-check diagnostics.
 - Day 31 completed in code: full DNS-based VPN integration core is wired from Flutter channel commands to native packet interception and filter-rule updates.
+- Day 32 completed in code: VPN protection UI now includes live runtime telemetry, manual rule-sync controls, and diagnostics guidance for real-device troubleshooting.
+- Day 33 completed in code: DNS query log page and method-channel hooks are now available, with incognito-mode privacy behavior and clear/refresh controls.
+- Day 34 completed in code: NextDNS setup is now available with validated profile persistence, endpoint previews, and VPN-screen navigation for staged managed DNS rollout.
+- Day 35 completed in code: VPN reliability tooling now includes battery-optimization status/actions and an in-app readiness test workflow for operator diagnostics.
 
-Last updated: 2026-02-16
+Last updated: 2026-02-17

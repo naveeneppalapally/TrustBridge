@@ -5,6 +5,7 @@ import java.net.DatagramPacket
 import java.net.DatagramSocket
 import java.net.InetAddress
 import java.nio.ByteBuffer
+import java.util.ArrayDeque
 import kotlin.math.min
 
 class DnsPacketHandler(
@@ -16,12 +17,36 @@ class DnsPacketHandler(
         private const val TAG = "DnsPacketHandler"
         private const val DNS_PORT = 53
         private const val TIMEOUT_MS = 5_000
+        private const val MAX_QUERY_LOG_ENTRIES = 250
     }
 
     private val upstreamSocket: DatagramSocket = DatagramSocket().apply {
         soTimeout = TIMEOUT_MS
         protectSocket?.invoke(this)
     }
+
+    @Volatile
+    private var processedQueries: Long = 0
+
+    @Volatile
+    private var blockedQueries: Long = 0
+
+    @Volatile
+    private var allowedQueries: Long = 0
+
+    private val recentQueries = ArrayDeque<QueryLogEntry>()
+
+    data class PacketStats(
+        val processedQueries: Long,
+        val blockedQueries: Long,
+        val allowedQueries: Long
+    )
+
+    data class QueryLogEntry(
+        val domain: String,
+        val blocked: Boolean,
+        val timestampEpochMs: Long
+    )
 
     fun handlePacket(packet: ByteArray, length: Int): ByteArray? {
         try {
@@ -65,6 +90,16 @@ class DnsPacketHandler(
             val domain = parseDomainName(dnsQuery)
             val isBlocked = filterEngine.shouldBlock(domain)
 
+            if (isBlocked) {
+                incrementBlockedQuery()
+            } else {
+                incrementAllowedQuery()
+            }
+            appendQueryLog(
+                domain = if (domain.isBlank()) "<unknown>" else domain,
+                blocked = isBlocked
+            )
+
             val dnsResponse = if (isBlocked) {
                 Log.d(TAG, "BLOCKED domain=$domain")
                 createBlockedResponse(dnsQuery)
@@ -84,6 +119,37 @@ class DnsPacketHandler(
             Log.e(TAG, "Error handling DNS packet", error)
             return null
         }
+    }
+
+    @Synchronized
+    fun statsSnapshot(): PacketStats {
+        return PacketStats(
+            processedQueries = processedQueries,
+            blockedQueries = blockedQueries,
+            allowedQueries = allowedQueries
+        )
+    }
+
+    @Synchronized
+    fun recentQueriesSnapshot(limit: Int = 100): List<Map<String, Any>> {
+        if (recentQueries.isEmpty()) {
+            return emptyList()
+        }
+
+        val safeLimit = if (limit <= 0) 1 else limit
+        val snapshot = recentQueries.toList().asReversed().take(safeLimit)
+        return snapshot.map { entry ->
+            mapOf(
+                "domain" to entry.domain,
+                "blocked" to entry.blocked,
+                "timestampEpochMs" to entry.timestampEpochMs
+            )
+        }
+    }
+
+    @Synchronized
+    fun clearRecentQueries() {
+        recentQueries.clear()
     }
 
     fun close() {
@@ -236,5 +302,31 @@ class DnsPacketHandler(
             return null
         }
         return offset + 4
+    }
+
+    @Synchronized
+    private fun incrementBlockedQuery() {
+        processedQueries += 1
+        blockedQueries += 1
+    }
+
+    @Synchronized
+    private fun incrementAllowedQuery() {
+        processedQueries += 1
+        allowedQueries += 1
+    }
+
+    @Synchronized
+    private fun appendQueryLog(domain: String, blocked: Boolean) {
+        if (recentQueries.size >= MAX_QUERY_LOG_ENTRIES) {
+            recentQueries.removeFirst()
+        }
+        recentQueries.addLast(
+            QueryLogEntry(
+                domain = domain,
+                blocked = blocked,
+                timestampEpochMs = System.currentTimeMillis()
+            )
+        )
     }
 }

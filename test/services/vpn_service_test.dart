@@ -30,6 +30,13 @@ void main() {
             'supported': true,
             'permissionGranted': true,
             'isRunning': true,
+            'queriesProcessed': 12,
+            'queriesBlocked': 5,
+            'queriesAllowed': 7,
+            'blockedCategoryCount': 3,
+            'blockedDomainCount': 42,
+            'startedAtEpochMs': 1708147200000,
+            'lastRuleUpdateEpochMs': 1708147205000,
           };
         }
         return null;
@@ -39,6 +46,13 @@ void main() {
       expect(status.supported, isTrue);
       expect(status.permissionGranted, isTrue);
       expect(status.isRunning, isTrue);
+      expect(status.queriesProcessed, 12);
+      expect(status.queriesBlocked, 5);
+      expect(status.queriesAllowed, 7);
+      expect(status.blockedCategoryCount, 3);
+      expect(status.blockedDomainCount, 42);
+      expect(status.startedAt, isNotNull);
+      expect(status.lastRuleUpdateAt, isNotNull);
     });
 
     test('permission/start/stop lifecycle methods map bool responses',
@@ -63,6 +77,24 @@ void main() {
         if (call.method == 'updateFilterRules') {
           return true;
         }
+        if (call.method == 'isIgnoringBatteryOptimizations') {
+          return true;
+        }
+        if (call.method == 'openBatteryOptimizationSettings') {
+          return true;
+        }
+        if (call.method == 'getRecentDnsQueries') {
+          return [
+            {
+              'domain': 'reddit.com',
+              'blocked': true,
+              'timestampEpochMs': 1708147210000,
+            },
+          ];
+        }
+        if (call.method == 'clearDnsQueryLogs') {
+          return true;
+        }
         return null;
       });
 
@@ -83,6 +115,13 @@ void main() {
         ),
         isTrue,
       );
+      expect(await service.isIgnoringBatteryOptimizations(), isTrue);
+      expect(await service.openBatteryOptimizationSettings(), isTrue);
+      final queryLogs = await service.getRecentDnsQueries(limit: 10);
+      expect(queryLogs, hasLength(1));
+      expect(queryLogs.first.domain, 'reddit.com');
+      expect(queryLogs.first.blocked, isTrue);
+      expect(await service.clearDnsQueryLogs(), isTrue);
       expect(await service.stopVpn(), isTrue);
     });
   });

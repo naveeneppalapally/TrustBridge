@@ -18,6 +18,11 @@ class _FakeVpnService implements VpnServiceBase {
   bool permissionResult = true;
   bool startResult = true;
   bool stopResult = true;
+  bool ignoringBatteryOptimizations = true;
+  int openBatterySettingsCalls = 0;
+  int updateFilterRulesCalls = 0;
+  List<String> lastUpdatedCategories = const [];
+  List<String> lastUpdatedDomains = const [];
 
   @override
   Future<VpnStatus> getStatus() async {
@@ -70,6 +75,30 @@ class _FakeVpnService implements VpnServiceBase {
     required List<String> blockedCategories,
     required List<String> blockedDomains,
   }) async {
+    updateFilterRulesCalls += 1;
+    lastUpdatedCategories = List<String>.from(blockedCategories);
+    lastUpdatedDomains = List<String>.from(blockedDomains);
+    return true;
+  }
+
+  @override
+  Future<bool> isIgnoringBatteryOptimizations() async {
+    return ignoringBatteryOptimizations;
+  }
+
+  @override
+  Future<bool> openBatteryOptimizationSettings() async {
+    openBatterySettingsCalls += 1;
+    return true;
+  }
+
+  @override
+  Future<List<DnsQueryLogEntry>> getRecentDnsQueries({int limit = 100}) async {
+    return const [];
+  }
+
+  @override
+  Future<bool> clearDnsQueryLogs() async {
     return true;
   }
 }
@@ -114,8 +143,7 @@ void main() {
 
       expect(find.text('VPN Protection Engine'), findsWidgets);
       expect(find.text('Unsupported on this platform'), findsOneWidget);
-      expect(
-          find.byKey(const Key('vpn_dns_self_check_button')), findsOneWidget);
+      expect(find.text('Live Status'), findsOneWidget);
     });
 
     testWidgets('enable protection updates status and preference',
@@ -203,6 +231,8 @@ void main() {
       );
       await tester.pumpAndSettle();
 
+      await tester.drag(find.byType(ListView), const Offset(0, -900));
+      await tester.pumpAndSettle();
       await tester
           .ensureVisible(find.byKey(const Key('vpn_dns_self_check_button')));
       await tester.tap(find.byKey(const Key('vpn_dns_self_check_button')));
@@ -211,6 +241,74 @@ void main() {
       expect(
           find.byKey(const Key('vpn_dns_self_check_result')), findsOneWidget);
       expect(find.textContaining('BLOCKED'), findsOneWidget);
+    });
+
+    testWidgets('sync rules button triggers vpn rule update when running',
+        (tester) async {
+      const parentId = 'parent-vpn-e';
+      await seedParent(parentId);
+
+      final fakeVpn = _FakeVpnService(
+        supported: true,
+        permissionGranted: true,
+        running: true,
+      );
+
+      await tester.pumpWidget(
+        MaterialApp(
+          home: VpnProtectionScreen(
+            vpnService: fakeVpn,
+            firestoreService: firestoreService,
+            parentIdOverride: parentId,
+          ),
+        ),
+      );
+      await tester.pumpAndSettle();
+
+      await tester
+          .ensureVisible(find.byKey(const Key('vpn_sync_rules_button')));
+      await tester.tap(find.byKey(const Key('vpn_sync_rules_button')));
+      await tester.pumpAndSettle();
+
+      expect(fakeVpn.updateFilterRulesCalls, 1);
+      expect(fakeVpn.lastUpdatedCategories, isNotEmpty);
+      expect(find.text('Policy rules synced to active VPN.'), findsOneWidget);
+    });
+
+    testWidgets('run readiness test updates summary', (tester) async {
+      const parentId = 'parent-vpn-f';
+      await seedParent(parentId);
+
+      final fakeVpn = _FakeVpnService(
+        supported: true,
+        permissionGranted: true,
+        running: true,
+      );
+
+      await tester.pumpWidget(
+        MaterialApp(
+          home: VpnProtectionScreen(
+            vpnService: fakeVpn,
+            firestoreService: firestoreService,
+            parentIdOverride: parentId,
+          ),
+        ),
+      );
+      await tester.pumpAndSettle();
+
+      final readinessButton =
+          find.byKey(const Key('vpn_run_health_check_button'));
+      await tester.dragUntilVisible(
+        readinessButton,
+        find.byType(ListView),
+        const Offset(0, -200),
+      );
+      await tester.pumpAndSettle();
+      await tester.tap(readinessButton, warnIfMissed: false);
+      await tester.pumpAndSettle();
+
+      expect(find.byKey(const Key('vpn_readiness_summary')), findsOneWidget);
+      expect(find.textContaining('checks passed'), findsOneWidget);
     });
   });
 }

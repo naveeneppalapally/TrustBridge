@@ -55,6 +55,9 @@ class DnsFilterEngine(private val context: Context) {
     @Synchronized
     fun blockedDomainCount(): Int = blockedDomains.size
 
+    @Synchronized
+    fun blockedCategoryCount(): Int = blockedCategories.size
+
     private fun loadFilterRules() {
         // Bootstrap with conservative defaults until dynamic policy sync is wired.
         blockedDomains.addAll(

@@ -64,14 +64,27 @@ class Policy {
   }
 
   factory Policy.fromMap(Map<String, dynamic> map) {
+    final parsedSchedules = <Schedule>[];
+    final rawSchedules = map['schedules'];
+    if (rawSchedules is List) {
+      for (final rawSchedule in rawSchedules) {
+        final scheduleMap = _asMap(rawSchedule);
+        if (scheduleMap.isEmpty) {
+          continue;
+        }
+        try {
+          parsedSchedules.add(Schedule.fromMap(scheduleMap));
+        } catch (_) {
+          // Skip malformed legacy schedule entries instead of failing policy load.
+        }
+      }
+    }
+
     return Policy(
-      blockedCategories: List<String>.from(map['blockedCategories'] ?? []),
-      blockedDomains: List<String>.from(map['blockedDomains'] ?? []),
-      schedules: (map['schedules'] as List<dynamic>?)
-              ?.map((s) => Schedule.fromMap(s as Map<String, dynamic>))
-              .toList() ??
-          [],
-      safeSearchEnabled: map['safeSearchEnabled'] as bool? ?? true,
+      blockedCategories: _stringList(map['blockedCategories']),
+      blockedDomains: _stringList(map['blockedDomains']),
+      schedules: parsedSchedules,
+      safeSearchEnabled: _boolValue(map['safeSearchEnabled']),
     );
   }
 
@@ -96,5 +109,36 @@ class Policy {
       schedules: schedules ?? this.schedules,
       safeSearchEnabled: safeSearchEnabled ?? this.safeSearchEnabled,
     );
+  }
+
+  static bool _boolValue(Object? value) {
+    if (value is bool) {
+      return value;
+    }
+    if (value is String) {
+      return value.toLowerCase() == 'true';
+    }
+    return true;
+  }
+
+  static List<String> _stringList(Object? value) {
+    if (value is List) {
+      return value
+          .where((item) => item != null)
+          .map((item) => item.toString())
+          .where((item) => item.trim().isNotEmpty)
+          .toList(growable: false);
+    }
+    return const <String>[];
+  }
+
+  static Map<String, dynamic> _asMap(Object? value) {
+    if (value is Map<String, dynamic>) {
+      return value;
+    }
+    if (value is Map) {
+      return value.map((key, item) => MapEntry(key.toString(), item));
+    }
+    return const <String, dynamic>{};
   }
 }

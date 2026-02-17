@@ -53,6 +53,26 @@ class _FakeVpnServiceForTest implements VpnServiceBase {
   }) async {
     return true;
   }
+
+  @override
+  Future<bool> isIgnoringBatteryOptimizations() async {
+    return true;
+  }
+
+  @override
+  Future<bool> openBatteryOptimizationSettings() async {
+    return true;
+  }
+
+  @override
+  Future<List<DnsQueryLogEntry>> getRecentDnsQueries({int limit = 100}) async {
+    return const [];
+  }
+
+  @override
+  Future<bool> clearDnsQueryLogs() async {
+    return true;
+  }
 }
 
 void main() {

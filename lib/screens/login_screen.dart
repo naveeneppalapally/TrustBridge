@@ -1,3 +1,6 @@
+import 'dart:async';
+
+import 'package:firebase_auth/firebase_auth.dart';
 import 'package:flutter/material.dart';
 import 'package:trustbridge_app/services/auth_service.dart';
 
@@ -12,6 +15,7 @@ class _LoginScreenState extends State<LoginScreen> {
   final AuthService _authService = AuthService();
   final TextEditingController _phoneController = TextEditingController();
   final TextEditingController _otpController = TextEditingController();
+  StreamSubscription<User?>? _authSubscription;
 
   bool _isOtpSent = false;
   bool _isLoading = false;
@@ -22,11 +26,37 @@ class _LoginScreenState extends State<LoginScreen> {
     if (code == null || code.isEmpty) {
       return fallback;
     }
-    return '$fallback ($code)';
+
+    switch (code) {
+      case 'network-request-failed':
+      case 'network-timeout':
+        return 'Network is slow right now. Check connection and try again.';
+      case 'invalid-credential':
+      case 'wrong-password':
+      case 'user-not-found':
+        return 'Invalid email or password.';
+      case 'too-many-requests':
+        return 'Too many attempts. Please wait and try again.';
+      default:
+        return '$fallback ($code)';
+    }
+  }
+
+  @override
+  void initState() {
+    super.initState();
+    _authSubscription = _authService.authStateChanges.listen((user) {
+      if (!mounted || user == null) {
+        return;
+      }
+
+      Navigator.of(context).pushReplacementNamed('/dashboard');
+    });
   }
 
   @override
   void dispose() {
+    _authSubscription?.cancel();
     _phoneController.dispose();
     _otpController.dispose();
     super.dispose();
@@ -76,6 +106,7 @@ class _LoginScreenState extends State<LoginScreen> {
     });
 
     final user = await _authService.verifyOTP(otp);
+    final resolvedUser = user ?? _authService.currentUser;
 
     if (!mounted) {
       return;
@@ -85,7 +116,7 @@ class _LoginScreenState extends State<LoginScreen> {
       _isLoading = false;
     });
 
-    if (user == null) {
+    if (resolvedUser == null) {
       setState(() {
         _errorMessage = _friendlyError(
           'Invalid OTP or verification failed. Try again.',
@@ -142,12 +173,13 @@ class _LoginScreenState extends State<LoginScreen> {
                       email: email,
                       password: password,
                     );
+              final resolvedUser = user ?? _authService.currentUser;
 
               if (!mounted) {
                 return;
               }
 
-              if (user == null) {
+              if (resolvedUser == null) {
                 setModalState(() {
                   isLoading = false;
                   errorMessage = _friendlyError(

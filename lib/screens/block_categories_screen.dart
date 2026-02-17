@@ -1,8 +1,10 @@
 import 'package:flutter/material.dart';
 import 'package:trustbridge_app/models/child_profile.dart';
+import 'package:trustbridge_app/models/policy.dart';
 import 'package:trustbridge_app/models/content_categories.dart';
 import 'package:trustbridge_app/services/auth_service.dart';
 import 'package:trustbridge_app/services/firestore_service.dart';
+import 'package:trustbridge_app/services/vpn_service.dart';
 
 class BlockCategoriesScreen extends StatefulWidget {
   const BlockCategoriesScreen({
@@ -10,12 +12,14 @@ class BlockCategoriesScreen extends StatefulWidget {
     required this.child,
     this.authService,
     this.firestoreService,
+    this.vpnService,
     this.parentIdOverride,
   });
 
   final ChildProfile child;
   final AuthService? authService;
   final FirestoreService? firestoreService;
+  final VpnServiceBase? vpnService;
   final String? parentIdOverride;
 
   @override
@@ -25,6 +29,7 @@ class BlockCategoriesScreen extends StatefulWidget {
 class _BlockCategoriesScreenState extends State<BlockCategoriesScreen> {
   AuthService? _authService;
   FirestoreService? _firestoreService;
+  VpnServiceBase? _vpnService;
 
   late final Set<String> _initialBlockedCategories;
   late Set<String> _blockedCategories;
@@ -39,6 +44,11 @@ class _BlockCategoriesScreenState extends State<BlockCategoriesScreen> {
   FirestoreService get _resolvedFirestoreService {
     _firestoreService ??= widget.firestoreService ?? FirestoreService();
     return _firestoreService!;
+  }
+
+  VpnServiceBase get _resolvedVpnService {
+    _vpnService ??= widget.vpnService ?? VpnService();
+    return _vpnService!;
   }
 
   bool get _hasChanges =>
@@ -304,6 +314,7 @@ class _BlockCategoriesScreenState extends State<BlockCategoriesScreen> {
         parentId: parentId,
         child: updatedChild,
       );
+      await _syncVpnRulesIfRunning(updatedPolicy);
 
       if (!mounted) {
         return;
@@ -341,6 +352,22 @@ class _BlockCategoriesScreenState extends State<BlockCategoriesScreen> {
           );
         },
       );
+    }
+  }
+
+  Future<void> _syncVpnRulesIfRunning(Policy updatedPolicy) async {
+    try {
+      final status = await _resolvedVpnService.getStatus();
+      if (!status.supported || !status.isRunning) {
+        return;
+      }
+
+      await _resolvedVpnService.updateFilterRules(
+        blockedCategories: updatedPolicy.blockedCategories,
+        blockedDomains: updatedPolicy.blockedDomains,
+      );
+    } catch (_) {
+      // Saving policy should succeed even if VPN sync is unavailable.
     }
   }
 

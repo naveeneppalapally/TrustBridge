@@ -249,6 +249,8 @@ void main() {
           'personalizedTipsEnabled': true,
           'biometricLoginEnabled': false,
           'incognitoModeEnabled': false,
+          'nextDnsEnabled': false,
+          'nextDnsProfileId': null,
         },
       });
 
@@ -260,6 +262,8 @@ void main() {
         biometricLoginEnabled: true,
         incognitoModeEnabled: true,
         vpnProtectionEnabled: true,
+        nextDnsEnabled: true,
+        nextDnsProfileId: 'abc123',
       );
 
       final snapshot =
@@ -273,6 +277,8 @@ void main() {
       expect(preferences['biometricLoginEnabled'], true);
       expect(preferences['incognitoModeEnabled'], true);
       expect(preferences['vpnProtectionEnabled'], true);
+      expect(preferences['nextDnsEnabled'], true);
+      expect(preferences['nextDnsProfileId'], 'abc123');
     });
 
     test('updateParentPreferences throws ArgumentError for empty parentId', () {

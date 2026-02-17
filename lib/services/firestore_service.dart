@@ -1,3 +1,5 @@
+import 'dart:developer' as developer;
+
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:trustbridge_app/models/child_profile.dart';
 
@@ -34,6 +36,8 @@ class FirestoreService {
           'biometricLoginEnabled': false,
           'incognitoModeEnabled': false,
           'vpnProtectionEnabled': false,
+          'nextDnsEnabled': false,
+          'nextDnsProfileId': null,
         },
         'fcmToken': null,
       },
@@ -67,6 +71,8 @@ class FirestoreService {
     bool? biometricLoginEnabled,
     bool? incognitoModeEnabled,
     bool? vpnProtectionEnabled,
+    bool? nextDnsEnabled,
+    String? nextDnsProfileId,
   }) async {
     if (parentId.trim().isEmpty) {
       throw ArgumentError.value(parentId, 'parentId', 'Parent ID is required.');
@@ -105,6 +111,13 @@ class FirestoreService {
     }
     if (vpnProtectionEnabled != null) {
       preferenceUpdates['vpnProtectionEnabled'] = vpnProtectionEnabled;
+    }
+    if (nextDnsEnabled != null) {
+      preferenceUpdates['nextDnsEnabled'] = nextDnsEnabled;
+    }
+    if (nextDnsProfileId != null) {
+      final trimmed = nextDnsProfileId.trim();
+      preferenceUpdates['nextDnsProfileId'] = trimmed.isEmpty ? null : trimmed;
     }
 
     if (preferenceUpdates.isEmpty) {
@@ -194,11 +207,50 @@ class FirestoreService {
         .where('parentId', isEqualTo: parentId)
         .snapshots()
         .map((snapshot) {
-      final children =
-          snapshot.docs.map((doc) => ChildProfile.fromFirestore(doc)).toList();
+      final children = <ChildProfile>[];
+      for (final doc in snapshot.docs) {
+        try {
+          children.add(ChildProfile.fromFirestore(doc));
+        } catch (error, stackTrace) {
+          developer.log(
+            'Skipping malformed child document: ${doc.id}',
+            name: 'FirestoreService',
+            error: error,
+            stackTrace: stackTrace,
+          );
+        }
+      }
       children.sort((a, b) => a.createdAt.compareTo(b.createdAt));
       return children;
     });
+  }
+
+  Future<List<ChildProfile>> getChildren(String parentId) async {
+    if (parentId.trim().isEmpty) {
+      throw ArgumentError.value(parentId, 'parentId', 'Parent ID is required.');
+    }
+
+    final snapshot = await _firestore
+        .collection('children')
+        .where('parentId', isEqualTo: parentId)
+        .get();
+
+    final children = <ChildProfile>[];
+    for (final doc in snapshot.docs) {
+      try {
+        children.add(ChildProfile.fromFirestore(doc));
+      } catch (error, stackTrace) {
+        developer.log(
+          'Skipping malformed child document: ${doc.id}',
+          name: 'FirestoreService',
+          error: error,
+          stackTrace: stackTrace,
+        );
+      }
+    }
+
+    children.sort((a, b) => a.createdAt.compareTo(b.createdAt));
+    return children;
   }
 
   Future<ChildProfile?> getChild({
@@ -246,12 +298,6 @@ class FirestoreService {
     }
 
     final childRef = _firestore.collection('children').doc(child.id);
-    final snapshot = await childRef.get();
-    final data = snapshot.data();
-    if (data != null && data['parentId'] != parentId) {
-      throw StateError('Child does not belong to parent $parentId.');
-    }
-
     await childRef.update({
       'nickname': normalizedNickname,
       'ageBand': child.ageBand.value,

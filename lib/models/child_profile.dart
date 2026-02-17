@@ -11,8 +11,19 @@ enum AgeBand {
   final String value;
   const AgeBand(this.value);
 
-  static AgeBand fromString(String value) {
-    return AgeBand.values.firstWhere((e) => e.value == value);
+  static AgeBand fromString(String? value) {
+    final normalized = value?.trim();
+    if (normalized == null || normalized.isEmpty) {
+      return AgeBand.young;
+    }
+
+    for (final band in AgeBand.values) {
+      if (band.value == normalized || band.name == normalized) {
+        return band;
+      }
+    }
+
+    return AgeBand.young;
   }
 }
 
@@ -58,9 +69,9 @@ class ChildProfile {
     final data = _asMap(doc.data());
     return ChildProfile(
       id: doc.id,
-      nickname: (data['nickname'] as String?) ?? '',
-      ageBand: AgeBand.fromString(data['ageBand'] as String),
-      deviceIds: List<String>.from(data['deviceIds'] ?? []),
+      nickname: _stringValue(data['nickname']),
+      ageBand: AgeBand.fromString(data['ageBand']?.toString()),
+      deviceIds: _stringList(data['deviceIds']),
       policy: Policy.fromMap(_asMap(data['policy'])),
       createdAt: _toDateTime(data['createdAt']),
       updatedAt: _toDateTime(data['updatedAt']),
@@ -136,5 +147,23 @@ class ChildProfile {
       );
     }
     return <String, dynamic>{};
+  }
+
+  static String _stringValue(Object? rawValue) {
+    if (rawValue is String) {
+      return rawValue;
+    }
+    return rawValue?.toString() ?? '';
+  }
+
+  static List<String> _stringList(Object? rawValue) {
+    if (rawValue is List) {
+      return rawValue
+          .where((item) => item != null)
+          .map((item) => item.toString())
+          .where((item) => item.trim().isNotEmpty)
+          .toList(growable: false);
+    }
+    return const <String>[];
   }
 }

@@ -1,8 +1,10 @@
 import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 import 'package:trustbridge_app/models/child_profile.dart';
+import 'package:trustbridge_app/models/policy.dart';
 import 'package:trustbridge_app/services/auth_service.dart';
 import 'package:trustbridge_app/services/firestore_service.dart';
+import 'package:trustbridge_app/services/vpn_service.dart';
 
 class CustomDomainsScreen extends StatefulWidget {
   const CustomDomainsScreen({
@@ -10,12 +12,14 @@ class CustomDomainsScreen extends StatefulWidget {
     required this.child,
     this.authService,
     this.firestoreService,
+    this.vpnService,
     this.parentIdOverride,
   });
 
   final ChildProfile child;
   final AuthService? authService;
   final FirestoreService? firestoreService;
+  final VpnServiceBase? vpnService;
   final String? parentIdOverride;
 
   @override
@@ -27,6 +31,7 @@ class _CustomDomainsScreenState extends State<CustomDomainsScreen> {
 
   AuthService? _authService;
   FirestoreService? _firestoreService;
+  VpnServiceBase? _vpnService;
 
   late final List<String> _initialDomains;
   late List<String> _blockedDomains;
@@ -50,6 +55,11 @@ class _CustomDomainsScreenState extends State<CustomDomainsScreen> {
   FirestoreService get _resolvedFirestoreService {
     _firestoreService ??= widget.firestoreService ?? FirestoreService();
     return _firestoreService!;
+  }
+
+  VpnServiceBase get _resolvedVpnService {
+    _vpnService ??= widget.vpnService ?? VpnService();
+    return _vpnService!;
   }
 
   bool get _hasChanges => !listEquals(_blockedDomains, _initialDomains);
@@ -312,6 +322,7 @@ class _CustomDomainsScreenState extends State<CustomDomainsScreen> {
         parentId: parentId,
         child: updatedChild,
       );
+      await _syncVpnRulesIfRunning(updatedPolicy);
 
       if (!mounted) {
         return;
@@ -346,6 +357,22 @@ class _CustomDomainsScreenState extends State<CustomDomainsScreen> {
           );
         },
       );
+    }
+  }
+
+  Future<void> _syncVpnRulesIfRunning(Policy updatedPolicy) async {
+    try {
+      final status = await _resolvedVpnService.getStatus();
+      if (!status.supported || !status.isRunning) {
+        return;
+      }
+
+      await _resolvedVpnService.updateFilterRules(
+        blockedCategories: updatedPolicy.blockedCategories,
+        blockedDomains: updatedPolicy.blockedDomains,
+      );
+    } catch (_) {
+      // Saving policy should succeed even if VPN sync is unavailable.
     }
   }
 

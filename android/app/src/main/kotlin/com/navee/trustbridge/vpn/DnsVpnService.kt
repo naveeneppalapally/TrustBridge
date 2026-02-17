@@ -20,7 +20,6 @@ class DnsVpnService : VpnService() {
     companion object {
         private const val TAG = "DnsVpnService"
         private const val VPN_ADDRESS = "10.0.0.2"
-        private const val VPN_ROUTE = "0.0.0.0"
         private const val VPN_DNS = "8.8.8.8"
         private const val NOTIFICATION_ID = 1001
         private const val CHANNEL_ID = "dns_vpn_channel"
@@ -28,12 +27,79 @@ class DnsVpnService : VpnService() {
         const val ACTION_START = "com.navee.trustbridge.vpn.START"
         const val ACTION_STOP = "com.navee.trustbridge.vpn.STOP"
         const val ACTION_UPDATE_RULES = "com.navee.trustbridge.vpn.UPDATE_RULES"
+        const val ACTION_CLEAR_QUERY_LOGS = "com.navee.trustbridge.vpn.CLEAR_QUERY_LOGS"
         const val EXTRA_BLOCKED_CATEGORIES = "blockedCategories"
         const val EXTRA_BLOCKED_DOMAINS = "blockedDomains"
 
         @Volatile
         var isRunning: Boolean = false
             private set
+
+        @Volatile
+        private var queriesProcessed: Long = 0
+
+        @Volatile
+        private var queriesBlocked: Long = 0
+
+        @Volatile
+        private var queriesAllowed: Long = 0
+
+        @Volatile
+        private var blockedCategoryCount: Int = 0
+
+        @Volatile
+        private var blockedDomainCount: Int = 0
+
+        @Volatile
+        private var startedAtEpochMs: Long? = null
+
+        @Volatile
+        private var lastRuleUpdateEpochMs: Long? = null
+
+        @Volatile
+        private var recentQueryLogs: List<Map<String, Any>> = emptyList()
+
+        fun statusSnapshot(permissionGranted: Boolean): Map<String, Any?> {
+            return mapOf(
+                "supported" to true,
+                "permissionGranted" to permissionGranted,
+                "isRunning" to isRunning,
+                "queriesProcessed" to queriesProcessed,
+                "queriesBlocked" to queriesBlocked,
+                "queriesAllowed" to queriesAllowed,
+                "blockedCategoryCount" to blockedCategoryCount,
+                "blockedDomainCount" to blockedDomainCount,
+                "startedAtEpochMs" to startedAtEpochMs,
+                "lastRuleUpdateEpochMs" to lastRuleUpdateEpochMs,
+                "recentQueryCount" to recentQueryLogs.size
+            )
+        }
+
+        @Synchronized
+        private fun updatePacketStats(stats: DnsPacketHandler.PacketStats) {
+            queriesProcessed = stats.processedQueries
+            queriesBlocked = stats.blockedQueries
+            queriesAllowed = stats.allowedQueries
+        }
+
+        @Synchronized
+        private fun updateRecentQueryLogs(logs: List<Map<String, Any>>) {
+            recentQueryLogs = logs
+        }
+
+        @Synchronized
+        fun getRecentQueryLogs(limit: Int = 100): List<Map<String, Any>> {
+            if (recentQueryLogs.isEmpty()) {
+                return emptyList()
+            }
+            val safeLimit = if (limit <= 0) 1 else limit
+            return recentQueryLogs.take(safeLimit)
+        }
+
+        @Synchronized
+        fun clearRecentQueryLogs() {
+            recentQueryLogs = emptyList()
+        }
     }
 
     private var vpnInterface: ParcelFileDescriptor? = null
@@ -47,6 +113,9 @@ class DnsVpnService : VpnService() {
     override fun onCreate() {
         super.onCreate()
         filterEngine = DnsFilterEngine(this)
+        blockedCategoryCount = filterEngine.blockedCategoryCount()
+        blockedDomainCount = filterEngine.blockedDomainCount()
+        lastRuleUpdateEpochMs = System.currentTimeMillis()
         Log.d(TAG, "DNS VPN service created")
     }
 
@@ -59,7 +128,7 @@ class DnsVpnService : VpnService() {
                 val categories =
                     intent?.getStringArrayListExtra(EXTRA_BLOCKED_CATEGORIES) ?: arrayListOf()
                 val domains = intent?.getStringArrayListExtra(EXTRA_BLOCKED_DOMAINS) ?: arrayListOf()
-                filterEngine.updateFilterRules(categories, domains)
+                applyFilterRules(categories, domains)
                 startVpn()
                 START_STICKY
             }
@@ -68,7 +137,13 @@ class DnsVpnService : VpnService() {
                 val categories =
                     intent?.getStringArrayListExtra(EXTRA_BLOCKED_CATEGORIES) ?: arrayListOf()
                 val domains = intent?.getStringArrayListExtra(EXTRA_BLOCKED_DOMAINS) ?: arrayListOf()
-                filterEngine.updateFilterRules(categories, domains)
+                applyFilterRules(categories, domains)
+                START_STICKY
+            }
+
+            ACTION_CLEAR_QUERY_LOGS -> {
+                clearRecentQueryLogs()
+                packetHandler?.clearRecentQueries()
                 START_STICKY
             }
 
@@ -91,7 +166,10 @@ class DnsVpnService : VpnService() {
             val builder = Builder()
                 .setSession("TrustBridge DNS Filter")
                 .addAddress(VPN_ADDRESS, 24)
-                .addRoute(VPN_ROUTE, 0)
+                // Route only upstream DNS host through the VPN tunnel.
+                // Full-tunnel routing would break all non-DNS traffic until
+                // generic packet forwarding is implemented.
+                .addRoute(VPN_DNS, 32)
                 .addDnsServer(VPN_DNS)
 
             vpnInterface = builder.establish()
@@ -111,6 +189,12 @@ class DnsVpnService : VpnService() {
 
             serviceRunning = true
             isRunning = true
+            startedAtEpochMs = System.currentTimeMillis()
+            queriesProcessed = 0
+            queriesBlocked = 0
+            queriesAllowed = 0
+            clearRecentQueryLogs()
+            packetHandler?.clearRecentQueries()
 
             startForeground(NOTIFICATION_ID, createNotification())
             startPacketProcessing()
@@ -138,6 +222,8 @@ class DnsVpnService : VpnService() {
                     }
 
                     val response = handler.handlePacket(buffer, length)
+                    updatePacketStats(handler.statsSnapshot())
+                    updateRecentQueryLogs(handler.recentQueriesSnapshot(limit = 120))
                     if (response != null && response.isNotEmpty()) {
                         outputStream.write(response)
                     }
@@ -195,6 +281,16 @@ class DnsVpnService : VpnService() {
         }
 
         stopSelf()
+    }
+
+    private fun applyFilterRules(
+        categories: List<String>,
+        domains: List<String>
+    ) {
+        filterEngine.updateFilterRules(categories, domains)
+        blockedCategoryCount = filterEngine.blockedCategoryCount()
+        blockedDomainCount = filterEngine.blockedDomainCount()
+        lastRuleUpdateEpochMs = System.currentTimeMillis()
     }
 
     private fun createNotification(): Notification {

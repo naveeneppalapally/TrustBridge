@@ -96,12 +96,6 @@ class _DashboardScreenState extends State<DashboardScreen> {
       body: StreamBuilder<List<ChildProfile>>(
         stream: _resolvedFirestoreService.getChildrenStream(parentId),
         builder: (context, snapshot) {
-          if (snapshot.connectionState == ConnectionState.waiting) {
-            return const Center(
-              child: CircularProgressIndicator(),
-            );
-          }
-
           if (snapshot.hasError) {
             return Center(
               child: Padding(
@@ -155,6 +149,11 @@ class _DashboardScreenState extends State<DashboardScreen> {
                 child: Column(
                   mainAxisAlignment: MainAxisAlignment.center,
                   children: [
+                    if (snapshot.connectionState == ConnectionState.waiting)
+                      const Padding(
+                        padding: EdgeInsets.only(bottom: 16),
+                        child: CircularProgressIndicator(strokeWidth: 2),
+                      ),
                     Icon(
                       Icons.family_restroom,
                       size: 92,
