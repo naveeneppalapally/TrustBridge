@@ -67,6 +67,11 @@ class _FakeVpnServiceForTest implements VpnServiceBase {
   }
 
   @override
+  Future<bool> setUpstreamDns({String? upstreamDns}) async {
+    return true;
+  }
+
+  @override
   Future<bool> isIgnoringBatteryOptimizations() async {
     return true;
   }

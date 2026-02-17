@@ -7,6 +7,7 @@ import android.provider.Settings
 import com.navee.trustbridge.vpn.BlocklistStore
 import com.navee.trustbridge.vpn.DnsFilterEngine
 import com.navee.trustbridge.vpn.DnsVpnService
+import com.navee.trustbridge.vpn.VpnPreferencesStore
 import io.flutter.embedding.android.FlutterActivity
 import io.flutter.embedding.engine.FlutterEngine
 import io.flutter.plugin.common.MethodCall
@@ -24,6 +25,9 @@ class MainActivity : FlutterActivity() {
     private var pendingPermissionResult: MethodChannel.Result? = null
     private val blocklistStore: BlocklistStore by lazy {
         BlocklistStore(applicationContext)
+    }
+    private val vpnPreferencesStore: VpnPreferencesStore by lazy {
+        VpnPreferencesStore(applicationContext)
     }
 
     override fun configureFlutterEngine(flutterEngine: FlutterEngine) {
@@ -63,6 +67,9 @@ class MainActivity : FlutterActivity() {
                     call.argument<List<String>>("blockedCategories") ?: emptyList()
                 val blockedDomains =
                     call.argument<List<String>>("blockedDomains") ?: emptyList()
+                val upstreamDns = call.argument<String>("upstreamDns")
+                    ?.trim()
+                    ?.takeIf { it.isNotEmpty() }
 
                 val serviceIntent = Intent(this, DnsVpnService::class.java).apply {
                     action = DnsVpnService.ACTION_START
@@ -74,6 +81,9 @@ class MainActivity : FlutterActivity() {
                         DnsVpnService.EXTRA_BLOCKED_DOMAINS,
                         ArrayList(blockedDomains)
                     )
+                    if (upstreamDns != null) {
+                        putExtra(DnsVpnService.EXTRA_UPSTREAM_DNS, upstreamDns)
+                    }
                 }
                 startServiceCompat(serviceIntent)
                 result.success(true)
@@ -93,6 +103,9 @@ class MainActivity : FlutterActivity() {
                     call.argument<List<String>>("blockedCategories") ?: emptyList()
                 val blockedDomains =
                     call.argument<List<String>>("blockedDomains") ?: emptyList()
+                val upstreamDns = call.argument<String>("upstreamDns")
+                    ?.trim()
+                    ?.takeIf { it.isNotEmpty() }
 
                 val serviceIntent = Intent(this, DnsVpnService::class.java).apply {
                     action = DnsVpnService.ACTION_RESTART
@@ -104,6 +117,9 @@ class MainActivity : FlutterActivity() {
                         DnsVpnService.EXTRA_BLOCKED_DOMAINS,
                         ArrayList(blockedDomains)
                     )
+                    if (upstreamDns != null) {
+                        putExtra(DnsVpnService.EXTRA_UPSTREAM_DNS, upstreamDns)
+                    }
                 }
                 startServiceCompat(serviceIntent)
                 result.success(true)
@@ -229,6 +245,31 @@ class MainActivity : FlutterActivity() {
                     )
                 }
                 startServiceCompat(serviceIntent)
+                result.success(true)
+            }
+
+            "setUpstreamDns" -> {
+                val upstreamDns = call.argument<String>("upstreamDns")
+                    ?.trim()
+                    ?.takeIf { it.isNotEmpty() }
+
+                if (DnsVpnService.isRunning) {
+                    val serviceIntent = Intent(this, DnsVpnService::class.java).apply {
+                        action = DnsVpnService.ACTION_SET_UPSTREAM_DNS
+                        if (upstreamDns != null) {
+                            putExtra(DnsVpnService.EXTRA_UPSTREAM_DNS, upstreamDns)
+                        }
+                    }
+                    startServiceCompat(serviceIntent)
+                } else {
+                    val config = vpnPreferencesStore.loadConfig()
+                    vpnPreferencesStore.saveRules(
+                        categories = config.blockedCategories,
+                        domains = config.blockedDomains,
+                        upstreamDns = upstreamDns
+                    )
+                }
+
                 result.success(true)
             }
 

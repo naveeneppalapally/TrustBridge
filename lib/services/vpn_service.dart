@@ -14,6 +14,7 @@ class VpnStatus {
     this.blockedDomainCount = 0,
     this.startedAt,
     this.lastRuleUpdateAt,
+    this.upstreamDns,
   });
 
   const VpnStatus.unsupported()
@@ -26,7 +27,8 @@ class VpnStatus {
         blockedCategoryCount = 0,
         blockedDomainCount = 0,
         startedAt = null,
-        lastRuleUpdateAt = null;
+        lastRuleUpdateAt = null,
+        upstreamDns = null;
 
   final bool supported;
   final bool permissionGranted;
@@ -38,6 +40,7 @@ class VpnStatus {
   final int blockedDomainCount;
   final DateTime? startedAt;
   final DateTime? lastRuleUpdateAt;
+  final String? upstreamDns;
 
   double get blockedRate {
     if (queriesProcessed <= 0) {
@@ -61,6 +64,7 @@ class VpnStatus {
       blockedDomainCount: _toInt(map['blockedDomainCount']),
       startedAt: _toDateTime(map['startedAtEpochMs']),
       lastRuleUpdateAt: _toDateTime(map['lastRuleUpdateEpochMs']),
+      upstreamDns: _toNullableString(map['upstreamDns']),
     );
   }
 
@@ -80,6 +84,14 @@ class VpnStatus {
       return null;
     }
     return DateTime.fromMillisecondsSinceEpoch(epochMs);
+  }
+
+  static String? _toNullableString(dynamic value) {
+    if (value is String) {
+      final trimmed = value.trim();
+      return trimmed.isEmpty ? null : trimmed;
+    }
+    return null;
   }
 }
 
@@ -211,6 +223,8 @@ abstract class VpnServiceBase {
     required List<String> blockedCategories,
     required List<String> blockedDomains,
   });
+
+  Future<bool> setUpstreamDns({String? upstreamDns});
 
   Future<bool> isIgnoringBatteryOptimizations();
 
@@ -398,6 +412,27 @@ class VpnService implements VpnServiceBase {
               'blockedDomains': blockedDomains,
             },
           ) ??
+          false;
+    } on PlatformException {
+      return false;
+    } on MissingPluginException {
+      return false;
+    }
+  }
+
+  @override
+  Future<bool> setUpstreamDns({String? upstreamDns}) async {
+    if (!_supported) {
+      return false;
+    }
+
+    try {
+      final payload = <String, dynamic>{};
+      final normalized = upstreamDns?.trim();
+      if (normalized != null && normalized.isNotEmpty) {
+        payload['upstreamDns'] = normalized;
+      }
+      return await _channel.invokeMethod<bool>('setUpstreamDns', payload) ??
           false;
     } on PlatformException {
       return false;

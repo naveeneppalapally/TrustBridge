@@ -6,7 +6,8 @@ import org.json.JSONArray
 internal data class PersistedVpnConfig(
     val enabled: Boolean,
     val blockedCategories: List<String>,
-    val blockedDomains: List<String>
+    val blockedDomains: List<String>,
+    val upstreamDns: String
 )
 
 internal class VpnPreferencesStore(context: Context) {
@@ -15,6 +16,8 @@ internal class VpnPreferencesStore(context: Context) {
         private const val KEY_ENABLED = "vpn_enabled"
         private const val KEY_BLOCKED_CATEGORIES = "vpn_blocked_categories"
         private const val KEY_BLOCKED_DOMAINS = "vpn_blocked_domains"
+        private const val KEY_UPSTREAM_DNS = "vpn_upstream_dns"
+        private const val DEFAULT_UPSTREAM_DNS = "8.8.8.8"
     }
 
     private val prefs = context.applicationContext.getSharedPreferences(
@@ -30,14 +33,22 @@ internal class VpnPreferencesStore(context: Context) {
             ),
             blockedDomains = decodeStringList(
                 prefs.getString(KEY_BLOCKED_DOMAINS, "[]")
+            ),
+            upstreamDns = normalizeUpstreamDns(
+                prefs.getString(KEY_UPSTREAM_DNS, DEFAULT_UPSTREAM_DNS)
             )
         )
     }
 
-    fun saveRules(categories: List<String>, domains: List<String>) {
+    fun saveRules(
+        categories: List<String>,
+        domains: List<String>,
+        upstreamDns: String? = null
+    ) {
         prefs.edit()
             .putString(KEY_BLOCKED_CATEGORIES, encodeStringList(categories))
             .putString(KEY_BLOCKED_DOMAINS, encodeStringList(domains))
+            .putString(KEY_UPSTREAM_DNS, normalizeUpstreamDns(upstreamDns))
             .apply()
     }
 
@@ -77,5 +88,10 @@ internal class VpnPreferencesStore(context: Context) {
         } catch (_: Exception) {
             emptyList()
         }
+    }
+
+    private fun normalizeUpstreamDns(value: String?): String {
+        val normalized = value?.trim().orEmpty()
+        return if (normalized.isEmpty()) DEFAULT_UPSTREAM_DNS else normalized
     }
 }

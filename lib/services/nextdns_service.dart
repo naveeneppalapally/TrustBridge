@@ -32,4 +32,8 @@ class NextDnsService {
     final normalized = normalizeProfileId(profileId);
     return '$normalized.dns.nextdns.io';
   }
+
+  String upstreamDnsHost(String profileId) {
+    return dotEndpoint(profileId);
+  }
 }

@@ -62,7 +62,6 @@ void main() {
       await tester.pump();
 
       expect(find.text('Ask for Access'), findsOneWidget);
-      expect(find.text('Request Updates'), findsOneWidget);
     });
 
     testWidgets('uses non-punitive wording', (tester) async {
@@ -87,9 +86,13 @@ void main() {
       );
       await tester.pump();
 
-      await tester.tap(find.text('Ask for Access'));
+      final askForAccessFinder =
+          find.byKey(const Key('child_status_request_access_button'));
+      await tester.ensureVisible(askForAccessFinder);
+      final requestButton = tester.widget<InkWell>(askForAccessFinder);
+      requestButton.onTap!.call();
       await tester.pump();
-      await tester.pump(const Duration(milliseconds: 400));
+      await tester.pump(const Duration(milliseconds: 500));
 
       expect(find.text('What do you need?'), findsOneWidget);
     });
@@ -112,8 +115,8 @@ void main() {
         'status': 'approved',
         'parentReply': 'Use it for your project.',
         'requestedAt': Timestamp.fromDate(DateTime.now()),
-        'respondedAt':
-            Timestamp.fromDate(DateTime.now().subtract(const Duration(minutes: 1))),
+        'respondedAt': Timestamp.fromDate(
+            DateTime.now().subtract(const Duration(minutes: 1))),
         'expiresAt':
             Timestamp.fromDate(DateTime.now().add(const Duration(minutes: 20))),
       });

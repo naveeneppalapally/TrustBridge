@@ -30,6 +30,9 @@ class _FakeVpnService implements VpnServiceBase {
   }
 
   @override
+  Future<bool> setUpstreamDns({String? upstreamDns}) async => true;
+
+  @override
   Future<VpnStatus> getStatus() async => const VpnStatus.unsupported();
 
   @override

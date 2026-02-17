@@ -2242,7 +2242,57 @@ Program goal: surface approved access windows directly on the child status scree
 
 ---
 
-## Current Summary (after Day 51)
+## Day 52 - NextDNS Resolver Bridge to Native VPN (Week 11 Day 2)
+
+Program goal: remove the manual gap between saved NextDNS settings and actual DNS enforcement by applying upstream resolver changes directly to the native VPN engine with persistence across restarts.
+
+### Commit entries
+
+1. **2026-02-17 23:58:00 +05:30**  
+   Commit: `pending (local changes)`  
+   Message: `Implement Day 52 NextDNS resolver integration with native VPN bridge`  
+   Changes:
+   - Updated `lib/services/vpn_service.dart`:
+     - added `setUpstreamDns({String? upstreamDns})` to `VpnServiceBase`
+     - implemented method-channel call for `setUpstreamDns`
+     - added `upstreamDns` to `VpnStatus` model parsing
+   - Updated `lib/services/nextdns_service.dart`:
+     - added `upstreamDnsHost(profileId)` helper for resolver host generation
+   - Updated `lib/screens/nextdns_settings_screen.dart`:
+     - save flow now applies resolver updates via `setUpstreamDns`
+     - success copy clarifies resolver application state
+   - Updated Android native bridge and VPN runtime:
+     - `android/app/src/main/kotlin/com/navee/trustbridge/MainActivity.kt`
+       - added `setUpstreamDns` method-channel handler
+       - persists resolver when VPN is stopped
+       - triggers live resolver update when VPN is running
+     - `android/app/src/main/kotlin/com/navee/trustbridge/vpn/VpnPreferencesStore.kt`
+       - persists upstream DNS in shared preferences
+     - `android/app/src/main/kotlin/com/navee/trustbridge/vpn/DnsVpnService.kt`
+       - added `ACTION_SET_UPSTREAM_DNS`
+       - tracks resolver in status snapshot
+       - applies resolver updates and restarts VPN loop safely when active
+   - Updated VPN diagnostics UI:
+     - `lib/screens/vpn_protection_screen.dart` now shows active upstream DNS
+     - diagnostics note updated to reflect NextDNS availability
+   - Updated tests/fakes for new VPN interface method:
+     - `test/screens/nextdns_settings_screen_test.dart`
+     - `test/screens/dns_query_log_screen_test.dart`
+     - `test/screens/domain_policy_tester_screen_test.dart`
+     - `test/screens/vpn_protection_screen_test.dart`
+     - `test/screens/vpn_test_screen_test.dart`
+     - `test/services/policy_vpn_sync_service_test.dart`
+   - Stabilized existing child status test navigation:
+     - `lib/screens/child_status_screen.dart` added request button key
+     - `test/screens/child_status_screen_test.dart` updated deterministic tap flow
+   Validation:
+   - `C:\Users\navee\flutter\bin\flutter.bat analyze` passed.
+   - `C:\Users\navee\flutter\bin\flutter.bat test` passed (162/162).
+   - Native resolver bridge compiles with Android method-channel updates.
+
+---
+
+## Current Summary (after Day 52)
 
 - Day 1 completed: foundation, naming, structure, git + GitHub.
 - Day 2 completed: dependencies and Provider baseline.
@@ -2297,5 +2347,6 @@ Program goal: surface approved access windows directly on the child status scree
 - Day 49 completed in code: child-facing request updates now show real-time request status/history with filters and reply visibility from parent decisions.
 - Day 50 completed in code: approved access requests now auto-expire via scheduled Cloud Function, with updated history rendering for expired decisions.
 - Day 51 completed in code: child status now displays active approved access passes in real time, and Cloud Functions runtime is upgraded to Node.js 22.
+- Day 52 completed in code: NextDNS settings now auto-apply to the native VPN upstream resolver with persisted state and live bridge support.
 
 Last updated: 2026-02-17

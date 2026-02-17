@@ -242,7 +242,7 @@ class _NextDnsSettingsScreenState extends State<NextDnsSettingsScreen> {
                       const SizedBox(width: 10),
                       Expanded(
                         child: Text(
-                          'Current build stores and validates NextDNS profile settings. Full resolver forwarding transport is staged for the next VPN milestone.',
+                          'Saving now also updates VPN upstream resolver settings. If VPN is active, resolver changes are applied immediately.',
                           style:
                               Theme.of(context).textTheme.bodySmall?.copyWith(
                                     color: Colors.blue.shade900,
@@ -375,6 +375,9 @@ class _NextDnsSettingsScreenState extends State<NextDnsSettingsScreen> {
 
     final normalizedProfileId =
         _nextDnsService.sanitizedProfileIdOrNull(_profileIdController.text);
+    final upstreamDns = _nextDnsEnabled && normalizedProfileId != null
+        ? _nextDnsService.upstreamDnsHost(normalizedProfileId)
+        : null;
     setState(() {
       _isSaving = true;
       _inlineError = null;
@@ -386,6 +389,8 @@ class _NextDnsSettingsScreenState extends State<NextDnsSettingsScreen> {
         nextDnsEnabled: _nextDnsEnabled,
         nextDnsProfileId: _nextDnsEnabled ? normalizedProfileId : '',
       );
+      final resolverUpdated =
+          await _resolvedVpnService.setUpstreamDns(upstreamDns: upstreamDns);
 
       if (!mounted) {
         return;
@@ -399,8 +404,12 @@ class _NextDnsSettingsScreenState extends State<NextDnsSettingsScreen> {
         SnackBar(
           content: Text(
             _nextDnsEnabled
-                ? 'NextDNS settings saved.'
-                : 'NextDNS integration disabled.',
+                ? (resolverUpdated
+                    ? 'NextDNS settings saved and applied to VPN.'
+                    : 'NextDNS settings saved. VPN resolver update not confirmed.')
+                : (resolverUpdated
+                    ? 'NextDNS integration disabled and VPN reset to default DNS.'
+                    : 'NextDNS integration disabled.'),
           ),
           backgroundColor: Colors.green,
         ),

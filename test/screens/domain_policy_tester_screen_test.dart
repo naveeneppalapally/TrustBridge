@@ -82,6 +82,9 @@ class _FakeVpnServiceForDomainTester implements VpnServiceBase {
     required List<String> blockedDomains,
   }) async =>
       true;
+
+  @override
+  Future<bool> setUpstreamDns({String? upstreamDns}) async => true;
 }
 
 void main() {

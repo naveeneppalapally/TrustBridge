@@ -331,11 +331,11 @@ class _ChildStatusScreenState extends State<ChildStatusScreen>
                 ),
                 const SizedBox(height: 12),
                 ...activeRequests.take(3).map(
-                  (request) => Padding(
-                    padding: const EdgeInsets.only(bottom: 10),
-                    child: _buildActiveAccessRow(context, request),
-                  ),
-                ),
+                      (request) => Padding(
+                        padding: const EdgeInsets.only(bottom: 10),
+                        child: _buildActiveAccessRow(context, request),
+                      ),
+                    ),
                 if (activeRequests.length > 3)
                   Text(
                     '+${activeRequests.length - 3} more active approvals',
@@ -474,6 +474,7 @@ class _ChildStatusScreenState extends State<ChildStatusScreen>
     return Material(
       color: Colors.transparent,
       child: InkWell(
+        key: const Key('child_status_request_access_button'),
         borderRadius: BorderRadius.circular(16),
         onTap: () {
           Navigator.of(context).push(

@@ -20,7 +20,8 @@ class DnsVpnService : VpnService() {
     companion object {
         private const val TAG = "DnsVpnService"
         private const val VPN_ADDRESS = "10.0.0.2"
-        private const val VPN_DNS = "8.8.8.8"
+        private const val INTERCEPT_DNS = "8.8.8.8"
+        private const val DEFAULT_UPSTREAM_DNS = "8.8.8.8"
         private const val NOTIFICATION_ID = 1001
         private const val CHANNEL_ID = "dns_vpn_channel"
 
@@ -28,9 +29,11 @@ class DnsVpnService : VpnService() {
         const val ACTION_STOP = "com.navee.trustbridge.vpn.STOP"
         const val ACTION_RESTART = "com.navee.trustbridge.vpn.RESTART"
         const val ACTION_UPDATE_RULES = "com.navee.trustbridge.vpn.UPDATE_RULES"
+        const val ACTION_SET_UPSTREAM_DNS = "com.navee.trustbridge.vpn.SET_UPSTREAM_DNS"
         const val ACTION_CLEAR_QUERY_LOGS = "com.navee.trustbridge.vpn.CLEAR_QUERY_LOGS"
         const val EXTRA_BLOCKED_CATEGORIES = "blockedCategories"
         const val EXTRA_BLOCKED_DOMAINS = "blockedDomains"
+        const val EXTRA_UPSTREAM_DNS = "upstreamDns"
 
         @Volatile
         var isRunning: Boolean = false
@@ -60,6 +63,9 @@ class DnsVpnService : VpnService() {
         @Volatile
         private var recentQueryLogs: List<Map<String, Any>> = emptyList()
 
+        @Volatile
+        private var currentUpstreamDns: String = DEFAULT_UPSTREAM_DNS
+
         fun statusSnapshot(permissionGranted: Boolean): Map<String, Any?> {
             return mapOf(
                 "supported" to true,
@@ -72,7 +78,8 @@ class DnsVpnService : VpnService() {
                 "blockedDomainCount" to blockedDomainCount,
                 "startedAtEpochMs" to startedAtEpochMs,
                 "lastRuleUpdateEpochMs" to lastRuleUpdateEpochMs,
-                "recentQueryCount" to recentQueryLogs.size
+                "recentQueryCount" to recentQueryLogs.size,
+                "upstreamDns" to currentUpstreamDns
             )
         }
 
@@ -110,6 +117,7 @@ class DnsVpnService : VpnService() {
     private lateinit var vpnPreferencesStore: VpnPreferencesStore
     private var lastAppliedCategories: List<String> = emptyList()
     private var lastAppliedDomains: List<String> = emptyList()
+    private var lastAppliedUpstreamDns: String = DEFAULT_UPSTREAM_DNS
 
     @Volatile
     private var serviceRunning: Boolean = false
@@ -118,6 +126,8 @@ class DnsVpnService : VpnService() {
         super.onCreate()
         vpnPreferencesStore = VpnPreferencesStore(this)
         val persisted = vpnPreferencesStore.loadConfig()
+        lastAppliedUpstreamDns = normalizeUpstreamDns(persisted.upstreamDns)
+        currentUpstreamDns = lastAppliedUpstreamDns
         if (persisted.blockedCategories.isNotEmpty() || persisted.blockedDomains.isNotEmpty()) {
             lastAppliedCategories = persisted.blockedCategories
             lastAppliedDomains = persisted.blockedDomains
@@ -141,6 +151,9 @@ class DnsVpnService : VpnService() {
                 val domains =
                     intent?.getStringArrayListExtra(EXTRA_BLOCKED_DOMAINS)?.toList()
                         ?: lastAppliedDomains
+                val upstreamDns =
+                    intent?.getStringExtra(EXTRA_UPSTREAM_DNS) ?: lastAppliedUpstreamDns
+                applyUpstreamDns(upstreamDns)
                 applyFilterRules(categories, domains)
                 startVpn()
                 START_STICKY
@@ -157,6 +170,7 @@ class DnsVpnService : VpnService() {
             ACTION_RESTART -> {
                 val hasCategories = intent?.hasExtra(EXTRA_BLOCKED_CATEGORIES) == true
                 val hasDomains = intent?.hasExtra(EXTRA_BLOCKED_DOMAINS) == true
+                val hasUpstreamDns = intent?.hasExtra(EXTRA_UPSTREAM_DNS) == true
                 val categories = if (hasCategories) {
                     intent?.getStringArrayListExtra(EXTRA_BLOCKED_CATEGORIES)
                         ?.toList() ?: emptyList()
@@ -169,10 +183,26 @@ class DnsVpnService : VpnService() {
                 } else {
                     lastAppliedDomains
                 }
+                val upstreamDns = if (hasUpstreamDns) {
+                    intent?.getStringExtra(EXTRA_UPSTREAM_DNS)
+                } else {
+                    lastAppliedUpstreamDns
+                }
 
                 stopVpn(stopService = false, markDisabled = false)
+                applyUpstreamDns(upstreamDns)
                 applyFilterRules(categories, domains)
                 startVpn()
+                START_STICKY
+            }
+
+            ACTION_SET_UPSTREAM_DNS -> {
+                val upstreamDns = intent?.getStringExtra(EXTRA_UPSTREAM_DNS)
+                applyUpstreamDns(upstreamDns)
+                if (serviceRunning) {
+                    stopVpn(stopService = false, markDisabled = false)
+                    startVpn()
+                }
                 START_STICKY
             }
 
@@ -201,11 +231,11 @@ class DnsVpnService : VpnService() {
             val builder = Builder()
                 .setSession("TrustBridge DNS Filter")
                 .addAddress(VPN_ADDRESS, 24)
-                // Route only upstream DNS host through the VPN tunnel.
+                // Route only the DNS interception endpoint through the tunnel.
                 // Full-tunnel routing would break all non-DNS traffic until
                 // generic packet forwarding is implemented.
-                .addRoute(VPN_DNS, 32)
-                .addDnsServer(VPN_DNS)
+                .addRoute(INTERCEPT_DNS, 32)
+                .addDnsServer(INTERCEPT_DNS)
 
             vpnInterface = builder.establish()
             if (vpnInterface == null) {
@@ -216,7 +246,7 @@ class DnsVpnService : VpnService() {
 
             packetHandler = DnsPacketHandler(
                 filterEngine = filterEngine,
-                upstreamDns = VPN_DNS,
+                upstreamDns = lastAppliedUpstreamDns,
                 protectSocket = { socket ->
                     protect(socket)
                 }
@@ -231,10 +261,11 @@ class DnsVpnService : VpnService() {
             queriesAllowed = 0
             clearRecentQueryLogs()
             packetHandler?.clearRecentQueries()
+            currentUpstreamDns = lastAppliedUpstreamDns
 
             startForeground(NOTIFICATION_ID, createNotification())
             startPacketProcessing()
-            Log.d(TAG, "DNS VPN started")
+            Log.d(TAG, "DNS VPN started (upstream=$lastAppliedUpstreamDns)")
         } catch (error: Exception) {
             Log.e(TAG, "Failed to start VPN", error)
             stopVpn(stopService = true, markDisabled = false)
@@ -333,11 +364,31 @@ class DnsVpnService : VpnService() {
     ) {
         lastAppliedCategories = categories
         lastAppliedDomains = domains
-        vpnPreferencesStore.saveRules(categories, domains)
+        vpnPreferencesStore.saveRules(
+            categories = categories,
+            domains = domains,
+            upstreamDns = lastAppliedUpstreamDns
+        )
         filterEngine.updateFilterRules(categories, domains)
         blockedCategoryCount = filterEngine.blockedCategoryCount()
         blockedDomainCount = filterEngine.blockedDomainCount()
         lastRuleUpdateEpochMs = System.currentTimeMillis()
+    }
+
+    private fun applyUpstreamDns(upstreamDns: String?) {
+        lastAppliedUpstreamDns = normalizeUpstreamDns(upstreamDns)
+        currentUpstreamDns = lastAppliedUpstreamDns
+        vpnPreferencesStore.saveRules(
+            categories = lastAppliedCategories,
+            domains = lastAppliedDomains,
+            upstreamDns = lastAppliedUpstreamDns
+        )
+        lastRuleUpdateEpochMs = System.currentTimeMillis()
+    }
+
+    private fun normalizeUpstreamDns(value: String?): String {
+        val normalized = value?.trim().orEmpty()
+        return if (normalized.isEmpty()) DEFAULT_UPSTREAM_DNS else normalized
     }
 
     private fun createNotification(): Notification {

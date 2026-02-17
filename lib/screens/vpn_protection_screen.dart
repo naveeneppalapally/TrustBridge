@@ -650,6 +650,11 @@ class _VpnProtectionScreenState extends State<VpnProtectionScreen> {
             ),
             _buildMetricRow(
               context,
+              label: 'Upstream DNS',
+              value: _status.upstreamDns ?? 'Default (8.8.8.8)',
+            ),
+            _buildMetricRow(
+              context,
               label: 'Last Status Refresh',
               value: lastRefreshLabel,
             ),
@@ -691,7 +696,7 @@ class _VpnProtectionScreenState extends State<VpnProtectionScreen> {
             ),
             _buildBullet(
               context,
-              'Some apps use encrypted DNS that can bypass local VPN DNS filtering. NextDNS integration is planned.',
+              'Some apps use encrypted DNS that can bypass local VPN DNS filtering. Configure NextDNS Integration to improve coverage.',
             ),
             const SizedBox(height: 12),
             Wrap(

@@ -9,6 +9,7 @@ class _FakeVpnServiceForNextDnsScreen implements VpnServiceBase {
   _FakeVpnServiceForNextDnsScreen({this.running = false});
 
   bool running;
+  String? lastUpstreamDns;
 
   @override
   Future<VpnStatus> getStatus() async {
@@ -57,6 +58,12 @@ class _FakeVpnServiceForNextDnsScreen implements VpnServiceBase {
     required List<String> blockedCategories,
     required List<String> blockedDomains,
   }) async {
+    return true;
+  }
+
+  @override
+  Future<bool> setUpstreamDns({String? upstreamDns}) async {
+    lastUpstreamDns = upstreamDns;
     return true;
   }
 
@@ -184,13 +191,14 @@ void main() {
     testWidgets('saves normalized nextdns profile settings', (tester) async {
       const parentId = 'parent-nextdns-c';
       await seedParent(parentId);
+      final fakeVpn = _FakeVpnServiceForNextDnsScreen(running: true);
 
       await tester.pumpWidget(
         MaterialApp(
           home: NextDnsSettingsScreen(
             parentIdOverride: parentId,
             firestoreService: firestoreService,
-            vpnService: _FakeVpnServiceForNextDnsScreen(running: true),
+            vpnService: fakeVpn,
           ),
         ),
       );
@@ -210,7 +218,8 @@ void main() {
       await tester.tap(find.byKey(const Key('nextdns_save_button')));
       await tester.pumpAndSettle();
 
-      expect(find.text('NextDNS settings saved.'), findsOneWidget);
+      expect(find.text('NextDNS settings saved and applied to VPN.'),
+          findsOneWidget);
 
       final snapshot =
           await fakeFirestore.collection('parents').doc(parentId).get();
@@ -218,6 +227,7 @@ void main() {
           snapshot.data()!['preferences'] as Map<String, dynamic>;
       expect(preferences['nextDnsEnabled'], true);
       expect(preferences['nextDnsProfileId'], 'abc123');
+      expect(fakeVpn.lastUpstreamDns, 'abc123.dns.nextdns.io');
     });
   });
 }
