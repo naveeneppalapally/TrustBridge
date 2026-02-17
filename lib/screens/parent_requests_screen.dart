@@ -25,6 +25,9 @@ class _ParentRequestsScreenState extends State<ParentRequestsScreen>
   AuthService? _authService;
   FirestoreService? _firestoreService;
   late final TabController _tabController;
+  Stream<List<AccessRequest>>? _pendingRequestsStream;
+  Stream<List<AccessRequest>>? _allRequestsStream;
+  String? _streamsParentId;
 
   AuthService get _resolvedAuthService {
     _authService ??= widget.authService ?? AuthService();
@@ -34,6 +37,20 @@ class _ParentRequestsScreenState extends State<ParentRequestsScreen>
   FirestoreService get _resolvedFirestoreService {
     _firestoreService ??= widget.firestoreService ?? FirestoreService();
     return _firestoreService!;
+  }
+
+  void _ensureRequestStreams(String parentId) {
+    if (_streamsParentId == parentId &&
+        _pendingRequestsStream != null &&
+        _allRequestsStream != null) {
+      return;
+    }
+
+    _streamsParentId = parentId;
+    _pendingRequestsStream =
+        _resolvedFirestoreService.getPendingRequestsStream(parentId);
+    _allRequestsStream =
+        _resolvedFirestoreService.getAllRequestsStream(parentId);
   }
 
   @override
@@ -52,6 +69,9 @@ class _ParentRequestsScreenState extends State<ParentRequestsScreen>
   Widget build(BuildContext context) {
     final parentId =
         widget.parentIdOverride ?? _resolvedAuthService.currentUser?.uid;
+    if (parentId != null) {
+      _ensureRequestStreams(parentId);
+    }
 
     return Scaffold(
       appBar: AppBar(
@@ -80,8 +100,15 @@ class _ParentRequestsScreenState extends State<ParentRequestsScreen>
   }
 
   Widget _buildPendingTab(String parentId) {
+    final pendingRequestsStream = _pendingRequestsStream;
+    if (pendingRequestsStream == null) {
+      return const Center(child: CircularProgressIndicator());
+    }
+
     return StreamBuilder<List<AccessRequest>>(
-      stream: _resolvedFirestoreService.getPendingRequestsStream(parentId),
+      key: ValueKey<String>(
+          'parent_requests_pending_${_streamsParentId ?? 'none'}'),
+      stream: pendingRequestsStream,
       builder:
           (BuildContext context, AsyncSnapshot<List<AccessRequest>> snapshot) {
         if (snapshot.connectionState == ConnectionState.waiting) {
@@ -121,8 +148,15 @@ class _ParentRequestsScreenState extends State<ParentRequestsScreen>
   }
 
   Widget _buildHistoryTab(String parentId) {
+    final allRequestsStream = _allRequestsStream;
+    if (allRequestsStream == null) {
+      return const Center(child: CircularProgressIndicator());
+    }
+
     return StreamBuilder<List<AccessRequest>>(
-      stream: _resolvedFirestoreService.getAllRequestsStream(parentId),
+      key: ValueKey<String>(
+          'parent_requests_history_${_streamsParentId ?? 'none'}'),
+      stream: allRequestsStream,
       builder:
           (BuildContext context, AsyncSnapshot<List<AccessRequest>> snapshot) {
         if (snapshot.connectionState == ConnectionState.waiting) {

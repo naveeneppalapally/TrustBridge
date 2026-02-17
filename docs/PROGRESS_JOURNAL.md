@@ -31,6 +31,46 @@ UI commit message convention:
 
 ---
 
+## Day 59 - Performance Optimization (Week 12 Day 4)
+
+Program goal: reduce startup and runtime overhead before alpha by removing avoidable rebuild/subscription churn and tightening release build configuration.
+
+### Commit entries
+
+1. **2026-02-17**  
+   Commit: `(this commit - see latest git log)`  
+   Message: `Implement Day 59 performance optimization and release build config`  
+   Changes:
+   - Updated `lib/main.dart`:
+     - deferred `NotificationService().initialize()` to post-first-frame (no startup blocking before `runApp`)
+     - added debug-gated `showPerformanceOverlay` via `SHOW_PERF_OVERLAY` dart define
+   - Updated `lib/screens/dashboard_screen.dart`:
+     - stabilized Firestore streams by caching children/pending-request streams per `parentId`
+     - removed stream recreation from `build()`
+   - Updated `lib/screens/parent_requests_screen.dart`:
+     - stabilized pending/history streams by caching per `parentId`
+   - Updated `lib/screens/child_status_screen.dart`:
+     - stabilized child request stream by caching per `(parentId, childId)`
+   - Updated `android/app/build.gradle.kts`:
+     - enabled release minification (`isMinifyEnabled = true`)
+     - enabled resource shrinking (`isShrinkResources = true`)
+     - wired ProGuard files for release
+   - Created `android/app/proguard-rules.pro`:
+     - Flutter/Firebase/VPN keep rules
+     - coroutine keep-name rules
+     - Play Core `-dontwarn` rules required by R8 for Flutter deferred component references
+   - Added tests:
+     - `test/performance/widget_rebuild_test.dart`
+   Validation:
+   - `C:\Users\navee\flutter\bin\flutter.bat analyze` passed.
+   - `C:\Users\navee\flutter\bin\flutter.bat test` passed (191/191).
+   - `C:\Users\navee\flutter\bin\flutter.bat build apk --release --target-platform android-arm64` passed.
+   - Release APK size: `21.0MB`.
+   Notes:
+   - Android phone was not detected by `flutter devices` at validation time, so profile run on physical device is still pending.
+
+---
+
 ## Day 58 - Firestore Security Rules Audit (Week 12 Day 3)
 
 Program goal: harden Firestore security before alpha by enforcing strict owner boundaries, request workflow constraints, and field-level validation.

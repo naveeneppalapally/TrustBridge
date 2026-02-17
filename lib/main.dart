@@ -2,6 +2,7 @@ import 'dart:async';
 
 import 'package:firebase_auth/firebase_auth.dart';
 import 'package:firebase_core/firebase_core.dart';
+import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 import 'package:trustbridge_app/firebase_options.dart';
@@ -25,8 +26,10 @@ Future<void> main() async {
     options: DefaultFirebaseOptions.currentPlatform,
   );
   NotificationService.navigatorKey = GlobalKey<NavigatorState>();
-  await NotificationService().initialize();
   runApp(const MyApp());
+  WidgetsBinding.instance.addPostFrameCallback((_) {
+    unawaited(NotificationService().initialize());
+  });
 }
 
 class MyApp extends StatelessWidget {
@@ -44,6 +47,11 @@ class MyApp extends StatelessWidget {
       ],
       child: MaterialApp(
         navigatorKey: NotificationService.navigatorKey,
+        showPerformanceOverlay: kDebugMode &&
+            const bool.fromEnvironment(
+              'SHOW_PERF_OVERLAY',
+              defaultValue: false,
+            ),
         title: 'TrustBridge',
         theme: ThemeData(
           colorScheme: ColorScheme.fromSeed(

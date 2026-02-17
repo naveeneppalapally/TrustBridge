@@ -30,6 +30,9 @@ class _DashboardScreenState extends State<DashboardScreen>
     with WidgetsBindingObserver {
   AuthService? _authService;
   FirestoreService? _firestoreService;
+  Stream<List<ChildProfile>>? _childrenStream;
+  Stream<List<AccessRequest>>? _pendingRequestsStream;
+  String? _streamsParentId;
 
   @override
   void initState() {
@@ -65,6 +68,19 @@ class _DashboardScreenState extends State<DashboardScreen>
     return widget.parentIdOverride ?? _resolvedAuthService.currentUser?.uid;
   }
 
+  void _ensureParentStreams(String parentId) {
+    if (_streamsParentId == parentId &&
+        _childrenStream != null &&
+        _pendingRequestsStream != null) {
+      return;
+    }
+
+    _streamsParentId = parentId;
+    _childrenStream = _resolvedFirestoreService.getChildrenStream(parentId);
+    _pendingRequestsStream =
+        _resolvedFirestoreService.getPendingRequestsStream(parentId);
+  }
+
   Future<void> _handleSignOut() async {
     await _resolvedAuthService.signOut();
     if (!mounted) {
@@ -90,9 +106,22 @@ class _DashboardScreenState extends State<DashboardScreen>
     );
   }
 
-  Widget _buildRequestsAction(String parentId) {
+  Widget _buildRequestsAction() {
+    final pendingRequestsStream = _pendingRequestsStream;
+    if (pendingRequestsStream == null) {
+      return IconButton(
+        key: const Key('dashboard_requests_button'),
+        icon: const Icon(Icons.notifications_outlined),
+        tooltip: 'Access Requests',
+        onPressed: () {
+          Navigator.of(context).pushNamed('/parent-requests');
+        },
+      );
+    }
+
     return StreamBuilder<List<AccessRequest>>(
-      stream: _resolvedFirestoreService.getPendingRequestsStream(parentId),
+      key: ValueKey<String>('dashboard_pending_${_streamsParentId ?? 'none'}'),
+      stream: pendingRequestsStream,
       builder:
           (BuildContext context, AsyncSnapshot<List<AccessRequest>> snapshot) {
         final pendingCount = snapshot.data?.length ?? 0;
@@ -153,6 +182,7 @@ class _DashboardScreenState extends State<DashboardScreen>
         body: const Center(child: Text('Not logged in')),
       );
     }
+    _ensureParentStreams(parentId);
 
     return Scaffold(
       backgroundColor: backgroundColor,
@@ -162,7 +192,7 @@ class _DashboardScreenState extends State<DashboardScreen>
         backgroundColor: Colors.transparent,
         elevation: 0,
         actions: [
-          _buildRequestsAction(parentId),
+          _buildRequestsAction(),
           IconButton(
             key: const Key('dashboard_analytics_button'),
             icon: const Icon(Icons.bar_chart_outlined),
@@ -182,7 +212,9 @@ class _DashboardScreenState extends State<DashboardScreen>
         ],
       ),
       body: StreamBuilder<List<ChildProfile>>(
-        stream: _resolvedFirestoreService.getChildrenStream(parentId),
+        key: ValueKey<String>(
+            'dashboard_children_${_streamsParentId ?? 'none'}'),
+        stream: _childrenStream,
         builder: (context, snapshot) {
           if (snapshot.hasError) {
             return Center(

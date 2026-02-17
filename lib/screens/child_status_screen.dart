@@ -33,6 +33,9 @@ class _ChildStatusScreenState extends State<ChildStatusScreen>
   FirestoreService? _firestoreService;
   late final AnimationController _pulseController;
   late final Animation<double> _pulseAnimation;
+  Stream<List<AccessRequest>>? _childRequestsStream;
+  String? _childRequestsParentId;
+  String? _childRequestsChildId;
 
   AuthService get _resolvedAuthService {
     _authService ??= widget.authService ?? AuthService();
@@ -42,6 +45,31 @@ class _ChildStatusScreenState extends State<ChildStatusScreen>
   FirestoreService get _resolvedFirestoreService {
     _firestoreService ??= widget.firestoreService ?? FirestoreService();
     return _firestoreService!;
+  }
+
+  void _ensureChildRequestsStream() {
+    final parentId = _resolveParentId()?.trim();
+    final childId = widget.child.id;
+
+    if (parentId == null || parentId.isEmpty) {
+      _childRequestsStream = null;
+      _childRequestsParentId = null;
+      _childRequestsChildId = null;
+      return;
+    }
+
+    if (_childRequestsStream != null &&
+        _childRequestsParentId == parentId &&
+        _childRequestsChildId == childId) {
+      return;
+    }
+
+    _childRequestsParentId = parentId;
+    _childRequestsChildId = childId;
+    _childRequestsStream = _resolvedFirestoreService.getChildRequestsStream(
+      parentId: parentId,
+      childId: childId,
+    );
   }
 
   ActiveMode get _activeMode {
@@ -120,12 +148,12 @@ class _ChildStatusScreenState extends State<ChildStatusScreen>
 
   @override
   Widget build(BuildContext context) {
+    _ensureChildRequestsStream();
     final mode = _activeMode;
     final modeColor = _modeColor(mode);
     final pausedCategories = _activeMode == ActiveMode.freeTime
         ? <String>[]
         : widget.child.policy.blockedCategories;
-    final parentId = _resolveParentId();
 
     return Scaffold(
       body: SafeArea(
@@ -137,8 +165,8 @@ class _ChildStatusScreenState extends State<ChildStatusScreen>
             const SizedBox(height: 16),
             _buildHeroCard(context, mode, modeColor),
             const SizedBox(height: 16),
-            if (parentId != null && parentId.trim().isNotEmpty) ...[
-              _buildActiveAccessSection(context, parentId),
+            if (_childRequestsStream != null) ...[
+              _buildActiveAccessSection(context),
               const SizedBox(height: 16),
             ],
             if (pausedCategories.isNotEmpty) ...[
@@ -292,12 +320,17 @@ class _ChildStatusScreenState extends State<ChildStatusScreen>
     );
   }
 
-  Widget _buildActiveAccessSection(BuildContext context, String parentId) {
+  Widget _buildActiveAccessSection(BuildContext context) {
+    final childRequestsStream = _childRequestsStream;
+    if (childRequestsStream == null) {
+      return const SizedBox.shrink();
+    }
+
     return StreamBuilder<List<AccessRequest>>(
-      stream: _resolvedFirestoreService.getChildRequestsStream(
-        parentId: parentId,
-        childId: widget.child.id,
+      key: ValueKey<String>(
+        'child_requests_${_childRequestsParentId ?? 'none'}_${_childRequestsChildId ?? 'none'}',
       ),
+      stream: childRequestsStream,
       builder: (context, snapshot) {
         if (!snapshot.hasData) {
           return const SizedBox.shrink();
