@@ -2011,7 +2011,52 @@ Program goal: replace the Day 44 stub with a complete request workflow so childr
 
 ---
 
-## Current Summary (after Day 45)
+## Day 46 - Parent Request Approval Screen (Week 10 Day 1)
+
+Program goal: build the parent-facing request inbox so parents can approve or deny child access requests with optional replies in seconds.
+
+### Commit entries
+
+1. **2026-02-17 20:18:00 +05:30**  
+   Commit: `pending (local changes)`  
+   Message: `Implement Day 46 parent request approval screen [design: parent_request_approval_mobile_light]`  
+   Changes:
+   - Updated `lib/services/firestore_service.dart`:
+     - added `respondToAccessRequest()` with approve/deny handling
+     - computes `expiresAt` for approved timed requests
+     - stores optional parent reply + response timestamp
+     - added `getAllRequestsStream()` for pending + history views
+   - Created `lib/screens/parent_requests_screen.dart`:
+     - tabbed inbox (`Pending`, `History`)
+     - real-time pending list via Firestore stream
+     - request cards with child, target app/site, duration, and reason
+     - approve/deny actions with optional reply field
+     - optimistic card dismissal and action loading indicators
+     - empty states for both tabs
+   - Updated `lib/screens/dashboard_screen.dart`:
+     - added app bar notification bell for request inbox
+     - added live pending badge count from Firestore stream
+     - added navigation to `/parent-requests`
+   - Updated `lib/main.dart`:
+     - added `/parent-requests` route
+   - Added/updated tests:
+     - new `test/screens/parent_requests_screen_test.dart` (5 widget tests)
+     - updated `test/services/firestore_service_test.dart` with request response/history tests
+     - updated `test/screens/dashboard_screen_test.dart` with requests badge test
+   Validation:
+   - `C:\Users\navee\flutter\bin\flutter.bat analyze` passed.
+   - `C:\Users\navee\flutter\bin\flutter.bat test` passed (150/150).
+   - `C:\Users\navee\flutter\bin\flutter.bat build apk --debug` passed.
+   Design folder(s) used:
+   - `parent_request_approval_mobile_light` (spec target; visual adapted to existing app design language)
+   Design assets checked:
+   - not found locally; implementation follows Day 46 acceptance criteria and current TrustBridge UI system
+   UI fidelity note:
+   - request cards keep action controls collapsed by default for fast scan and quick one-tap responses.
+
+---
+
+## Current Summary (after Day 46)
 
 - Day 1 completed: foundation, naming, structure, git + GitHub.
 - Day 2 completed: dependencies and Provider baseline.
@@ -2060,5 +2105,6 @@ Program goal: replace the Day 44 stub with a complete request workflow so childr
 - Day 43 completed in code: Firestore child-policy updates now auto-sync to active VPN rules, with foreground/manual sync controls and diagnostics.
 - Day 44 completed in code: child-facing status screen now shows active mode, supportive paused-content messaging, and Ask for Access entry.
 - Day 45 completed in code: child request access flow now saves structured requests to Firestore with duration/reason preview and success feedback.
+- Day 46 completed in code: parent request inbox now supports real-time pending review, approve/deny replies, history tracking, and dashboard badge navigation.
 
 Last updated: 2026-02-17

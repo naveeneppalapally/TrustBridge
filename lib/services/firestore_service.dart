@@ -408,4 +408,86 @@ class FirestoreService {
               .toList(),
         );
   }
+
+  /// Parent responds to an access request (approved or denied).
+  Future<void> respondToAccessRequest({
+    required String parentId,
+    required String requestId,
+    required RequestStatus status,
+    String? reply,
+  }) async {
+    if (parentId.trim().isEmpty) {
+      throw ArgumentError.value(parentId, 'parentId', 'Parent ID is required.');
+    }
+    if (requestId.trim().isEmpty) {
+      throw ArgumentError.value(
+        requestId,
+        'requestId',
+        'Request ID is required.',
+      );
+    }
+    if (status != RequestStatus.approved && status != RequestStatus.denied) {
+      throw ArgumentError.value(
+        status,
+        'status',
+        'Status must be approved or denied.',
+      );
+    }
+
+    final requestRef = _firestore
+        .collection('parents')
+        .doc(parentId)
+        .collection('access_requests')
+        .doc(requestId);
+
+    final requestSnapshot = await requestRef.get();
+    if (!requestSnapshot.exists) {
+      throw StateError('Access request not found.');
+    }
+
+    DateTime? expiresAt;
+    if (status == RequestStatus.approved) {
+      final data = requestSnapshot.data();
+      final minutesValue = data?['durationMinutes'];
+      int? minutes;
+      if (minutesValue is int) {
+        minutes = minutesValue;
+      } else if (minutesValue is num) {
+        minutes = minutesValue.toInt();
+      }
+
+      if (minutes != null && minutes > 0) {
+        expiresAt = DateTime.now().add(Duration(minutes: minutes));
+      }
+    }
+
+    final trimmedReply = reply?.trim();
+    await requestRef.update({
+      'status': status.name,
+      'parentReply':
+          (trimmedReply == null || trimmedReply.isEmpty) ? null : trimmedReply,
+      'respondedAt': Timestamp.fromDate(DateTime.now()),
+      if (expiresAt != null) 'expiresAt': Timestamp.fromDate(expiresAt),
+    });
+  }
+
+  /// Stream all requests (pending + history) for parent.
+  Stream<List<AccessRequest>> getAllRequestsStream(String parentId) {
+    if (parentId.trim().isEmpty) {
+      throw ArgumentError.value(parentId, 'parentId', 'Parent ID is required.');
+    }
+
+    return _firestore
+        .collection('parents')
+        .doc(parentId)
+        .collection('access_requests')
+        .orderBy('requestedAt', descending: true)
+        .limit(50)
+        .snapshots()
+        .map(
+          (snapshot) => snapshot.docs
+              .map((doc) => AccessRequest.fromFirestore(doc))
+              .toList(),
+        );
+  }
 }

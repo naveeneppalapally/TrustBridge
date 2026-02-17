@@ -434,6 +434,108 @@ void main() {
       expect(requests.first.childId, 'child-a');
       expect(requests.first.appOrSite, 'minecraft.net');
     });
+
+    test('respondToAccessRequest marks request approved and sets expiry',
+        () async {
+      final request = AccessRequest.create(
+        childId: 'child-a',
+        parentId: 'parent-a',
+        childNickname: 'Aarav',
+        appOrSite: 'youtube.com',
+        duration: RequestDuration.thirtyMin,
+      );
+      final requestId = await firestoreService.submitAccessRequest(request);
+
+      await firestoreService.respondToAccessRequest(
+        parentId: 'parent-a',
+        requestId: requestId,
+        status: RequestStatus.approved,
+        reply: 'Okay for homework only',
+      );
+
+      final snapshot = await fakeFirestore
+          .collection('parents')
+          .doc('parent-a')
+          .collection('access_requests')
+          .doc(requestId)
+          .get();
+      final data = snapshot.data()!;
+
+      expect(data['status'], RequestStatus.approved.name);
+      expect(data['parentReply'], 'Okay for homework only');
+      expect(data['respondedAt'], isA<Timestamp>());
+      expect(data['expiresAt'], isA<Timestamp>());
+    });
+
+    test('respondToAccessRequest marks request denied without expiry',
+        () async {
+      final request = AccessRequest.create(
+        childId: 'child-b',
+        parentId: 'parent-a',
+        childNickname: 'Maya',
+        appOrSite: 'reddit.com',
+        duration: RequestDuration.untilScheduleEnds,
+      );
+      final requestId = await firestoreService.submitAccessRequest(request);
+
+      await firestoreService.respondToAccessRequest(
+        parentId: 'parent-a',
+        requestId: requestId,
+        status: RequestStatus.denied,
+      );
+
+      final snapshot = await fakeFirestore
+          .collection('parents')
+          .doc('parent-a')
+          .collection('access_requests')
+          .doc(requestId)
+          .get();
+      final data = snapshot.data()!;
+
+      expect(data['status'], RequestStatus.denied.name);
+      expect(data['respondedAt'], isA<Timestamp>());
+      expect(data['expiresAt'], isNull);
+    });
+
+    test('getAllRequestsStream returns pending and history requests', () async {
+      final pending = AccessRequest.create(
+        childId: 'child-a',
+        parentId: 'parent-a',
+        childNickname: 'Aarav',
+        appOrSite: 'minecraft.net',
+        duration: RequestDuration.fifteenMin,
+      );
+      final approved = AccessRequest.create(
+        childId: 'child-b',
+        parentId: 'parent-a',
+        childNickname: 'Maya',
+        appOrSite: 'youtube.com',
+        duration: RequestDuration.oneHour,
+      );
+
+      final pendingId = await firestoreService.submitAccessRequest(pending);
+      final approvedId = await firestoreService.submitAccessRequest(approved);
+      await firestoreService.respondToAccessRequest(
+        parentId: 'parent-a',
+        requestId: approvedId,
+        status: RequestStatus.approved,
+      );
+
+      final requests =
+          await firestoreService.getAllRequestsStream('parent-a').first;
+
+      final ids = requests.map((request) => request.id).toList();
+      expect(ids, contains(pendingId));
+      expect(ids, contains(approvedId));
+      expect(
+        requests.any((request) => request.status == RequestStatus.pending),
+        isTrue,
+      );
+      expect(
+        requests.any((request) => request.status == RequestStatus.approved),
+        isTrue,
+      );
+    });
   });
 }
 

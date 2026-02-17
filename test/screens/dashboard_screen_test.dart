@@ -60,6 +60,47 @@ void main() {
       expect(find.text('Leo'), findsOneWidget);
       expect(find.text('Age: 6-9'), findsOneWidget);
     });
+
+    testWidgets('shows pending requests badge when requests exist',
+        (tester) async {
+      final fakeFirestore = FakeFirebaseFirestore();
+      final firestoreService = FirestoreService(firestore: fakeFirestore);
+
+      await fakeFirestore
+          .collection('parents')
+          .doc('parent-badge')
+          .collection('access_requests')
+          .doc('req-1')
+          .set({
+        'childId': 'child-1',
+        'parentId': 'parent-badge',
+        'childNickname': 'Aarav',
+        'appOrSite': 'youtube.com',
+        'durationLabel': '30 min',
+        'durationMinutes': 30,
+        'reason': 'Project work',
+        'status': 'pending',
+        'parentReply': null,
+        'requestedAt': Timestamp.fromDate(DateTime(2026, 2, 17, 20, 30)),
+        'respondedAt': null,
+        'expiresAt': null,
+      });
+
+      await tester.pumpWidget(
+        MaterialApp(
+          home: DashboardScreen(
+            parentIdOverride: 'parent-badge',
+            firestoreService: firestoreService,
+          ),
+        ),
+      );
+
+      await tester.pumpAndSettle();
+
+      expect(
+          find.byKey(const Key('dashboard_requests_button')), findsOneWidget);
+      expect(find.byKey(const Key('dashboard_requests_badge')), findsOneWidget);
+    });
   });
 
   group('ChildCard', () {

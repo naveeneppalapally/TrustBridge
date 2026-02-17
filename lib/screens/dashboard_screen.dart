@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
+import 'package:trustbridge_app/models/access_request.dart';
 import 'package:trustbridge_app/models/child_profile.dart';
 import 'package:trustbridge_app/screens/add_child_screen.dart';
 import 'package:trustbridge_app/screens/child_detail_screen.dart';
@@ -83,6 +84,55 @@ class _DashboardScreenState extends State<DashboardScreen>
     );
   }
 
+  Widget _buildRequestsAction(String parentId) {
+    return StreamBuilder<List<AccessRequest>>(
+      stream: _resolvedFirestoreService.getPendingRequestsStream(parentId),
+      builder:
+          (BuildContext context, AsyncSnapshot<List<AccessRequest>> snapshot) {
+        final pendingCount = snapshot.data?.length ?? 0;
+        return Stack(
+          clipBehavior: Clip.none,
+          children: <Widget>[
+            IconButton(
+              key: const Key('dashboard_requests_button'),
+              icon: const Icon(Icons.notifications_outlined),
+              tooltip: 'Access Requests',
+              onPressed: () {
+                Navigator.of(context).pushNamed('/parent-requests');
+              },
+            ),
+            if (pendingCount > 0)
+              Positioned(
+                right: 6,
+                top: 6,
+                child: Container(
+                  key: const Key('dashboard_requests_badge'),
+                  constraints:
+                      const BoxConstraints(minWidth: 16, minHeight: 16),
+                  padding:
+                      const EdgeInsets.symmetric(horizontal: 4, vertical: 1),
+                  decoration: const BoxDecoration(
+                    color: Colors.red,
+                    shape: BoxShape.circle,
+                  ),
+                  child: Center(
+                    child: Text(
+                      pendingCount > 9 ? '9+' : '$pendingCount',
+                      style: const TextStyle(
+                        color: Colors.white,
+                        fontSize: 10,
+                        fontWeight: FontWeight.bold,
+                      ),
+                    ),
+                  ),
+                ),
+              ),
+          ],
+        );
+      },
+    );
+  }
+
   @override
   Widget build(BuildContext context) {
     final parentId = _parentId;
@@ -106,6 +156,7 @@ class _DashboardScreenState extends State<DashboardScreen>
         backgroundColor: Colors.transparent,
         elevation: 0,
         actions: [
+          _buildRequestsAction(parentId),
           IconButton(
             icon: const Icon(Icons.settings_outlined),
             onPressed: _openSettings,

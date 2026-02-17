@@ -8,6 +8,7 @@ import 'package:trustbridge_app/screens/add_child_screen.dart';
 import 'package:trustbridge_app/screens/child_status_screen.dart';
 import 'package:trustbridge_app/screens/dashboard_screen.dart';
 import 'package:trustbridge_app/screens/login_screen.dart';
+import 'package:trustbridge_app/screens/parent_requests_screen.dart';
 import 'package:trustbridge_app/services/auth_service.dart';
 import 'package:trustbridge_app/services/policy_vpn_sync_service.dart';
 
@@ -56,6 +57,7 @@ class MyApp extends StatelessWidget {
           '/login': (context) => const LoginScreen(),
           '/dashboard': (context) => const DashboardScreen(),
           '/add-child': (context) => const AddChildScreen(),
+          '/parent-requests': (context) => const ParentRequestsScreen(),
           '/child-status': (context) {
             final child =
                 ModalRoute.of(context)!.settings.arguments as ChildProfile;
