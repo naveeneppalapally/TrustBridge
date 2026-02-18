@@ -537,12 +537,25 @@ class _BetaFeedbackHistoryScreenState extends State<BetaFeedbackHistoryScreen> {
               ],
             ),
             const SizedBox(height: 8),
-            ..._bulkResolveActivity.take(3).map((entry) {
+            ..._bulkResolveActivity.take(3).toList().asMap().entries.map((row) {
+              final index = row.key;
+              final entry = row.value;
               return Padding(
                 padding: const EdgeInsets.only(bottom: 8),
-                child: Text(
-                  '• ${entry.label}: resolved ${entry.resolvedCount} at ${_formatTimestamp(entry.timestamp)}',
-                  style: Theme.of(context).textTheme.bodySmall,
+                child: InkWell(
+                  key: Key('feedback_history_activity_entry_$index'),
+                  borderRadius: BorderRadius.circular(8),
+                  onTap: () => _focusClusterFromActivity(entry),
+                  child: Padding(
+                    padding: const EdgeInsets.symmetric(
+                      horizontal: 6,
+                      vertical: 4,
+                    ),
+                    child: Text(
+                      '• ${entry.label}: resolved ${entry.resolvedCount} at ${_formatTimestamp(entry.timestamp)}',
+                      style: Theme.of(context).textTheme.bodySmall,
+                    ),
+                  ),
                 ),
               );
             }),
@@ -571,6 +584,16 @@ class _BetaFeedbackHistoryScreenState extends State<BetaFeedbackHistoryScreen> {
         ),
       ),
     );
+  }
+
+  void _focusClusterFromActivity(_BulkResolveActivity activity) {
+    setState(() {
+      _duplicateFilter = _DuplicateFilter.duplicates;
+      _focusedDuplicateKey = activity.duplicateKey;
+      _searchQuery = activity.duplicateKey;
+      _searchController.text = activity.duplicateKey;
+      _hideResolvedTickets = false;
+    });
   }
 
   Future<void> _undoLatestBulkResolve({

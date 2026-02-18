@@ -3030,3 +3030,31 @@ duplicate-cluster bulk resolves from the activity trail.
    - `flutter test` passed.
 
 ---
+
+## Day 72 - Activity Trail Re-Focus Shortcut (Week 15 Day 2)
+
+Program goal: speed up post-resolution review by letting parents tap recent
+bulk-action entries to instantly refocus duplicate triage filters.
+
+### Commit entries
+
+1. **2026-02-18**  
+   Commit: `(this commit - see latest git log)`  
+   Message: `Implement Day 72 activity trail refocus shortcut`  
+   Changes:
+   - Updated `lib/screens/beta_feedback_history_screen.dart`:
+     - made recent bulk-activity rows tappable (`feedback_history_activity_entry_<index>`)
+     - tapping an activity row now reapplies duplicate-cluster focus:
+       - duplicate-only filter
+       - focused duplicate key
+       - search query synchronization
+       - hide-resolved disabled for review context
+   - Updated tests:
+     - expanded `test/screens/beta_feedback_history_screen_test.dart` with
+       activity-entry tap behavior coverage
+   Validation:
+   - `flutter analyze` passed.
+   - `flutter test test/screens/beta_feedback_history_screen_test.dart` passed.
+   - `flutter test` passed.
+
+---

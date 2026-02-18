@@ -673,6 +673,49 @@ void main() {
       expect(fakeService.bulkReopenCallCount, 0);
     });
 
+    testWidgets('activity entry tap refocuses duplicate cluster filters', (tester) async {
+      await tester.binding.setSurfaceSize(const Size(430, 1400));
+      addTearDown(() => tester.binding.setSurfaceSize(null));
+
+      final fakeService = FakeFirestoreService();
+      fakeService.tickets = [
+        _ticket(id: 'a', parentId: 'parent-1', subject: '[Beta] Bug A'),
+        _ticket(id: 'b', parentId: 'parent-1', subject: '[Beta] Bug A'),
+        _ticket(id: 'c', parentId: 'parent-1', subject: '[Beta] Different issue'),
+      ];
+
+      await tester.pumpWidget(
+        MaterialApp(
+          home: BetaFeedbackHistoryScreen(
+            parentIdOverride: 'parent-1',
+            firestoreService: fakeService,
+          ),
+        ),
+      );
+      await tester.pumpAndSettle();
+
+      await tester.tap(find.byKey(const Key('feedback_history_top_cluster_0')));
+      await tester.pumpAndSettle();
+      await tester.tap(find.text('Resolve Cluster (2)'));
+      await tester.pumpAndSettle();
+      await tester.tap(find.text('Resolve All'));
+      await tester.pumpAndSettle();
+
+      await tester.scrollUntilVisible(
+        find.byKey(const Key('feedback_history_activity_entry_0')),
+        240,
+        scrollable: find.byType(Scrollable).first,
+      );
+      final activityEntryFinder =
+          find.byKey(const Key('feedback_history_activity_entry_0'));
+      await tester.ensureVisible(activityEntryFinder);
+      await tester.tap(activityEntryFinder, warnIfMissed: false);
+      await tester.pumpAndSettle();
+
+      expect(find.text('Showing 2 of 3 tickets'), findsOneWidget);
+      expect(find.byKey(const Key('feedback_history_ticket_c')), findsNothing);
+    });
+
     testWidgets('hide resolved toggle filters out resolved tickets', (tester) async {
       await tester.binding.setSurfaceSize(const Size(430, 1400));
       addTearDown(() => tester.binding.setSurfaceSize(null));
