@@ -2944,3 +2944,36 @@ clusters as one-tap actions that instantly focus the inbox on that issue.
    - `flutter test` passed.
 
 ---
+
+## Day 69 - Bulk Duplicate Resolution Actions (Week 14 Day 4)
+
+Program goal: reduce triage effort by allowing parents to resolve entire
+duplicate clusters in one action instead of handling each ticket individually.
+
+### Commit entries
+
+1. **2026-02-18**  
+   Commit: `(this commit - see latest git log)`  
+   Message: `Implement Day 69 bulk duplicate cluster resolution`  
+   Changes:
+   - Updated `lib/services/firestore_service.dart`:
+     - added `getDuplicateClusterSize(...)` to count unresolved tickets for a
+       duplicate key
+     - added `bulkResolveDuplicates(...)` to mark unresolved duplicate cluster
+       tickets as `resolved` with updated timestamps
+   - Updated `lib/screens/beta_feedback_history_screen.dart`:
+     - added cluster-focus state and one-tap bulk resolve workflow
+     - added `Resolve Cluster (N)` action button when a duplicate cluster is in focus
+     - added confirmation dialog with explicit `Resolve All` action
+     - added hide-resolved toggle in triage filters
+     - improved ticket metadata row to wrap cleanly on narrow screens
+   - Updated tests:
+     - expanded `test/screens/beta_feedback_history_screen_test.dart` with Day 69 coverage:
+       - resolve-cluster action visibility
+       - bulk resolve execution path
+       - hide-resolved filter behavior
+   Validation:
+   - `flutter analyze` passed.
+   - `flutter test test/screens/beta_feedback_history_screen_test.dart` passed.
+
+---

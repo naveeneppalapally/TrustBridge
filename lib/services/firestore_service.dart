@@ -326,6 +326,94 @@ class FirestoreService {
     });
   }
 
+  /// Returns unresolved duplicate count for a normalized duplicate key.
+  Future<int> getDuplicateClusterSize({
+    required String parentId,
+    required String duplicateKey,
+  }) async {
+    if (parentId.trim().isEmpty) {
+      throw ArgumentError.value(parentId, 'parentId', 'Parent ID is required.');
+    }
+
+    final normalizedKey = duplicateKey.trim().toLowerCase();
+    if (normalizedKey.isEmpty) {
+      throw ArgumentError.value(
+        duplicateKey,
+        'duplicateKey',
+        'Duplicate key is required.',
+      );
+    }
+
+    final snapshot = await _firestore
+        .collection('supportTickets')
+        .where('parentId', isEqualTo: parentId)
+        .limit(300)
+        .get();
+
+    var count = 0;
+    for (final doc in snapshot.docs) {
+      try {
+        final ticket = SupportTicket.fromFirestore(doc);
+        if (!ticket.isResolved && ticket.duplicateKey == normalizedKey) {
+          count += 1;
+        }
+      } catch (_) {
+        // Skip malformed tickets.
+      }
+    }
+    return count;
+  }
+
+  /// Resolves all unresolved tickets in a duplicate cluster.
+  Future<int> bulkResolveDuplicates({
+    required String parentId,
+    required String duplicateKey,
+  }) async {
+    if (parentId.trim().isEmpty) {
+      throw ArgumentError.value(parentId, 'parentId', 'Parent ID is required.');
+    }
+
+    final normalizedKey = duplicateKey.trim().toLowerCase();
+    if (normalizedKey.isEmpty) {
+      throw ArgumentError.value(
+        duplicateKey,
+        'duplicateKey',
+        'Duplicate key is required.',
+      );
+    }
+
+    final snapshot = await _firestore
+        .collection('supportTickets')
+        .where('parentId', isEqualTo: parentId)
+        .limit(300)
+        .get();
+
+    final batch = _firestore.batch();
+    var updatedCount = 0;
+    for (final doc in snapshot.docs) {
+      try {
+        final ticket = SupportTicket.fromFirestore(doc);
+        if (ticket.isResolved || ticket.duplicateKey != normalizedKey) {
+          continue;
+        }
+
+        batch.update(doc.reference, {
+          'status': SupportTicketStatus.resolved.name,
+          'updatedAt': Timestamp.fromDate(DateTime.now()),
+        });
+        updatedCount += 1;
+      } catch (_) {
+        // Skip malformed tickets.
+      }
+    }
+
+    if (updatedCount > 0) {
+      await batch.commit();
+    }
+
+    return updatedCount;
+  }
+
   Future<String> submitBetaFeedback({
     required String parentId,
     required String category,

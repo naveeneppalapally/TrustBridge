@@ -1,6 +1,7 @@
 import 'package:fake_cloud_firestore/fake_cloud_firestore.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
+import 'package:trustbridge_app/models/support_ticket.dart';
 import 'package:trustbridge_app/screens/beta_feedback_history_screen.dart';
 import 'package:trustbridge_app/services/firestore_service.dart';
 
@@ -566,4 +567,201 @@ void main() {
           findsNothing);
     });
   });
+
+  group('BetaFeedbackHistoryScreen Day 69 bulk actions', () {
+    testWidgets('resolve cluster FAB appears when focused cluster has duplicates',
+        (tester) async {
+      final fakeService = FakeFirestoreService();
+      fakeService.tickets = [
+        _ticket(id: 'a', parentId: 'parent-1', subject: '[Beta] Bug A'),
+        _ticket(id: 'b', parentId: 'parent-1', subject: '[Beta] Bug A'),
+        _ticket(id: 'c', parentId: 'parent-1', subject: '[Beta] Other'),
+      ];
+
+      await tester.pumpWidget(
+        MaterialApp(
+          home: BetaFeedbackHistoryScreen(
+            parentIdOverride: 'parent-1',
+            firestoreService: fakeService,
+          ),
+        ),
+      );
+      await tester.pumpAndSettle();
+
+      await tester.tap(find.byKey(const Key('feedback_history_top_cluster_0')));
+      await tester.pumpAndSettle();
+
+      expect(
+        find.widgetWithText(FloatingActionButton, 'Resolve Cluster (2)'),
+        findsOneWidget,
+      );
+    });
+
+    testWidgets('bulk resolve updates all matching tickets', (tester) async {
+      final fakeService = FakeFirestoreService();
+      fakeService.tickets = [
+        _ticket(id: 'a', parentId: 'parent-1', subject: '[Beta] Bug A'),
+        _ticket(id: 'b', parentId: 'parent-1', subject: '[Beta] Bug A'),
+      ];
+
+      await tester.pumpWidget(
+        MaterialApp(
+          home: BetaFeedbackHistoryScreen(
+            parentIdOverride: 'parent-1',
+            firestoreService: fakeService,
+          ),
+        ),
+      );
+      await tester.pumpAndSettle();
+
+      await tester.tap(find.byKey(const Key('feedback_history_top_cluster_0')));
+      await tester.pumpAndSettle();
+      await tester.tap(find.text('Resolve Cluster (2)'));
+      await tester.pumpAndSettle();
+
+      await tester.tap(find.text('Resolve All'));
+      await tester.pumpAndSettle();
+
+      expect(fakeService.bulkResolveCallCount, 1);
+      expect(fakeService.tickets.where((t) => !t.isResolved), isEmpty);
+    });
+
+    testWidgets('hide resolved toggle filters out resolved tickets', (tester) async {
+      await tester.binding.setSurfaceSize(const Size(430, 1400));
+      addTearDown(() => tester.binding.setSurfaceSize(null));
+
+      final fakeService = FakeFirestoreService();
+      fakeService.tickets = [
+        _ticket(
+          id: 'a',
+          parentId: 'parent-1',
+          subject: '[Beta] Pending',
+          status: SupportTicketStatus.open,
+        ),
+        _ticket(
+          id: 'b',
+          parentId: 'parent-1',
+          subject: '[Beta] Resolved',
+          status: SupportTicketStatus.resolved,
+        ),
+      ];
+
+      await tester.pumpWidget(
+        MaterialApp(
+          home: BetaFeedbackHistoryScreen(
+            parentIdOverride: 'parent-1',
+            firestoreService: fakeService,
+          ),
+        ),
+      );
+      await tester.pumpAndSettle();
+
+      await tester.scrollUntilVisible(
+        find.byKey(const Key('feedback_history_ticket_a')),
+        240,
+        scrollable: find.byType(Scrollable).first,
+      );
+      expect(find.byKey(const Key('feedback_history_ticket_a')), findsOneWidget);
+      await tester.scrollUntilVisible(
+        find.byKey(const Key('feedback_history_ticket_b')),
+        240,
+        scrollable: find.byType(Scrollable).first,
+      );
+      expect(find.byKey(const Key('feedback_history_ticket_b')), findsOneWidget);
+
+      await tester.tap(find.byKey(const Key('feedback_history_hide_resolved_switch')));
+      await tester.pumpAndSettle();
+
+      await tester.scrollUntilVisible(
+        find.byKey(const Key('feedback_history_ticket_a')),
+        240,
+        scrollable: find.byType(Scrollable).first,
+      );
+      expect(find.byKey(const Key('feedback_history_ticket_a')), findsOneWidget);
+      expect(find.byKey(const Key('feedback_history_ticket_b')), findsNothing);
+    });
+  });
+}
+
+SupportTicket _ticket({
+  required String id,
+  required String parentId,
+  required String subject,
+  SupportTicketStatus status = SupportTicketStatus.open,
+}) {
+  final now = DateTime(2026, 2, 19, 10, 0);
+  return SupportTicket(
+    id: id,
+    parentId: parentId,
+    subject: subject,
+    message: 'Issue',
+    status: status,
+    createdAt: now,
+    updatedAt: now,
+  );
+}
+
+class FakeFirestoreService extends FirestoreService {
+  FakeFirestoreService() : super(firestore: FakeFirebaseFirestore());
+
+  List<SupportTicket> tickets = [];
+  int bulkResolveCallCount = 0;
+
+  @override
+  Stream<List<SupportTicket>> getSupportTicketsStream(
+    String parentId, {
+    int limit = 50,
+  }) {
+    final filtered = tickets
+        .where((t) => t.parentId == parentId)
+        .take(limit)
+        .toList()
+      ..sort((a, b) => b.createdAt.compareTo(a.createdAt));
+    return Stream.value(filtered);
+  }
+
+  @override
+  Future<int> bulkResolveDuplicates({
+    required String parentId,
+    required String duplicateKey,
+  }) async {
+    bulkResolveCallCount++;
+    var count = 0;
+
+    tickets = tickets.map((ticket) {
+      if (ticket.parentId == parentId &&
+          ticket.duplicateKey == duplicateKey &&
+          !ticket.isResolved) {
+        count += 1;
+        return SupportTicket(
+          id: ticket.id,
+          parentId: ticket.parentId,
+          subject: ticket.subject,
+          message: ticket.message,
+          childId: ticket.childId,
+          status: SupportTicketStatus.resolved,
+          createdAt: ticket.createdAt,
+          updatedAt: DateTime(2026, 2, 19, 11, 0),
+        );
+      }
+      return ticket;
+    }).toList();
+
+    return count;
+  }
+
+  @override
+  Future<int> getDuplicateClusterSize({
+    required String parentId,
+    required String duplicateKey,
+  }) async {
+    return tickets
+        .where(
+          (t) =>
+              t.parentId == parentId &&
+              t.duplicateKey == duplicateKey &&
+              !t.isResolved,
+        )
+        .length;
+  }
 }

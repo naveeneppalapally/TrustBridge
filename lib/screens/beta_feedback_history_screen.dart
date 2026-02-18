@@ -104,6 +104,9 @@ class _BetaFeedbackHistoryScreenState extends State<BetaFeedbackHistoryScreen> {
   _DuplicateFilter _duplicateFilter = _DuplicateFilter.all;
   _TicketSortOrder _sortOrder = _TicketSortOrder.newestFirst;
   String _searchQuery = '';
+  String? _focusedDuplicateKey;
+  bool _hideResolvedTickets = false;
+  bool _isResolvingCluster = false;
 
   AuthService get _resolvedAuthService {
     _authService ??= widget.authService ?? AuthService();
@@ -187,40 +190,58 @@ class _BetaFeedbackHistoryScreenState extends State<BetaFeedbackHistoryScreen> {
 
           final duplicateCounts = _duplicateCountsByKey(tickets);
           final filteredTickets = _applyFilters(tickets, duplicateCounts);
+          final focusedClusterSize =
+              _focusedClusterUnresolvedSize(tickets, _focusedDuplicateKey);
 
-          return ListView(
-            padding: const EdgeInsets.fromLTRB(16, 12, 16, 100),
+          return Column(
             children: [
-              _buildFilterCard(
-                tickets: tickets,
-                filteredCount: filteredTickets.length,
-                duplicateCounts: duplicateCounts,
-              ),
-              const SizedBox(height: 12),
-              if (filteredTickets.isEmpty)
-                _buildEmptyState(hasAnyTickets: true)
-              else
-                ...filteredTickets.map((ticket) {
-                  final duplicateCount =
-                      duplicateCounts[ticket.duplicateKey] ?? 1;
-                  return Padding(
-                    padding: const EdgeInsets.only(bottom: 12),
-                    child: _buildTicketCard(
-                      ticket,
-                      duplicateCount: duplicateCount,
+              Expanded(
+                child: ListView(
+                  padding: const EdgeInsets.fromLTRB(16, 12, 16, 100),
+                  children: [
+                    _buildFilterCard(
+                      tickets: tickets,
+                      filteredCount: filteredTickets.length,
+                      duplicateCounts: duplicateCounts,
                     ),
-                  );
-                }),
+                    const SizedBox(height: 12),
+                    if (filteredTickets.isEmpty)
+                      _buildEmptyState(hasAnyTickets: true)
+                    else
+                      ...filteredTickets.map((ticket) {
+                        final duplicateCount =
+                            duplicateCounts[ticket.duplicateKey] ?? 1;
+                        return Padding(
+                          padding: const EdgeInsets.only(bottom: 12),
+                          child: _buildTicketCard(
+                            ticket,
+                            duplicateCount: duplicateCount,
+                          ),
+                        );
+                      }),
+                  ],
+                ),
+              ),
+              if (focusedClusterSize > 1)
+                Padding(
+                  padding: const EdgeInsets.fromLTRB(16, 0, 16, 16),
+                  child: _buildResolveClusterFab(
+                    parentId: parentId,
+                    focusedClusterSize: focusedClusterSize,
+                  ),
+                ),
             ],
           );
         },
       ),
-      floatingActionButton: FloatingActionButton.extended(
-        key: const Key('feedback_history_new_button'),
-        onPressed: _openFeedbackForm,
-        icon: const Icon(Icons.add_comment_outlined),
-        label: const Text('Send Feedback'),
-      ),
+      floatingActionButton: _focusedDuplicateKey == null
+          ? FloatingActionButton.extended(
+              key: const Key('feedback_history_new_button'),
+              onPressed: _openFeedbackForm,
+              icon: const Icon(Icons.add_comment_outlined),
+              label: const Text('Send Feedback'),
+            )
+          : null,
     );
   }
 
@@ -252,6 +273,10 @@ class _BetaFeedbackHistoryScreenState extends State<BetaFeedbackHistoryScreen> {
       }
 
       if (_severityFilter != null && ticket.severity != _severityFilter) {
+        return false;
+      }
+
+      if (_hideResolvedTickets && ticket.isResolved) {
         return false;
       }
 
@@ -330,6 +355,123 @@ class _BetaFeedbackHistoryScreenState extends State<BetaFeedbackHistoryScreen> {
     }
 
     return filtered;
+  }
+
+  int _focusedClusterUnresolvedSize(
+    List<SupportTicket> tickets,
+    String? duplicateKey,
+  ) {
+    final normalizedKey = duplicateKey?.trim().toLowerCase();
+    if (normalizedKey == null || normalizedKey.isEmpty) {
+      return 0;
+    }
+
+    return tickets
+        .where((ticket) =>
+            !ticket.isResolved && ticket.duplicateKey == normalizedKey)
+        .length;
+  }
+
+  Widget _buildResolveClusterFab({
+    required String parentId,
+    required int focusedClusterSize,
+  }) {
+    return SizedBox(
+      width: double.infinity,
+      child: FloatingActionButton.extended(
+        key: const Key('feedback_history_resolve_cluster_fab'),
+        heroTag: 'feedback_history_resolve_cluster_fab',
+        onPressed: _isResolvingCluster
+            ? null
+            : () => _confirmResolveFocusedCluster(
+                  parentId: parentId,
+                  clusterSize: focusedClusterSize,
+                ),
+        icon: _isResolvingCluster
+            ? const SizedBox(
+                width: 18,
+                height: 18,
+                child: CircularProgressIndicator(strokeWidth: 2),
+              )
+            : const Icon(Icons.done_all),
+        label: Text('Resolve Cluster ($focusedClusterSize)'),
+      ),
+    );
+  }
+
+  Future<void> _confirmResolveFocusedCluster({
+    required String parentId,
+    required int clusterSize,
+  }) async {
+    final duplicateKey = _focusedDuplicateKey;
+    if (duplicateKey == null || duplicateKey.trim().isEmpty) {
+      return;
+    }
+
+    final shouldResolve = await showDialog<bool>(
+      context: context,
+      builder: (context) {
+        return AlertDialog(
+          title: const Text('Resolve duplicate cluster?'),
+          content: Text(
+            'This will mark $clusterSize matching reports as resolved.',
+          ),
+          actions: [
+            TextButton(
+              onPressed: () => Navigator.of(context).pop(false),
+              child: const Text('Cancel'),
+            ),
+            FilledButton(
+              onPressed: () => Navigator.of(context).pop(true),
+              child: const Text('Resolve All'),
+            ),
+          ],
+        );
+      },
+    );
+
+    if (shouldResolve != true) {
+      return;
+    }
+
+    setState(() {
+      _isResolvingCluster = true;
+    });
+
+    try {
+      final resolvedCount = await _resolvedFirestoreService.bulkResolveDuplicates(
+        parentId: parentId,
+        duplicateKey: duplicateKey,
+      );
+
+      if (!mounted) {
+        return;
+      }
+
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text('Resolved $resolvedCount ticket(s) in cluster.'),
+        ),
+      );
+
+      setState(() {
+        _isResolvingCluster = false;
+        _focusedDuplicateKey = null;
+        _searchQuery = '';
+        _searchController.clear();
+      });
+      _refreshStream();
+    } catch (error) {
+      if (!mounted) {
+        return;
+      }
+      setState(() {
+        _isResolvingCluster = false;
+      });
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text('Failed to resolve cluster: $error')),
+      );
+    }
   }
 
   Widget _buildFilterCard({
@@ -458,6 +600,7 @@ class _BetaFeedbackHistoryScreenState extends State<BetaFeedbackHistoryScreen> {
                     onPressed: () {
                       setState(() {
                         _duplicateFilter = _DuplicateFilter.duplicates;
+                        _focusedDuplicateKey = cluster.key;
                         _searchQuery = cluster.key;
                         _searchController.text = cluster.key;
                       });
@@ -604,6 +747,18 @@ class _BetaFeedbackHistoryScreenState extends State<BetaFeedbackHistoryScreen> {
               }).toList(),
             ),
             const SizedBox(height: 10),
+            SwitchListTile.adaptive(
+              key: const Key('feedback_history_hide_resolved_switch'),
+              contentPadding: EdgeInsets.zero,
+              title: const Text('Hide resolved tickets'),
+              value: _hideResolvedTickets,
+              onChanged: (value) {
+                setState(() {
+                  _hideResolvedTickets = value;
+                });
+              },
+            ),
+            const SizedBox(height: 10),
             TextField(
               key: const Key('feedback_history_search_input'),
               controller: _searchController,
@@ -743,6 +898,8 @@ class _BetaFeedbackHistoryScreenState extends State<BetaFeedbackHistoryScreen> {
                   _duplicateFilter = _DuplicateFilter.all;
                   _attentionFilter = _AttentionFilter.all;
                   _sortOrder = _TicketSortOrder.newestFirst;
+                  _focusedDuplicateKey = null;
+                  _hideResolvedTickets = false;
                   _searchQuery = '';
                 });
               },
@@ -802,52 +959,56 @@ class _BetaFeedbackHistoryScreenState extends State<BetaFeedbackHistoryScreen> {
                 style: TextStyle(color: Colors.grey.shade700),
               ),
               const SizedBox(height: 10),
-              Row(
+              Wrap(
+                spacing: 8,
+                runSpacing: 6,
+                crossAxisAlignment: WrapCrossAlignment.center,
                 children: [
                   _buildSourceChip(ticket),
-                  if (ticket.severity != SupportTicketSeverity.unknown) ...[
-                    const SizedBox(width: 8),
+                  if (ticket.severity != SupportTicketSeverity.unknown)
                     _buildSeverityChip(ticket.severity),
-                  ],
-                  if (similarCount > 0) ...[
-                    const SizedBox(width: 8),
-                    _buildDuplicateChip(similarCount),
-                  ],
-                  if (ticket.isStale()) ...[
-                    const SizedBox(width: 8),
+                  if (similarCount > 0) _buildDuplicateChip(similarCount),
+                  if (ticket.isStale())
                     _buildAgingChip(
-                        label: 'Stale', color: Colors.brown.shade700),
-                  ] else if (ticket.needsAttention()) ...[
-                    const SizedBox(width: 8),
+                      label: 'Stale',
+                      color: Colors.brown.shade700,
+                    )
+                  else if (ticket.needsAttention())
                     _buildAgingChip(
                       label: 'Needs attention',
                       color: Colors.deepPurple.shade700,
                     ),
-                  ],
-                  const SizedBox(width: 8),
-                  Icon(Icons.schedule, size: 16, color: Colors.grey.shade500),
-                  const SizedBox(width: 6),
-                  Expanded(
-                    child: Text(
-                      _formatTimestamp(ticket.createdAt),
-                      style: TextStyle(
-                        color: Colors.grey.shade600,
-                        fontSize: 12,
+                  Row(
+                    mainAxisSize: MainAxisSize.min,
+                    children: [
+                      Icon(Icons.schedule,
+                          size: 16, color: Colors.grey.shade500),
+                      const SizedBox(width: 6),
+                      Text(
+                        _formatTimestamp(ticket.createdAt),
+                        style: TextStyle(
+                          color: Colors.grey.shade600,
+                          fontSize: 12,
+                        ),
                       ),
-                    ),
+                    ],
                   ),
-                  if (ticket.childId != null) ...[
-                    Icon(Icons.child_care,
-                        size: 16, color: Colors.grey.shade500),
-                    const SizedBox(width: 4),
-                    Text(
-                      ticket.childId!,
-                      style: TextStyle(
-                        color: Colors.grey.shade600,
-                        fontSize: 12,
-                      ),
+                  if (ticket.childId != null)
+                    Row(
+                      mainAxisSize: MainAxisSize.min,
+                      children: [
+                        Icon(Icons.child_care,
+                            size: 16, color: Colors.grey.shade500),
+                        const SizedBox(width: 4),
+                        Text(
+                          ticket.childId!,
+                          style: TextStyle(
+                            color: Colors.grey.shade600,
+                            fontSize: 12,
+                          ),
+                        ),
+                      ],
                     ),
-                  ],
                 ],
               ),
             ],
