@@ -364,43 +364,94 @@ Program goal: reduce startup and runtime overhead before alpha by removing avoid
 
 ---
 
-## Day 58 - Firestore Security Rules Audit (Week 12 Day 3)
+## Day 55 - DNS Analytics Dashboard (Week 11 Day 5)
 
-Program goal: harden Firestore security before alpha by enforcing strict owner boundaries, request workflow constraints, and field-level validation.
+Program goal: give parents visibility into DNS protection outcomes with privacy-preserving analytics sourced from on-device VPN telemetry and local DNS logs.
 
 ### Commit entries
 
-1. **2026-02-17 22:31:29 +05:30**  
-   Commit: `1928960`  
-   Message: `Implement Day 58 Firestore security rules audit and hardening`  
+1. **2026-02-17 20:58:53 +05:30**  
+   Commit: `(this commit - see latest git log)`  
+   Message: `Implement Day 55 DNS analytics dashboard [design: usage_reports_mobile_light]`  
    Changes:
-   - Rewrote `firestore.rules` with:
-     - explicit auth/ownership helpers
-     - owner-only access to `parents/{parentId}`
-     - owner-only access to top-level `children/{childId}` by `parentId == auth.uid`
-     - controlled create/update flow for `parents/{parentId}/access_requests/{requestId}`
-     - write-only client access to `notification_queue`
-     - secured `supportTickets` creation/read for owner
-     - global catch-all deny rule
-   - Updated `firestore.indexes.json`:
-     - added `access_requests` indexes for status/requestedAt and childId/requestedAt
-     - added collection-group index for `access_requests` status/expiresAt
-     - added `children` parentId/createdAt index
-     - added `notification_queue` processed/sentAt index
-   - Added rules emulator test suite:
-     - `test/firestore_rules/rules.test.js`
-     - covers parent ownership, child profile access control, request workflow permissions, queue restrictions, and catch-all deny
-   - Added `docs/SECURITY_CHECKLIST.md` with pre-alpha security controls and remaining post-alpha items
-   - Extended `test/services/firestore_service_test.dart` with permission-denied propagation smoke test
-   - Added dev dependency in `functions/package.json`:
-     - `@firebase/rules-unit-testing`
+   - Updated `lib/services/vpn_service.dart`:
+     - added `VpnTelemetry` model (`empty`, `fromMap`, `fromStatus`, `blockRate`)
+     - added `getVpnTelemetry()` helper in `VpnService`
+   - Updated `lib/services/firestore_service.dart`:
+     - added `getParentPreferences()` one-shot fetch
+   - Created `lib/screens/dns_analytics_screen.dart`:
+     - hero telemetry stats (blocked/intercepted/allowed/block rate)
+     - VPN-off banner
+     - traffic breakdown bar
+     - top blocked domains from local DNS logs
+     - category breakdown across child policies
+     - per-child policy summary
+     - NextDNS analytics card with dashboard deep link
+     - resolver health card and always-on privacy note
+   - Updated `lib/main.dart`:
+     - added `/dns-analytics` route
+   - Updated `lib/screens/parent_settings_screen.dart`:
+     - added `Protection Analytics` navigation tile
+   - Updated `lib/screens/dashboard_screen.dart`:
+     - added analytics AppBar action
+   - Added tests:
+     - `test/screens/dns_analytics_screen_test.dart`
    Validation:
    - `flutter analyze` passed.
-   - `flutter test` passed.
-   - Firestore rules emulator tests passed via `firebase emulators:exec --only firestore \"node test/firestore_rules/rules.test.js\"`.
-   - `firebase deploy --only firestore:rules` passed.
-   - `firebase deploy --only firestore:indexes` passed.
+   - `flutter test` passed (170/170).
    - `flutter build apk --debug` passed.
+   Design folder(s) used:
+   - `usage_reports_mobile_light`
+   Design assets checked:
+   - `screen.png`, `code.html`
+   UI fidelity note:
+   - Implemented card-based analytics layout with a privacy-first emphasis and lightweight visual hierarchy aligned to current app styling.
+
+---
+
+## Day 56 - Onboarding Flow (Week 12 Day 1)
+
+Program goal: guide first-time parents through setup with a 3-step onboarding flow instead of landing immediately on an empty dashboard.
+
+### Commit entries
+
+1. **2026-02-17 21:17:54 +05:30**  
+   Commit: `e9b0c1e`  
+   Message: `Implement Day 56 onboarding flow [design: onboarding_mobile_light]`  
+   Changes:
+   - Updated `lib/services/firestore_service.dart`:
+     - added `completeOnboarding()`
+     - added `isOnboardingComplete()`
+     - updated `getParentPreferences()` to include onboarding flags
+     - set default `onboardingComplete: false` in `ensureParentProfile()`
+   - Updated `lib/main.dart`:
+     - added `/onboarding` route
+     - updated `AuthWrapper` to gate logged-in users through onboarding status
+     - routes first-time parents to `OnboardingScreen`
+   - Created `lib/screens/onboarding_screen.dart`:
+     - 3-step `PageView` (Welcome, Add Child, Enable Protection)
+     - animated step indicator dots
+     - skip action (marks onboarding complete)
+     - deep-link to `AddChildScreen`
+     - deep-link to `VpnProtectionScreen`
+     - finish action marks complete and enters dashboard
+     - `isRevisit` mode for settings re-entry
+   - Updated `lib/screens/parent_settings_screen.dart`:
+     - added `Setup Guide` tile to reopen onboarding in revisit mode
+   - Added tests:
+     - `test/screens/onboarding_screen_test.dart`
+     - expanded `test/services/firestore_service_test.dart` onboarding coverage
+     - updated `test/screens/parent_settings_screen_test.dart` section expectations
+   Validation:
+   - `flutter analyze` passed.
+   - `flutter test` passed (180/180).
+   - `flutter build apk --debug` passed.
+   Design folder(s) used:
+   - `onboarding_mobile_light`
+   Design assets checked:
+   - `screen.png`, `code.html`
+   UI fidelity note:
+   - Implemented a step-based first-run flow with persistent completion state and re-entry from settings while keeping current app visual language.
 
 ---
 
@@ -453,6 +504,46 @@ Program goal: prevent children from opening parent-sensitive controls by requiri
    - `screen.png`, `code.html`
    UI fidelity note:
    - Added a compact security management card to existing settings layout while preserving TrustBridge’s current visual language.
+
+---
+
+## Day 58 - Firestore Security Rules Audit (Week 12 Day 3)
+
+Program goal: harden Firestore security before alpha by enforcing strict owner boundaries, request workflow constraints, and field-level validation.
+
+### Commit entries
+
+1. **2026-02-17 22:31:29 +05:30**  
+   Commit: `1928960`  
+   Message: `Implement Day 58 Firestore security rules audit and hardening`  
+   Changes:
+   - Rewrote `firestore.rules` with:
+     - explicit auth/ownership helpers
+     - owner-only access to `parents/{parentId}`
+     - owner-only access to top-level `children/{childId}` by `parentId == auth.uid`
+     - controlled create/update flow for `parents/{parentId}/access_requests/{requestId}`
+     - write-only client access to `notification_queue`
+     - secured `supportTickets` creation/read for owner
+     - global catch-all deny rule
+   - Updated `firestore.indexes.json`:
+     - added `access_requests` indexes for status/requestedAt and childId/requestedAt
+     - added collection-group index for `access_requests` status/expiresAt
+     - added `children` parentId/createdAt index
+     - added `notification_queue` processed/sentAt index
+   - Added rules emulator test suite:
+     - `test/firestore_rules/rules.test.js`
+     - covers parent ownership, child profile access control, request workflow permissions, queue restrictions, and catch-all deny
+   - Added `docs/SECURITY_CHECKLIST.md` with pre-alpha security controls and remaining post-alpha items
+   - Extended `test/services/firestore_service_test.dart` with permission-denied propagation smoke test
+   - Added dev dependency in `functions/package.json`:
+     - `@firebase/rules-unit-testing`
+   Validation:
+   - `flutter analyze` passed.
+   - `flutter test` passed.
+   - Firestore rules emulator tests passed via `firebase emulators:exec --only firestore \"node test/firestore_rules/rules.test.js\"`.
+   - `firebase deploy --only firestore:rules` passed.
+   - `firebase deploy --only firestore:indexes` passed.
+   - `flutter build apk --debug` passed.
 
 ---
 
@@ -2853,94 +2944,3 @@ Program goal: ensure NextDNS takes effect automatically from Firestore parent pr
 - Day 54 completed in code: VPN operations now auto-load NextDNS preference from Firestore and apply resolver settings during enable/restart/sync without extra manual steps.
 
 Last updated: 2026-02-17
-
-## Day 55 - DNS Analytics Dashboard (Week 11 Day 5)
-
-Program goal: give parents visibility into DNS protection outcomes with privacy-preserving analytics sourced from on-device VPN telemetry and local DNS logs.
-
-### Commit entries
-
-1. **2026-02-17 20:58:53 +05:30**  
-   Commit: `(this commit - see latest git log)`  
-   Message: `Implement Day 55 DNS analytics dashboard [design: usage_reports_mobile_light]`  
-   Changes:
-   - Updated `lib/services/vpn_service.dart`:
-     - added `VpnTelemetry` model (`empty`, `fromMap`, `fromStatus`, `blockRate`)
-     - added `getVpnTelemetry()` helper in `VpnService`
-   - Updated `lib/services/firestore_service.dart`:
-     - added `getParentPreferences()` one-shot fetch
-   - Created `lib/screens/dns_analytics_screen.dart`:
-     - hero telemetry stats (blocked/intercepted/allowed/block rate)
-     - VPN-off banner
-     - traffic breakdown bar
-     - top blocked domains from local DNS logs
-     - category breakdown across child policies
-     - per-child policy summary
-     - NextDNS analytics card with dashboard deep link
-     - resolver health card and always-on privacy note
-   - Updated `lib/main.dart`:
-     - added `/dns-analytics` route
-   - Updated `lib/screens/parent_settings_screen.dart`:
-     - added `Protection Analytics` navigation tile
-   - Updated `lib/screens/dashboard_screen.dart`:
-     - added analytics AppBar action
-   - Added tests:
-     - `test/screens/dns_analytics_screen_test.dart`
-   Validation:
-   - `flutter analyze` passed.
-   - `flutter test` passed (170/170).
-   - `flutter build apk --debug` passed.
-   Design folder(s) used:
-   - `usage_reports_mobile_light`
-   Design assets checked:
-   - `screen.png`, `code.html`
-   UI fidelity note:
-   - Implemented card-based analytics layout with a privacy-first emphasis and lightweight visual hierarchy aligned to current app styling.
-
----
-
-## Day 56 - Onboarding Flow (Week 12 Day 1)
-
-Program goal: guide first-time parents through setup with a 3-step onboarding flow instead of landing immediately on an empty dashboard.
-
-### Commit entries
-
-1. **2026-02-17 21:17:54 +05:30**  
-   Commit: `e9b0c1e`  
-   Message: `Implement Day 56 onboarding flow [design: onboarding_mobile_light]`  
-   Changes:
-   - Updated `lib/services/firestore_service.dart`:
-     - added `completeOnboarding()`
-     - added `isOnboardingComplete()`
-     - updated `getParentPreferences()` to include onboarding flags
-     - set default `onboardingComplete: false` in `ensureParentProfile()`
-   - Updated `lib/main.dart`:
-     - added `/onboarding` route
-     - updated `AuthWrapper` to gate logged-in users through onboarding status
-     - routes first-time parents to `OnboardingScreen`
-   - Created `lib/screens/onboarding_screen.dart`:
-     - 3-step `PageView` (Welcome, Add Child, Enable Protection)
-     - animated step indicator dots
-     - skip action (marks onboarding complete)
-     - deep-link to `AddChildScreen`
-     - deep-link to `VpnProtectionScreen`
-     - finish action marks complete and enters dashboard
-     - `isRevisit` mode for settings re-entry
-   - Updated `lib/screens/parent_settings_screen.dart`:
-     - added `Setup Guide` tile to reopen onboarding in revisit mode
-   - Added tests:
-     - `test/screens/onboarding_screen_test.dart`
-     - expanded `test/services/firestore_service_test.dart` onboarding coverage
-     - updated `test/screens/parent_settings_screen_test.dart` section expectations
-   Validation:
-   - `flutter analyze` passed.
-   - `flutter test` passed (180/180).
-   - `flutter build apk --debug` passed.
-   Design folder(s) used:
-   - `onboarding_mobile_light`
-   Design assets checked:
-   - `screen.png`, `code.html`
-   UI fidelity note:
-   - Implemented a step-based first-run flow with persistent completion state and re-entry from settings while keeping current app visual language.
-
----
