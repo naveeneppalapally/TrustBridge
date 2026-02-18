@@ -74,11 +74,13 @@ enum _DuplicateFilter {
 
 class _BulkResolveActivity {
   const _BulkResolveActivity({
+    required this.duplicateKey,
     required this.label,
     required this.resolvedCount,
     required this.timestamp,
   });
 
+  final String duplicateKey;
   final String label;
   final int resolvedCount;
   final DateTime timestamp;
@@ -119,6 +121,7 @@ class _BetaFeedbackHistoryScreenState extends State<BetaFeedbackHistoryScreen> {
   String? _focusedDuplicateKey;
   bool _hideResolvedTickets = false;
   bool _isResolvingCluster = false;
+  bool _isReopeningCluster = false;
   final List<_BulkResolveActivity> _bulkResolveActivity = <_BulkResolveActivity>[];
 
   AuthService get _resolvedAuthService {
@@ -219,7 +222,7 @@ class _BetaFeedbackHistoryScreenState extends State<BetaFeedbackHistoryScreen> {
                     ),
                     if (_bulkResolveActivity.isNotEmpty) ...[
                       const SizedBox(height: 12),
-                      _buildBulkResolveActivityCard(),
+                      _buildBulkResolveActivityCard(parentId: parentId),
                     ],
                     const SizedBox(height: 12),
                     if (filteredTickets.isEmpty)
@@ -476,6 +479,7 @@ class _BetaFeedbackHistoryScreenState extends State<BetaFeedbackHistoryScreen> {
         _bulkResolveActivity.insert(
           0,
           _BulkResolveActivity(
+            duplicateKey: duplicateKey,
             label: _formatDuplicateKeyLabel(duplicateKey),
             resolvedCount: resolvedCount,
             timestamp: DateTime.now(),
@@ -499,7 +503,9 @@ class _BetaFeedbackHistoryScreenState extends State<BetaFeedbackHistoryScreen> {
     }
   }
 
-  Widget _buildBulkResolveActivityCard() {
+  Widget _buildBulkResolveActivityCard({required String parentId}) {
+    final latestActivity = _bulkResolveActivity.first;
+
     return Card(
       elevation: 0,
       shape: RoundedRectangleBorder(
@@ -512,13 +518,14 @@ class _BetaFeedbackHistoryScreenState extends State<BetaFeedbackHistoryScreen> {
           children: [
             Row(
               children: [
-                Text(
-                  'Recent bulk actions',
-                  style: Theme.of(context).textTheme.titleSmall?.copyWith(
-                        fontWeight: FontWeight.w700,
-                      ),
+                Expanded(
+                  child: Text(
+                    'Recent bulk actions',
+                    style: Theme.of(context).textTheme.titleSmall?.copyWith(
+                          fontWeight: FontWeight.w700,
+                        ),
+                  ),
                 ),
-                const Spacer(),
                 TextButton(
                   onPressed: () {
                     setState(() {
@@ -539,10 +546,72 @@ class _BetaFeedbackHistoryScreenState extends State<BetaFeedbackHistoryScreen> {
                 ),
               );
             }),
+            const SizedBox(height: 4),
+            Align(
+              alignment: Alignment.centerRight,
+              child: OutlinedButton.icon(
+                key: const Key('feedback_history_undo_bulk_resolve_button'),
+                onPressed: _isReopeningCluster
+                    ? null
+                    : () => _undoLatestBulkResolve(
+                          parentId: parentId,
+                          latestActivity: latestActivity,
+                        ),
+                icon: _isReopeningCluster
+                    ? const SizedBox(
+                        width: 16,
+                        height: 16,
+                        child: CircularProgressIndicator(strokeWidth: 2),
+                      )
+                    : const Icon(Icons.undo, size: 18),
+                label: const Text('Undo latest'),
+              ),
+            ),
           ],
         ),
       ),
     );
+  }
+
+  Future<void> _undoLatestBulkResolve({
+    required String parentId,
+    required _BulkResolveActivity latestActivity,
+  }) async {
+    setState(() {
+      _isReopeningCluster = true;
+    });
+
+    try {
+      final reopenedCount = await _resolvedFirestoreService.bulkReopenDuplicates(
+        parentId: parentId,
+        duplicateKey: latestActivity.duplicateKey,
+        limit: latestActivity.resolvedCount,
+      );
+
+      if (!mounted) {
+        return;
+      }
+
+      setState(() {
+        _isReopeningCluster = false;
+        _bulkResolveActivity.remove(latestActivity);
+      });
+
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text('Reopened $reopenedCount ticket(s).')),
+      );
+      _refreshStream();
+    } catch (error) {
+      if (!mounted) {
+        return;
+      }
+      setState(() {
+        _isReopeningCluster = false;
+      });
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text('Failed to undo bulk resolve: $error')),
+      );
+    }
   }
 
   Widget _buildFilterCard({

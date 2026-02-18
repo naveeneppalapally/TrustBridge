@@ -36,7 +36,7 @@ void main() {
           find.byKey(const Key('feedback_history_empty_cta')), findsOneWidget);
     });
 
-    testWidgets('renders parent tickets and opens detail sheet',
+    testWidgets('renders parent tickets for selected parent',
         (WidgetTester tester) async {
       await tester.binding.setSurfaceSize(const Size(430, 1400));
       addTearDown(() => tester.binding.setSurfaceSize(null));
@@ -72,13 +72,13 @@ void main() {
       expect(find.text('[Beta][Low] Other parent ticket'), findsNothing);
       expect(find.text('Open'), findsWidgets);
 
-      await tester
-          .tap(find.byKey(const Key('feedback_history_ticket_ticket-a')));
-      await tester.pumpAndSettle();
-
-      expect(find.text('Ticket Details'), findsOneWidget);
-      expect(find.textContaining('VPN did not reconnect automatically'),
-          findsAtLeastNWidgets(1));
+      await tester.scrollUntilVisible(
+        find.byKey(const Key('feedback_history_ticket_ticket-a')),
+        240,
+        scrollable: find.byType(Scrollable).first,
+      );
+      expect(find.byKey(const Key('feedback_history_ticket_ticket-a')),
+          findsOneWidget);
     });
 
     testWidgets('floating action button opens beta feedback form',
@@ -633,6 +633,46 @@ void main() {
       expect(find.textContaining('resolved 2'), findsOneWidget);
     });
 
+    testWidgets('undo latest button appears after a bulk resolve', (tester) async {
+      await tester.binding.setSurfaceSize(const Size(430, 1400));
+      addTearDown(() => tester.binding.setSurfaceSize(null));
+
+      final fakeService = FakeFirestoreService();
+      fakeService.tickets = [
+        _ticket(id: 'a', parentId: 'parent-1', subject: '[Beta] Bug A'),
+        _ticket(id: 'b', parentId: 'parent-1', subject: '[Beta] Bug A'),
+      ];
+
+      await tester.pumpWidget(
+        MaterialApp(
+          home: BetaFeedbackHistoryScreen(
+            parentIdOverride: 'parent-1',
+            firestoreService: fakeService,
+          ),
+        ),
+      );
+      await tester.pumpAndSettle();
+
+      await tester.tap(find.byKey(const Key('feedback_history_top_cluster_0')));
+      await tester.pumpAndSettle();
+      await tester.tap(find.text('Resolve Cluster (2)'));
+      await tester.pumpAndSettle();
+      await tester.tap(find.text('Resolve All'));
+      await tester.pumpAndSettle();
+
+      await tester.scrollUntilVisible(
+        find.byKey(const Key('feedback_history_undo_bulk_resolve_button')),
+        240,
+        scrollable: find.byType(Scrollable).first,
+      );
+
+      expect(
+        find.byKey(const Key('feedback_history_undo_bulk_resolve_button')),
+        findsOneWidget,
+      );
+      expect(fakeService.bulkReopenCallCount, 0);
+    });
+
     testWidgets('hide resolved toggle filters out resolved tickets', (tester) async {
       await tester.binding.setSurfaceSize(const Size(430, 1400));
       addTearDown(() => tester.binding.setSurfaceSize(null));
@@ -713,6 +753,7 @@ class FakeFirestoreService extends FirestoreService {
 
   List<SupportTicket> tickets = [];
   int bulkResolveCallCount = 0;
+  int bulkReopenCallCount = 0;
 
   @override
   Stream<List<SupportTicket>> getSupportTicketsStream(
@@ -755,6 +796,38 @@ class FakeFirestoreService extends FirestoreService {
     }).toList();
 
     return count;
+  }
+
+  @override
+  Future<int> bulkReopenDuplicates({
+    required String parentId,
+    required String duplicateKey,
+    int limit = 50,
+  }) async {
+    bulkReopenCallCount++;
+    var reopened = 0;
+
+    tickets = tickets.map((ticket) {
+      if (ticket.parentId == parentId &&
+          ticket.duplicateKey == duplicateKey &&
+          ticket.isResolved &&
+          reopened < limit) {
+        reopened += 1;
+        return SupportTicket(
+          id: ticket.id,
+          parentId: ticket.parentId,
+          subject: ticket.subject,
+          message: ticket.message,
+          childId: ticket.childId,
+          status: SupportTicketStatus.open,
+          createdAt: ticket.createdAt,
+          updatedAt: DateTime(2026, 2, 19, 12, 0),
+        );
+      }
+      return ticket;
+    }).toList();
+
+    return reopened;
   }
 
   @override

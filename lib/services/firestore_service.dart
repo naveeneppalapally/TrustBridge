@@ -414,6 +414,66 @@ class FirestoreService {
     return updatedCount;
   }
 
+  /// Reopens recently resolved tickets in a duplicate cluster.
+  Future<int> bulkReopenDuplicates({
+    required String parentId,
+    required String duplicateKey,
+    int limit = 50,
+  }) async {
+    if (parentId.trim().isEmpty) {
+      throw ArgumentError.value(parentId, 'parentId', 'Parent ID is required.');
+    }
+
+    final normalizedKey = duplicateKey.trim().toLowerCase();
+    if (normalizedKey.isEmpty) {
+      throw ArgumentError.value(
+        duplicateKey,
+        'duplicateKey',
+        'Duplicate key is required.',
+      );
+    }
+    if (limit <= 0) {
+      throw ArgumentError.value(limit, 'limit', 'Limit must be greater than 0.');
+    }
+
+    final snapshot = await _firestore
+        .collection('supportTickets')
+        .where('parentId', isEqualTo: parentId)
+        .limit(300)
+        .get();
+
+    final candidates = <MapEntry<DocumentReference<Map<String, dynamic>>, SupportTicket>>[];
+    for (final doc in snapshot.docs) {
+      try {
+        final ticket = SupportTicket.fromFirestore(doc);
+        if (!ticket.isResolved || ticket.duplicateKey != normalizedKey) {
+          continue;
+        }
+        candidates.add(MapEntry(doc.reference, ticket));
+      } catch (_) {
+        // Skip malformed tickets.
+      }
+    }
+
+    candidates.sort((a, b) => b.value.updatedAt.compareTo(a.value.updatedAt));
+
+    final batch = _firestore.batch();
+    var reopenedCount = 0;
+    for (final entry in candidates.take(limit)) {
+      batch.update(entry.key, {
+        'status': SupportTicketStatus.open.name,
+        'updatedAt': Timestamp.fromDate(DateTime.now()),
+      });
+      reopenedCount += 1;
+    }
+
+    if (reopenedCount > 0) {
+      await batch.commit();
+    }
+
+    return reopenedCount;
+  }
+
   Future<String> submitBetaFeedback({
     required String parentId,
     required String category,

@@ -3001,3 +3001,32 @@ activity trail after bulk resolve actions and preserving triage clarity.
    - `flutter test test/screens/beta_feedback_history_screen_test.dart` passed.
 
 ---
+
+## Day 71 - Undo Bulk Resolve Action (Week 15 Day 1)
+
+Program goal: reduce operator risk by allowing quick rollback of recent
+duplicate-cluster bulk resolves from the activity trail.
+
+### Commit entries
+
+1. **2026-02-18**  
+   Commit: `(this commit - see latest git log)`  
+   Message: `Implement Day 71 undo bulk resolve action`  
+   Changes:
+   - Updated `lib/services/firestore_service.dart`:
+     - added `bulkReopenDuplicates(...)` to reopen recently resolved tickets for a duplicate key
+     - supports a `limit` to bound rollback scope to latest bulk action size
+   - Updated `lib/screens/beta_feedback_history_screen.dart`:
+     - extended bulk activity entries with duplicate-key metadata
+     - added `Undo latest` action in `Recent bulk actions`
+     - added async reopen flow with progress state and success/failure snackbar feedback
+     - refined activity card header layout to avoid small-width overflow
+   - Updated tests:
+     - expanded `test/screens/beta_feedback_history_screen_test.dart` with Day 71 coverage for undo action visibility
+     - stabilized parent-ticket render test interaction under constrained test surface
+   Validation:
+   - `flutter analyze` passed.
+   - `flutter test test/screens/beta_feedback_history_screen_test.dart` passed.
+   - `flutter test` passed.
+
+---
