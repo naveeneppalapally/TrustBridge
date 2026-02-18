@@ -39,7 +39,7 @@ clusters as one-tap actions that instantly focus the inbox on that issue.
 ### Commit entries
 
 1. **2026-02-18**  
-   Commit: `(this commit - see latest git log)`  
+   Commit: `d5e1464`  
    Message: `Implement Day 68 duplicate cluster spotlight actions`  
    Changes:
    - Updated `lib/screens/beta_feedback_history_screen.dart`:
@@ -66,7 +66,7 @@ large duplicate clusters first instead of only filtering duplicates.
 ### Commit entries
 
 1. **2026-02-18**  
-   Commit: `(this commit - see latest git log)`  
+   Commit: `2bc22fb`  
    Message: `Implement Day 67 duplicate cluster prioritization`  
    Changes:
    - Updated `lib/screens/beta_feedback_history_screen.dart`:
@@ -97,7 +97,7 @@ parents focus on duplicate clusters first.
 ### Commit entries
 
 1. **2026-02-18**  
-   Commit: `(this commit - see latest git log)`  
+   Commit: `52dad7b`  
    Message: `Implement Day 66 duplicate feedback triage`  
    Changes:
    - Updated `lib/models/support_ticket.dart`:
@@ -131,7 +131,7 @@ adding urgency filters so unresolved issues are addressed first.
 ### Commit entries
 
 1. **2026-02-17**  
-   Commit: `(this commit - see latest git log)`  
+   Commit: `3e931f2`  
    Message: `Implement Day 65 feedback aging escalation signals`  
    Changes:
    - Updated `lib/models/support_ticket.dart`:
@@ -192,7 +192,7 @@ to the feedback inbox so reports can be processed in seconds.
 ### Commit entries
 
 1. **2026-02-17**  
-   Commit: `(this commit - see latest git log)`  
+   Commit: `b61689b`  
    Message: `Implement Day 63 feedback inbox triage filters`  
    Changes:
    - Updated `lib/models/support_ticket.dart`:
@@ -222,7 +222,7 @@ with status visibility and quick access back to the feedback form.
 ### Commit entries
 
 1. **2026-02-17**  
-   Commit: `(this commit - see latest git log)`  
+   Commit: `2aab136`  
    Message: `Implement Day 62 beta feedback history screen`  
    Changes:
    - Created `lib/models/support_ticket.dart`:
@@ -259,7 +259,7 @@ inside the app so issues can be triaged quickly after release.
 ### Commit entries
 
 1. **2026-02-17**  
-   Commit: `(this commit - see latest git log)`  
+   Commit: `df4f35b`  
    Message: `Implement Day 61 beta feedback intake workflow`  
    Changes:
    - Updated `lib/services/firestore_service.dart`:
@@ -294,7 +294,7 @@ Program goal: ship TrustBridge Alpha 1 to first real users through a signed rele
 ### Commit entries
 
 1. **2026-02-17**  
-   Commit: `(this commit - see latest git log)`  
+   Commit: `bc8f5c0`  
    Message: `Day 60 alpha release: version 1.0.0-alpha.1+60`  
    Changes:
    - Updated `pubspec.yaml`:
@@ -331,7 +331,7 @@ Program goal: reduce startup and runtime overhead before alpha by removing avoid
 ### Commit entries
 
 1. **2026-02-17**  
-   Commit: `(this commit - see latest git log)`  
+   Commit: `e2078c0`  
    Message: `Implement Day 59 performance optimization and release build config`  
    Changes:
    - Updated `lib/main.dart`:
@@ -371,7 +371,7 @@ Program goal: harden Firestore security before alpha by enforcing strict owner b
 ### Commit entries
 
 1. **2026-02-17 22:31:29 +05:30**  
-   Commit: `(this commit - see latest git log)`  
+   Commit: `1928960`  
    Message: `Implement Day 58 Firestore security rules audit and hardening`  
    Changes:
    - Rewrote `firestore.rules` with:
@@ -411,7 +411,7 @@ Program goal: prevent children from opening parent-sensitive controls by requiri
 ### Commit entries
 
 1. **2026-02-17 22:04:45 +05:30**  
-   Commit: `(this commit - see latest git log)`  
+   Commit: `a922bd9`  
    Message: `Implement Day 57 app lock PIN protection [design: security_settings_light]`  
    Changes:
    - Added dependencies in `pubspec.yaml`:
@@ -2906,7 +2906,7 @@ Program goal: guide first-time parents through setup with a 3-step onboarding fl
 ### Commit entries
 
 1. **2026-02-17 21:17:54 +05:30**  
-   Commit: `(this commit - see latest git log)`  
+   Commit: `e9b0c1e`  
    Message: `Implement Day 56 onboarding flow [design: onboarding_mobile_light]`  
    Changes:
    - Updated `lib/services/firestore_service.dart`:
