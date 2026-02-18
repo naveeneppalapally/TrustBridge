@@ -24,7 +24,8 @@ enum _TicketSourceFilter {
 enum _TicketSortOrder {
   newestFirst,
   oldestFirst,
-  highestSeverity;
+  highestSeverity,
+  highestDuplicateCluster;
 
   String get label {
     switch (this) {
@@ -34,6 +35,8 @@ enum _TicketSortOrder {
         return 'Oldest';
       case _TicketSortOrder.highestSeverity:
         return 'Severity';
+      case _TicketSortOrder.highestDuplicateCluster:
+        return 'Dup clusters';
     }
   }
 }
@@ -307,6 +310,23 @@ class _BetaFeedbackHistoryScreenState extends State<BetaFeedbackHistoryScreen> {
           return b.createdAt.compareTo(a.createdAt);
         });
         break;
+      case _TicketSortOrder.highestDuplicateCluster:
+        filtered.sort((a, b) {
+          final aCluster = duplicateCounts[a.duplicateKey] ?? 1;
+          final bCluster = duplicateCounts[b.duplicateKey] ?? 1;
+          final clusterComparison = bCluster.compareTo(aCluster);
+          if (clusterComparison != 0) {
+            return clusterComparison;
+          }
+
+          final severityComparison = a.severity.rank.compareTo(b.severity.rank);
+          if (severityComparison != 0) {
+            return severityComparison;
+          }
+
+          return b.createdAt.compareTo(a.createdAt);
+        });
+        break;
     }
 
     return filtered;
@@ -336,6 +356,9 @@ class _BetaFeedbackHistoryScreenState extends State<BetaFeedbackHistoryScreen> {
         .fold<int>(0, (total, count) => total + count);
     final duplicateClusterCount =
         duplicateCounts.values.where((count) => count > 1).length;
+    final largestClusterSize = duplicateCounts.values.isEmpty
+        ? 1
+        : duplicateCounts.values.reduce((a, b) => a > b ? a : b);
 
     return Card(
       elevation: 0,
@@ -392,6 +415,11 @@ class _BetaFeedbackHistoryScreenState extends State<BetaFeedbackHistoryScreen> {
                   label: 'Dup reports',
                   value: '$duplicateTicketsCount',
                   color: Colors.indigo.shade700,
+                ),
+                _buildMetricPill(
+                  label: 'Largest cluster',
+                  value: '$largestClusterSize',
+                  color: Colors.deepPurple.shade400,
                 ),
               ],
             ),

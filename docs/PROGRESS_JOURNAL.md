@@ -31,6 +31,37 @@ UI commit message convention:
 
 ---
 
+## Day 67 - Duplicate Cluster Prioritization (Week 14 Day 2)
+
+Program goal: help parents triage repeated beta issues faster by prioritizing
+large duplicate clusters first instead of only filtering duplicates.
+
+### Commit entries
+
+1. **2026-02-18**  
+   Commit: `(this commit - see latest git log)`  
+   Message: `Implement Day 67 duplicate cluster prioritization`  
+   Changes:
+   - Updated `lib/screens/beta_feedback_history_screen.dart`:
+     - added new sort option: `Dup clusters`
+     - sort logic now supports `highestDuplicateCluster`:
+       - larger duplicate clusters first
+       - tie-break by severity priority
+       - then newest-first
+     - added triage metric pill: `Largest cluster`
+   - Updated tests:
+     - expanded `test/screens/beta_feedback_history_screen_test.dart`
+       with duplicate-cluster sort coverage
+   Validation:
+   - `flutter analyze` passed.
+   - `flutter test` passed.
+   Rationale:
+   - Day 66 introduced duplicate detection/filtering; Day 67 extends this by
+     prioritizing the highest-impact duplicate clusters first, which is the
+     next logical triage step for high-volume beta feedback.
+
+---
+
 ## Day 66 - Duplicate Feedback Triage (Week 14 Day 1)
 
 Program goal: reduce triage noise by detecting repeated reports and letting
