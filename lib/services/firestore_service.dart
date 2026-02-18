@@ -326,6 +326,176 @@ class FirestoreService {
     });
   }
 
+  /// Returns duplicate-ticket analytics summary for roadmap planning.
+  Future<Map<String, dynamic>> getDuplicateAnalytics(String parentId) async {
+    if (parentId.trim().isEmpty) {
+      throw ArgumentError.value(parentId, 'parentId', 'Parent ID is required.');
+    }
+
+    try {
+      final snapshot = await _firestore
+          .collection('supportTickets')
+          .where('parentId', isEqualTo: parentId)
+          .limit(500)
+          .get();
+
+      final allTickets = <SupportTicket>[];
+      for (final doc in snapshot.docs) {
+        try {
+          allTickets.add(SupportTicket.fromFirestore(doc));
+        } catch (_) {
+          // Skip malformed tickets.
+        }
+      }
+
+      final clusterMap = <String, List<SupportTicket>>{};
+      for (final ticket in allTickets) {
+        final key = ticket.duplicateKey;
+        if (key.isEmpty) {
+          continue;
+        }
+        clusterMap.putIfAbsent(key, () => <SupportTicket>[]).add(ticket);
+      }
+
+      final duplicateClusters =
+          clusterMap.entries.where((entry) => entry.value.length >= 2).toList();
+      duplicateClusters
+          .sort((a, b) => b.value.length.compareTo(a.value.length));
+
+      final duplicateTickets = duplicateClusters
+          .expand((entry) => entry.value)
+          .toList(growable: false);
+      final totalDuplicateReports = duplicateTickets.length;
+
+      final resolvedDuplicateReports =
+          duplicateTickets.where((ticket) => ticket.isResolved).length;
+      final resolutionRate = totalDuplicateReports == 0
+          ? 0.0
+          : resolvedDuplicateReports / totalDuplicateReports;
+
+      final velocities =
+          duplicateTickets.where((ticket) => ticket.isResolved).map((ticket) {
+        final days =
+            ticket.updatedAt.difference(ticket.createdAt).inHours.toDouble() /
+                24.0;
+        return days < 0 ? 0.0 : days;
+      }).toList();
+
+      final avgVelocity = velocities.isEmpty
+          ? 0.0
+          : velocities.reduce((a, b) => a + b) / velocities.length;
+      final minVelocity =
+          velocities.isEmpty ? 0.0 : velocities.reduce((a, b) => a < b ? a : b);
+      final maxVelocity =
+          velocities.isEmpty ? 0.0 : velocities.reduce((a, b) => a > b ? a : b);
+
+      final categoryMap = <String, int>{};
+      for (final ticket in duplicateTickets) {
+        final category = _extractDuplicateCategory(ticket.subject);
+        categoryMap[category] = (categoryMap[category] ?? 0) + 1;
+      }
+
+      final now = DateTime.now();
+      final volumeByWeek = <String, int>{
+        'Week -3': 0,
+        'Week -2': 0,
+        'Week -1': 0,
+        'Week -0': 0,
+      };
+      for (final ticket in duplicateTickets) {
+        final weekOffset = now.difference(ticket.createdAt).inDays ~/ 7;
+        if (weekOffset >= 0 && weekOffset < 4) {
+          final weekKey = 'Week -$weekOffset';
+          volumeByWeek[weekKey] = (volumeByWeek[weekKey] ?? 0) + 1;
+        }
+      }
+
+      final topIssues = duplicateClusters
+          .take(5)
+          .map((entry) => <String, dynamic>{
+                'subject': _formatDuplicateKeyForDisplay(entry.key),
+                'count': entry.value.length,
+              })
+          .toList(growable: false);
+
+      return <String, dynamic>{
+        'topIssues': topIssues,
+        'avgVelocityDays': avgVelocity,
+        'minVelocityDays': minVelocity,
+        'maxVelocityDays': maxVelocity,
+        'volumeByWeek': volumeByWeek,
+        'categoryBreakdown': categoryMap,
+        'totalDuplicateClusters': duplicateClusters.length,
+        'totalDuplicateReports': totalDuplicateReports,
+        'resolutionRate': resolutionRate,
+      };
+    } catch (error, stackTrace) {
+      developer.log(
+        'Duplicate analytics error',
+        name: 'FirestoreService',
+        error: error,
+        stackTrace: stackTrace,
+      );
+      return <String, dynamic>{};
+    }
+  }
+
+  /// Exports top duplicate clusters as CSV text.
+  Future<String> exportDuplicateClustersCSV(String parentId) async {
+    final analytics = await getDuplicateAnalytics(parentId);
+    final topIssues = (analytics['topIssues'] as List?) ?? const <dynamic>[];
+
+    final csv = StringBuffer();
+    csv.writeln('Subject,Report Count,Category');
+
+    for (final rawIssue in topIssues) {
+      if (rawIssue is! Map) {
+        continue;
+      }
+      final subject = (rawIssue['subject'] as String? ?? '').trim();
+      final count = rawIssue['count'];
+      final category = _extractDuplicateCategory(subject);
+      final escapedSubject = subject.replaceAll('"', '""');
+      csv.writeln('"$escapedSubject",$count,$category');
+    }
+
+    return csv.toString();
+  }
+
+  String _extractDuplicateCategory(String subject) {
+    final lower = subject.toLowerCase();
+    if (lower.contains('vpn')) {
+      return 'VPN';
+    }
+    if (lower.contains('notification')) {
+      return 'Notifications';
+    }
+    if (lower.contains('policy') || lower.contains('schedule')) {
+      return 'Policy';
+    }
+    if (lower.contains('crash') || lower.contains('bug')) {
+      return 'Crashes';
+    }
+    if (lower.contains('request')) {
+      return 'Requests';
+    }
+    if (lower.contains('dns')) {
+      return 'DNS';
+    }
+    return 'Other';
+  }
+
+  String _formatDuplicateKeyForDisplay(String key) {
+    if (key.trim().isEmpty) {
+      return 'Unknown issue';
+    }
+    return key
+        .split(' ')
+        .where((part) => part.trim().isNotEmpty)
+        .map((part) => '${part[0].toUpperCase()}${part.substring(1)}')
+        .join(' ');
+  }
+
   /// Returns unresolved duplicate count for a normalized duplicate key.
   Future<int> getDuplicateClusterSize({
     required String parentId,
@@ -433,7 +603,8 @@ class FirestoreService {
       );
     }
     if (limit <= 0) {
-      throw ArgumentError.value(limit, 'limit', 'Limit must be greater than 0.');
+      throw ArgumentError.value(
+          limit, 'limit', 'Limit must be greater than 0.');
     }
 
     final snapshot = await _firestore
@@ -442,7 +613,8 @@ class FirestoreService {
         .limit(300)
         .get();
 
-    final candidates = <MapEntry<DocumentReference<Map<String, dynamic>>, SupportTicket>>[];
+    final candidates =
+        <MapEntry<DocumentReference<Map<String, dynamic>>, SupportTicket>>[];
     for (final doc in snapshot.docs) {
       try {
         final ticket = SupportTicket.fromFirestore(doc);

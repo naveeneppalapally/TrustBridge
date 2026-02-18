@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:trustbridge_app/models/support_ticket.dart';
 import 'package:trustbridge_app/screens/beta_feedback_screen.dart';
+import 'package:trustbridge_app/screens/duplicate_analytics_screen.dart';
 import 'package:trustbridge_app/services/auth_service.dart';
 import 'package:trustbridge_app/services/firestore_service.dart';
 
@@ -122,7 +123,8 @@ class _BetaFeedbackHistoryScreenState extends State<BetaFeedbackHistoryScreen> {
   bool _hideResolvedTickets = false;
   bool _isResolvingCluster = false;
   bool _isReopeningCluster = false;
-  final List<_BulkResolveActivity> _bulkResolveActivity = <_BulkResolveActivity>[];
+  final List<_BulkResolveActivity> _bulkResolveActivity =
+      <_BulkResolveActivity>[];
 
   AuthService get _resolvedAuthService {
     _authService ??= widget.authService ?? AuthService();
@@ -178,6 +180,22 @@ class _BetaFeedbackHistoryScreenState extends State<BetaFeedbackHistoryScreen> {
       appBar: AppBar(
         title: const Text('Feedback History'),
         actions: [
+          IconButton(
+            key: const Key('feedback_history_analytics_button'),
+            onPressed: () {
+              Navigator.of(context).push(
+                MaterialPageRoute(
+                  builder: (_) => DuplicateAnalyticsScreen(
+                    authService: widget.authService,
+                    firestoreService: widget.firestoreService,
+                    parentIdOverride: widget.parentIdOverride,
+                  ),
+                ),
+              );
+            },
+            icon: const Icon(Icons.analytics_outlined),
+            tooltip: 'Analytics',
+          ),
           IconButton(
             key: const Key('feedback_history_refresh_button'),
             onPressed: _refreshStream,
@@ -459,7 +477,8 @@ class _BetaFeedbackHistoryScreenState extends State<BetaFeedbackHistoryScreen> {
     });
 
     try {
-      final resolvedCount = await _resolvedFirestoreService.bulkResolveDuplicates(
+      final resolvedCount =
+          await _resolvedFirestoreService.bulkResolveDuplicates(
         parentId: parentId,
         duplicateKey: duplicateKey,
       );
@@ -560,25 +579,36 @@ class _BetaFeedbackHistoryScreenState extends State<BetaFeedbackHistoryScreen> {
               );
             }),
             const SizedBox(height: 4),
-            Align(
-              alignment: Alignment.centerRight,
-              child: OutlinedButton.icon(
-                key: const Key('feedback_history_undo_bulk_resolve_button'),
-                onPressed: _isReopeningCluster
-                    ? null
-                    : () => _undoLatestBulkResolve(
-                          parentId: parentId,
-                          latestActivity: latestActivity,
-                        ),
-                icon: _isReopeningCluster
-                    ? const SizedBox(
-                        width: 16,
-                        height: 16,
-                        child: CircularProgressIndicator(strokeWidth: 2),
-                      )
-                    : const Icon(Icons.undo, size: 18),
-                label: const Text('Undo latest'),
-              ),
+            Wrap(
+              alignment: WrapAlignment.end,
+              spacing: 8,
+              runSpacing: 8,
+              children: [
+                OutlinedButton.icon(
+                  key: const Key(
+                      'feedback_history_focus_latest_activity_button'),
+                  onPressed: () => _focusClusterFromActivity(latestActivity),
+                  icon: const Icon(Icons.my_location, size: 18),
+                  label: const Text('Focus latest'),
+                ),
+                OutlinedButton.icon(
+                  key: const Key('feedback_history_undo_bulk_resolve_button'),
+                  onPressed: _isReopeningCluster
+                      ? null
+                      : () => _undoLatestBulkResolve(
+                            parentId: parentId,
+                            latestActivity: latestActivity,
+                          ),
+                  icon: _isReopeningCluster
+                      ? const SizedBox(
+                          width: 16,
+                          height: 16,
+                          child: CircularProgressIndicator(strokeWidth: 2),
+                        )
+                      : const Icon(Icons.undo, size: 18),
+                  label: const Text('Undo latest'),
+                ),
+              ],
             ),
           ],
         ),
@@ -605,7 +635,8 @@ class _BetaFeedbackHistoryScreenState extends State<BetaFeedbackHistoryScreen> {
     });
 
     try {
-      final reopenedCount = await _resolvedFirestoreService.bulkReopenDuplicates(
+      final reopenedCount =
+          await _resolvedFirestoreService.bulkReopenDuplicates(
         parentId: parentId,
         duplicateKey: latestActivity.duplicateKey,
         limit: latestActivity.resolvedCount,
@@ -664,16 +695,15 @@ class _BetaFeedbackHistoryScreenState extends State<BetaFeedbackHistoryScreen> {
     final largestClusterSize = duplicateCounts.values.isEmpty
         ? 1
         : duplicateCounts.values.reduce((a, b) => a > b ? a : b);
-    final topDuplicateClusters = duplicateCounts.entries
-        .where((entry) => entry.value > 1)
-        .toList()
-      ..sort((a, b) {
-        final countComparison = b.value.compareTo(a.value);
-        if (countComparison != 0) {
-          return countComparison;
-        }
-        return a.key.compareTo(b.key);
-      });
+    final topDuplicateClusters =
+        duplicateCounts.entries.where((entry) => entry.value > 1).toList()
+          ..sort((a, b) {
+            final countComparison = b.value.compareTo(a.value);
+            if (countComparison != 0) {
+              return countComparison;
+            }
+            return a.key.compareTo(b.key);
+          });
 
     return Card(
       elevation: 0,
@@ -751,7 +781,12 @@ class _BetaFeedbackHistoryScreenState extends State<BetaFeedbackHistoryScreen> {
               Wrap(
                 spacing: 8,
                 runSpacing: 8,
-                children: topDuplicateClusters.take(3).toList().asMap().entries.map((entry) {
+                children: topDuplicateClusters
+                    .take(3)
+                    .toList()
+                    .asMap()
+                    .entries
+                    .map((entry) {
                   final index = entry.key;
                   final cluster = entry.value;
                   return ActionChip(

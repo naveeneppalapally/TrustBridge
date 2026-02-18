@@ -104,6 +104,28 @@ void main() {
           find.byKey(const Key('beta_feedback_submit_button')), findsOneWidget);
     });
 
+    testWidgets('analytics app bar action opens duplicate analytics screen',
+        (WidgetTester tester) async {
+      await tester.binding.setSurfaceSize(const Size(430, 1400));
+      addTearDown(() => tester.binding.setSurfaceSize(null));
+
+      await tester.pumpWidget(
+        MaterialApp(
+          home: BetaFeedbackHistoryScreen(
+            parentIdOverride: 'parent-history-analytics-nav',
+            firestoreService: firestoreService,
+          ),
+        ),
+      );
+      await tester.pumpAndSettle();
+
+      await tester
+          .tap(find.byKey(const Key('feedback_history_analytics_button')));
+      await tester.pumpAndSettle();
+
+      expect(find.text('Duplicate Analytics'), findsOneWidget);
+    });
+
     testWidgets('applies source, status, and search filters',
         (WidgetTester tester) async {
       await tester.binding.setSurfaceSize(const Size(430, 1400));
@@ -162,18 +184,21 @@ void main() {
       expect(find.byKey(const Key('feedback_history_ticket_ticket-beta-open')),
           findsOneWidget);
       expect(
-          find.byKey(const Key('feedback_history_ticket_ticket-support-resolved')),
+          find.byKey(
+              const Key('feedback_history_ticket_ticket-support-resolved')),
           findsNothing);
 
       await tester.tap(find.byKey(const Key('feedback_history_source_all')));
       await tester.pumpAndSettle();
       await tester.scrollUntilVisible(
-        find.byKey(const Key('feedback_history_ticket_ticket-support-resolved')),
+        find.byKey(
+            const Key('feedback_history_ticket_ticket-support-resolved')),
         240,
         scrollable: find.byType(Scrollable).first,
       );
       expect(
-          find.byKey(const Key('feedback_history_ticket_ticket-support-resolved')),
+          find.byKey(
+              const Key('feedback_history_ticket_ticket-support-resolved')),
           findsOneWidget);
 
       await tester.enterText(
@@ -182,7 +207,8 @@ void main() {
       );
       await tester.pumpAndSettle();
       expect(
-          find.byKey(const Key('feedback_history_ticket_ticket-support-resolved')),
+          find.byKey(
+              const Key('feedback_history_ticket_ticket-support-resolved')),
           findsOneWidget);
       expect(
           find.byKey(const Key('feedback_history_ticket_ticket-beta-resolved')),
@@ -350,7 +376,10 @@ void main() {
       await tester.binding.setSurfaceSize(const Size(430, 1400));
       addTearDown(() => tester.binding.setSurfaceSize(null));
 
-      await fakeFirestore.collection('supportTickets').doc('ticket-cluster-a1').set({
+      await fakeFirestore
+          .collection('supportTickets')
+          .doc('ticket-cluster-a1')
+          .set({
         'parentId': 'parent-history-dup-sort',
         'subject': '[Beta][High] VPN crash on enable',
         'message': 'Cluster A first report.',
@@ -358,7 +387,10 @@ void main() {
         'createdAt': DateTime(2026, 2, 18, 8, 0),
         'updatedAt': DateTime(2026, 2, 18, 8, 1),
       });
-      await fakeFirestore.collection('supportTickets').doc('ticket-cluster-a2').set({
+      await fakeFirestore
+          .collection('supportTickets')
+          .doc('ticket-cluster-a2')
+          .set({
         'parentId': 'parent-history-dup-sort',
         'subject': '[Beta][Medium] vpn crash on enable!',
         'message': 'Cluster A second report.',
@@ -366,7 +398,10 @@ void main() {
         'createdAt': DateTime(2026, 2, 18, 8, 5),
         'updatedAt': DateTime(2026, 2, 18, 8, 6),
       });
-      await fakeFirestore.collection('supportTickets').doc('ticket-cluster-a3').set({
+      await fakeFirestore
+          .collection('supportTickets')
+          .doc('ticket-cluster-a3')
+          .set({
         'parentId': 'parent-history-dup-sort',
         'subject': '[Beta][Low] VPN crash on enable??',
         'message': 'Cluster A third report.',
@@ -375,7 +410,10 @@ void main() {
         'updatedAt': DateTime(2026, 2, 18, 8, 11),
       });
 
-      await fakeFirestore.collection('supportTickets').doc('ticket-cluster-b1').set({
+      await fakeFirestore
+          .collection('supportTickets')
+          .doc('ticket-cluster-b1')
+          .set({
         'parentId': 'parent-history-dup-sort',
         'subject': '[Beta][Critical] Schedule confusion',
         'message': 'Cluster B first report.',
@@ -383,7 +421,10 @@ void main() {
         'createdAt': DateTime(2026, 2, 18, 9, 0),
         'updatedAt': DateTime(2026, 2, 18, 9, 1),
       });
-      await fakeFirestore.collection('supportTickets').doc('ticket-cluster-b2').set({
+      await fakeFirestore
+          .collection('supportTickets')
+          .doc('ticket-cluster-b2')
+          .set({
         'parentId': 'parent-history-dup-sort',
         'subject': '[Beta][High] schedule confusion',
         'message': 'Cluster B second report.',
@@ -569,7 +610,8 @@ void main() {
   });
 
   group('BetaFeedbackHistoryScreen Day 69 bulk actions', () {
-    testWidgets('resolve cluster FAB appears when focused cluster has duplicates',
+    testWidgets(
+        'resolve cluster FAB appears when focused cluster has duplicates',
         (tester) async {
       final fakeService = FakeFirestoreService();
       fakeService.tickets = [
@@ -633,7 +675,8 @@ void main() {
       expect(find.textContaining('resolved 2'), findsOneWidget);
     });
 
-    testWidgets('undo latest button appears after a bulk resolve', (tester) async {
+    testWidgets('undo latest button appears after a bulk resolve',
+        (tester) async {
       await tester.binding.setSurfaceSize(const Size(430, 1400));
       addTearDown(() => tester.binding.setSurfaceSize(null));
 
@@ -673,7 +716,8 @@ void main() {
       expect(fakeService.bulkReopenCallCount, 0);
     });
 
-    testWidgets('activity entry tap refocuses duplicate cluster filters', (tester) async {
+    testWidgets('activity entry tap refocuses duplicate cluster filters',
+        (tester) async {
       await tester.binding.setSurfaceSize(const Size(430, 1400));
       addTearDown(() => tester.binding.setSurfaceSize(null));
 
@@ -681,7 +725,8 @@ void main() {
       fakeService.tickets = [
         _ticket(id: 'a', parentId: 'parent-1', subject: '[Beta] Bug A'),
         _ticket(id: 'b', parentId: 'parent-1', subject: '[Beta] Bug A'),
-        _ticket(id: 'c', parentId: 'parent-1', subject: '[Beta] Different issue'),
+        _ticket(
+            id: 'c', parentId: 'parent-1', subject: '[Beta] Different issue'),
       ];
 
       await tester.pumpWidget(
@@ -716,7 +761,53 @@ void main() {
       expect(find.byKey(const Key('feedback_history_ticket_c')), findsNothing);
     });
 
-    testWidgets('hide resolved toggle filters out resolved tickets', (tester) async {
+    testWidgets('focus latest button reapplies duplicate cluster focus',
+        (tester) async {
+      await tester.binding.setSurfaceSize(const Size(430, 1400));
+      addTearDown(() => tester.binding.setSurfaceSize(null));
+
+      final fakeService = FakeFirestoreService();
+      fakeService.tickets = [
+        _ticket(id: 'a', parentId: 'parent-1', subject: '[Beta] Bug A'),
+        _ticket(id: 'b', parentId: 'parent-1', subject: '[Beta] Bug A'),
+        _ticket(
+            id: 'c', parentId: 'parent-1', subject: '[Beta] Different issue'),
+      ];
+
+      await tester.pumpWidget(
+        MaterialApp(
+          home: BetaFeedbackHistoryScreen(
+            parentIdOverride: 'parent-1',
+            firestoreService: fakeService,
+          ),
+        ),
+      );
+      await tester.pumpAndSettle();
+
+      await tester.tap(find.byKey(const Key('feedback_history_top_cluster_0')));
+      await tester.pumpAndSettle();
+      await tester.tap(find.text('Resolve Cluster (2)'));
+      await tester.pumpAndSettle();
+      await tester.tap(find.text('Resolve All'));
+      await tester.pumpAndSettle();
+
+      await tester.scrollUntilVisible(
+        find.byKey(const Key('feedback_history_focus_latest_activity_button')),
+        240,
+        scrollable: find.byType(Scrollable).first,
+      );
+      final focusLatestFinder = find
+          .byKey(const Key('feedback_history_focus_latest_activity_button'));
+      await tester.ensureVisible(focusLatestFinder);
+      await tester.tap(focusLatestFinder, warnIfMissed: false);
+      await tester.pumpAndSettle();
+
+      expect(find.text('Showing 2 of 3 tickets'), findsOneWidget);
+      expect(find.byKey(const Key('feedback_history_ticket_c')), findsNothing);
+    });
+
+    testWidgets('hide resolved toggle filters out resolved tickets',
+        (tester) async {
       await tester.binding.setSurfaceSize(const Size(430, 1400));
       addTearDown(() => tester.binding.setSurfaceSize(null));
 
@@ -751,15 +842,18 @@ void main() {
         240,
         scrollable: find.byType(Scrollable).first,
       );
-      expect(find.byKey(const Key('feedback_history_ticket_a')), findsOneWidget);
+      expect(
+          find.byKey(const Key('feedback_history_ticket_a')), findsOneWidget);
       await tester.scrollUntilVisible(
         find.byKey(const Key('feedback_history_ticket_b')),
         240,
         scrollable: find.byType(Scrollable).first,
       );
-      expect(find.byKey(const Key('feedback_history_ticket_b')), findsOneWidget);
+      expect(
+          find.byKey(const Key('feedback_history_ticket_b')), findsOneWidget);
 
-      await tester.tap(find.byKey(const Key('feedback_history_hide_resolved_switch')));
+      await tester
+          .tap(find.byKey(const Key('feedback_history_hide_resolved_switch')));
       await tester.pumpAndSettle();
 
       await tester.scrollUntilVisible(
@@ -767,7 +861,8 @@ void main() {
         240,
         scrollable: find.byType(Scrollable).first,
       );
-      expect(find.byKey(const Key('feedback_history_ticket_a')), findsOneWidget);
+      expect(
+          find.byKey(const Key('feedback_history_ticket_a')), findsOneWidget);
       expect(find.byKey(const Key('feedback_history_ticket_b')), findsNothing);
     });
   });
