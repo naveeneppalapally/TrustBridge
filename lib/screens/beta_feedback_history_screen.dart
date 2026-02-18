@@ -55,6 +55,20 @@ enum _AttentionFilter {
   }
 }
 
+enum _DuplicateFilter {
+  all,
+  duplicates;
+
+  String get label {
+    switch (this) {
+      case _DuplicateFilter.all:
+        return 'All reports';
+      case _DuplicateFilter.duplicates:
+        return 'Duplicates';
+    }
+  }
+}
+
 class BetaFeedbackHistoryScreen extends StatefulWidget {
   const BetaFeedbackHistoryScreen({
     super.key,
@@ -84,6 +98,7 @@ class _BetaFeedbackHistoryScreenState extends State<BetaFeedbackHistoryScreen> {
   SupportTicketStatus? _statusFilter;
   SupportTicketSeverity? _severityFilter;
   _AttentionFilter _attentionFilter = _AttentionFilter.all;
+  _DuplicateFilter _duplicateFilter = _DuplicateFilter.all;
   _TicketSortOrder _sortOrder = _TicketSortOrder.newestFirst;
   String _searchQuery = '';
 
@@ -167,7 +182,8 @@ class _BetaFeedbackHistoryScreenState extends State<BetaFeedbackHistoryScreen> {
             return _buildEmptyState(hasAnyTickets: false);
           }
 
-          final filteredTickets = _applyFilters(tickets);
+          final duplicateCounts = _duplicateCountsByKey(tickets);
+          final filteredTickets = _applyFilters(tickets, duplicateCounts);
 
           return ListView(
             padding: const EdgeInsets.fromLTRB(16, 12, 16, 100),
@@ -175,15 +191,21 @@ class _BetaFeedbackHistoryScreenState extends State<BetaFeedbackHistoryScreen> {
               _buildFilterCard(
                 tickets: tickets,
                 filteredCount: filteredTickets.length,
+                duplicateCounts: duplicateCounts,
               ),
               const SizedBox(height: 12),
               if (filteredTickets.isEmpty)
                 _buildEmptyState(hasAnyTickets: true)
               else
                 ...filteredTickets.map((ticket) {
+                  final duplicateCount =
+                      duplicateCounts[ticket.duplicateKey] ?? 1;
                   return Padding(
                     padding: const EdgeInsets.only(bottom: 12),
-                    child: _buildTicketCard(ticket),
+                    child: _buildTicketCard(
+                      ticket,
+                      duplicateCount: duplicateCount,
+                    ),
                   );
                 }),
             ],
@@ -199,7 +221,10 @@ class _BetaFeedbackHistoryScreenState extends State<BetaFeedbackHistoryScreen> {
     );
   }
 
-  List<SupportTicket> _applyFilters(List<SupportTicket> tickets) {
+  List<SupportTicket> _applyFilters(
+    List<SupportTicket> tickets,
+    Map<String, int> duplicateCounts,
+  ) {
     final query = _searchQuery.trim().toLowerCase();
     final now = DateTime.now();
 
@@ -225,6 +250,16 @@ class _BetaFeedbackHistoryScreenState extends State<BetaFeedbackHistoryScreen> {
 
       if (_severityFilter != null && ticket.severity != _severityFilter) {
         return false;
+      }
+
+      switch (_duplicateFilter) {
+        case _DuplicateFilter.all:
+          break;
+        case _DuplicateFilter.duplicates:
+          if ((duplicateCounts[ticket.duplicateKey] ?? 0) < 2) {
+            return false;
+          }
+          break;
       }
 
       switch (_attentionFilter) {
@@ -280,6 +315,7 @@ class _BetaFeedbackHistoryScreenState extends State<BetaFeedbackHistoryScreen> {
   Widget _buildFilterCard({
     required List<SupportTicket> tickets,
     required int filteredCount,
+    required Map<String, int> duplicateCounts,
   }) {
     final now = DateTime.now();
     final openCount = tickets
@@ -295,6 +331,11 @@ class _BetaFeedbackHistoryScreenState extends State<BetaFeedbackHistoryScreen> {
         tickets.where((ticket) => ticket.needsAttention(now: now)).length;
     final staleCount =
         tickets.where((ticket) => ticket.isStale(now: now)).length;
+    final duplicateTicketsCount = duplicateCounts.values
+        .where((count) => count > 1)
+        .fold<int>(0, (total, count) => total + count);
+    final duplicateClusterCount =
+        duplicateCounts.values.where((count) => count > 1).length;
 
     return Card(
       elevation: 0,
@@ -341,6 +382,16 @@ class _BetaFeedbackHistoryScreenState extends State<BetaFeedbackHistoryScreen> {
                   label: 'Stale 72h+',
                   value: '$staleCount',
                   color: Colors.brown.shade700,
+                ),
+                _buildMetricPill(
+                  label: 'Dup clusters',
+                  value: '$duplicateClusterCount',
+                  color: Colors.deepPurple.shade700,
+                ),
+                _buildMetricPill(
+                  label: 'Dup reports',
+                  value: '$duplicateTicketsCount',
+                  color: Colors.indigo.shade700,
                 ),
               ],
             ),
@@ -429,6 +480,23 @@ class _BetaFeedbackHistoryScreenState extends State<BetaFeedbackHistoryScreen> {
                   );
                 }),
               ],
+            ),
+            const SizedBox(height: 10),
+            Wrap(
+              spacing: 8,
+              runSpacing: 8,
+              children: _DuplicateFilter.values.map((filter) {
+                return ChoiceChip(
+                  key: Key('feedback_history_duplicate_${filter.name}'),
+                  label: Text(filter.label),
+                  selected: _duplicateFilter == filter,
+                  onSelected: (_) {
+                    setState(() {
+                      _duplicateFilter = filter;
+                    });
+                  },
+                );
+              }).toList(),
             ),
             const SizedBox(height: 10),
             Wrap(
@@ -601,6 +669,7 @@ class _BetaFeedbackHistoryScreenState extends State<BetaFeedbackHistoryScreen> {
                   _sourceFilter = _TicketSourceFilter.beta;
                   _statusFilter = null;
                   _severityFilter = null;
+                  _duplicateFilter = _DuplicateFilter.all;
                   _attentionFilter = _AttentionFilter.all;
                   _sortOrder = _TicketSortOrder.newestFirst;
                   _searchQuery = '';
@@ -614,8 +683,12 @@ class _BetaFeedbackHistoryScreenState extends State<BetaFeedbackHistoryScreen> {
     );
   }
 
-  Widget _buildTicketCard(SupportTicket ticket) {
+  Widget _buildTicketCard(
+    SupportTicket ticket, {
+    required int duplicateCount,
+  }) {
     final color = _statusColor(ticket.status);
+    final similarCount = duplicateCount - 1;
     return Card(
       key: Key('feedback_history_ticket_${ticket.id}'),
       elevation: 0,
@@ -624,7 +697,10 @@ class _BetaFeedbackHistoryScreenState extends State<BetaFeedbackHistoryScreen> {
       ),
       child: InkWell(
         borderRadius: BorderRadius.circular(16),
-        onTap: () => _openTicketDetails(ticket),
+        onTap: () => _openTicketDetails(
+          ticket,
+          duplicateCount: duplicateCount,
+        ),
         child: Padding(
           padding: const EdgeInsets.all(16),
           child: Column(
@@ -661,6 +737,10 @@ class _BetaFeedbackHistoryScreenState extends State<BetaFeedbackHistoryScreen> {
                   if (ticket.severity != SupportTicketSeverity.unknown) ...[
                     const SizedBox(width: 8),
                     _buildSeverityChip(ticket.severity),
+                  ],
+                  if (similarCount > 0) ...[
+                    const SizedBox(width: 8),
+                    _buildDuplicateChip(similarCount),
                   ],
                   if (ticket.isStale()) ...[
                     const SizedBox(width: 8),
@@ -807,7 +887,28 @@ class _BetaFeedbackHistoryScreenState extends State<BetaFeedbackHistoryScreen> {
     );
   }
 
-  Future<void> _openTicketDetails(SupportTicket ticket) async {
+  Widget _buildDuplicateChip(int similarCount) {
+    return Container(
+      padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
+      decoration: BoxDecoration(
+        color: Colors.indigo.withValues(alpha: 0.12),
+        borderRadius: BorderRadius.circular(20),
+      ),
+      child: Text(
+        '$similarCount similar',
+        style: TextStyle(
+          fontSize: 11,
+          fontWeight: FontWeight.w700,
+          color: Colors.indigo.shade700,
+        ),
+      ),
+    );
+  }
+
+  Future<void> _openTicketDetails(
+    SupportTicket ticket, {
+    required int duplicateCount,
+  }) async {
     await showModalBottomSheet<void>(
       context: context,
       isScrollControlled: true,
@@ -849,6 +950,10 @@ class _BetaFeedbackHistoryScreenState extends State<BetaFeedbackHistoryScreen> {
                       if (ticket.severity != SupportTicketSeverity.unknown) ...[
                         const SizedBox(width: 8),
                         _buildSeverityChip(ticket.severity),
+                      ],
+                      if (duplicateCount > 1) ...[
+                        const SizedBox(width: 8),
+                        _buildDuplicateChip(duplicateCount - 1),
                       ],
                       if (ticket.isStale()) ...[
                         const SizedBox(width: 8),
@@ -961,5 +1066,17 @@ class _BetaFeedbackHistoryScreenState extends State<BetaFeedbackHistoryScreen> {
     final month = local.month.toString().padLeft(2, '0');
     final day = local.day.toString().padLeft(2, '0');
     return '${local.year}-$month-$day $hour:$minute';
+  }
+
+  Map<String, int> _duplicateCountsByKey(List<SupportTicket> tickets) {
+    final counts = <String, int>{};
+    for (final ticket in tickets) {
+      final key = ticket.duplicateKey;
+      if (key.isEmpty) {
+        continue;
+      }
+      counts[key] = (counts[key] ?? 0) + 1;
+    }
+    return counts;
   }
 }

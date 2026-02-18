@@ -31,6 +31,40 @@ UI commit message convention:
 
 ---
 
+## Day 66 - Duplicate Feedback Triage (Week 14 Day 1)
+
+Program goal: reduce triage noise by detecting repeated reports and letting
+parents focus on duplicate clusters first.
+
+### Commit entries
+
+1. **2026-02-18**  
+   Commit: `(this commit - see latest git log)`  
+   Message: `Implement Day 66 duplicate feedback triage`  
+   Changes:
+   - Updated `lib/models/support_ticket.dart`:
+     - added `duplicateKey` normalization helper
+     - strips `[Beta][Severity]` prefix and punctuation
+     - normalizes spacing/casing for stable duplicate matching
+   - Updated `lib/screens/beta_feedback_history_screen.dart`:
+     - added duplicate filter chips (`All reports`, `Duplicates`)
+     - added duplicate triage metrics:
+       - `Dup clusters`
+       - `Dup reports`
+     - added duplicate badge on ticket cards/detail (`N similar`)
+     - integrated duplicate-only filtering with existing triage filters
+   - Updated tests:
+     - `test/models_test.dart` with duplicate key normalization coverage
+     - `test/screens/beta_feedback_history_screen_test.dart` with
+       duplicate-only filter + badge coverage
+     - adjusted severity-sort test to use stable card keys with scroll
+       (layout now includes extra filter row)
+   Validation:
+   - `flutter analyze` passed.
+   - `flutter test` passed (213/213).
+
+---
+
 ## Day 65 - Feedback Aging & Escalation Signals (Week 13 Day 5)
 
 Program goal: make triage response-time aware by surfacing stale tickets and

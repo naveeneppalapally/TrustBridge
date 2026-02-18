@@ -229,12 +229,23 @@ void main() {
       await tester
           .tap(find.byKey(const Key('feedback_history_sort_highestSeverity')));
       await tester.pumpAndSettle();
+      final criticalY = tester
+          .getTopLeft(
+              find.byKey(const Key('feedback_history_ticket_ticket-critical')))
+          .dy;
+      final highY = tester
+          .getTopLeft(
+              find.byKey(const Key('feedback_history_ticket_ticket-high')))
+          .dy;
+      expect(criticalY, lessThan(highY));
 
-      final criticalY =
-          tester.getTopLeft(find.text('[Beta][Critical] VPN crash')).dy;
-      final lowY =
-          tester.getTopLeft(find.text('[Beta][Low] Minor copy issue')).dy;
-      expect(criticalY, lessThan(lowY));
+      await tester.scrollUntilVisible(
+        find.byKey(const Key('feedback_history_ticket_ticket-low')),
+        240,
+        scrollable: find.byType(Scrollable).first,
+      );
+      expect(find.byKey(const Key('feedback_history_ticket_ticket-low')),
+          findsOneWidget);
     });
 
     testWidgets('applies attention and stale filters',
@@ -319,6 +330,70 @@ void main() {
       expect(find.byKey(const Key('feedback_history_ticket_ticket-stale')),
           findsOneWidget);
       expect(find.byKey(const Key('feedback_history_ticket_ticket-attn')),
+          findsNothing);
+    });
+
+    testWidgets('applies duplicate-only filter and shows duplicate badge',
+        (WidgetTester tester) async {
+      await tester.binding.setSurfaceSize(const Size(430, 1400));
+      addTearDown(() => tester.binding.setSurfaceSize(null));
+
+      await fakeFirestore.collection('supportTickets').doc('ticket-dup-a').set({
+        'parentId': 'parent-history-duplicates',
+        'subject': '[Beta][High] VPN crash on enable',
+        'message': 'Crashes right after I enable protection.',
+        'status': 'open',
+        'createdAt': DateTime(2026, 2, 18, 8, 0),
+        'updatedAt': DateTime(2026, 2, 18, 8, 5),
+      });
+      await fakeFirestore.collection('supportTickets').doc('ticket-dup-b').set({
+        'parentId': 'parent-history-duplicates',
+        'subject': '[Beta][Low] vpn crash on enable!!!',
+        'message': 'Same crash issue seen on another phone.',
+        'status': 'open',
+        'createdAt': DateTime(2026, 2, 18, 8, 10),
+        'updatedAt': DateTime(2026, 2, 18, 8, 12),
+      });
+      await fakeFirestore
+          .collection('supportTickets')
+          .doc('ticket-unique')
+          .set({
+        'parentId': 'parent-history-duplicates',
+        'subject': '[Beta][Medium] Schedule overlap confusion',
+        'message': 'Unsure which rule wins during overlaps.',
+        'status': 'open',
+        'createdAt': DateTime(2026, 2, 18, 8, 20),
+        'updatedAt': DateTime(2026, 2, 18, 8, 21),
+      });
+
+      await tester.pumpWidget(
+        MaterialApp(
+          home: BetaFeedbackHistoryScreen(
+            parentIdOverride: 'parent-history-duplicates',
+            firestoreService: firestoreService,
+          ),
+        ),
+      );
+      await tester.pumpAndSettle();
+
+      expect(find.text('Dup clusters: 1'), findsOneWidget);
+      expect(find.text('Dup reports: 2'), findsOneWidget);
+
+      await tester
+          .tap(find.byKey(const Key('feedback_history_duplicate_duplicates')));
+      await tester.pumpAndSettle();
+
+      expect(find.text('Showing 2 of 3 tickets'), findsOneWidget);
+      expect(find.byKey(const Key('feedback_history_ticket_ticket-dup-a')),
+          findsOneWidget);
+      await tester.scrollUntilVisible(
+        find.byKey(const Key('feedback_history_ticket_ticket-dup-b')),
+        240,
+        scrollable: find.byType(Scrollable).first,
+      );
+      expect(find.byKey(const Key('feedback_history_ticket_ticket-dup-b')),
+          findsOneWidget);
+      expect(find.byKey(const Key('feedback_history_ticket_ticket-unique')),
           findsNothing);
     });
   });

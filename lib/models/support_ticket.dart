@@ -169,6 +169,21 @@ class SupportTicket {
     return age(now: now).inHours >= 72;
   }
 
+  /// Normalized key used to detect duplicate reports with different severity
+  /// prefixes or punctuation.
+  String get duplicateKey {
+    final lower = subject.trim().toLowerCase();
+    final withoutBetaPrefix = lower.replaceFirst(
+      RegExp(r'^\[beta\](\[(critical|high|medium|low)\])?\s*'),
+      '',
+    );
+    final wordsOnly = withoutBetaPrefix
+        .replaceAll(RegExp(r'[^a-z0-9]+'), ' ')
+        .replaceAll(RegExp(r'\s+'), ' ')
+        .trim();
+    return wordsOnly;
+  }
+
   factory SupportTicket.fromFirestore(
     DocumentSnapshot<Map<String, dynamic>> snapshot,
   ) {

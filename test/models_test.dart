@@ -163,5 +163,30 @@ void main() {
       expect(resolvedTicket.needsAttention(now: referenceNow), isFalse);
       expect(resolvedTicket.isStale(now: referenceNow), isFalse);
     });
+
+    test('duplicate key normalizes beta prefix, punctuation, and spacing', () {
+      final a = SupportTicket(
+        id: '1',
+        parentId: 'parent',
+        subject: '[Beta][High] VPN crash on enable!!!',
+        message: 'details',
+        status: SupportTicketStatus.open,
+        createdAt: DateTime(2026, 2, 17),
+        updatedAt: DateTime(2026, 2, 17),
+      );
+      final b = SupportTicket(
+        id: '2',
+        parentId: 'parent',
+        subject: 'vpn   crash on enable',
+        message: 'details',
+        status: SupportTicketStatus.open,
+        createdAt: DateTime(2026, 2, 17),
+        updatedAt: DateTime(2026, 2, 17),
+      );
+
+      expect(a.duplicateKey, equals('vpn crash on enable'));
+      expect(b.duplicateKey, equals('vpn crash on enable'));
+      expect(a.duplicateKey, equals(b.duplicateKey));
+    });
   });
 }
