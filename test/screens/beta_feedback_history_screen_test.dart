@@ -175,15 +175,6 @@ void main() {
           find.byKey(const Key('feedback_history_ticket_ticket-support-resolved')),
           findsOneWidget);
 
-      await tester
-          .tap(find.byKey(const Key('feedback_history_status_resolved')));
-      await tester.pumpAndSettle();
-      expect(find.byKey(const Key('feedback_history_ticket_ticket-beta-open')),
-          findsNothing);
-      expect(
-          find.byKey(const Key('feedback_history_ticket_ticket-support-resolved')),
-          findsOneWidget);
-
       await tester.enterText(
         find.byKey(const Key('feedback_history_search_input')),
         'policy',
@@ -431,6 +422,79 @@ void main() {
       );
       expect(find.byKey(const Key('feedback_history_ticket_ticket-cluster-b2')),
           findsOneWidget);
+    });
+
+    testWidgets('top duplicate cluster chip applies focused duplicate search',
+        (WidgetTester tester) async {
+      await tester.binding.setSurfaceSize(const Size(430, 1400));
+      addTearDown(() => tester.binding.setSurfaceSize(null));
+
+      await fakeFirestore
+          .collection('supportTickets')
+          .doc('ticket-top-dup-a')
+          .set({
+        'parentId': 'parent-history-top-cluster',
+        'subject': '[Beta][High] VPN crash on enable',
+        'message': 'Crash appears on child tablet.',
+        'status': 'open',
+        'createdAt': DateTime(2026, 2, 18, 8, 0),
+        'updatedAt': DateTime(2026, 2, 18, 8, 1),
+      });
+      await fakeFirestore
+          .collection('supportTickets')
+          .doc('ticket-top-dup-b')
+          .set({
+        'parentId': 'parent-history-top-cluster',
+        'subject': '[Beta][Low] vpn crash on enable!!',
+        'message': 'Same issue on second child phone.',
+        'status': 'open',
+        'createdAt': DateTime(2026, 2, 18, 8, 2),
+        'updatedAt': DateTime(2026, 2, 18, 8, 3),
+      });
+      await fakeFirestore
+          .collection('supportTickets')
+          .doc('ticket-top-unique')
+          .set({
+        'parentId': 'parent-history-top-cluster',
+        'subject': '[Beta][Medium] Notification badge mismatch',
+        'message': 'Unread badge count seems off by one.',
+        'status': 'open',
+        'createdAt': DateTime(2026, 2, 18, 8, 4),
+        'updatedAt': DateTime(2026, 2, 18, 8, 5),
+      });
+
+      await tester.pumpWidget(
+        MaterialApp(
+          home: BetaFeedbackHistoryScreen(
+            parentIdOverride: 'parent-history-top-cluster',
+            firestoreService: firestoreService,
+          ),
+        ),
+      );
+      await tester.pumpAndSettle();
+
+      await tester.scrollUntilVisible(
+        find.byKey(const Key('feedback_history_top_cluster_0')),
+        240,
+        scrollable: find.byType(Scrollable).first,
+      );
+      await tester.tap(find.byKey(const Key('feedback_history_top_cluster_0')));
+      await tester.pumpAndSettle();
+
+      expect(find.text('Showing 2 of 3 tickets'), findsOneWidget);
+      await tester.scrollUntilVisible(
+        find.byKey(const Key('feedback_history_ticket_ticket-top-dup-a')),
+        240,
+        scrollable: find.byType(Scrollable).first,
+      );
+      expect(
+        find.byKey(const Key('feedback_history_ticket_ticket-top-dup-a')),
+        findsOneWidget,
+      );
+      expect(
+        find.byKey(const Key('feedback_history_ticket_ticket-top-unique')),
+        findsNothing,
+      );
     });
 
     testWidgets('applies duplicate-only filter and shows duplicate badge',

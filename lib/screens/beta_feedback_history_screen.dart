@@ -359,6 +359,16 @@ class _BetaFeedbackHistoryScreenState extends State<BetaFeedbackHistoryScreen> {
     final largestClusterSize = duplicateCounts.values.isEmpty
         ? 1
         : duplicateCounts.values.reduce((a, b) => a > b ? a : b);
+    final topDuplicateClusters = duplicateCounts.entries
+        .where((entry) => entry.value > 1)
+        .toList()
+      ..sort((a, b) {
+        final countComparison = b.value.compareTo(a.value);
+        if (countComparison != 0) {
+          return countComparison;
+        }
+        return a.key.compareTo(b.key);
+      });
 
     return Card(
       elevation: 0,
@@ -423,6 +433,39 @@ class _BetaFeedbackHistoryScreenState extends State<BetaFeedbackHistoryScreen> {
                 ),
               ],
             ),
+            if (topDuplicateClusters.isNotEmpty) ...[
+              const SizedBox(height: 10),
+              Text(
+                'Top duplicate clusters',
+                style: Theme.of(context).textTheme.bodySmall?.copyWith(
+                      fontWeight: FontWeight.w700,
+                      color: Colors.grey.shade700,
+                    ),
+              ),
+              const SizedBox(height: 8),
+              Wrap(
+                spacing: 8,
+                runSpacing: 8,
+                children: topDuplicateClusters.take(3).toList().asMap().entries.map((entry) {
+                  final index = entry.key;
+                  final cluster = entry.value;
+                  return ActionChip(
+                    key: Key('feedback_history_top_cluster_$index'),
+                    avatar: const Icon(Icons.hub, size: 16),
+                    label: Text(
+                      '${_formatDuplicateKeyLabel(cluster.key)} (${cluster.value})',
+                    ),
+                    onPressed: () {
+                      setState(() {
+                        _duplicateFilter = _DuplicateFilter.duplicates;
+                        _searchQuery = cluster.key;
+                        _searchController.text = cluster.key;
+                      });
+                    },
+                  );
+                }).toList(),
+              ),
+            ],
             const SizedBox(height: 10),
             Wrap(
               spacing: 8,
@@ -1078,6 +1121,18 @@ class _BetaFeedbackHistoryScreenState extends State<BetaFeedbackHistoryScreen> {
       case SupportTicketSeverity.unknown:
         return Colors.grey.shade700;
     }
+  }
+
+  String _formatDuplicateKeyLabel(String key) {
+    if (key.trim().isEmpty) {
+      return 'General';
+    }
+
+    return key
+        .split(' ')
+        .where((word) => word.isNotEmpty)
+        .map((word) => word[0].toUpperCase() + word.substring(1))
+        .join(' ');
   }
 
   String _formatTimestamp(DateTime timestamp) {
