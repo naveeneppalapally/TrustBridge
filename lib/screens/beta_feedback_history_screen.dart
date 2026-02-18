@@ -72,6 +72,18 @@ enum _DuplicateFilter {
   }
 }
 
+class _BulkResolveActivity {
+  const _BulkResolveActivity({
+    required this.label,
+    required this.resolvedCount,
+    required this.timestamp,
+  });
+
+  final String label;
+  final int resolvedCount;
+  final DateTime timestamp;
+}
+
 class BetaFeedbackHistoryScreen extends StatefulWidget {
   const BetaFeedbackHistoryScreen({
     super.key,
@@ -107,6 +119,7 @@ class _BetaFeedbackHistoryScreenState extends State<BetaFeedbackHistoryScreen> {
   String? _focusedDuplicateKey;
   bool _hideResolvedTickets = false;
   bool _isResolvingCluster = false;
+  final List<_BulkResolveActivity> _bulkResolveActivity = <_BulkResolveActivity>[];
 
   AuthService get _resolvedAuthService {
     _authService ??= widget.authService ?? AuthService();
@@ -204,6 +217,10 @@ class _BetaFeedbackHistoryScreenState extends State<BetaFeedbackHistoryScreen> {
                       filteredCount: filteredTickets.length,
                       duplicateCounts: duplicateCounts,
                     ),
+                    if (_bulkResolveActivity.isNotEmpty) ...[
+                      const SizedBox(height: 12),
+                      _buildBulkResolveActivityCard(),
+                    ],
                     const SizedBox(height: 12),
                     if (filteredTickets.isEmpty)
                       _buildEmptyState(hasAnyTickets: true)
@@ -456,6 +473,14 @@ class _BetaFeedbackHistoryScreenState extends State<BetaFeedbackHistoryScreen> {
 
       setState(() {
         _isResolvingCluster = false;
+        _bulkResolveActivity.insert(
+          0,
+          _BulkResolveActivity(
+            label: _formatDuplicateKeyLabel(duplicateKey),
+            resolvedCount: resolvedCount,
+            timestamp: DateTime.now(),
+          ),
+        );
         _focusedDuplicateKey = null;
         _searchQuery = '';
         _searchController.clear();
@@ -472,6 +497,52 @@ class _BetaFeedbackHistoryScreenState extends State<BetaFeedbackHistoryScreen> {
         SnackBar(content: Text('Failed to resolve cluster: $error')),
       );
     }
+  }
+
+  Widget _buildBulkResolveActivityCard() {
+    return Card(
+      elevation: 0,
+      shape: RoundedRectangleBorder(
+        borderRadius: BorderRadius.circular(16),
+      ),
+      child: Padding(
+        padding: const EdgeInsets.all(14),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Row(
+              children: [
+                Text(
+                  'Recent bulk actions',
+                  style: Theme.of(context).textTheme.titleSmall?.copyWith(
+                        fontWeight: FontWeight.w700,
+                      ),
+                ),
+                const Spacer(),
+                TextButton(
+                  onPressed: () {
+                    setState(() {
+                      _bulkResolveActivity.clear();
+                    });
+                  },
+                  child: const Text('Clear'),
+                ),
+              ],
+            ),
+            const SizedBox(height: 8),
+            ..._bulkResolveActivity.take(3).map((entry) {
+              return Padding(
+                padding: const EdgeInsets.only(bottom: 8),
+                child: Text(
+                  '• ${entry.label}: resolved ${entry.resolvedCount} at ${_formatTimestamp(entry.timestamp)}',
+                  style: Theme.of(context).textTheme.bodySmall,
+                ),
+              );
+            }),
+          ],
+        ),
+      ),
+    );
   }
 
   Widget _buildFilterCard({

@@ -624,6 +624,13 @@ void main() {
 
       expect(fakeService.bulkResolveCallCount, 1);
       expect(fakeService.tickets.where((t) => !t.isResolved), isEmpty);
+      await tester.scrollUntilVisible(
+        find.text('Recent bulk actions'),
+        240,
+        scrollable: find.byType(Scrollable).first,
+      );
+      expect(find.text('Recent bulk actions'), findsOneWidget);
+      expect(find.textContaining('resolved 2'), findsOneWidget);
     });
 
     testWidgets('hide resolved toggle filters out resolved tickets', (tester) async {

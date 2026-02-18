@@ -2977,3 +2977,27 @@ duplicate clusters in one action instead of handling each ticket individually.
    - `flutter test test/screens/beta_feedback_history_screen_test.dart` passed.
 
 ---
+
+## Day 70 - Bulk Resolution Activity Trail (Week 14 Day 5)
+
+Program goal: make duplicate-cluster cleanup auditable by showing a recent
+activity trail after bulk resolve actions and preserving triage clarity.
+
+### Commit entries
+
+1. **2026-02-18**  
+   Commit: `(this commit - see latest git log)`  
+   Message: `Implement Day 70 bulk resolution activity trail`  
+   Changes:
+   - Updated `lib/screens/beta_feedback_history_screen.dart`:
+     - added `Recent bulk actions` card showing latest bulk resolve events
+     - records duplicate label, resolved count, and timestamp per action
+     - added clear action for activity entries
+   - Updated tests:
+     - expanded `test/screens/beta_feedback_history_screen_test.dart`
+       to verify activity log entry appears after bulk resolve
+   Validation:
+   - `flutter analyze` passed.
+   - `flutter test test/screens/beta_feedback_history_screen_test.dart` passed.
+
+---
