@@ -9,12 +9,12 @@ void main() {
 
     setUp(() {
       testChild = ChildProfile.create(
-        nickname: 'Test Child',
+        nickname: 'Leo',
         ageBand: AgeBand.young,
       );
     });
 
-    testWidgets('displays child information correctly', (tester) async {
+    Future<void> pumpScreen(WidgetTester tester) async {
       await tester.binding.setSurfaceSize(const Size(430, 1400));
       addTearDown(() => tester.binding.setSurfaceSize(null));
 
@@ -23,189 +23,78 @@ void main() {
           home: ChildDetailScreen(child: testChild),
         ),
       );
+      await tester.pumpAndSettle();
+    }
 
-      expect(find.text('Test Child'), findsWidgets);
-      expect(find.text('Age: 6-9'), findsOneWidget);
-      expect(find.textContaining('Added'), findsOneWidget);
+    testWidgets('renders profile header and status card', (tester) async {
+      await pumpScreen(tester);
+
+      expect(find.text('CHILD PROFILE'), findsOneWidget);
+      expect(find.text('Leo'), findsWidgets);
+      expect(find.byKey(const Key('child_detail_status_card')), findsOneWidget);
+      expect(find.textContaining('Mode'), findsWidgets);
+      expect(find.text('ACTIVE'), findsOneWidget);
     });
 
-    testWidgets('shows policy summary metrics', (tester) async {
-      await tester.binding.setSurfaceSize(const Size(430, 1400));
-      addTearDown(() => tester.binding.setSurfaceSize(null));
+    testWidgets('renders circular ring and quick actions grid', (tester) async {
+      await pumpScreen(tester);
 
-      await tester.pumpWidget(
-        MaterialApp(
-          home: ChildDetailScreen(child: testChild),
-        ),
+      expect(find.byKey(const Key('child_detail_timer_ring')), findsOneWidget);
+      expect(find.text('REMAINING'), findsOneWidget);
+      expect(
+        find.byKey(const Key('child_detail_quick_actions_grid')),
+        findsOneWidget,
       );
-
-      expect(find.text('Protection Overview'), findsOneWidget);
-      expect(find.byIcon(Icons.block), findsWidgets);
-      expect(find.byIcon(Icons.schedule), findsWidgets);
-      expect(find.text('ON'), findsOneWidget);
+      expect(find.text('Pause All'), findsOneWidget);
+      expect(find.text('Homework'), findsOneWidget);
+      expect(find.text('Bedtime'), findsWidgets);
+      expect(find.text('Free Play'), findsOneWidget);
     });
 
-    testWidgets('displays blocked categories as chips', (tester) async {
-      await tester.binding.setSurfaceSize(const Size(430, 1400));
-      addTearDown(() => tester.binding.setSurfaceSize(null));
+    testWidgets('shows today activity and active schedules sections',
+        (tester) async {
+      await pumpScreen(tester);
 
-      await tester.pumpWidget(
-        MaterialApp(
-          home: ChildDetailScreen(child: testChild),
-        ),
-      );
+      expect(
+          find.byKey(const Key('child_detail_activity_card')), findsOneWidget);
+      expect(find.textContaining('Today\'s Activity'), findsOneWidget);
+      expect(find.text('Education'), findsOneWidget);
+      expect(find.text('Entertainment'), findsOneWidget);
+      expect(find.text('Social'), findsOneWidget);
 
-      expect(find.text('Blocked Content'), findsOneWidget);
-      expect(find.text('Social Networks'), findsOneWidget);
-      expect(find.byType(Chip), findsWidgets);
+      expect(
+          find.byKey(const Key('child_detail_schedules_card')), findsOneWidget);
+      expect(find.text('Active Schedules'), findsOneWidget);
+      expect(find.text('View All'), findsOneWidget);
+      expect(find.byType(Switch), findsWidgets);
     });
 
-    testWidgets('shows quick action buttons', (tester) async {
-      await tester.binding.setSurfaceSize(const Size(430, 1400));
-      addTearDown(() => tester.binding.setSurfaceSize(null));
+    testWidgets('overflow menu exposes edit activity policy and delete',
+        (tester) async {
+      await pumpScreen(tester);
 
-      await tester.pumpWidget(
-        MaterialApp(
-          home: ChildDetailScreen(child: testChild),
-        ),
-      );
-
-      await tester.scrollUntilVisible(
-        find.text('Edit Profile'),
-        300,
-        scrollable: find.byType(Scrollable).first,
-      );
+      await tester.tap(find.byKey(const Key('child_detail_overflow_menu')));
       await tester.pumpAndSettle();
 
       expect(find.text('Edit Profile'), findsOneWidget);
-      expect(find.text('Delete'), findsOneWidget);
-    });
-
-    testWidgets('shows devices card with manage hint', (tester) async {
-      await tester.binding.setSurfaceSize(const Size(430, 1400));
-      addTearDown(() => tester.binding.setSurfaceSize(null));
-
-      await tester.pumpWidget(
-        MaterialApp(
-          home: ChildDetailScreen(child: testChild),
-        ),
-      );
-
-      await tester.scrollUntilVisible(
-        find.text('Devices'),
-        300,
-        scrollable: find.byType(Scrollable).first,
-      );
-      await tester.pumpAndSettle();
-
-      expect(find.text('Devices'), findsOneWidget);
-      expect(find.text('No linked devices. Tap to add a device ID.'),
-          findsOneWidget);
-    });
-
-    testWidgets('more options sheet shows real actions', (tester) async {
-      await tester.binding.setSurfaceSize(const Size(430, 1400));
-      addTearDown(() => tester.binding.setSurfaceSize(null));
-
-      await tester.pumpWidget(
-        MaterialApp(
-          home: ChildDetailScreen(child: testChild),
-        ),
-      );
-
-      await tester.tap(find.byIcon(Icons.more_vert));
-      await tester.pumpAndSettle();
-
-      expect(find.text('Pause Internet'), findsOneWidget);
       expect(find.text('View Activity Log'), findsOneWidget);
-      expect(find.text('Advanced Settings'), findsOneWidget);
+      expect(find.text('Manage Policy'), findsOneWidget);
+      expect(find.text('Delete Profile'), findsOneWidget);
     });
 
-    testWidgets('delete button shows confirmation dialog', (tester) async {
-      await tester.binding.setSurfaceSize(const Size(430, 1400));
-      addTearDown(() => tester.binding.setSurfaceSize(null));
+    testWidgets('delete option opens confirmation dialog', (tester) async {
+      await pumpScreen(tester);
 
-      await tester.pumpWidget(
-        MaterialApp(
-          home: ChildDetailScreen(child: testChild),
-        ),
-      );
-
-      await tester.scrollUntilVisible(
-        find.widgetWithText(OutlinedButton, 'Delete'),
-        300,
-        scrollable: find.byType(Scrollable).first,
-      );
+      await tester.tap(find.byKey(const Key('child_detail_overflow_menu')));
       await tester.pumpAndSettle();
-
-      await tester.tap(find.widgetWithText(OutlinedButton, 'Delete'));
+      await tester.tap(find.text('Delete Profile'));
       await tester.pumpAndSettle();
 
       expect(find.text('Delete Child Profile'), findsOneWidget);
       expect(find.text('This action cannot be undone'), findsOneWidget);
+      expect(find.text('Cancel'), findsOneWidget);
       expect(
-        find.text(
-          'Are you sure you want to delete Test Child\'s profile?',
-        ),
-        findsOneWidget,
-      );
-      expect(find.text('- Child profile'), findsOneWidget);
-      expect(find.text('- Content filters'), findsOneWidget);
-      expect(find.text('- Time restrictions'), findsOneWidget);
-      expect(find.text('- All settings'), findsOneWidget);
-      expect(find.text('Cancel'), findsOneWidget);
-      expect(find.text('Delete Profile'), findsOneWidget);
-    });
-
-    testWidgets('delete confirmation has cancel and delete buttons',
-        (tester) async {
-      await tester.binding.setSurfaceSize(const Size(430, 1400));
-      addTearDown(() => tester.binding.setSurfaceSize(null));
-
-      await tester.pumpWidget(
-        MaterialApp(
-          home: ChildDetailScreen(child: testChild),
-        ),
-      );
-
-      await tester.scrollUntilVisible(
-        find.widgetWithText(OutlinedButton, 'Delete'),
-        300,
-        scrollable: find.byType(Scrollable).first,
-      );
-      await tester.pumpAndSettle();
-
-      await tester.tap(find.widgetWithText(OutlinedButton, 'Delete'));
-      await tester.pumpAndSettle();
-
-      expect(find.text('Cancel'), findsOneWidget);
-      expect(find.text('Delete Profile'), findsOneWidget);
-    });
-
-    testWidgets('cancel button closes delete dialog', (tester) async {
-      await tester.binding.setSurfaceSize(const Size(430, 1400));
-      addTearDown(() => tester.binding.setSurfaceSize(null));
-
-      await tester.pumpWidget(
-        MaterialApp(
-          home: ChildDetailScreen(child: testChild),
-        ),
-      );
-
-      await tester.scrollUntilVisible(
-        find.widgetWithText(OutlinedButton, 'Delete'),
-        300,
-        scrollable: find.byType(Scrollable).first,
-      );
-      await tester.pumpAndSettle();
-
-      await tester.tap(find.widgetWithText(OutlinedButton, 'Delete'));
-      await tester.pumpAndSettle();
-
-      await tester.tap(find.text('Cancel'));
-      await tester.pumpAndSettle();
-
-      expect(find.text('Delete Child Profile'), findsNothing);
+          find.widgetWithText(FilledButton, 'Delete Profile'), findsOneWidget);
     });
   });
 }

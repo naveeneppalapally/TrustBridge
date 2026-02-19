@@ -1,3 +1,5 @@
+import 'dart:math' as math;
+
 import 'package:flutter/material.dart';
 import 'package:intl/intl.dart';
 import 'package:trustbridge_app/models/child_profile.dart';
@@ -10,7 +12,7 @@ import 'package:trustbridge_app/services/auth_service.dart';
 import 'package:trustbridge_app/services/firestore_service.dart';
 import 'package:trustbridge_app/utils/app_lock_guard.dart';
 
-class ChildDetailScreen extends StatelessWidget {
+class ChildDetailScreen extends StatefulWidget {
   const ChildDetailScreen({
     super.key,
     required this.child,
@@ -24,334 +26,395 @@ class ChildDetailScreen extends StatelessWidget {
   final FirestoreService? firestoreService;
   final String? parentIdOverride;
 
-  AuthService get _resolvedAuthService => authService ?? AuthService();
+  @override
+  State<ChildDetailScreen> createState() => _ChildDetailScreenState();
+}
+
+class _ChildDetailScreenState extends State<ChildDetailScreen> {
+  late ChildProfile _child;
+  AuthService? _authService;
+  FirestoreService? _firestoreService;
+  _QuickMode? _quickModeOverride;
+
+  AuthService get _resolvedAuthService =>
+      _authService ??= widget.authService ?? AuthService();
+
   FirestoreService get _resolvedFirestoreService =>
-      firestoreService ?? FirestoreService();
+      _firestoreService ??= widget.firestoreService ?? FirestoreService();
+
   String? get _resolvedParentId =>
-      parentIdOverride ?? _resolvedAuthService.currentUser?.uid;
+      widget.parentIdOverride ?? _resolvedAuthService.currentUser?.uid;
+
+  @override
+  void initState() {
+    super.initState();
+    _child = widget.child;
+  }
 
   @override
   Widget build(BuildContext context) {
-    final isDark = Theme.of(context).brightness == Brightness.dark;
-    final width = MediaQuery.sizeOf(context).width;
-    final isTablet = width >= 700;
-    final backgroundColor =
-        isDark ? const Color(0xFF101A22) : const Color(0xFFF5F7F8);
+    final background = Theme.of(context).brightness == Brightness.dark
+        ? const Color(0xFF0F172A)
+        : const Color(0xFFF2F6FB);
+
+    final timerData = _timerDataForActiveSchedule();
+    final quickMode = _currentQuickMode;
+    final modeColor = _quickModeColor(quickMode);
 
     return Scaffold(
-      backgroundColor: backgroundColor,
-      appBar: AppBar(
-        title: Text(child.nickname),
-        centerTitle: false,
-        backgroundColor: Colors.transparent,
-        elevation: 0,
-        actions: [
-          IconButton(
-            icon: const Icon(Icons.edit_outlined),
-            tooltip: 'Edit Child',
-            onPressed: () async {
-              await _openEditScreen(context);
-            },
-          ),
-          IconButton(
-            icon: const Icon(Icons.more_vert),
-            tooltip: 'More options',
-            onPressed: () {
-              _showMoreOptions(context);
-            },
-          ),
-        ],
-      ),
-      body: ListView(
-        padding:
-            EdgeInsets.fromLTRB(isTablet ? 24 : 16, 8, isTablet ? 24 : 16, 32),
-        children: [
-          _buildInfoCard(context),
-          const SizedBox(height: 16),
-          _buildPolicySummaryCard(context),
-          const SizedBox(height: 16),
-          _buildBlockedCategoriesCard(context),
-          const SizedBox(height: 16),
-          _buildSchedulesCard(context),
-          const SizedBox(height: 16),
-          _buildDevicesCard(context),
-          const SizedBox(height: 16),
-          _buildQuickActions(context),
-        ],
+      backgroundColor: background,
+      body: SafeArea(
+        child: ListView(
+          padding: const EdgeInsets.fromLTRB(16, 14, 16, 28),
+          children: [
+            _buildHeader(context),
+            const SizedBox(height: 14),
+            _buildStatusCard(context, quickMode, modeColor),
+            const SizedBox(height: 14),
+            _buildTimerCard(context, modeColor, timerData),
+            const SizedBox(height: 14),
+            _buildQuickActionsGrid(context, quickMode),
+            const SizedBox(height: 14),
+            _buildTodayActivityCard(context),
+            const SizedBox(height: 14),
+            _buildActiveSchedulesCard(context),
+            const SizedBox(height: 14),
+            _buildDevicesCard(context),
+          ],
+        ),
       ),
     );
   }
 
-  Widget _buildInfoCard(BuildContext context) {
-    return Card(
-      elevation: 0,
-      shape: RoundedRectangleBorder(
-        borderRadius: BorderRadius.circular(18),
-      ),
-      child: Padding(
-        padding: const EdgeInsets.all(20),
-        child: Column(
-          children: [
-            CircleAvatar(
-              radius: 48,
-              backgroundColor: _getAvatarColor(child.ageBand),
-              child: Text(
-                child.nickname.isEmpty ? '?' : child.nickname[0].toUpperCase(),
-                style: const TextStyle(
-                  fontSize: 42,
-                  fontWeight: FontWeight.w700,
-                  color: Colors.white,
-                ),
+  Widget _buildHeader(BuildContext context) {
+    return Row(
+      children: [
+        Expanded(
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Text(
+                'CHILD PROFILE',
+                style: Theme.of(context).textTheme.labelMedium?.copyWith(
+                      letterSpacing: 1.0,
+                      fontWeight: FontWeight.w700,
+                      color: Colors.grey[600],
+                    ),
               ),
-            ),
-            const SizedBox(height: 14),
-            Text(
-              child.nickname,
-              style: Theme.of(context).textTheme.headlineSmall?.copyWith(
-                    fontWeight: FontWeight.w700,
-                  ),
-            ),
-            const SizedBox(height: 8),
-            Chip(
-              label: Text('Age: ${child.ageBand.value}'),
-              avatar: Icon(_getAgeBandIcon(child.ageBand), size: 16),
-            ),
-            if (_isPausedNow(child.pausedUntil)) ...[
-              const SizedBox(height: 8),
-              Chip(
-                label: Text(
-                  'Paused until ${_formatTime(child.pausedUntil!)}',
-                ),
-                avatar: const Icon(Icons.pause_circle_outline, size: 16),
-                backgroundColor: Colors.red.shade50,
-                side: BorderSide(color: Colors.red.shade200),
-                labelStyle: TextStyle(color: Colors.red.shade900),
+              const SizedBox(height: 4),
+              Text(
+                _child.nickname,
+                style: Theme.of(context).textTheme.headlineSmall?.copyWith(
+                      fontWeight: FontWeight.w800,
+                      color: const Color(0xFF0F172A),
+                    ),
               ),
             ],
-            const SizedBox(height: 14),
-            Row(
-              mainAxisAlignment: MainAxisAlignment.center,
+          ),
+        ),
+        PopupMenuButton<_HeaderAction>(
+          key: const Key('child_detail_overflow_menu'),
+          tooltip: 'More options',
+          icon: const Icon(Icons.more_horiz_rounded),
+          onSelected: (action) async {
+            switch (action) {
+              case _HeaderAction.edit:
+                await _openEditScreen(context);
+                break;
+              case _HeaderAction.activity:
+                await _openActivityLog(context);
+                break;
+              case _HeaderAction.policy:
+                await _openPolicyOverview(context);
+                break;
+              case _HeaderAction.delete:
+                _showDeleteConfirmation(context);
+                break;
+            }
+          },
+          itemBuilder: (context) => const [
+            PopupMenuItem<_HeaderAction>(
+              value: _HeaderAction.edit,
+              child: Text('Edit Profile'),
+            ),
+            PopupMenuItem<_HeaderAction>(
+              value: _HeaderAction.activity,
+              child: Text('View Activity Log'),
+            ),
+            PopupMenuItem<_HeaderAction>(
+              value: _HeaderAction.policy,
+              child: Text('Manage Policy'),
+            ),
+            PopupMenuItem<_HeaderAction>(
+              value: _HeaderAction.delete,
+              child: Text('Delete Profile'),
+            ),
+          ],
+        ),
+      ],
+    );
+  }
+
+  Widget _buildStatusCard(
+    BuildContext context,
+    _QuickMode mode,
+    Color modeColor,
+  ) {
+    return Container(
+      key: const Key('child_detail_status_card'),
+      padding: const EdgeInsets.all(14),
+      decoration: BoxDecoration(
+        color: Colors.white,
+        borderRadius: BorderRadius.circular(16),
+        border: Border.all(color: const Color(0xFFDEE5EF)),
+      ),
+      child: Row(
+        children: [
+          CircleAvatar(
+            radius: 24,
+            backgroundColor: _avatarColor(_child.ageBand),
+            child: Text(
+              _child.nickname.isEmpty ? '?' : _child.nickname[0].toUpperCase(),
+              style: const TextStyle(
+                color: Colors.white,
+                fontWeight: FontWeight.bold,
+                fontSize: 20,
+              ),
+            ),
+          ),
+          const SizedBox(width: 12),
+          Expanded(
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
               children: [
-                Icon(Icons.calendar_today,
-                    size: 16, color: Colors.grey.shade600),
-                const SizedBox(width: 8),
                 Text(
-                  'Added ${_formatDate(child.createdAt)}',
+                  '${_quickModeLabel(mode)} Mode |',
+                  style: Theme.of(context).textTheme.titleMedium?.copyWith(
+                        fontWeight: FontWeight.w800,
+                        color: const Color(0xFF0F172A),
+                      ),
+                ),
+                const SizedBox(height: 4),
+                Text(
+                  _modeSubtitle(mode),
                   style: Theme.of(context).textTheme.bodySmall?.copyWith(
-                        color: Colors.grey.shade600,
+                        color: Colors.grey[700],
                       ),
                 ),
               ],
             ),
-          ],
-        ),
-      ),
-    );
-  }
-
-  Widget _buildPolicySummaryCard(BuildContext context) {
-    final categoriesCount = child.policy.blockedCategories.length;
-    final schedulesCount = child.policy.schedules.length;
-    final safeSearchEnabled = child.policy.safeSearchEnabled;
-
-    return Card(
-      elevation: 0,
-      shape: RoundedRectangleBorder(
-        borderRadius: BorderRadius.circular(16),
-      ),
-      child: Padding(
-        padding: const EdgeInsets.all(16),
-        child: Column(
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            Text(
-              'Protection Overview',
-              style: Theme.of(context).textTheme.titleLarge?.copyWith(
-                    fontWeight: FontWeight.w700,
-                  ),
-            ),
-            const SizedBox(height: 12),
-            LayoutBuilder(
-              builder: (context, constraints) {
-                final wide = constraints.maxWidth >= 520;
-                final rowChildren = [
-                  Expanded(
-                    child: _buildMetricBox(
-                      context,
-                      icon: Icons.block,
-                      label: 'Categories\nBlocked',
-                      value: '$categoriesCount',
-                      color: Colors.red,
-                    ),
-                  ),
-                  const SizedBox(width: 10),
-                  Expanded(
-                    child: _buildMetricBox(
-                      context,
-                      icon: Icons.schedule,
-                      label: 'Time\nRestrictions',
-                      value: '$schedulesCount',
-                      color: Colors.orange,
-                    ),
-                  ),
-                  const SizedBox(width: 10),
-                  Expanded(
-                    child: _buildMetricBox(
-                      context,
-                      icon: Icons.search,
-                      label: 'Safe\nSearch',
-                      value: safeSearchEnabled ? 'ON' : 'OFF',
-                      color: safeSearchEnabled ? Colors.green : Colors.grey,
-                    ),
-                  ),
-                ];
-
-                if (wide) {
-                  return Row(children: rowChildren);
-                }
-
-                return Column(
-                  children: [
-                    _buildMetricBox(
-                      context,
-                      icon: Icons.block,
-                      label: 'Categories Blocked',
-                      value: '$categoriesCount',
-                      color: Colors.red,
-                    ),
-                    const SizedBox(height: 10),
-                    _buildMetricBox(
-                      context,
-                      icon: Icons.schedule,
-                      label: 'Time Restrictions',
-                      value: '$schedulesCount',
-                      color: Colors.orange,
-                    ),
-                    const SizedBox(height: 10),
-                    _buildMetricBox(
-                      context,
-                      icon: Icons.search,
-                      label: 'Safe Search',
-                      value: safeSearchEnabled ? 'ON' : 'OFF',
-                      color: safeSearchEnabled ? Colors.green : Colors.grey,
-                    ),
-                  ],
-                );
-              },
-            ),
-          ],
-        ),
-      ),
-    );
-  }
-
-  Widget _buildMetricBox(
-    BuildContext context, {
-    required IconData icon,
-    required String label,
-    required String value,
-    required Color color,
-  }) {
-    return Container(
-      width: double.infinity,
-      padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
-      decoration: BoxDecoration(
-        color: color.withValues(alpha: 0.11),
-        borderRadius: BorderRadius.circular(10),
-        border: Border.all(color: color.withValues(alpha: 0.34)),
-      ),
-      child: Column(
-        children: [
-          Icon(icon, color: color, size: 22),
-          const SizedBox(height: 8),
-          Text(
-            value,
-            style: Theme.of(context).textTheme.titleLarge?.copyWith(
-                  fontWeight: FontWeight.w700,
-                  color: color,
-                ),
           ),
-          const SizedBox(height: 4),
-          Text(
-            label,
-            textAlign: TextAlign.center,
-            style: Theme.of(context).textTheme.bodySmall?.copyWith(
-                  color: Colors.grey.shade700,
-                  height: 1.15,
-                ),
+          Container(
+            padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
+            decoration: BoxDecoration(
+              color: modeColor.withValues(alpha: 0.12),
+              borderRadius: BorderRadius.circular(12),
+            ),
+            child: Text(
+              'ACTIVE',
+              style: TextStyle(
+                color: modeColor,
+                fontSize: 11,
+                fontWeight: FontWeight.w800,
+                letterSpacing: 0.5,
+              ),
+            ),
           ),
         ],
       ),
     );
   }
 
-  Widget _buildBlockedCategoriesCard(BuildContext context) {
-    final categories = child.policy.blockedCategories;
+  Widget _buildTimerCard(
+    BuildContext context,
+    Color modeColor,
+    _ModeTimerData? timerData,
+  ) {
+    final remaining =
+        timerData?.remaining ?? const Duration(hours: 1, minutes: 34);
+    final progress = timerData?.remainingProgress ?? 0.58;
 
     return Card(
+      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(20)),
       elevation: 0,
-      shape: RoundedRectangleBorder(
-        borderRadius: BorderRadius.circular(16),
-      ),
       child: Padding(
-        padding: const EdgeInsets.all(16),
+        padding: const EdgeInsets.all(18),
         child: Column(
-          crossAxisAlignment: CrossAxisAlignment.start,
           children: [
-            Row(
-              children: [
-                const Icon(Icons.block, color: Colors.red),
-                const SizedBox(width: 8),
-                Text(
-                  'Blocked Content',
-                  style: Theme.of(context).textTheme.titleMedium?.copyWith(
-                        fontWeight: FontWeight.w700,
-                      ),
+            SizedBox(
+              key: const Key('child_detail_timer_ring'),
+              width: 188,
+              height: 188,
+              child: CustomPaint(
+                painter: _CircularTimerRingPainter(
+                  progress: progress,
+                  color: modeColor,
                 ),
-              ],
+                child: Column(
+                  mainAxisAlignment: MainAxisAlignment.center,
+                  children: [
+                    Text(
+                      _formatDuration(remaining),
+                      style:
+                          Theme.of(context).textTheme.headlineSmall?.copyWith(
+                                fontWeight: FontWeight.w800,
+                                color: const Color(0xFF0F172A),
+                              ),
+                    ),
+                    const SizedBox(height: 6),
+                    Text(
+                      'REMAINING',
+                      style: Theme.of(context).textTheme.labelMedium?.copyWith(
+                            letterSpacing: 0.8,
+                            fontWeight: FontWeight.w700,
+                            color: Colors.grey[600],
+                          ),
+                    ),
+                  ],
+                ),
+              ),
             ),
             const SizedBox(height: 12),
-            if (categories.isEmpty)
-              Text(
-                'No categories blocked yet.',
-                style: Theme.of(context).textTheme.bodyMedium?.copyWith(
-                      color: Colors.grey.shade600,
-                    ),
-              )
-            else
-              Wrap(
-                spacing: 8,
-                runSpacing: 8,
-                children: categories
-                    .map(
-                      (category) => Chip(
-                        label: Text(_formatCategoryName(category)),
-                        avatar: Icon(
-                          Icons.block,
-                          size: 16,
-                          color: Colors.red.shade700,
-                        ),
-                        backgroundColor: Colors.red.shade50,
-                        side: BorderSide(color: Colors.red.shade200),
-                        labelStyle: TextStyle(color: Colors.red.shade900),
-                      ),
-                    )
-                    .toList(),
-              ),
+            Text(
+              _modeQuote(_currentQuickMode),
+              textAlign: TextAlign.center,
+              style: Theme.of(context).textTheme.bodyMedium?.copyWith(
+                    fontStyle: FontStyle.italic,
+                    color: Colors.grey[700],
+                    height: 1.4,
+                  ),
+            ),
           ],
         ),
       ),
     );
   }
 
-  Widget _buildSchedulesCard(BuildContext context) {
-    final schedules = child.policy.schedules;
+  Widget _buildQuickActionsGrid(BuildContext context, _QuickMode activeMode) {
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        Text(
+          'Quick Actions',
+          style: Theme.of(context).textTheme.titleMedium?.copyWith(
+                fontWeight: FontWeight.w800,
+                color: const Color(0xFF0F172A),
+              ),
+        ),
+        const SizedBox(height: 12),
+        GridView.count(
+          key: const Key('child_detail_quick_actions_grid'),
+          crossAxisCount: 2,
+          crossAxisSpacing: 10,
+          mainAxisSpacing: 10,
+          shrinkWrap: true,
+          physics: const NeverScrollableScrollPhysics(),
+          childAspectRatio: 1.45,
+          children: [
+            _buildQuickActionTile(
+              context,
+              label: 'Pause All',
+              icon: Icons.pause_circle_outline,
+              color: const Color(0xFFEF4444),
+              selected: false,
+              onTap: () async => _showPauseDurationPicker(context),
+            ),
+            _buildQuickActionTile(
+              context,
+              label: 'Homework',
+              icon: Icons.menu_book_rounded,
+              color: const Color(0xFF3B82F6),
+              selected: activeMode == _QuickMode.homework,
+              onTap: () => _setQuickMode(context, _QuickMode.homework),
+            ),
+            _buildQuickActionTile(
+              context,
+              label: 'Bedtime',
+              icon: Icons.nightlight_round,
+              color: const Color(0xFF8B5CF6),
+              selected: activeMode == _QuickMode.bedtime,
+              onTap: () => _setQuickMode(context, _QuickMode.bedtime),
+            ),
+            _buildQuickActionTile(
+              context,
+              label: 'Free Play',
+              icon: Icons.celebration_outlined,
+              color: const Color(0xFF10B981),
+              selected: activeMode == _QuickMode.freePlay,
+              onTap: () => _setQuickMode(context, _QuickMode.freePlay),
+            ),
+          ],
+        ),
+      ],
+    );
+  }
+
+  Widget _buildQuickActionTile(
+    BuildContext context, {
+    required String label,
+    required IconData icon,
+    required Color color,
+    required bool selected,
+    required VoidCallback onTap,
+  }) {
+    return InkWell(
+      borderRadius: BorderRadius.circular(16),
+      onTap: onTap,
+      child: Container(
+        decoration: BoxDecoration(
+          borderRadius: BorderRadius.circular(16),
+          color: selected ? color.withValues(alpha: 0.14) : Colors.white,
+          border: Border.all(
+            color: selected ? color : const Color(0xFFD8E1EE),
+            width: selected ? 1.6 : 1,
+          ),
+        ),
+        padding: const EdgeInsets.all(12),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          mainAxisAlignment: MainAxisAlignment.center,
+          children: [
+            Icon(icon, color: color, size: 24),
+            const SizedBox(height: 10),
+            Text(
+              label,
+              style: Theme.of(context).textTheme.titleSmall?.copyWith(
+                    fontWeight: FontWeight.w800,
+                    color: color,
+                  ),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+
+  Widget _buildTodayActivityCard(BuildContext context) {
+    const rows = <_ActivityRowData>[
+      _ActivityRowData(
+        label: 'Education',
+        value: '1h 05m',
+        progress: 0.48,
+        color: Color(0xFF3B82F6),
+      ),
+      _ActivityRowData(
+        label: 'Entertainment',
+        value: '45m',
+        progress: 0.33,
+        color: Color(0xFFF59E0B),
+      ),
+      _ActivityRowData(
+        label: 'Social',
+        value: '25m',
+        progress: 0.19,
+        color: Color(0xFF10B981),
+      ),
+    ];
 
     return Card(
+      key: const Key('child_detail_activity_card'),
       elevation: 0,
-      shape: RoundedRectangleBorder(
-        borderRadius: BorderRadius.circular(16),
-      ),
+      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
       child: Padding(
         padding: const EdgeInsets.all(16),
         child: Column(
@@ -359,86 +422,112 @@ class ChildDetailScreen extends StatelessWidget {
           children: [
             Row(
               children: [
-                const Icon(Icons.schedule, color: Colors.orange),
-                const SizedBox(width: 8),
-                Text(
-                  'Time Restrictions',
-                  style: Theme.of(context).textTheme.titleMedium?.copyWith(
-                        fontWeight: FontWeight.w700,
-                      ),
+                Expanded(
+                  child: Text(
+                    'Today\'s Activity - Total: 2h 15m screen time',
+                    style: Theme.of(context).textTheme.titleSmall?.copyWith(
+                          fontWeight: FontWeight.w800,
+                          color: const Color(0xFF0F172A),
+                        ),
+                  ),
                 ),
+                const Icon(Icons.bar_chart_rounded, size: 18),
               ],
             ),
             const SizedBox(height: 12),
+            ...rows.map((row) => _buildActivityRow(context, row)),
+          ],
+        ),
+      ),
+    );
+  }
+
+  Widget _buildActivityRow(BuildContext context, _ActivityRowData row) {
+    return Padding(
+      padding: const EdgeInsets.only(bottom: 12),
+      child: Column(
+        children: [
+          Row(
+            children: [
+              Expanded(
+                child: Text(
+                  row.label,
+                  style: Theme.of(context).textTheme.bodyMedium?.copyWith(
+                        fontWeight: FontWeight.w600,
+                      ),
+                ),
+              ),
+              Text(
+                row.value,
+                style: Theme.of(context).textTheme.bodySmall?.copyWith(
+                      color: Colors.grey[700],
+                      fontWeight: FontWeight.w600,
+                    ),
+              ),
+            ],
+          ),
+          const SizedBox(height: 6),
+          LinearProgressIndicator(
+            value: row.progress,
+            color: row.color,
+            backgroundColor: row.color.withValues(alpha: 0.16),
+            minHeight: 8,
+            borderRadius: BorderRadius.circular(8),
+          ),
+        ],
+      ),
+    );
+  }
+
+  Widget _buildActiveSchedulesCard(BuildContext context) {
+    final schedules = _child.policy.schedules;
+
+    return Card(
+      key: const Key('child_detail_schedules_card'),
+      elevation: 0,
+      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
+      child: Padding(
+        padding: const EdgeInsets.all(16),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Row(
+              children: [
+                Expanded(
+                  child: Text(
+                    'Active Schedules',
+                    maxLines: 1,
+                    overflow: TextOverflow.ellipsis,
+                    style: Theme.of(context).textTheme.titleMedium?.copyWith(
+                          fontWeight: FontWeight.w800,
+                          color: const Color(0xFF0F172A),
+                        ),
+                  ),
+                ),
+                TextButton(
+                  style: TextButton.styleFrom(
+                    padding: const EdgeInsets.symmetric(horizontal: 8),
+                    minimumSize: const Size(0, 32),
+                    tapTargetSize: MaterialTapTargetSize.shrinkWrap,
+                  ),
+                  onPressed: () => _openPolicyOverview(context),
+                  child: const Text('View All'),
+                ),
+              ],
+            ),
+            const SizedBox(height: 6),
             if (schedules.isEmpty)
               Text(
-                'No schedules configured.',
-                style: Theme.of(context).textTheme.bodyMedium?.copyWith(
-                      color: Colors.grey.shade600,
+                'No schedules configured yet.',
+                style: Theme.of(context).textTheme.bodySmall?.copyWith(
+                      color: Colors.grey[600],
                     ),
               )
             else
               ...schedules.map(
                 (schedule) => Padding(
                   padding: const EdgeInsets.only(bottom: 10),
-                  child: Container(
-                    padding: const EdgeInsets.all(12),
-                    decoration: BoxDecoration(
-                      color: Colors.orange.shade50,
-                      borderRadius: BorderRadius.circular(10),
-                      border: Border.all(color: Colors.orange.shade200),
-                    ),
-                    child: Row(
-                      children: [
-                        Container(
-                          padding: const EdgeInsets.all(8),
-                          decoration: BoxDecoration(
-                            color: Colors.orange.shade100,
-                            borderRadius: BorderRadius.circular(8),
-                          ),
-                          child: Icon(
-                            _getScheduleIcon(schedule.type),
-                            size: 18,
-                            color: Colors.orange.shade700,
-                          ),
-                        ),
-                        const SizedBox(width: 12),
-                        Expanded(
-                          child: Column(
-                            crossAxisAlignment: CrossAxisAlignment.start,
-                            children: [
-                              Text(
-                                schedule.name,
-                                style: Theme.of(context)
-                                    .textTheme
-                                    .titleSmall
-                                    ?.copyWith(fontWeight: FontWeight.w700),
-                              ),
-                              const SizedBox(height: 2),
-                              Text(
-                                '${schedule.startTime} - ${schedule.endTime}',
-                                style: Theme.of(context).textTheme.bodySmall,
-                              ),
-                              Text(
-                                _formatDays(schedule.days),
-                                style: Theme.of(context)
-                                    .textTheme
-                                    .bodySmall
-                                    ?.copyWith(
-                                      color: Colors.grey.shade600,
-                                    ),
-                              ),
-                            ],
-                          ),
-                        ),
-                        Icon(
-                          schedule.enabled ? Icons.check_circle : Icons.cancel,
-                          color: schedule.enabled ? Colors.green : Colors.grey,
-                          size: 20,
-                        ),
-                      ],
-                    ),
-                  ),
+                  child: _buildScheduleRow(context, schedule),
                 ),
               ),
           ],
@@ -447,8 +536,61 @@ class ChildDetailScreen extends StatelessWidget {
     );
   }
 
+  Widget _buildScheduleRow(BuildContext context, Schedule schedule) {
+    return Container(
+      padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
+      decoration: BoxDecoration(
+        color: const Color(0xFFF8FBFF),
+        borderRadius: BorderRadius.circular(12),
+        border: Border.all(color: const Color(0xFFDCE5F1)),
+      ),
+      child: Row(
+        children: [
+          Container(
+            width: 34,
+            height: 34,
+            decoration: BoxDecoration(
+              color: _scheduleColor(schedule.type).withValues(alpha: 0.14),
+              borderRadius: BorderRadius.circular(10),
+            ),
+            child: Icon(
+              _scheduleIcon(schedule.type),
+              size: 18,
+              color: _scheduleColor(schedule.type),
+            ),
+          ),
+          const SizedBox(width: 10),
+          Expanded(
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Text(
+                  schedule.name,
+                  style: Theme.of(context).textTheme.bodyMedium?.copyWith(
+                        fontWeight: FontWeight.w700,
+                      ),
+                ),
+                const SizedBox(height: 2),
+                Text(
+                  '${_formatScheduleTime(schedule.startTime)} - ${_formatScheduleTime(schedule.endTime)}',
+                  style: Theme.of(context).textTheme.bodySmall?.copyWith(
+                        color: Colors.grey[700],
+                      ),
+                ),
+              ],
+            ),
+          ),
+          Switch(
+            value: schedule.enabled,
+            onChanged: (value) => _toggleSchedule(context, schedule, value),
+          ),
+        ],
+      ),
+    );
+  }
+
   Widget _buildDevicesCard(BuildContext context) {
-    final devices = child.deviceIds;
+    final devices = _child.deviceIds;
     return Card(
       elevation: 0,
       shape: RoundedRectangleBorder(
@@ -477,7 +619,7 @@ class ChildDetailScreen extends StatelessWidget {
                   Icon(Icons.chevron_right, color: Colors.grey.shade600),
                 ],
               ),
-              const SizedBox(height: 12),
+              const SizedBox(height: 10),
               if (devices.isEmpty)
                 Text(
                   'No linked devices. Tap to add a device ID.',
@@ -518,13 +660,6 @@ class ChildDetailScreen extends StatelessWidget {
                         ),
                       ),
                     ),
-                if (devices.length > 3)
-                  Text(
-                    '+${devices.length - 3} more',
-                    style: Theme.of(context).textTheme.bodySmall?.copyWith(
-                          color: Colors.grey.shade600,
-                        ),
-                  ),
               ],
             ],
           ),
@@ -533,176 +668,229 @@ class ChildDetailScreen extends StatelessWidget {
     );
   }
 
-  Widget _buildQuickActions(BuildContext context) {
-    return Column(
-      crossAxisAlignment: CrossAxisAlignment.start,
-      children: [
-        Text(
-          'Quick Actions',
-          style: Theme.of(context).textTheme.titleMedium?.copyWith(
-                fontWeight: FontWeight.w700,
-              ),
-        ),
-        const SizedBox(height: 12),
-        LayoutBuilder(
-          builder: (context, constraints) {
-            final wide = constraints.maxWidth >= 460;
-            if (wide) {
-              return Column(
-                children: [
-                  Row(
-                    children: [
-                      Expanded(
-                        child: FilledButton.icon(
-                          onPressed: () async {
-                            await _openEditScreen(context);
-                          },
-                          icon: const Icon(Icons.edit_outlined),
-                          label: const Text('Edit Profile'),
-                        ),
-                      ),
-                      const SizedBox(width: 12),
-                      Expanded(
-                        child: OutlinedButton.icon(
-                          onPressed: () => _showDeleteConfirmation(context),
-                          icon: const Icon(Icons.delete_outline),
-                          label: const Text('Delete'),
-                          style: OutlinedButton.styleFrom(
-                            foregroundColor: Colors.red,
-                          ),
-                        ),
-                      ),
-                    ],
-                  ),
-                  const SizedBox(height: 10),
-                  SizedBox(
-                    width: double.infinity,
-                    child: OutlinedButton.icon(
-                      onPressed: () => _openPolicyOverview(context),
-                      icon: const Icon(Icons.policy_outlined),
-                      label: const Text('Manage Policy'),
-                    ),
-                  ),
-                ],
-              );
-            }
+  _QuickMode get _currentQuickMode {
+    if (_quickModeOverride != null) {
+      return _quickModeOverride!;
+    }
 
-            return Column(
-              children: [
-                SizedBox(
-                  width: double.infinity,
-                  child: FilledButton.icon(
-                    onPressed: () async {
-                      await _openEditScreen(context);
-                    },
-                    icon: const Icon(Icons.edit_outlined),
-                    label: const Text('Edit Profile'),
-                  ),
-                ),
-                const SizedBox(height: 10),
-                SizedBox(
-                  width: double.infinity,
-                  child: OutlinedButton.icon(
-                    onPressed: () => _showDeleteConfirmation(context),
-                    icon: const Icon(Icons.delete_outline),
-                    label: const Text('Delete'),
-                    style: OutlinedButton.styleFrom(
-                      foregroundColor: Colors.red,
-                    ),
-                  ),
-                ),
-                const SizedBox(height: 10),
-                SizedBox(
-                  width: double.infinity,
-                  child: OutlinedButton.icon(
-                    onPressed: () => _openPolicyOverview(context),
-                    icon: const Icon(Icons.policy_outlined),
-                    label: const Text('Manage Policy'),
-                  ),
-                ),
-              ],
-            );
-          },
-        ),
-      ],
+    final active = _activeSchedule;
+    if (active == null) {
+      return _QuickMode.freePlay;
+    }
+
+    switch (active.type) {
+      case ScheduleType.homework:
+      case ScheduleType.school:
+        return _QuickMode.homework;
+      case ScheduleType.bedtime:
+        return _QuickMode.bedtime;
+      case ScheduleType.custom:
+        return _QuickMode.freePlay;
+    }
+  }
+
+  Schedule? get _activeSchedule {
+    final now = TimeOfDay.now();
+    final today = Day.values[DateTime.now().weekday - 1];
+
+    for (final schedule in _child.policy.schedules) {
+      if (!schedule.enabled) {
+        continue;
+      }
+      if (!schedule.days.contains(today)) {
+        continue;
+      }
+      if (_isTimeInRange(now, schedule.startTime, schedule.endTime)) {
+        return schedule;
+      }
+    }
+    return null;
+  }
+
+  bool _isTimeInRange(TimeOfDay current, String start, String end) {
+    try {
+      final startParts = start.split(':');
+      final endParts = end.split(':');
+      if (startParts.length != 2 || endParts.length != 2) {
+        return false;
+      }
+
+      final startMinutes =
+          int.parse(startParts[0]) * 60 + int.parse(startParts[1]);
+      final endMinutes = int.parse(endParts[0]) * 60 + int.parse(endParts[1]);
+      final currentMinutes = current.hour * 60 + current.minute;
+
+      if (startMinutes > endMinutes) {
+        return currentMinutes >= startMinutes || currentMinutes <= endMinutes;
+      }
+
+      return currentMinutes >= startMinutes && currentMinutes <= endMinutes;
+    } catch (_) {
+      return false;
+    }
+  }
+
+  _ModeTimerData? _timerDataForActiveSchedule() {
+    final schedule = _activeSchedule;
+    if (schedule == null) {
+      return null;
+    }
+
+    final now = DateTime.now();
+    final window = _resolveScheduleWindow(schedule, now);
+    final total = window.end.difference(window.start);
+    if (total.inSeconds <= 0) {
+      return null;
+    }
+
+    final remaining =
+        window.end.isAfter(now) ? window.end.difference(now) : Duration.zero;
+
+    return _ModeTimerData(remaining: remaining, total: total);
+  }
+
+  ({DateTime start, DateTime end}) _resolveScheduleWindow(
+    Schedule schedule,
+    DateTime now,
+  ) {
+    final startTime = _parseTime(schedule.startTime);
+    final endTime = _parseTime(schedule.endTime);
+
+    DateTime start = DateTime(
+      now.year,
+      now.month,
+      now.day,
+      startTime.hour,
+      startTime.minute,
+    );
+    DateTime end = DateTime(
+      now.year,
+      now.month,
+      now.day,
+      endTime.hour,
+      endTime.minute,
+    );
+
+    final crossesMidnight = (startTime.hour * 60 + startTime.minute) >
+        (endTime.hour * 60 + endTime.minute);
+
+    if (!crossesMidnight) {
+      return (start: start, end: end);
+    }
+
+    if (now.isBefore(end)) {
+      start = start.subtract(const Duration(days: 1));
+    } else {
+      end = end.add(const Duration(days: 1));
+    }
+
+    return (start: start, end: end);
+  }
+
+  TimeOfDay _parseTime(String value) {
+    final parts = value.split(':');
+    if (parts.length != 2) {
+      return const TimeOfDay(hour: 0, minute: 0);
+    }
+    final hour = int.tryParse(parts[0]) ?? 0;
+    final minute = int.tryParse(parts[1]) ?? 0;
+    return TimeOfDay(hour: hour, minute: minute);
+  }
+
+  Future<void> _setQuickMode(BuildContext context, _QuickMode mode) async {
+    setState(() {
+      _quickModeOverride = mode;
+    });
+
+    _showMessage(
+      context,
+      '${_quickModeLabel(mode)} mode selected for quick focus.',
+      success: true,
     );
   }
 
-  void _showMoreOptions(BuildContext context) {
-    showModalBottomSheet<void>(
-      context: context,
-      builder: (context) {
-        final paused = _isPausedNow(child.pausedUntil);
-        return SafeArea(
-          child: Column(
-            mainAxisSize: MainAxisSize.min,
-            children: [
-              ListTile(
-                leading: Icon(paused
-                    ? Icons.play_circle_outline
-                    : Icons.pause_circle_outline),
-                title: Text(paused ? 'Resume Internet' : 'Pause Internet'),
-                subtitle: Text(
-                  paused
-                      ? 'Currently paused until ${_formatTime(child.pausedUntil!)}'
-                      : 'Temporarily block internet access for this child',
-                ),
-                onTap: () async {
-                  Navigator.of(context).pop();
-                  if (paused) {
-                    await _resumeInternet(context);
-                  } else {
-                    await _showPauseDurationPicker(context);
-                  }
-                },
-              ),
-              ListTile(
-                leading: const Icon(Icons.history),
-                title: const Text('View Activity Log'),
-                subtitle: const Text('Profile and policy timeline'),
-                onTap: () async {
-                  Navigator.of(context).pop();
-                  await _openActivityLog(context);
-                },
-              ),
-              ListTile(
-                leading: const Icon(Icons.settings_outlined),
-                title: const Text('Advanced Settings'),
-                subtitle: const Text('Manage policy and safety controls'),
-                onTap: () async {
-                  Navigator.of(context).pop();
-                  await _openPolicyOverview(context);
-                },
-              ),
-              const Divider(height: 1),
-              ListTile(
-                leading: const Icon(Icons.close),
-                title: const Text('Close'),
-                onTap: () {
-                  Navigator.of(context).pop();
-                },
-              ),
-            ],
-          ),
-        );
-      },
+  Future<void> _toggleSchedule(
+    BuildContext context,
+    Schedule schedule,
+    bool enabled,
+  ) async {
+    final parentId = _resolvedParentId;
+    if (parentId == null) {
+      _showMessage(context, 'Not logged in');
+      return;
+    }
+
+    final oldSchedules = _child.policy.schedules;
+    final updatedSchedules = oldSchedules
+        .map(
+          (item) => item.id == schedule.id
+              ? Schedule(
+                  id: item.id,
+                  name: item.name,
+                  type: item.type,
+                  days: item.days,
+                  startTime: item.startTime,
+                  endTime: item.endTime,
+                  enabled: enabled,
+                  action: item.action,
+                )
+              : item,
+        )
+        .toList(growable: false);
+
+    final updatedChild = _child.copyWith(
+      policy: _child.policy.copyWith(schedules: updatedSchedules),
     );
+
+    setState(() {
+      _child = updatedChild;
+    });
+
+    try {
+      await _resolvedFirestoreService.updateChild(
+        parentId: parentId,
+        child: updatedChild,
+      );
+      if (!context.mounted) {
+        return;
+      }
+      _showMessage(
+        context,
+        enabled ? 'Schedule enabled' : 'Schedule disabled',
+        success: true,
+      );
+    } catch (error) {
+      if (!mounted) {
+        return;
+      }
+      setState(() {
+        _child = _child.copyWith(
+          policy: _child.policy.copyWith(schedules: oldSchedules),
+        );
+      });
+      if (!context.mounted) {
+        return;
+      }
+      _showMessage(context, 'Unable to update schedule: $error');
+    }
   }
 
   Future<void> _openEditScreen(BuildContext context) async {
     final didUpdate = await Navigator.of(context).push<bool>(
       MaterialPageRoute(
         builder: (_) => EditChildScreen(
-          child: child,
-          authService: authService,
-          firestoreService: firestoreService,
-          parentIdOverride: parentIdOverride,
+          child: _child,
+          authService: widget.authService,
+          firestoreService: widget.firestoreService,
+          parentIdOverride: widget.parentIdOverride,
         ),
       ),
     );
+
     if (!context.mounted) {
       return;
     }
+
     if (didUpdate == true) {
       Navigator.of(context).pop();
     }
@@ -715,10 +903,10 @@ class ChildDetailScreen extends StatelessWidget {
         await Navigator.of(context).push(
           MaterialPageRoute(
             builder: (_) => PolicyOverviewScreen(
-              child: child,
-              authService: authService,
-              firestoreService: firestoreService,
-              parentIdOverride: parentIdOverride,
+              child: _child,
+              authService: widget.authService,
+              firestoreService: widget.firestoreService,
+              parentIdOverride: widget.parentIdOverride,
             ),
           ),
         );
@@ -730,32 +918,27 @@ class ChildDetailScreen extends StatelessWidget {
     final updatedChild = await Navigator.of(context).push<ChildProfile>(
       MaterialPageRoute(
         builder: (_) => ChildDevicesScreen(
-          child: child,
-          authService: authService,
-          firestoreService: firestoreService,
-          parentIdOverride: parentIdOverride,
+          child: _child,
+          authService: widget.authService,
+          firestoreService: widget.firestoreService,
+          parentIdOverride: widget.parentIdOverride,
         ),
       ),
     );
+
     if (!context.mounted || updatedChild == null) {
       return;
     }
-    Navigator.of(context).pushReplacement(
-      MaterialPageRoute(
-        builder: (_) => ChildDetailScreen(
-          child: updatedChild,
-          authService: authService,
-          firestoreService: firestoreService,
-          parentIdOverride: parentIdOverride,
-        ),
-      ),
-    );
+
+    setState(() {
+      _child = updatedChild;
+    });
   }
 
   Future<void> _openActivityLog(BuildContext context) async {
     await Navigator.of(context).push(
       MaterialPageRoute(
-        builder: (_) => ChildActivityLogScreen(child: child),
+        builder: (_) => ChildActivityLogScreen(child: _child),
       ),
     );
   }
@@ -777,23 +960,20 @@ class ChildDetailScreen extends StatelessWidget {
               ListTile(
                 leading: const Icon(Icons.timer_outlined),
                 title: const Text('15 minutes'),
-                onTap: () => Navigator.of(context).pop(
-                  const Duration(minutes: 15),
-                ),
+                onTap: () =>
+                    Navigator.of(context).pop(const Duration(minutes: 15)),
               ),
               ListTile(
                 leading: const Icon(Icons.timer_outlined),
                 title: const Text('30 minutes'),
-                onTap: () => Navigator.of(context).pop(
-                  const Duration(minutes: 30),
-                ),
+                onTap: () =>
+                    Navigator.of(context).pop(const Duration(minutes: 30)),
               ),
               ListTile(
                 leading: const Icon(Icons.timer_outlined),
                 title: const Text('1 hour'),
-                onTap: () => Navigator.of(context).pop(
-                  const Duration(hours: 1),
-                ),
+                onTap: () =>
+                    Navigator.of(context).pop(const Duration(hours: 1)),
               ),
               const SizedBox(height: 8),
             ],
@@ -802,12 +982,10 @@ class ChildDetailScreen extends StatelessWidget {
       },
     );
 
-    if (duration == null) {
+    if (duration == null || !context.mounted) {
       return;
     }
-    if (!context.mounted) {
-      return;
-    }
+
     await _pauseInternetForDuration(context, duration);
   }
 
@@ -822,7 +1000,7 @@ class ChildDetailScreen extends StatelessWidget {
     }
 
     final pausedUntil = DateTime.now().add(duration);
-    final updatedChild = child.copyWith(pausedUntil: pausedUntil);
+    final updatedChild = _child.copyWith(pausedUntil: pausedUntil);
 
     try {
       await _resolvedFirestoreService.updateChild(
@@ -832,61 +1010,19 @@ class ChildDetailScreen extends StatelessWidget {
       if (!context.mounted) {
         return;
       }
+      setState(() {
+        _child = updatedChild;
+      });
       _showMessage(
         context,
         'Internet paused until ${_formatTime(pausedUntil)}',
         success: true,
-      );
-      Navigator.of(context).pushReplacement(
-        MaterialPageRoute(
-          builder: (_) => ChildDetailScreen(
-            child: updatedChild,
-            authService: authService,
-            firestoreService: firestoreService,
-            parentIdOverride: parentIdOverride,
-          ),
-        ),
       );
     } catch (error) {
       if (!context.mounted) {
         return;
       }
       _showMessage(context, 'Unable to pause internet: $error');
-    }
-  }
-
-  Future<void> _resumeInternet(BuildContext context) async {
-    final parentId = _resolvedParentId;
-    if (parentId == null) {
-      _showMessage(context, 'Not logged in');
-      return;
-    }
-
-    final updatedChild = child.copyWith(clearPausedUntil: true);
-    try {
-      await _resolvedFirestoreService.updateChild(
-        parentId: parentId,
-        child: updatedChild,
-      );
-      if (!context.mounted) {
-        return;
-      }
-      _showMessage(context, 'Internet resumed', success: true);
-      Navigator.of(context).pushReplacement(
-        MaterialPageRoute(
-          builder: (_) => ChildDetailScreen(
-            child: updatedChild,
-            authService: authService,
-            firestoreService: firestoreService,
-            parentIdOverride: parentIdOverride,
-          ),
-        ),
-      );
-    } catch (error) {
-      if (!context.mounted) {
-        return;
-      }
-      _showMessage(context, 'Unable to resume internet: $error');
     }
   }
 
@@ -909,7 +1045,7 @@ class ChildDetailScreen extends StatelessWidget {
             crossAxisAlignment: CrossAxisAlignment.start,
             children: [
               Text(
-                'Are you sure you want to delete ${child.nickname}\'s profile?',
+                'Are you sure you want to delete ${_child.nickname}\'s profile?',
                 style: const TextStyle(fontWeight: FontWeight.w700),
               ),
               const SizedBox(height: 14),
@@ -920,47 +1056,28 @@ class ChildDetailScreen extends StatelessWidget {
                   borderRadius: BorderRadius.circular(8),
                   border: Border.all(color: Colors.red.shade200),
                 ),
-                child: Column(
+                child: const Column(
                   crossAxisAlignment: CrossAxisAlignment.start,
                   children: [
-                    Row(
-                      children: [
-                        Icon(Icons.info_outline,
-                            size: 16, color: Colors.red.shade700),
-                        const SizedBox(width: 8),
-                        const Expanded(
-                          child: Text(
-                            'This action cannot be undone',
-                            style: TextStyle(fontWeight: FontWeight.w700),
-                          ),
-                        ),
-                      ],
+                    Text(
+                      'This action cannot be undone',
+                      style: TextStyle(fontWeight: FontWeight.w700),
                     ),
-                    const SizedBox(height: 8),
-                    const Text('The following will be deleted:'),
-                    const SizedBox(height: 4),
-                    const Text('- Child profile'),
-                    const Text('- Content filters'),
-                    const Text('- Time restrictions'),
-                    const Text('- All settings'),
+                    SizedBox(height: 8),
+                    Text('The following will be deleted:'),
+                    SizedBox(height: 4),
+                    Text('- Child profile'),
+                    Text('- Content filters'),
+                    Text('- Time restrictions'),
+                    Text('- All settings'),
                   ],
-                ),
-              ),
-              const SizedBox(height: 14),
-              Text(
-                'This will not affect other children or your account.',
-                style: TextStyle(
-                  fontSize: 12,
-                  color: Colors.grey.shade600,
                 ),
               ),
             ],
           ),
           actions: [
             TextButton(
-              onPressed: () {
-                Navigator.of(context).pop();
-              },
+              onPressed: () => Navigator.of(context).pop(),
               child: const Text('Cancel'),
             ),
             FilledButton(
@@ -984,21 +1101,19 @@ class ChildDetailScreen extends StatelessWidget {
     showDialog<void>(
       context: context,
       barrierDismissible: false,
-      builder: (_) {
-        return const AlertDialog(
-          content: Row(
-            children: [
-              SizedBox(
-                width: 20,
-                height: 20,
-                child: CircularProgressIndicator(strokeWidth: 2),
-              ),
-              SizedBox(width: 16),
-              Text('Deleting...'),
-            ],
-          ),
-        );
-      },
+      builder: (_) => const AlertDialog(
+        content: Row(
+          children: [
+            SizedBox(
+              width: 20,
+              height: 20,
+              child: CircularProgressIndicator(strokeWidth: 2),
+            ),
+            SizedBox(width: 16),
+            Text('Deleting...'),
+          ],
+        ),
+      ),
     );
 
     try {
@@ -1009,7 +1124,7 @@ class ChildDetailScreen extends StatelessWidget {
 
       await _resolvedFirestoreService.deleteChild(
         parentId: parentId,
-        childId: child.id,
+        childId: _child.id,
       );
 
       if (!context.mounted) {
@@ -1018,7 +1133,7 @@ class ChildDetailScreen extends StatelessWidget {
       Navigator.of(context).pop();
       ScaffoldMessenger.of(context).showSnackBar(
         SnackBar(
-          content: Text('${child.nickname}\'s profile has been deleted'),
+          content: Text('${_child.nickname}\'s profile has been deleted'),
           backgroundColor: Colors.green,
         ),
       );
@@ -1028,51 +1143,117 @@ class ChildDetailScreen extends StatelessWidget {
         return;
       }
       Navigator.of(context).pop();
-      showDialog<void>(
-        context: context,
-        builder: (context) {
-          return AlertDialog(
-            title: const Text('Delete Failed'),
-            content: Column(
-              mainAxisSize: MainAxisSize.min,
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                const Text('Failed to delete child profile:'),
-                const SizedBox(height: 8),
-                Text(
-                  error.toString(),
-                  style: const TextStyle(
-                    fontFamily: 'monospace',
-                    fontSize: 12,
-                  ),
-                ),
-                const SizedBox(height: 12),
-                const Text(
-                  'Please try again or contact support if the problem persists.',
-                ),
-              ],
-            ),
-            actions: [
-              TextButton(
-                onPressed: () {
-                  Navigator.of(context).pop();
-                },
-                child: const Text('OK'),
-              ),
-            ],
-          );
-        },
-      );
+      _showMessage(context, 'Failed to delete child profile: $error');
     }
   }
 
-  bool _isPausedNow(DateTime? pausedUntil) {
-    return pausedUntil != null && pausedUntil.isAfter(DateTime.now());
+  Color _avatarColor(AgeBand ageBand) {
+    switch (ageBand) {
+      case AgeBand.young:
+        return const Color(0xFF3B82F6);
+      case AgeBand.middle:
+        return const Color(0xFF10B981);
+      case AgeBand.teen:
+        return const Color(0xFFF59E0B);
+    }
   }
 
-  String _formatTime(DateTime dateTime) {
-    return DateFormat('h:mm a').format(dateTime);
+  Color _scheduleColor(ScheduleType type) {
+    switch (type) {
+      case ScheduleType.homework:
+      case ScheduleType.school:
+        return const Color(0xFF3B82F6);
+      case ScheduleType.bedtime:
+        return const Color(0xFF8B5CF6);
+      case ScheduleType.custom:
+        return const Color(0xFF10B981);
+    }
   }
+
+  IconData _scheduleIcon(ScheduleType type) {
+    switch (type) {
+      case ScheduleType.homework:
+      case ScheduleType.school:
+        return Icons.menu_book_rounded;
+      case ScheduleType.bedtime:
+        return Icons.nightlight_round;
+      case ScheduleType.custom:
+        return Icons.event_available_rounded;
+    }
+  }
+
+  Color _quickModeColor(_QuickMode mode) {
+    switch (mode) {
+      case _QuickMode.homework:
+        return const Color(0xFF3B82F6);
+      case _QuickMode.bedtime:
+        return const Color(0xFF8B5CF6);
+      case _QuickMode.freePlay:
+        return const Color(0xFF10B981);
+    }
+  }
+
+  String _quickModeLabel(_QuickMode mode) {
+    switch (mode) {
+      case _QuickMode.homework:
+        return 'Homework';
+      case _QuickMode.bedtime:
+        return 'Bedtime';
+      case _QuickMode.freePlay:
+        return 'Free Play';
+    }
+  }
+
+  String _modeSubtitle(_QuickMode mode) {
+    switch (mode) {
+      case _QuickMode.homework:
+        return 'Distraction apps are paused until study block ends.';
+      case _QuickMode.bedtime:
+        return 'Only essential access is allowed during bedtime.';
+      case _QuickMode.freePlay:
+        return 'Regular family policy is active now.';
+    }
+  }
+
+  String _modeQuote(_QuickMode mode) {
+    switch (mode) {
+      case _QuickMode.homework:
+        return '"Focus now, play later. You\'re building a strong habit."';
+      case _QuickMode.bedtime:
+        return '"Great sleep tonight means better energy tomorrow."';
+      case _QuickMode.freePlay:
+        return '"Balance helps you enjoy screen time and real life."';
+    }
+  }
+
+  String _formatDuration(Duration duration) {
+    final hours = duration.inHours;
+    final minutes = duration.inMinutes.remainder(60);
+    if (hours <= 0) {
+      return '${minutes}m';
+    }
+    if (minutes == 0) {
+      return '${hours}h';
+    }
+    return '${hours}h ${minutes}m';
+  }
+
+  String _formatScheduleTime(String value) {
+    final parts = value.split(':');
+    if (parts.length != 2) {
+      return value;
+    }
+    final hour = int.tryParse(parts[0]);
+    final minute = int.tryParse(parts[1]);
+    if (hour == null || minute == null) {
+      return value;
+    }
+    final date = DateTime(2026, 1, 1, hour, minute);
+    return DateFormat('h:mm a').format(date);
+  }
+
+  String _formatTime(DateTime dateTime) =>
+      DateFormat('h:mm a').format(dateTime);
 
   void _showMessage(
     BuildContext context,
@@ -1086,84 +1267,81 @@ class ChildDetailScreen extends StatelessWidget {
       ),
     );
   }
+}
 
-  Color _getAvatarColor(AgeBand ageBand) {
-    switch (ageBand) {
-      case AgeBand.young:
-        return Colors.blue;
-      case AgeBand.middle:
-        return Colors.green;
-      case AgeBand.teen:
-        return Colors.orange;
+class _ModeTimerData {
+  const _ModeTimerData({required this.remaining, required this.total});
+
+  final Duration remaining;
+  final Duration total;
+
+  double get remainingProgress {
+    if (total.inMilliseconds <= 0) {
+      return 0;
     }
-  }
-
-  IconData _getAgeBandIcon(AgeBand ageBand) {
-    switch (ageBand) {
-      case AgeBand.young:
-        return Icons.child_care;
-      case AgeBand.middle:
-        return Icons.school;
-      case AgeBand.teen:
-        return Icons.face;
-    }
-  }
-
-  IconData _getScheduleIcon(ScheduleType type) {
-    switch (type) {
-      case ScheduleType.bedtime:
-        return Icons.bedtime;
-      case ScheduleType.school:
-        return Icons.school;
-      case ScheduleType.homework:
-        return Icons.menu_book;
-      case ScheduleType.custom:
-        return Icons.event;
-    }
-  }
-
-  String _formatDays(List<Day> days) {
-    if (days.length == Day.values.length) {
-      return 'Every day';
-    }
-
-    const weekdays = {
-      Day.monday,
-      Day.tuesday,
-      Day.wednesday,
-      Day.thursday,
-      Day.friday,
-    };
-
-    if (days.toSet().containsAll(weekdays) && days.length == weekdays.length) {
-      return 'Weekdays';
-    }
-
-    return days.map((d) => d.name.substring(0, 3).toUpperCase()).join(', ');
-  }
-
-  String _formatCategoryName(String category) {
-    return category
-        .split('-')
-        .where((word) => word.isNotEmpty)
-        .map((word) => '${word[0].toUpperCase()}${word.substring(1)}')
-        .join(' ');
-  }
-
-  String _formatDate(DateTime date) {
-    final now = DateTime.now();
-    final difference = now.difference(date);
-
-    if (difference.inDays <= 0) {
-      return 'today';
-    }
-    if (difference.inDays == 1) {
-      return 'yesterday';
-    }
-    if (difference.inDays < 7) {
-      return '${difference.inDays} days ago';
-    }
-
-    return DateFormat('MMM d, yyyy').format(date);
+    final ratio = remaining.inMilliseconds / total.inMilliseconds;
+    return ratio.clamp(0.0, 1.0).toDouble();
   }
 }
+
+class _CircularTimerRingPainter extends CustomPainter {
+  const _CircularTimerRingPainter({
+    required this.progress,
+    required this.color,
+  });
+
+  final double progress;
+  final Color color;
+
+  @override
+  void paint(Canvas canvas, Size size) {
+    final center = Offset(size.width / 2, size.height / 2);
+    final radius = math.min(size.width, size.height) / 2 - 10;
+
+    final trackPaint = Paint()
+      ..color = color.withValues(alpha: 0.16)
+      ..style = PaintingStyle.stroke
+      ..strokeWidth = 14
+      ..strokeCap = StrokeCap.round;
+
+    final progressPaint = Paint()
+      ..color = color
+      ..style = PaintingStyle.stroke
+      ..strokeWidth = 14
+      ..strokeCap = StrokeCap.round;
+
+    canvas.drawCircle(center, radius, trackPaint);
+
+    final sweep = 2 * math.pi * progress.clamp(0.0, 1.0);
+    canvas.drawArc(
+      Rect.fromCircle(center: center, radius: radius),
+      -math.pi / 2,
+      sweep,
+      false,
+      progressPaint,
+    );
+  }
+
+  @override
+  bool shouldRepaint(covariant _CircularTimerRingPainter oldDelegate) {
+    return oldDelegate.progress != progress || oldDelegate.color != color;
+  }
+}
+
+class _ActivityRowData {
+  const _ActivityRowData({
+    required this.label,
+    required this.value,
+    required this.progress,
+    required this.color,
+  });
+
+  final String label;
+  final String value;
+  final double progress;
+  final Color color;
+}
+
+enum _QuickMode { homework, bedtime, freePlay }
+
+enum _HeaderAction { edit, activity, policy, delete }
