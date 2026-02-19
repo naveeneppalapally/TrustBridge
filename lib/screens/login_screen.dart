@@ -124,8 +124,6 @@ class _LoginScreenState extends State<LoginScreen> {
       });
       return;
     }
-
-    Navigator.of(context).pushReplacementNamed('/dashboard');
   }
 
   Future<void> _showEmailAuthSheet() async {
@@ -143,7 +141,6 @@ class _LoginScreenState extends State<LoginScreen> {
           builder: (context, setModalState) {
             Future<void> submit() async {
               final sheetNavigator = Navigator.of(sheetContext);
-              final rootNavigator = Navigator.of(this.context);
               final email = emailController.text.trim();
               final password = passwordController.text;
               if (email.isEmpty || password.isEmpty) {
@@ -194,8 +191,6 @@ class _LoginScreenState extends State<LoginScreen> {
               if (sheetNavigator.canPop()) {
                 sheetNavigator.pop();
               }
-
-              rootNavigator.pushReplacementNamed('/dashboard');
             }
 
             final bottomInset = MediaQuery.of(context).viewInsets.bottom;

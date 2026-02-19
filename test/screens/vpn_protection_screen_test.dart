@@ -24,6 +24,7 @@ class _FakeVpnService implements VpnServiceBase {
   bool restartResult = true;
   bool stopResult = true;
   bool ignoringBatteryOptimizations = true;
+  int startCalls = 0;
   int openBatterySettingsCalls = 0;
   int openVpnSettingsCalls = 0;
   int openPrivateDnsSettingsCalls = 0;
@@ -74,6 +75,7 @@ class _FakeVpnService implements VpnServiceBase {
     List<String> blockedDomains = const [],
     String? upstreamDns,
   }) async {
+    startCalls += 1;
     if (startResult) {
       running = true;
     }
@@ -262,6 +264,42 @@ void main() {
     });
 
     testWidgets(
+        'enable protection requires notification permission before VPN start',
+        (tester) async {
+      const parentId = 'parent-vpn-notification-permission';
+      await seedParent(parentId);
+
+      final fakeVpn = _FakeVpnService(
+        supported: true,
+        permissionGranted: true,
+        running: false,
+      );
+
+      await tester.pumpWidget(
+        MaterialApp(
+          home: VpnProtectionScreen(
+            vpnService: fakeVpn,
+            firestoreService: firestoreService,
+            parentIdOverride: parentId,
+            notificationPermissionRequester: () async => false,
+          ),
+        ),
+      );
+      await tester.pumpAndSettle();
+
+      await tester.tap(find.byKey(const Key('vpn_primary_button')));
+      await tester.pumpAndSettle();
+
+      expect(fakeVpn.startCalls, 0);
+      expect(
+        find.text(
+          'Notification permission is required for VPN to run in background.',
+        ),
+        findsOneWidget,
+      );
+    });
+
+    testWidgets(
         'enable protection applies upstream DNS from parent NextDNS preference',
         (tester) async {
       const parentId = 'parent-vpn-nextdns-start';
@@ -409,6 +447,7 @@ void main() {
             vpnService: fakeVpn,
             firestoreService: firestoreService,
             parentIdOverride: parentId,
+            notificationPermissionChecker: () async => true,
           ),
         ),
       );
@@ -427,6 +466,10 @@ void main() {
 
       expect(find.byKey(const Key('vpn_readiness_summary')), findsOneWidget);
       expect(find.textContaining('checks passed'), findsOneWidget);
+      expect(
+        find.text('POST_NOTIFICATIONS permission is granted.'),
+        findsOneWidget,
+      );
     });
 
     testWidgets('clear rule cache button clears persisted cache',

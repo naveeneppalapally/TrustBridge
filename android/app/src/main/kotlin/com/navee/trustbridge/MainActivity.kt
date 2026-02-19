@@ -3,6 +3,7 @@ package com.navee.trustbridge
 import android.content.Intent
 import android.os.Build
 import android.os.PowerManager
+import android.net.Uri
 import android.provider.Settings
 import com.navee.trustbridge.vpn.BlocklistStore
 import com.navee.trustbridge.vpn.DnsFilterEngine
@@ -342,8 +343,21 @@ class MainActivity : FlutterFragmentActivity() {
     }
 
     private fun openBatteryOptimizationSettings(): Boolean {
+        if (Build.VERSION.SDK_INT < Build.VERSION_CODES.M) {
+            return true
+        }
+
         return try {
-            val intent = Intent(Settings.ACTION_IGNORE_BATTERY_OPTIMIZATION_SETTINGS).apply {
+            val intent = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.UPSIDE_DOWN_CAKE) {
+                Intent(
+                    Settings.ACTION_APPLICATION_DETAILS_SETTINGS,
+                    Uri.parse("package:$packageName")
+                )
+            } else {
+                Intent(Settings.ACTION_REQUEST_IGNORE_BATTERY_OPTIMIZATIONS).apply {
+                    data = Uri.parse("package:$packageName")
+                }
+            }.apply {
                 addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
             }
             startActivity(intent)

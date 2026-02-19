@@ -91,5 +91,31 @@ void main() {
 
       expect(find.textContaining('Get Started'), findsOneWidget);
     });
+
+    testWidgets('skip completes onboarding then routes to dashboard',
+        (WidgetTester tester) async {
+      var completeCalled = false;
+
+      await tester.pumpWidget(
+        MaterialApp(
+          routes: {
+            '/dashboard': (_) => const Scaffold(body: Text('Dashboard Home')),
+          },
+          home: OnboardingScreen(
+            parentId: 'parent-test',
+            onCompleteOnboarding: (_) async {
+              completeCalled = true;
+            },
+          ),
+        ),
+      );
+      await tester.pump();
+
+      await tester.tap(find.text('Skip'));
+      await tester.pumpAndSettle();
+
+      expect(completeCalled, isTrue);
+      expect(find.text('Dashboard Home'), findsOneWidget);
+    });
   });
 }

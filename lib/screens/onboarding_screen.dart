@@ -9,11 +9,13 @@ class OnboardingScreen extends StatefulWidget {
     required this.parentId,
     this.isRevisit = false,
     this.firestoreService,
+    this.onCompleteOnboarding,
   });
 
   final String parentId;
   final bool isRevisit;
   final FirestoreService? firestoreService;
+  final Future<void> Function(String parentId)? onCompleteOnboarding;
 
   @override
   State<OnboardingScreen> createState() => _OnboardingScreenState();
@@ -28,6 +30,15 @@ class _OnboardingScreenState extends State<OnboardingScreen> {
 
   FirestoreService get _resolvedFirestoreService {
     return widget.firestoreService ?? FirestoreService();
+  }
+
+  Future<void> _completeOnboardingForParent() async {
+    final override = widget.onCompleteOnboarding;
+    if (override != null) {
+      await override(widget.parentId);
+      return;
+    }
+    await _resolvedFirestoreService.completeOnboarding(widget.parentId);
   }
 
   @override
@@ -65,7 +76,7 @@ class _OnboardingScreenState extends State<OnboardingScreen> {
     });
 
     try {
-      await _resolvedFirestoreService.completeOnboarding(widget.parentId);
+      await _completeOnboardingForParent();
       if (!mounted) {
         return;
       }
@@ -95,7 +106,7 @@ class _OnboardingScreenState extends State<OnboardingScreen> {
       _isCompleting = true;
     });
     try {
-      await _resolvedFirestoreService.completeOnboarding(widget.parentId);
+      await _completeOnboardingForParent();
       if (!mounted) {
         return;
       }

@@ -18,7 +18,6 @@ import 'package:trustbridge_app/screens/beta_feedback_history_screen.dart';
 import 'package:trustbridge_app/screens/beta_feedback_screen.dart';
 import 'package:trustbridge_app/screens/child_requests_screen.dart';
 import 'package:trustbridge_app/screens/child_status_screen.dart';
-import 'package:trustbridge_app/screens/dashboard_screen.dart';
 import 'package:trustbridge_app/screens/dns_analytics_screen.dart';
 import 'package:trustbridge_app/screens/login_screen.dart';
 import 'package:trustbridge_app/screens/onboarding_screen.dart';
@@ -28,6 +27,9 @@ import 'package:trustbridge_app/services/crashlytics_service.dart';
 import 'package:trustbridge_app/services/firestore_service.dart';
 import 'package:trustbridge_app/services/notification_service.dart';
 import 'package:trustbridge_app/services/policy_vpn_sync_service.dart';
+import 'package:trustbridge_app/theme/app_theme.dart';
+import 'package:trustbridge_app/widgets/child_shell.dart';
+import 'package:trustbridge_app/widgets/parent_shell.dart';
 
 Future<void> main() async {
   WidgetsFlutterBinding.ensureInitialized();
@@ -138,8 +140,6 @@ class _MyAppState extends State<MyApp> {
 
   @override
   Widget build(BuildContext context) {
-    const primaryColor = Color(0xFF2094F3);
-
     return MultiProvider(
       providers: [
         ChangeNotifierProvider<PolicyVpnSyncService>(
@@ -162,33 +162,24 @@ class _MyAppState extends State<MyApp> {
           GlobalCupertinoLocalizations.delegate,
         ],
         supportedLocales: AppLocalizations.supportedLocales,
-        theme: ThemeData(
-          colorScheme: ColorScheme.fromSeed(
-            seedColor: primaryColor,
-            brightness: Brightness.light,
-          ),
-          scaffoldBackgroundColor: const Color(0xFFF5F7F8),
-          useMaterial3: true,
-        ),
-        darkTheme: ThemeData(
-          colorScheme: ColorScheme.fromSeed(
-            seedColor: primaryColor,
-            brightness: Brightness.dark,
-          ),
-          scaffoldBackgroundColor: const Color(0xFF101A22),
-          useMaterial3: true,
-        ),
+        theme: AppTheme.light(),
+        darkTheme: AppTheme.dark(),
         themeMode: ThemeMode.system,
         home: const AuthWrapper(),
         routes: {
           '/login': (context) => const LoginScreen(),
-          '/dashboard': (context) => const DashboardScreen(),
+          '/dashboard': (context) => const _DashboardEntryScreen(),
           '/add-child': (context) => const AddChildScreen(),
           '/parent-requests': (context) => const ParentRequestsScreen(),
           '/dns-analytics': (context) => const DnsAnalyticsScreen(),
           '/beta-feedback': (context) => const BetaFeedbackScreen(),
           '/beta-feedback-history': (context) =>
               const BetaFeedbackHistoryScreen(),
+          '/child-shell': (context) {
+            final child =
+                ModalRoute.of(context)!.settings.arguments as ChildProfile;
+            return ChildShell(child: child);
+          },
           '/onboarding': (context) {
             final parentId = ModalRoute.of(context)?.settings.arguments;
             if (parentId is! String || parentId.trim().isEmpty) {
@@ -224,6 +215,8 @@ class _AuthWrapperState extends State<AuthWrapper> {
   final FirestoreService _firestoreService = FirestoreService();
   final NotificationService _notificationService = NotificationService();
   final CrashlyticsService _crashlyticsService = CrashlyticsService();
+  Future<_LaunchRoute>? _launchRouteFuture;
+  String? _launchRouteUserId;
   String? _lastSyncUserId;
   String? _lastNotificationUserId;
   String? _lastCrashlyticsUserId;
@@ -336,6 +329,26 @@ class _AuthWrapperState extends State<AuthWrapper> {
     super.dispose();
   }
 
+  void _clearLaunchRouteCache() {
+    _launchRouteFuture = null;
+    _launchRouteUserId = null;
+  }
+
+  void _ensureLaunchRouteFuture(User user) {
+    if (_launchRouteFuture != null && _launchRouteUserId == user.uid) {
+      return;
+    }
+    _launchRouteUserId = user.uid;
+    _launchRouteFuture = _resolveLaunchRoute(user);
+  }
+
+  Future<_LaunchRoute> _resolveLaunchRoute(User user) async {
+    return _loadLaunchRoute(
+      firestoreService: _firestoreService,
+      user: user,
+    );
+  }
+
   @override
   Widget build(BuildContext context) {
     return StreamBuilder<User?>(
@@ -353,37 +366,120 @@ class _AuthWrapperState extends State<AuthWrapper> {
           );
         }
 
-        if (snapshot.hasData) {
-          return FutureBuilder<bool>(
-            key: ValueKey<String>('onboarding-${snapshot.data!.uid}'),
-            future: _firestoreService.isOnboardingComplete(snapshot.data!.uid),
-            builder: (context, onboardingSnapshot) {
-              if (onboardingSnapshot.connectionState ==
-                  ConnectionState.waiting) {
-                return const Scaffold(
-                  body: Center(
-                    child: CircularProgressIndicator(),
-                  ),
-                );
-              }
-
-              if (onboardingSnapshot.hasError) {
-                return const DashboardScreen();
-              }
-
-              final onboardingComplete = onboardingSnapshot.data ?? false;
-              if (!onboardingComplete) {
-                return OnboardingScreen(parentId: snapshot.data!.uid);
-              }
-
-              return const DashboardScreen();
-            },
-          );
+        final user = snapshot.data;
+        if (user == null) {
+          _clearLaunchRouteCache();
+          return const LoginScreen();
         }
 
-        return const LoginScreen();
+        _ensureLaunchRouteFuture(user);
+
+        return FutureBuilder<_LaunchRoute>(
+          key: ValueKey<String>('onboarding-${user.uid}'),
+          future: _launchRouteFuture,
+          builder: (context, launchSnapshot) {
+            if (launchSnapshot.connectionState == ConnectionState.waiting) {
+              return const Scaffold(
+                body: Center(
+                  child: CircularProgressIndicator(),
+                ),
+              );
+            }
+
+            final launchRoute = launchSnapshot.data;
+            if (launchSnapshot.hasError || launchRoute == null) {
+              return OnboardingScreen(parentId: user.uid);
+            }
+
+            if (!launchRoute.onboardingComplete) {
+              return OnboardingScreen(parentId: launchRoute.parentId);
+            }
+
+            return const ParentShell();
+          },
+        );
       },
     );
   }
 }
 
+class _LaunchRoute {
+  const _LaunchRoute({
+    required this.parentId,
+    required this.onboardingComplete,
+  });
+
+  final String parentId;
+  final bool onboardingComplete;
+}
+
+Future<_LaunchRoute> _loadLaunchRoute({
+  required FirestoreService firestoreService,
+  required User user,
+}) async {
+  await firestoreService.ensureParentProfile(
+    parentId: user.uid,
+    phoneNumber: user.phoneNumber,
+  );
+  final parentPrefs = await firestoreService.getParentPreferences(user.uid);
+  final onboardingComplete =
+      (parentPrefs?['onboardingComplete'] as bool?) ?? false;
+  return _LaunchRoute(
+    parentId: user.uid,
+    onboardingComplete: onboardingComplete,
+  );
+}
+
+class _DashboardEntryScreen extends StatefulWidget {
+  const _DashboardEntryScreen();
+
+  @override
+  State<_DashboardEntryScreen> createState() => _DashboardEntryScreenState();
+}
+
+class _DashboardEntryScreenState extends State<_DashboardEntryScreen> {
+  final AuthService _authService = AuthService();
+  final FirestoreService _firestoreService = FirestoreService();
+  Future<_LaunchRoute>? _launchRouteFuture;
+  String? _launchRouteUserId;
+
+  @override
+  Widget build(BuildContext context) {
+    final user = _authService.currentUser;
+    if (user == null) {
+      return const LoginScreen();
+    }
+
+    if (_launchRouteFuture == null || _launchRouteUserId != user.uid) {
+      _launchRouteUserId = user.uid;
+      _launchRouteFuture = _loadLaunchRoute(
+        firestoreService: _firestoreService,
+        user: user,
+      );
+    }
+
+    return FutureBuilder<_LaunchRoute>(
+      future: _launchRouteFuture,
+      builder: (context, snapshot) {
+        if (snapshot.connectionState == ConnectionState.waiting) {
+          return const Scaffold(
+            body: Center(
+              child: CircularProgressIndicator(),
+            ),
+          );
+        }
+
+        final launchRoute = snapshot.data;
+        if (snapshot.hasError || launchRoute == null) {
+          return OnboardingScreen(parentId: user.uid);
+        }
+
+        if (!launchRoute.onboardingComplete) {
+          return OnboardingScreen(parentId: launchRoute.parentId);
+        }
+
+        return const ParentShell();
+      },
+    );
+  }
+}

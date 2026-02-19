@@ -211,6 +211,21 @@ void main() {
       firestoreService = FirestoreService(firestore: fakeFirestore);
     });
 
+    test('ensureParentProfile initializes onboardingComplete to false',
+        () async {
+      await firestoreService.ensureParentProfile(
+        parentId: 'parent-profile-default',
+        phoneNumber: '+919999999999',
+      );
+
+      final snapshot = await fakeFirestore
+          .collection('parents')
+          .doc('parent-profile-default')
+          .get();
+      expect(snapshot.exists, isTrue);
+      expect(snapshot.data()!['onboardingComplete'], isFalse);
+    });
+
     test('updateParentPreferences merges preference values', () async {
       await fakeFirestore.collection('parents').doc('parentA').set({
         'parentId': 'parentA',

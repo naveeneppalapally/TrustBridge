@@ -3524,3 +3524,132 @@ flows, and telemetry-backed threshold tracking before v1.0.
    - Release APK output size: ~21.6 MB.
 
 ---
+
+## Day 85 - First-Run Route Guard + Onboarding Reliability (Week 17 Day 1)
+
+Program goal: ensure every authenticated parent lands in the correct flow
+(onboarding vs dashboard) with deterministic startup behavior.
+
+### Commit entries
+
+1. **2026-02-19 17:13:44 +05:30**  
+   Commit: `[pending]`  
+   Message: `Implement Day 85 onboarding route guard hardening`  
+   Changes:
+   - Updated `lib/main.dart`:
+     - `/dashboard` now resolves through a guarded dashboard entry
+     - added startup route resolution that ensures parent profile and checks onboarding state
+     - Auth wrapper now uses stable per-user onboarding future flow
+   - Updated `lib/services/firestore_service.dart`:
+     - parent preferences onboarding flag defaults safely to `false` when absent
+   - Updated `lib/screens/login_screen.dart`:
+     - removed duplicate manual navigation in login handlers
+     - kept auth-state listener driven navigation to avoid race conditions
+   - Updated `test/screens/onboarding_screen_test.dart`:
+     - added skip-to-dashboard test with onboarding completion hook
+
+---
+
+## Day 86 - Android 14 VPN Service Compliance (Week 17 Day 2)
+
+Program goal: harden VPN runtime behavior for modern Android lifecycle and
+network transitions.
+
+### Commit entries
+
+1. **2026-02-19 17:13:44 +05:30**  
+   Commit: `[pending]`  
+   Message: `Implement Day 86 Android 14 VPN stability updates`  
+   Changes:
+   - Updated `android/app/src/main/kotlin/com/navee/trustbridge/vpn/DnsVpnService.kt`:
+     - standardized TUN config (`10.0.0.1/32`, MTU 1500, fallback DNS servers)
+     - added connectivity callback and dynamic `setUnderlyingNetworks(...)`
+     - persisted VPN enabled state consistently across start/restart/stop actions
+     - improved `onRevoke()` recovery behavior for Android 14 revoke scenarios
+   - Updated tests:
+     - `test/services/vpn_service_test.dart` telemetry mapping coverage extended
+
+---
+
+## Day 87 - Permission + Battery Hardening For VPN (Week 17 Day 3)
+
+Program goal: make VPN activation reliable on newer Android versions by
+covering notification permission and battery optimization paths.
+
+### Commit entries
+
+1. **2026-02-19 17:13:44 +05:30**  
+   Commit: `[pending]`  
+   Message: `Implement Day 87 Android permission and battery hardening`  
+   Changes:
+   - Updated `android/app/src/main/AndroidManifest.xml`:
+     - added `FOREGROUND_SERVICE_SPECIAL_USE` permission
+     - configured `DnsVpnService` special-use FGS subtype metadata
+     - updated boot receiver attributes for deterministic behavior
+   - Updated `android/app/src/main/kotlin/com/navee/trustbridge/MainActivity.kt`:
+     - refined battery optimization settings deep link handling for Android 14+
+   - Updated `lib/screens/vpn_protection_screen.dart`:
+     - added pre-start notification permission request flow
+     - surfaced permission state in readiness checks
+     - improved battery guidance copy for Android 14 unrestricted mode path
+   - Updated `test/screens/vpn_protection_screen_test.dart`:
+     - added permission-gating and readiness assertions
+
+---
+
+## Day 88 - Theme Foundation Refactor (Week 17 Day 4)
+
+Program goal: establish a reusable design system foundation for consistent
+light/dark UI and future screen work.
+
+### Commit entries
+
+1. **2026-02-19 17:13:44 +05:30**  
+   Commit: `[pending]`  
+   Message: `Implement Day 88 app theme foundation`  
+   Changes:
+   - Added:
+     - `lib/theme/app_spacing.dart`
+     - `lib/theme/app_text_styles.dart`
+     - `lib/theme/app_theme.dart`
+   - Updated `lib/main.dart`:
+     - wired `theme`, `darkTheme`, `themeMode`
+   - Updated `pubspec.yaml` / `pubspec.lock`:
+     - added `google_fonts` dependency
+   - Added tests:
+     - `test/theme/app_theme_test.dart`
+   - Test hardening:
+     - made text style generation safe under `flutter test` without runtime font fetch
+
+---
+
+## Day 89 - Parent/Child Navigation Shells (Week 17 Day 5)
+
+Program goal: introduce scalable shell navigation for parent and child
+experiences with stable tab state and request awareness.
+
+### Commit entries
+
+1. **2026-02-19 17:13:44 +05:30**  
+   Commit: `[pending]`  
+   Message: `Implement Day 89 parent and child shell navigation`  
+   Changes:
+   - Added:
+     - `lib/widgets/parent_shell.dart`
+     - `lib/widgets/child_shell.dart`
+   - Parent shell:
+     - 4-tab `IndexedStack` navigation (Dashboard, Schedule, Reports, Security)
+     - dashboard badge indicator when pending requests exist
+   - Child shell:
+     - 3-tab navigation (Home, Activity, Help)
+   - Added tests:
+     - `test/widgets/parent_shell_test.dart`
+     - `test/widgets/child_shell_test.dart`
+
+### Validation (Days 85-89 batch)
+
+- `flutter analyze` passed.
+- `flutter test` passed (275/275).
+- `flutter build apk --debug` passed.
+
+---

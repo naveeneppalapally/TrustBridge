@@ -92,10 +92,8 @@ class FirestoreService {
       );
     }
     if (data != null) {
-      if (data.containsKey('onboardingComplete')) {
-        mergedPreferences['onboardingComplete'] =
-            data['onboardingComplete'] == true;
-      }
+      mergedPreferences['onboardingComplete'] =
+          data['onboardingComplete'] == true;
       if (data.containsKey('onboardingCompletedAt')) {
         mergedPreferences['onboardingCompletedAt'] =
             data['onboardingCompletedAt'];

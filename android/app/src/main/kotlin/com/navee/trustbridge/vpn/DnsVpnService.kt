@@ -5,6 +5,10 @@ import android.app.NotificationChannel
 import android.app.NotificationManager
 import android.app.PendingIntent
 import android.content.Intent
+import android.net.ConnectivityManager
+import android.net.Network
+import android.net.NetworkCapabilities
+import android.net.NetworkRequest
 import android.net.VpnService
 import android.os.Build
 import android.os.ParcelFileDescriptor
@@ -19,8 +23,10 @@ import kotlin.concurrent.thread
 class DnsVpnService : VpnService() {
     companion object {
         private const val TAG = "DnsVpnService"
-        private const val VPN_ADDRESS = "10.0.0.2"
+        private const val VPN_ADDRESS = "10.0.0.1"
         private const val INTERCEPT_DNS = "8.8.8.8"
+        private const val FALLBACK_DNS_PRIMARY = "1.1.1.1"
+        private const val FALLBACK_DNS_SECONDARY = "8.8.8.8"
         private const val DEFAULT_UPSTREAM_DNS = "8.8.8.8"
         private const val NOTIFICATION_ID = 1001
         private const val CHANNEL_ID = "dns_vpn_channel"
@@ -126,6 +132,11 @@ class DnsVpnService : VpnService() {
     private var packetHandler: DnsPacketHandler? = null
     private lateinit var filterEngine: DnsFilterEngine
     private lateinit var vpnPreferencesStore: VpnPreferencesStore
+    private lateinit var connectivityManager: ConnectivityManager
+    private var networkCallback: ConnectivityManager.NetworkCallback? = null
+    private var activeUnderlyingNetwork: Network? = null
+    @Volatile
+    private var reconnectScheduledFromRevoke: Boolean = false
     private var lastAppliedCategories: List<String> = emptyList()
     private var lastAppliedDomains: List<String> = emptyList()
     private var lastAppliedAllowedDomains: List<String> = emptyList()
@@ -137,6 +148,7 @@ class DnsVpnService : VpnService() {
     override fun onCreate() {
         super.onCreate()
         vpnPreferencesStore = VpnPreferencesStore(this)
+        connectivityManager = getSystemService(ConnectivityManager::class.java)
         val persisted = vpnPreferencesStore.loadConfig()
         lastAppliedUpstreamDns = normalizeUpstreamDns(persisted.upstreamDns)
         currentUpstreamDns = lastAppliedUpstreamDns
@@ -160,6 +172,8 @@ class DnsVpnService : VpnService() {
 
         return when (action) {
             ACTION_START -> {
+                vpnPreferencesStore.setEnabled(true)
+                reconnectScheduledFromRevoke = false
                 val categories =
                     intent?.getStringArrayListExtra(EXTRA_BLOCKED_CATEGORIES)?.toList()
                         ?: lastAppliedCategories
@@ -189,6 +203,8 @@ class DnsVpnService : VpnService() {
             }
 
             ACTION_RESTART -> {
+                vpnPreferencesStore.setEnabled(true)
+                reconnectScheduledFromRevoke = false
                 val hasCategories = intent?.hasExtra(EXTRA_BLOCKED_CATEGORIES) == true
                 val hasDomains = intent?.hasExtra(EXTRA_BLOCKED_DOMAINS) == true
                 val hasAllowedDomains = intent?.hasExtra(EXTRA_TEMP_ALLOWED_DOMAINS) == true
@@ -241,6 +257,7 @@ class DnsVpnService : VpnService() {
             }
 
             ACTION_STOP -> {
+                vpnPreferencesStore.setEnabled(false)
                 stopVpn(stopService = true, markDisabled = true)
                 START_NOT_STICKY
             }
@@ -258,12 +275,17 @@ class DnsVpnService : VpnService() {
         try {
             val builder = Builder()
                 .setSession("TrustBridge DNS Filter")
-                .addAddress(VPN_ADDRESS, 24)
+                .addAddress(VPN_ADDRESS, 32)
+                .setMtu(1500)
                 // Route only the DNS interception endpoint through the tunnel.
                 // Full-tunnel routing would break all non-DNS traffic until
                 // generic packet forwarding is implemented.
                 .addRoute(INTERCEPT_DNS, 32)
                 .addDnsServer(INTERCEPT_DNS)
+                .addDnsServer(FALLBACK_DNS_PRIMARY)
+                .addDnsServer(FALLBACK_DNS_SECONDARY)
+
+            setInitialUnderlyingNetwork(builder)
 
             vpnInterface = builder.establish()
             if (vpnInterface == null) {
@@ -294,6 +316,7 @@ class DnsVpnService : VpnService() {
             currentUpstreamDns = lastAppliedUpstreamDns
 
             startForeground(NOTIFICATION_ID, createNotification())
+            registerNetworkCallback()
             startPacketProcessing()
             Log.d(TAG, "DNS VPN started (upstream=$lastAppliedUpstreamDns)")
         } catch (error: Exception) {
@@ -358,6 +381,7 @@ class DnsVpnService : VpnService() {
         if (markDisabled) {
             vpnPreferencesStore.setEnabled(false)
         }
+        unregisterNetworkCallback()
 
         try {
             packetHandler?.close()
@@ -385,6 +409,97 @@ class DnsVpnService : VpnService() {
 
         if (stopService) {
             stopSelf()
+        }
+    }
+
+    private fun setInitialUnderlyingNetwork(builder: Builder) {
+        if (Build.VERSION.SDK_INT < Build.VERSION_CODES.LOLLIPOP) {
+            return
+        }
+
+        val network = try {
+            connectivityManager.activeNetwork
+        } catch (_: Exception) {
+            null
+        }
+        activeUnderlyingNetwork = network
+        try {
+            builder.setUnderlyingNetworks(network?.let { arrayOf(it) })
+        } catch (error: Exception) {
+            Log.w(TAG, "Unable to set initial underlying network", error)
+        }
+    }
+
+    private fun registerNetworkCallback() {
+        if (Build.VERSION.SDK_INT < Build.VERSION_CODES.LOLLIPOP) {
+            return
+        }
+        if (networkCallback != null) {
+            return
+        }
+
+        val callback = object : ConnectivityManager.NetworkCallback() {
+            override fun onAvailable(network: Network) {
+                updateUnderlyingNetwork(network)
+            }
+
+            override fun onLost(network: Network) {
+                if (network == activeUnderlyingNetwork) {
+                    val fallbackNetwork = try {
+                        connectivityManager.activeNetwork
+                    } catch (_: Exception) {
+                        null
+                    }
+                    updateUnderlyingNetwork(fallbackNetwork)
+                }
+            }
+
+            override fun onCapabilitiesChanged(
+                network: Network,
+                networkCapabilities: NetworkCapabilities
+            ) {
+                if (networkCapabilities.hasCapability(NetworkCapabilities.NET_CAPABILITY_INTERNET)) {
+                    updateUnderlyingNetwork(network)
+                }
+            }
+        }
+
+        try {
+            val request = NetworkRequest.Builder()
+                .addCapability(NetworkCapabilities.NET_CAPABILITY_INTERNET)
+                .build()
+            connectivityManager.registerNetworkCallback(request, callback)
+            networkCallback = callback
+        } catch (error: Exception) {
+            Log.w(TAG, "Unable to register network callback", error)
+            networkCallback = null
+        }
+    }
+
+    private fun unregisterNetworkCallback() {
+        val callback = networkCallback ?: return
+        try {
+            connectivityManager.unregisterNetworkCallback(callback)
+        } catch (_: Exception) {
+            // Ignore cleanup errors.
+        } finally {
+            networkCallback = null
+            activeUnderlyingNetwork = null
+        }
+    }
+
+    private fun updateUnderlyingNetwork(network: Network?) {
+        if (!serviceRunning) {
+            return
+        }
+        if (activeUnderlyingNetwork == network) {
+            return
+        }
+        activeUnderlyingNetwork = network
+        try {
+            setUnderlyingNetworks(network?.let { arrayOf(it) })
+        } catch (error: Exception) {
+            Log.w(TAG, "Unable to update underlying network", error)
         }
     }
 
@@ -460,8 +575,40 @@ class DnsVpnService : VpnService() {
 
     override fun onRevoke() {
         super.onRevoke()
-        Log.d(TAG, "VPN permission revoked")
-        stopVpn(stopService = true, markDisabled = true)
+        val config = vpnPreferencesStore.loadConfig()
+        val shouldReconnect = Build.VERSION.SDK_INT >= Build.VERSION_CODES.UPSIDE_DOWN_CAKE &&
+            config.enabled
+
+        if (!shouldReconnect || reconnectScheduledFromRevoke) {
+            Log.d(TAG, "VPN permission revoked")
+            stopVpn(stopService = true, markDisabled = true)
+            return
+        }
+
+        reconnectScheduledFromRevoke = true
+        Log.w(TAG, "VPN revoked on Android 14; scheduling reconnect attempt")
+        stopVpn(stopService = false, markDisabled = false)
+
+        thread(name = "dns-vpn-reconnect") {
+            try {
+                Thread.sleep(1200)
+            } catch (_: InterruptedException) {
+            }
+
+            val restartIntent = Intent(this@DnsVpnService, DnsVpnService::class.java).apply {
+                action = ACTION_START
+                putStringArrayListExtra(EXTRA_BLOCKED_CATEGORIES, ArrayList(lastAppliedCategories))
+                putStringArrayListExtra(EXTRA_BLOCKED_DOMAINS, ArrayList(lastAppliedDomains))
+                putStringArrayListExtra(EXTRA_TEMP_ALLOWED_DOMAINS, ArrayList(lastAppliedAllowedDomains))
+                putExtra(EXTRA_UPSTREAM_DNS, lastAppliedUpstreamDns)
+            }
+
+            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
+                startForegroundService(restartIntent)
+            } else {
+                startService(restartIntent)
+            }
+        }
     }
 
     override fun onDestroy() {

@@ -45,6 +45,8 @@ dependencies:
   share_plus: ^7.2.2
   local_auth: ^2.2.0
   flutter_secure_storage: ^9.0.0
+  permission_handler: ^12.0.1
+  google_fonts: ^6.2.1
 
   # State Management
   provider: ^6.1.1

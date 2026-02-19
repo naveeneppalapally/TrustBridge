@@ -1,9 +1,11 @@
 import 'dart:async';
+import 'dart:io';
 
 import 'package:trustbridge_app/l10n/app_localizations.dart';
 import 'package:trustbridge_app/l10n/app_localizations_en.dart';
 import 'package:flutter/material.dart';
 import 'package:intl/intl.dart';
+import 'package:permission_handler/permission_handler.dart';
 import 'package:provider/provider.dart';
 import 'package:trustbridge_app/services/auth_service.dart';
 import 'package:trustbridge_app/services/dns_filter_engine.dart';
@@ -24,12 +26,16 @@ class VpnProtectionScreen extends StatefulWidget {
     this.firestoreService,
     this.vpnService,
     this.parentIdOverride,
+    this.notificationPermissionChecker,
+    this.notificationPermissionRequester,
   });
 
   final AuthService? authService;
   final FirestoreService? firestoreService;
   final VpnServiceBase? vpnService;
   final String? parentIdOverride;
+  final Future<bool> Function()? notificationPermissionChecker;
+  final Future<bool> Function()? notificationPermissionRequester;
 
   @override
   State<VpnProtectionScreen> createState() => _VpnProtectionScreenState();
@@ -58,6 +64,7 @@ class _VpnProtectionScreenState extends State<VpnProtectionScreen> {
   bool _isRunningReadinessTest = false;
   bool _isOpeningVpnSettings = false;
   bool _isOpeningPrivateDnsSettings = false;
+  bool _notificationPermissionGranted = true;
   List<_ReadinessCheckItem> _readinessItems = const [];
   DateTime? _lastReadinessRunAt;
   RuleCacheSnapshot _ruleCacheSnapshot = const RuleCacheSnapshot.empty();
@@ -862,6 +869,9 @@ class _VpnProtectionScreenState extends State<VpnProtectionScreen> {
     final statusLabel = _ignoringBatteryOptimizations
         ? 'Battery optimization ignored'
         : 'Battery optimization active';
+    final guidanceText = _ignoringBatteryOptimizations
+        ? 'TrustBridge is less likely to be stopped in the background.'
+        : 'On Android 14+, open app details and set Battery to Unrestricted for stable VPN protection.';
 
     return Card(
       elevation: 0,
@@ -896,9 +906,7 @@ class _VpnProtectionScreenState extends State<VpnProtectionScreen> {
             ),
             const SizedBox(height: 8),
             Text(
-              _ignoringBatteryOptimizations
-                  ? 'TrustBridge is less likely to be stopped in the background.'
-                  : 'Allow TrustBridge in battery settings for better VPN reliability.',
+              guidanceText,
               style: Theme.of(context).textTheme.bodySmall?.copyWith(
                     color: Colors.grey.shade700,
                   ),
@@ -1225,12 +1233,15 @@ class _VpnProtectionScreenState extends State<VpnProtectionScreen> {
     _isRefreshingStatus = true;
     VpnStatus status = _status;
     var ignoringBatteryOptimizations = _ignoringBatteryOptimizations;
+    var notificationPermissionGranted = _notificationPermissionGranted;
     var ruleCache = _ruleCacheSnapshot;
     Object? refreshError;
     try {
       status = await _resolvedVpnService.getStatus();
       ignoringBatteryOptimizations =
           await _resolvedVpnService.isIgnoringBatteryOptimizations();
+      notificationPermissionGranted =
+          await _resolveNotificationPermissionStatus();
       ruleCache =
           await _resolvedVpnService.getRuleCacheSnapshot(sampleLimit: 4);
     } catch (error) {
@@ -1305,6 +1316,7 @@ class _VpnProtectionScreenState extends State<VpnProtectionScreen> {
     setState(() {
       _status = status;
       _ignoringBatteryOptimizations = ignoringBatteryOptimizations;
+      _notificationPermissionGranted = notificationPermissionGranted;
       _ruleCacheSnapshot = ruleCache;
       _lastStatusRefreshAt = DateTime.now();
     });
@@ -1322,9 +1334,62 @@ class _VpnProtectionScreenState extends State<VpnProtectionScreen> {
     });
   }
 
+  Future<bool> _resolveNotificationPermissionStatus() async {
+    final checker = widget.notificationPermissionChecker;
+    if (checker != null) {
+      return checker();
+    }
+    if (!Platform.isAndroid) {
+      return true;
+    }
+
+    try {
+      final status = await Permission.notification.status;
+      return status.isGranted;
+    } catch (_) {
+      return true;
+    }
+  }
+
+  Future<bool> _ensureForegroundNotificationPermission() async {
+    final requester = widget.notificationPermissionRequester;
+    if (requester != null) {
+      return requester();
+    }
+    if (!Platform.isAndroid) {
+      return true;
+    }
+
+    try {
+      final status = await Permission.notification.status;
+      if (status.isGranted) {
+        return true;
+      }
+      final result = await Permission.notification.request();
+      return result.isGranted;
+    } catch (_) {
+      return true;
+    }
+  }
+
   Future<void> _enableProtection() async {
     setState(() => _isBusy = true);
     try {
+      final notificationPermissionGranted =
+          await _ensureForegroundNotificationPermission();
+      if (!notificationPermissionGranted) {
+        if (mounted) {
+          setState(() {
+            _notificationPermissionGranted = false;
+          });
+          _showMessage(
+            'Notification permission is required for VPN to run in background.',
+            isError: true,
+          );
+        }
+        return;
+      }
+
       var permissionGranted = _status.permissionGranted;
       if (!permissionGranted) {
         permissionGranted = await _resolvedVpnService.requestPermission();
@@ -1723,6 +1788,9 @@ class _VpnProtectionScreenState extends State<VpnProtectionScreen> {
   Future<void> _runReadinessTest() async {
     setState(() => _isRunningReadinessTest = true);
     try {
+      final notificationPermissionGranted =
+          await _resolveNotificationPermissionStatus();
+
       final checks = <_ReadinessCheckItem>[
         _ReadinessCheckItem(
           passed: _status.supported,
@@ -1735,6 +1803,12 @@ class _VpnProtectionScreenState extends State<VpnProtectionScreen> {
           message: _status.permissionGranted
               ? 'VPN permission is granted.'
               : 'VPN permission is missing.',
+        ),
+        _ReadinessCheckItem(
+          passed: notificationPermissionGranted,
+          message: notificationPermissionGranted
+              ? 'POST_NOTIFICATIONS permission is granted.'
+              : 'POST_NOTIFICATIONS permission is missing.',
         ),
         _ReadinessCheckItem(
           passed: _status.isRunning,
@@ -1773,6 +1847,7 @@ class _VpnProtectionScreenState extends State<VpnProtectionScreen> {
         return;
       }
       setState(() {
+        _notificationPermissionGranted = notificationPermissionGranted;
         _readinessItems = checks;
         _lastReadinessRunAt = DateTime.now();
       });
@@ -1818,4 +1893,3 @@ class _ReadinessCheckItem {
 AppLocalizations _l10n(BuildContext context) {
   return AppLocalizations.of(context) ?? AppLocalizationsEn();
 }
-

@@ -202,5 +202,32 @@ void main() {
         const ['instagram.com'],
       );
     });
+
+    test('getVpnTelemetry maps query counters for Android 14 path', () async {
+      TestDefaultBinaryMessengerBinding.instance.defaultBinaryMessenger
+          .setMockMethodCallHandler(channel, (call) async {
+        if (call.method == 'getStatus') {
+          return {
+            'queriesProcessed': 120,
+            'queriesBlocked': 48,
+            'queriesAllowed': 72,
+            'upstreamFailureCount': 3,
+            'fallbackQueryCount': 3,
+            'upstreamDns': 'abc123.dns.nextdns.io',
+            'isRunning': true,
+          };
+        }
+        return null;
+      });
+
+      final telemetry = await service.getVpnTelemetry();
+      expect(telemetry.queriesIntercepted, 120);
+      expect(telemetry.queriesBlocked, 48);
+      expect(telemetry.queriesAllowed, 72);
+      expect(telemetry.upstreamFailureCount, 3);
+      expect(telemetry.fallbackQueryCount, 3);
+      expect(telemetry.activeUpstreamDns, 'abc123.dns.nextdns.io');
+      expect(telemetry.isRunning, isTrue);
+    });
   });
 }
