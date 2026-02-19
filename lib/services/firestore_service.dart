@@ -1129,6 +1129,63 @@ class FirestoreService {
     }
   }
 
+  /// Parent ends an active approved request immediately.
+  ///
+  /// This marks the request as expired so temporary DNS exceptions are removed
+  /// on the next policy sync.
+  Future<void> expireApprovedAccessRequestNow({
+    required String parentId,
+    required String requestId,
+  }) async {
+    if (parentId.trim().isEmpty) {
+      throw ArgumentError.value(parentId, 'parentId', 'Parent ID is required.');
+    }
+    if (requestId.trim().isEmpty) {
+      throw ArgumentError.value(
+        requestId,
+        'requestId',
+        'Request ID is required.',
+      );
+    }
+
+    try {
+      final requestRef = _firestore
+          .collection('parents')
+          .doc(parentId)
+          .collection('access_requests')
+          .doc(requestId);
+
+      final requestSnapshot = await requestRef.get();
+      if (!requestSnapshot.exists) {
+        throw StateError('Access request not found.');
+      }
+
+      final request = AccessRequest.fromFirestore(requestSnapshot);
+      if (request.status != RequestStatus.approved) {
+        throw StateError('Only approved requests can be ended early.');
+      }
+
+      final now = Timestamp.fromDate(DateTime.now());
+      await requestRef.update({
+        'status': RequestStatus.expired.name,
+        'expiresAt': now,
+        'expiredAt': now,
+        'updatedAt': now,
+      });
+      await _crashlyticsService.setCustomKeys({
+        'last_request_id': requestId,
+        'last_request_status': RequestStatus.expired.name,
+      });
+    } catch (error, stackTrace) {
+      await _crashlyticsService.logError(
+        error,
+        stackTrace,
+        reason: 'Failed to end approved access request early',
+      );
+      rethrow;
+    }
+  }
+
   /// Stream all requests (pending + history) for parent.
   Stream<List<AccessRequest>> getAllRequestsStream(String parentId) {
     if (parentId.trim().isEmpty) {

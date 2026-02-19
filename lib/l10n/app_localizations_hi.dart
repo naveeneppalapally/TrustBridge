@@ -273,6 +273,20 @@ class AppLocalizationsHi extends AppLocalizations {
   String get confirmDenyButton => 'अभी अस्वीकार करें';
 
   @override
+  String get endAccessNowButton => 'अभी एक्सेस रोकें';
+
+  @override
+  String get endAccessDialogTitle => 'अभी एक्सेस समाप्त करें?';
+
+  @override
+  String endAccessDialogSummary(Object childName, Object appOrSite) {
+    return '$childName का $appOrSite का एक्सेस तुरंत बंद हो जाएगा।';
+  }
+
+  @override
+  String get accessEndedMessage => 'एक्सेस समाप्त कर दिया गया।';
+
+  @override
   String requestReplyHint(Object childName) {
     return '$childName के लिए संदेश... (वैकल्पिक)';
   }

@@ -2,6 +2,7 @@ import 'dart:async';
 
 import 'package:fake_cloud_firestore/fake_cloud_firestore.dart';
 import 'package:flutter_test/flutter_test.dart';
+import 'package:trustbridge_app/models/access_request.dart';
 import 'package:trustbridge_app/models/child_profile.dart';
 import 'package:trustbridge_app/models/policy.dart';
 import 'package:trustbridge_app/services/firestore_service.dart';
@@ -102,6 +103,8 @@ class _FakeFirestoreService extends FirestoreService {
   DateTime? nextExceptionExpiry;
   final StreamController<List<ChildProfile>> _streamController =
       StreamController<List<ChildProfile>>.broadcast();
+  final StreamController<List<AccessRequest>> _requestsStreamController =
+      StreamController<List<AccessRequest>>.broadcast();
   bool streamRequested = false;
 
   @override
@@ -111,6 +114,11 @@ class _FakeFirestoreService extends FirestoreService {
   Stream<List<ChildProfile>> getChildrenStream(String parentId) {
     streamRequested = true;
     return _streamController.stream;
+  }
+
+  @override
+  Stream<List<AccessRequest>> getAllRequestsStream(String parentId) {
+    return _requestsStreamController.stream;
   }
 
   @override
@@ -133,8 +141,13 @@ class _FakeFirestoreService extends FirestoreService {
     _streamController.add(nextChildren);
   }
 
+  void emitRequests(List<AccessRequest> requests) {
+    _requestsStreamController.add(requests);
+  }
+
   Future<void> disposeController() async {
     await _streamController.close();
+    await _requestsStreamController.close();
   }
 }
 
@@ -307,6 +320,40 @@ void main() {
 
       expect(fakeVpn.updateCalls, 1);
       expect(fakeVpn.lastDomains, contains('facebook.com'));
+    });
+
+    test('access request updates trigger syncNow for exception refresh',
+        () async {
+      fakeVpn.vpnRunning = true;
+      fakeFirestore.children = <ChildProfile>[
+        ChildProfile.create(
+          nickname: 'Child',
+          ageBand: AgeBand.middle,
+        ),
+      ];
+
+      syncService.startListening();
+      fakeFirestore.emitRequests(const <AccessRequest>[]);
+      await Future<void>.delayed(const Duration(milliseconds: 10));
+      expect(fakeVpn.updateCalls, 0);
+
+      fakeFirestore.emitRequests(<AccessRequest>[
+        AccessRequest(
+          id: 'req-1',
+          childId: 'child-1',
+          parentId: 'parent-test',
+          childNickname: 'Child',
+          appOrSite: 'instagram.com',
+          duration: RequestDuration.thirtyMin,
+          status: RequestStatus.approved,
+          requestedAt: DateTime.now(),
+          respondedAt: DateTime.now(),
+          expiresAt: DateTime.now().add(const Duration(minutes: 10)),
+        ),
+      ]);
+      await Future<void>.delayed(const Duration(milliseconds: 30));
+
+      expect(fakeVpn.updateCalls, 1);
     });
   });
 }

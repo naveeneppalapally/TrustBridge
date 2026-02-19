@@ -700,6 +700,60 @@ void main() {
       );
     });
 
+    test('expireApprovedAccessRequestNow marks approved request expired',
+        () async {
+      final request = AccessRequest.create(
+        childId: 'child-e',
+        parentId: 'parent-a',
+        childNickname: 'Riya',
+        appOrSite: 'youtube.com',
+        duration: RequestDuration.thirtyMin,
+      );
+      final requestId = await firestoreService.submitAccessRequest(request);
+      await firestoreService.respondToAccessRequest(
+        parentId: 'parent-a',
+        requestId: requestId,
+        status: RequestStatus.approved,
+      );
+
+      await firestoreService.expireApprovedAccessRequestNow(
+        parentId: 'parent-a',
+        requestId: requestId,
+      );
+
+      final snapshot = await fakeFirestore
+          .collection('parents')
+          .doc('parent-a')
+          .collection('access_requests')
+          .doc(requestId)
+          .get();
+      final data = snapshot.data()!;
+
+      expect(data['status'], RequestStatus.expired.name);
+      expect(data['expiredAt'], isA<Timestamp>());
+      expect(data['expiresAt'], isA<Timestamp>());
+    });
+
+    test('expireApprovedAccessRequestNow rejects non-approved request',
+        () async {
+      final request = AccessRequest.create(
+        childId: 'child-f',
+        parentId: 'parent-a',
+        childNickname: 'Sam',
+        appOrSite: 'reddit.com',
+        duration: RequestDuration.fifteenMin,
+      );
+      final requestId = await firestoreService.submitAccessRequest(request);
+
+      await expectLater(
+        () => firestoreService.expireApprovedAccessRequestNow(
+          parentId: 'parent-a',
+          requestId: requestId,
+        ),
+        throwsA(isA<StateError>()),
+      );
+    });
+
     test('getActiveApprovedExceptionDomains returns normalized active domains',
         () async {
       final now = DateTime.now();

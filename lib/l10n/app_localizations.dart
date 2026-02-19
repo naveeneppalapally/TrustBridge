@@ -609,6 +609,30 @@ abstract class AppLocalizations {
   /// **'Deny Now'**
   String get confirmDenyButton;
 
+  /// No description provided for @endAccessNowButton.
+  ///
+  /// In en, this message translates to:
+  /// **'End Access Now'**
+  String get endAccessNowButton;
+
+  /// No description provided for @endAccessDialogTitle.
+  ///
+  /// In en, this message translates to:
+  /// **'End access now?'**
+  String get endAccessDialogTitle;
+
+  /// No description provided for @endAccessDialogSummary.
+  ///
+  /// In en, this message translates to:
+  /// **'{childName} will lose access to {appOrSite} immediately.'**
+  String endAccessDialogSummary(Object childName, Object appOrSite);
+
+  /// No description provided for @accessEndedMessage.
+  ///
+  /// In en, this message translates to:
+  /// **'Access ended.'**
+  String get accessEndedMessage;
+
   /// No description provided for @requestReplyHint.
   ///
   /// In en, this message translates to:

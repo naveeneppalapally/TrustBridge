@@ -3081,6 +3081,57 @@ high-frequency user pain points.
 
 ---
 
+## Day 82 - Manual Early Expiration (Week 17 Day 2)
+
+Program goal: let parents immediately end an active approved access window
+and ensure VPN exceptions refresh as soon as request status changes.
+
+### Commit entries
+
+1. **2026-02-19 14:01:01 +05:30**  
+   Commit: `[pending]`  
+   Message: `Implement Day 82 manual early expiration for approved access`  
+   Changes:
+   - Updated `lib/services/firestore_service.dart`:
+     - added `expireApprovedAccessRequestNow()` to transition
+       `approved -> expired` with timestamp updates
+   - Updated `lib/services/policy_vpn_sync_service.dart`:
+     - added access-request stream listener alongside child policy listener
+     - access request updates now trigger `syncNow()` (after initial snapshot)
+       so temporary exception changes are applied promptly
+   - Updated `lib/screens/parent_requests_screen.dart`:
+     - history cards for active approved requests now show
+       `End Access Now` action
+     - confirmation dialog before ending access
+     - success/error snackbars for revoke flow
+   - Updated localization:
+     - `lib/l10n/app_en.arb`
+     - `lib/l10n/app_hi.arb`
+     - regenerated:
+       - `lib/l10n/app_localizations.dart`
+       - `lib/l10n/app_localizations_en.dart`
+       - `lib/l10n/app_localizations_hi.dart`
+   - Updated Firestore security rules:
+     - `firestore.rules` now allows parent-only `approved -> expired`
+       update with restricted fields/timestamps
+   - Updated tests:
+     - `test/screens/parent_requests_screen_test.dart`
+       - verifies active approved request can be ended from history
+     - `test/services/firestore_service_test.dart`
+       - verifies manual early-expire success and non-approved rejection
+     - `test/services/policy_vpn_sync_service_test.dart`
+       - verifies access-request stream updates trigger policy sync
+     - `test/firestore_rules/rules.test.js`
+       - added rules coverage for `approved -> expired` transition
+   Validation:
+   - `flutter gen-l10n` passed.
+   - `flutter analyze` passed.
+   - `flutter test` passed (253/253).
+   - `flutter build apk --debug` passed.
+   - `node --check test/firestore_rules/rules.test.js` passed.
+
+---
+
 ## Day 81 - Exception Expiry Auto-Refresh (Week 17 Day 1)
 
 Program goal: ensure temporary approved exceptions are removed on time by

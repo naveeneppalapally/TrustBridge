@@ -273,6 +273,20 @@ class AppLocalizationsEn extends AppLocalizations {
   String get confirmDenyButton => 'Deny Now';
 
   @override
+  String get endAccessNowButton => 'End Access Now';
+
+  @override
+  String get endAccessDialogTitle => 'End access now?';
+
+  @override
+  String endAccessDialogSummary(Object childName, Object appOrSite) {
+    return '$childName will lose access to $appOrSite immediately.';
+  }
+
+  @override
+  String get accessEndedMessage => 'Access ended.';
+
+  @override
   String requestReplyHint(Object childName) {
     return 'Message to $childName... (optional)';
   }

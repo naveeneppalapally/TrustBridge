@@ -350,6 +350,61 @@ void main() {
       expect(data['status'], 'denied');
       expect(data['parentReply'], 'Not right now.');
     });
+
+    testWidgets('active approved request can be ended early from history',
+        (tester) async {
+      await _seedRequest(
+        firestore: fakeFirestore,
+        parentId: 'parent-a',
+        requestId: 'request-7',
+        childNickname: 'Ira',
+        appOrSite: 'youtube.com',
+        durationLabel: '30 min',
+        durationMinutes: 30,
+        status: 'approved',
+        respondedAt: DateTime.now().subtract(const Duration(minutes: 2)),
+        expiresAt: DateTime.now().add(const Duration(minutes: 20)),
+      );
+
+      await tester.pumpWidget(
+        MaterialApp(
+          home: ParentRequestsScreen(
+            parentIdOverride: 'parent-a',
+            firestoreService: firestoreService,
+          ),
+        ),
+      );
+      await tester.pumpAndSettle();
+
+      await tester.tap(find.text('History'));
+      await tester.pumpAndSettle();
+
+      expect(find.byKey(const Key('request_end_access_button_request-7')),
+          findsOneWidget);
+
+      await tester
+          .tap(find.byKey(const Key('request_end_access_button_request-7')));
+      await tester.pumpAndSettle();
+      expect(find.byKey(const Key('request_end_access_dialog_request-7')),
+          findsOneWidget);
+
+      await tester.tap(
+        find.byKey(const Key('request_confirm_end_access_button_request-7')),
+      );
+      await tester.pumpAndSettle();
+
+      final snapshot = await fakeFirestore
+          .collection('parents')
+          .doc('parent-a')
+          .collection('access_requests')
+          .doc('request-7')
+          .get();
+      final data = snapshot.data()!;
+
+      expect(data['status'], 'expired');
+      expect(data['expiredAt'], isA<Timestamp>());
+      expect(data['expiresAt'], isA<Timestamp>());
+    });
   });
 }
 
@@ -363,6 +418,9 @@ Future<void> _seedRequest({
   required int? durationMinutes,
   required String status,
   String? reason,
+  DateTime? respondedAt,
+  DateTime? expiresAt,
+  String? parentReply,
 }) {
   return firestore
       .collection('parents')
@@ -378,9 +436,9 @@ Future<void> _seedRequest({
     'durationMinutes': durationMinutes,
     'reason': reason,
     'status': status,
-    'parentReply': null,
+    'parentReply': parentReply,
     'requestedAt': Timestamp.fromDate(DateTime(2026, 2, 17, 20, 0)),
-    'respondedAt': null,
-    'expiresAt': null,
+    'respondedAt': respondedAt == null ? null : Timestamp.fromDate(respondedAt),
+    'expiresAt': expiresAt == null ? null : Timestamp.fromDate(expiresAt),
   });
 }

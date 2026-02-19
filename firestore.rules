@@ -112,14 +112,29 @@ service cloud.firestore {
           (!('expiresAt' in request.resource.data) || request.resource.data.expiresAt == null);
 
         allow update: if isParent(parentId) &&
-          resource.data.status == 'pending' &&
-          request.resource.data.diff(resource.data).affectedKeys().hasOnly(
-            ['status', 'parentReply', 'respondedAt', 'expiresAt']
-          ) &&
-          request.resource.data.status in ['approved', 'denied'] &&
-          isOptionalString(request.resource.data, 'parentReply', 200) &&
-          isRequiredTimestamp(request.resource.data, 'respondedAt') &&
-          isOptionalTimestamp(request.resource.data, 'expiresAt');
+          (
+            (
+              resource.data.status == 'pending' &&
+              request.resource.data.diff(resource.data).affectedKeys().hasOnly(
+                ['status', 'parentReply', 'respondedAt', 'expiresAt']
+              ) &&
+              request.resource.data.status in ['approved', 'denied'] &&
+              isOptionalString(request.resource.data, 'parentReply', 200) &&
+              isRequiredTimestamp(request.resource.data, 'respondedAt') &&
+              isOptionalTimestamp(request.resource.data, 'expiresAt')
+            ) ||
+            (
+              resource.data.status == 'approved' &&
+              request.resource.data.diff(resource.data).affectedKeys().hasOnly(
+                ['status', 'parentReply', 'expiresAt', 'expiredAt', 'updatedAt']
+              ) &&
+              request.resource.data.status == 'expired' &&
+              isOptionalString(request.resource.data, 'parentReply', 200) &&
+              isRequiredTimestamp(request.resource.data, 'expiresAt') &&
+              isRequiredTimestamp(request.resource.data, 'expiredAt') &&
+              isRequiredTimestamp(request.resource.data, 'updatedAt')
+            )
+          );
 
         allow delete: if isParent(parentId);
       }

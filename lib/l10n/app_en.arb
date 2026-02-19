@@ -97,6 +97,16 @@
   "keepPendingButton": "Keep Pending",
   "confirmApproveButton": "Approve Now",
   "confirmDenyButton": "Deny Now",
+  "endAccessNowButton": "End Access Now",
+  "endAccessDialogTitle": "End access now?",
+  "endAccessDialogSummary": "{childName} will lose access to {appOrSite} immediately.",
+  "@endAccessDialogSummary": {
+    "placeholders": {
+      "childName": {},
+      "appOrSite": {}
+    }
+  },
+  "accessEndedMessage": "Access ended.",
   "requestReplyHint": "Message to {childName}... (optional)",
   "@requestReplyHint": {
     "placeholders": {

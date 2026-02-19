@@ -219,6 +219,52 @@ describe('parents/{parentId}/access_requests/{requestId}', () => {
         }),
     );
   });
+
+  test('parent can end approved access early (approved -> expired)', async () => {
+    await testEnv.withSecurityRulesDisabled(async (context) => {
+      await context.firestore()
+        .doc(`parents/${PARENT_ID}/access_requests/req-expire-now`)
+        .set({
+          ...accessRequestData(),
+          status: 'approved',
+          respondedAt: new Date(),
+          expiresAt: new Date(Date.now() + 30 * 60 * 1000),
+        });
+    });
+
+    await assertSucceeds(
+      testDoc(`parents/${PARENT_ID}/access_requests/req-expire-now`, PARENT_ID)
+        .update({
+          status: 'expired',
+          expiresAt: new Date(),
+          expiredAt: new Date(),
+          updatedAt: new Date(),
+        }),
+    );
+  });
+
+  test('other user cannot end approved access early', async () => {
+    await testEnv.withSecurityRulesDisabled(async (context) => {
+      await context.firestore()
+        .doc(`parents/${PARENT_ID}/access_requests/req-expire-other`)
+        .set({
+          ...accessRequestData(),
+          status: 'approved',
+          respondedAt: new Date(),
+          expiresAt: new Date(Date.now() + 30 * 60 * 1000),
+        });
+    });
+
+    await assertFails(
+      testDoc(`parents/${PARENT_ID}/access_requests/req-expire-other`, OTHER_ID)
+        .update({
+          status: 'expired',
+          expiresAt: new Date(),
+          expiredAt: new Date(),
+          updatedAt: new Date(),
+        }),
+    );
+  });
 });
 
 describe('notification_queue', () => {

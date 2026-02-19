@@ -192,7 +192,11 @@ class _ParentRequestsScreenState extends State<ParentRequestsScreen>
           itemCount: history.length,
           separatorBuilder: (_, __) => const SizedBox(height: 10),
           itemBuilder: (BuildContext context, int index) {
-            return _HistoryCard(request: history[index]);
+            return _HistoryCard(
+              request: history[index],
+              parentId: parentId,
+              firestoreService: _resolvedFirestoreService,
+            );
           },
         );
       },
@@ -752,13 +756,112 @@ class _RequestCardState extends State<_RequestCard> {
   }
 }
 
-class _HistoryCard extends StatelessWidget {
-  const _HistoryCard({required this.request});
+class _HistoryCard extends StatefulWidget {
+  const _HistoryCard({
+    required this.request,
+    required this.parentId,
+    required this.firestoreService,
+  });
 
   final AccessRequest request;
+  final String parentId;
+  final FirestoreService firestoreService;
+
+  @override
+  State<_HistoryCard> createState() => _HistoryCardState();
+}
+
+class _HistoryCardState extends State<_HistoryCard> {
+  bool _isEndingAccess = false;
+
+  bool _canEndAccessNow(AccessRequest request) {
+    if (request.status != RequestStatus.approved) {
+      return false;
+    }
+    final expiresAt = request.expiresAt;
+    return expiresAt == null || expiresAt.isAfter(DateTime.now());
+  }
+
+  Future<void> _endAccessNow() async {
+    if (_isEndingAccess) {
+      return;
+    }
+
+    final request = widget.request;
+    final confirmed = await showDialog<bool>(
+      context: context,
+      builder: (BuildContext dialogContext) {
+        final l10n = _l10n(dialogContext);
+        return AlertDialog(
+          key: Key('request_end_access_dialog_${request.id}'),
+          title: Text(l10n.endAccessDialogTitle),
+          content: Text(
+            l10n.endAccessDialogSummary(
+              request.childNickname,
+              request.appOrSite,
+            ),
+          ),
+          actions: <Widget>[
+            TextButton(
+              onPressed: () => Navigator.of(dialogContext).pop(false),
+              child: Text(l10n.cancelButton),
+            ),
+            FilledButton(
+              key: Key('request_confirm_end_access_button_${request.id}'),
+              style: FilledButton.styleFrom(
+                backgroundColor: Colors.red,
+                foregroundColor: Colors.white,
+              ),
+              onPressed: () => Navigator.of(dialogContext).pop(true),
+              child: Text(l10n.endAccessNowButton),
+            ),
+          ],
+        );
+      },
+    );
+
+    if (confirmed != true || !mounted) {
+      return;
+    }
+
+    setState(() {
+      _isEndingAccess = true;
+    });
+
+    try {
+      await widget.firestoreService.expireApprovedAccessRequestNow(
+        parentId: widget.parentId,
+        requestId: request.id,
+      );
+      if (!mounted) {
+        return;
+      }
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text(_l10n(context).accessEndedMessage),
+        ),
+      );
+    } catch (error) {
+      if (!mounted) {
+        return;
+      }
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text(_l10n(context).errorWithValue('$error')),
+        ),
+      );
+    } finally {
+      if (mounted) {
+        setState(() {
+          _isEndingAccess = false;
+        });
+      }
+    }
+  }
 
   @override
   Widget build(BuildContext context) {
+    final request = widget.request;
     final color = _statusColor(request.status);
 
     return Container(
@@ -821,6 +924,30 @@ class _HistoryCard extends StatelessWidget {
                     fontStyle: FontStyle.italic,
                     color: Colors.grey[600],
                   ),
+            ),
+          ],
+          if (_canEndAccessNow(request)) ...<Widget>[
+            const SizedBox(height: 10),
+            Align(
+              alignment: Alignment.centerRight,
+              child: OutlinedButton.icon(
+                key: Key('request_end_access_button_${request.id}'),
+                onPressed: _isEndingAccess ? null : _endAccessNow,
+                icon: _isEndingAccess
+                    ? const SizedBox(
+                        width: 14,
+                        height: 14,
+                        child: CircularProgressIndicator(strokeWidth: 2),
+                      )
+                    : const Icon(Icons.block, size: 16),
+                label: Text(_l10n(context).endAccessNowButton),
+                style: OutlinedButton.styleFrom(
+                  foregroundColor: Colors.red[700],
+                  side: BorderSide(
+                    color: Colors.red.withValues(alpha: 0.40),
+                  ),
+                ),
+              ),
             ),
           ],
         ],
