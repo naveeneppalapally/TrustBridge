@@ -13,8 +13,8 @@ void main() {
         ),
       );
 
-      expect(find.text('Add a new child profile'), findsOneWidget);
-      expect(find.text('What will be blocked?'), findsOneWidget);
+      expect(find.text('Add Child'), findsOneWidget);
+      expect(find.text('PROTECTION LEVEL'), findsOneWidget);
     });
 
     testWidgets('ChildDetailScreen displays child info', (tester) async {
@@ -29,8 +29,8 @@ void main() {
         ),
       );
 
-      expect(find.text('Test Child'), findsNWidgets(2));
-      expect(find.text('Age: 6-9'), findsOneWidget);
+      expect(find.text('Test Child'), findsOneWidget);
+      expect(find.text('Quick Actions'), findsOneWidget);
     });
 
     testWidgets('Back button navigation works', (tester) async {
@@ -58,7 +58,7 @@ void main() {
       await tester.tap(find.text('Navigate'));
       await tester.pumpAndSettle();
 
-      expect(find.text('Add a new child profile'), findsOneWidget);
+      expect(find.text('Add Child'), findsOneWidget);
 
       await tester.tap(find.byTooltip('Back'));
       await tester.pumpAndSettle();

@@ -3963,3 +3963,39 @@ single checklist source of truth before release day.
    - Physical QA flow remains pending and is documented explicitly in checklist.
 
 ---
+
+## Day 114 - Beta 1 Release Build & Distribution (Week 23 Day 5)
+
+Program goal: ship the first beta build with verified signing, deployment,
+release notes, and distribution pipeline validation.
+
+### Commit entries
+
+1. **2026-02-19 21:15:38 +05:30**  
+   Message: `Implement Day 114 beta release build and distribution`  
+   Changes:
+   - Updated `pubspec.yaml`:
+     - version bumped to `1.0.0-beta.1+114`
+   - Updated `test/navigation_test.dart`:
+     - aligned stale text expectations with current UI copy
+     - restored full test-suite pass
+   - Added `docs/BETA_1_RELEASE_NOTES.md`:
+     - beta changelog, validation focus areas, distribution status
+   - Deployed Firestore rules:
+     - `firebase deploy --only firestore:rules` (project `trustbridge-navee`)
+   - Built release artifact:
+     - `flutter build apk --release --target-platform android-arm64 --obfuscate --split-debug-info=build/debug-info`
+     - output: `build/app/outputs/flutter-apk/app-release.apk` (~21.5 MB)
+   - Verified release signing:
+     - `apksigner verify --verbose --print-certs ...`
+     - v2 signature valid, signer `CN=TrustBridge`
+   - Distributed beta build:
+     - created App Distribution group `beta-testers`
+     - uploaded/distributed release `1.0.0-beta.1 (114)` to `beta-testers`
+   Validation:
+   - `flutter analyze` passed.
+   - `flutter test` passed (309 tests).
+   - Firestore rules deploy passed.
+   - Firebase App Distribution upload/distribution passed.
+
+---
