@@ -3533,7 +3533,7 @@ Program goal: ensure every authenticated parent lands in the correct flow
 ### Commit entries
 
 1. **2026-02-19 17:13:44 +05:30**  
-   Commit: `[pending]`  
+   Commit: `9d40dd1`  
    Message: `Implement Day 85 onboarding route guard hardening`  
    Changes:
    - Updated `lib/main.dart`:
@@ -3558,7 +3558,7 @@ network transitions.
 ### Commit entries
 
 1. **2026-02-19 17:13:44 +05:30**  
-   Commit: `[pending]`  
+   Commit: `9d40dd1`  
    Message: `Implement Day 86 Android 14 VPN stability updates`  
    Changes:
    - Updated `android/app/src/main/kotlin/com/navee/trustbridge/vpn/DnsVpnService.kt`:
@@ -3579,7 +3579,7 @@ covering notification permission and battery optimization paths.
 ### Commit entries
 
 1. **2026-02-19 17:13:44 +05:30**  
-   Commit: `[pending]`  
+   Commit: `9d40dd1`  
    Message: `Implement Day 87 Android permission and battery hardening`  
    Changes:
    - Updated `android/app/src/main/AndroidManifest.xml`:
@@ -3605,7 +3605,7 @@ light/dark UI and future screen work.
 ### Commit entries
 
 1. **2026-02-19 17:13:44 +05:30**  
-   Commit: `[pending]`  
+   Commit: `9d40dd1`  
    Message: `Implement Day 88 app theme foundation`  
    Changes:
    - Added:
@@ -3631,7 +3631,7 @@ experiences with stable tab state and request awareness.
 ### Commit entries
 
 1. **2026-02-19 17:13:44 +05:30**  
-   Commit: `[pending]`  
+   Commit: `9d40dd1`  
    Message: `Implement Day 89 parent and child shell navigation`  
    Changes:
    - Added:
