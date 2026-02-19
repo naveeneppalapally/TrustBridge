@@ -215,6 +215,30 @@ class AppLocalizationsHi extends AppLocalizations {
   String get requestDeniedMessage => 'अनुरोध अस्वीकृत कर दिया गया।';
 
   @override
+  String get approvalModalTitle => 'अनुरोध स्वीकृत करें?';
+
+  @override
+  String get denialModalTitle => 'अनुरोध अस्वीकार करें?';
+
+  @override
+  String approvalModalSummary(
+      Object childName, Object appOrSite, Object duration) {
+    return '$childName $appOrSite के लिए $duration का एक्सेस मांग रहा/रही है।';
+  }
+
+  @override
+  String get parentReplyOptionalLabel => 'बच्चे के लिए जवाब (वैकल्पिक)';
+
+  @override
+  String get keepPendingButton => 'लंबित ही रखें';
+
+  @override
+  String get confirmApproveButton => 'अभी स्वीकृत करें';
+
+  @override
+  String get confirmDenyButton => 'अभी अस्वीकार करें';
+
+  @override
   String requestReplyHint(Object childName) {
     return '$childName के लिए संदेश... (वैकल्पिक)';
   }

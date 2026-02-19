@@ -252,7 +252,6 @@ class _RequestCard extends StatefulWidget {
 
 class _RequestCardState extends State<_RequestCard> {
   final TextEditingController _replyController = TextEditingController();
-  bool _showReplyField = false;
   bool _isResponding = false;
   bool _hiddenOptimistically = false;
   RequestStatus? _pendingAction;
@@ -263,7 +262,10 @@ class _RequestCardState extends State<_RequestCard> {
     super.dispose();
   }
 
-  Future<void> _respond(RequestStatus status) async {
+  Future<void> _respond(
+    RequestStatus status, {
+    required String reply,
+  }) async {
     if (_isResponding) {
       return;
     }
@@ -279,7 +281,7 @@ class _RequestCardState extends State<_RequestCard> {
         parentId: widget.parentId,
         requestId: widget.request.id,
         status: status,
-        reply: _replyController.text,
+        reply: reply,
       );
       if (!mounted) {
         return;
@@ -310,6 +312,92 @@ class _RequestCardState extends State<_RequestCard> {
         ),
       );
     }
+  }
+
+  Future<void> _openDecisionModal(RequestStatus status) async {
+    if (_isResponding) {
+      return;
+    }
+
+    final request = widget.request;
+    final l10n = _l10n(context);
+
+    final confirmed = await showDialog<bool>(
+      context: context,
+      builder: (BuildContext dialogContext) {
+        return AlertDialog(
+          key: Key('request_decision_dialog_${request.id}'),
+          title: Text(_decisionTitle(l10n, status)),
+          content: Column(
+            mainAxisSize: MainAxisSize.min,
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: <Widget>[
+              Text(
+                _decisionSummary(l10n, request),
+                style: Theme.of(dialogContext).textTheme.bodyMedium,
+              ),
+              const SizedBox(height: 12),
+              TextField(
+                key: Key('request_modal_reply_input_${request.id}'),
+                controller: _replyController,
+                maxLines: 3,
+                maxLength: 200,
+                decoration: InputDecoration(
+                  labelText: l10n.parentReplyOptionalLabel,
+                  hintText: l10n.requestReplyHint(request.childNickname),
+                  border: const OutlineInputBorder(),
+                ),
+              ),
+            ],
+          ),
+          actions: <Widget>[
+            TextButton(
+              onPressed: () => Navigator.of(dialogContext).pop(false),
+              child: Text(l10n.keepPendingButton),
+            ),
+            FilledButton(
+              key: Key(
+                status == RequestStatus.approved
+                    ? 'request_confirm_approve_button_${request.id}'
+                    : 'request_confirm_deny_button_${request.id}',
+              ),
+              style: FilledButton.styleFrom(
+                backgroundColor: status == RequestStatus.approved
+                    ? Colors.green
+                    : Colors.orange,
+              ),
+              onPressed: () => Navigator.of(dialogContext).pop(true),
+              child: Text(
+                status == RequestStatus.approved
+                    ? l10n.confirmApproveButton
+                    : l10n.confirmDenyButton,
+              ),
+            ),
+          ],
+        );
+      },
+    );
+
+    if (confirmed != true || !mounted) {
+      return;
+    }
+
+    final reply = _replyController.text.trim();
+    await _respond(status, reply: reply);
+  }
+
+  String _decisionTitle(AppLocalizations l10n, RequestStatus status) {
+    return status == RequestStatus.approved
+        ? l10n.approvalModalTitle
+        : l10n.denialModalTitle;
+  }
+
+  String _decisionSummary(AppLocalizations l10n, AccessRequest request) {
+    return l10n.approvalModalSummary(
+      request.childNickname,
+      request.appOrSite,
+      request.duration.label,
+    );
   }
 
   @override
@@ -458,52 +546,15 @@ class _RequestCardState extends State<_RequestCard> {
                 ),
               ),
             ],
-            if (_showReplyField) ...<Widget>[
-              const SizedBox(height: 12),
-              TextField(
-                key: Key('request_reply_input_${request.id}'),
-                controller: _replyController,
-                maxLines: 2,
-                maxLength: 200,
-                decoration: InputDecoration(
-                  hintText: l10n.requestReplyHint(request.childNickname),
-                  hintStyle: TextStyle(
-                    color: Colors.grey[400],
-                    fontSize: 13,
-                  ),
-                  filled: true,
-                  isDense: true,
-                  border: OutlineInputBorder(
-                    borderRadius: BorderRadius.circular(10),
-                    borderSide: BorderSide.none,
-                  ),
-                ),
-              ),
-            ],
             const SizedBox(height: 16),
             Row(
               children: <Widget>[
-                TextButton.icon(
-                  onPressed: () {
-                    setState(() {
-                      _showReplyField = !_showReplyField;
-                    });
-                  },
-                  icon: Icon(_showReplyField ? Icons.close : Icons.reply,
-                      size: 16),
-                  label: Text(
-                    _showReplyField
-                        ? l10n.cancelReplyButton
-                        : l10n.addReplyButton,
-                    style: const TextStyle(fontSize: 13),
-                  ),
-                ),
                 const Spacer(),
                 OutlinedButton(
                   key: Key('request_deny_button_${request.id}'),
                   onPressed: _isResponding
                       ? null
-                      : () => _respond(RequestStatus.denied),
+                      : () => _openDecisionModal(RequestStatus.denied),
                   style: OutlinedButton.styleFrom(
                     foregroundColor: Colors.orange[800],
                     side: BorderSide(
@@ -529,7 +580,7 @@ class _RequestCardState extends State<_RequestCard> {
                   key: Key('request_approve_button_${request.id}'),
                   onPressed: _isResponding
                       ? null
-                      : () => _respond(RequestStatus.approved),
+                      : () => _openDecisionModal(RequestStatus.approved),
                   style: ElevatedButton.styleFrom(
                     backgroundColor: Colors.green,
                     foregroundColor: Colors.white,

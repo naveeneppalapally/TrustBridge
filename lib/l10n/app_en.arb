@@ -68,6 +68,20 @@
   "cancelReplyButton": "Cancel reply",
   "requestApprovedMessage": "Request approved.",
   "requestDeniedMessage": "Request denied.",
+  "approvalModalTitle": "Approve request?",
+  "denialModalTitle": "Deny request?",
+  "approvalModalSummary": "{childName} is requesting access to {appOrSite} for {duration}.",
+  "@approvalModalSummary": {
+    "placeholders": {
+      "childName": {},
+      "appOrSite": {},
+      "duration": {}
+    }
+  },
+  "parentReplyOptionalLabel": "Reply to child (optional)",
+  "keepPendingButton": "Keep Pending",
+  "confirmApproveButton": "Approve Now",
+  "confirmDenyButton": "Deny Now",
   "requestReplyHint": "Message to {childName}... (optional)",
   "@requestReplyHint": {
     "placeholders": {

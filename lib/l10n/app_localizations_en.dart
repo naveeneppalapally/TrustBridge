@@ -216,6 +216,30 @@ class AppLocalizationsEn extends AppLocalizations {
   String get requestDeniedMessage => 'Request denied.';
 
   @override
+  String get approvalModalTitle => 'Approve request?';
+
+  @override
+  String get denialModalTitle => 'Deny request?';
+
+  @override
+  String approvalModalSummary(
+      Object childName, Object appOrSite, Object duration) {
+    return '$childName is requesting access to $appOrSite for $duration.';
+  }
+
+  @override
+  String get parentReplyOptionalLabel => 'Reply to child (optional)';
+
+  @override
+  String get keepPendingButton => 'Keep Pending';
+
+  @override
+  String get confirmApproveButton => 'Approve Now';
+
+  @override
+  String get confirmDenyButton => 'Deny Now';
+
+  @override
   String requestReplyHint(Object childName) {
     return 'Message to $childName... (optional)';
   }

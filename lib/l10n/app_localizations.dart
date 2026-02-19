@@ -506,6 +506,49 @@ abstract class AppLocalizations {
   /// **'Request denied.'**
   String get requestDeniedMessage;
 
+  /// No description provided for @approvalModalTitle.
+  ///
+  /// In en, this message translates to:
+  /// **'Approve request?'**
+  String get approvalModalTitle;
+
+  /// No description provided for @denialModalTitle.
+  ///
+  /// In en, this message translates to:
+  /// **'Deny request?'**
+  String get denialModalTitle;
+
+  /// No description provided for @approvalModalSummary.
+  ///
+  /// In en, this message translates to:
+  /// **'{childName} is requesting access to {appOrSite} for {duration}.'**
+  String approvalModalSummary(
+      Object childName, Object appOrSite, Object duration);
+
+  /// No description provided for @parentReplyOptionalLabel.
+  ///
+  /// In en, this message translates to:
+  /// **'Reply to child (optional)'**
+  String get parentReplyOptionalLabel;
+
+  /// No description provided for @keepPendingButton.
+  ///
+  /// In en, this message translates to:
+  /// **'Keep Pending'**
+  String get keepPendingButton;
+
+  /// No description provided for @confirmApproveButton.
+  ///
+  /// In en, this message translates to:
+  /// **'Approve Now'**
+  String get confirmApproveButton;
+
+  /// No description provided for @confirmDenyButton.
+  ///
+  /// In en, this message translates to:
+  /// **'Deny Now'**
+  String get confirmDenyButton;
+
   /// No description provided for @requestReplyHint.
   ///
   /// In en, this message translates to:

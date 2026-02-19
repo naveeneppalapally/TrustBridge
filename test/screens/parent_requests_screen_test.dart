@@ -109,7 +109,8 @@ void main() {
           find.textContaining('Need for science assignment'), findsOneWidget);
     });
 
-    testWidgets('reply field toggles when add reply is tapped', (tester) async {
+    testWidgets('approve button opens decision modal with reply input',
+        (tester) async {
       await _seedRequest(
         firestore: fakeFirestore,
         parentId: 'parent-a',
@@ -131,14 +132,26 @@ void main() {
       );
       await tester.pumpAndSettle();
 
-      expect(
-          find.byKey(const Key('request_reply_input_request-2')), findsNothing);
-
-      await tester.tap(find.text('Add reply'));
+      await tester
+          .tap(find.byKey(const Key('request_approve_button_request-2')));
       await tester.pumpAndSettle();
 
-      expect(find.byKey(const Key('request_reply_input_request-2')),
+      expect(find.byKey(const Key('request_decision_dialog_request-2')),
           findsOneWidget);
+      expect(find.text('Approve request?'), findsOneWidget);
+      expect(find.byKey(const Key('request_modal_reply_input_request-2')),
+          findsOneWidget);
+
+      await tester.tap(find.text('Keep Pending'));
+      await tester.pumpAndSettle();
+
+      final snapshot = await fakeFirestore
+          .collection('parents')
+          .doc('parent-a')
+          .collection('access_requests')
+          .doc('request-2')
+          .get();
+      expect(snapshot.data()!['status'], 'pending');
     });
 
     testWidgets('approve action updates status and moves request to history',
@@ -168,6 +181,14 @@ void main() {
           .tap(find.byKey(const Key('request_approve_button_request-3')));
       await tester.pumpAndSettle();
 
+      await tester.enterText(
+        find.byKey(const Key('request_modal_reply_input_request-3')),
+        'Approved for homework',
+      );
+      await tester
+          .tap(find.byKey(const Key('request_confirm_approve_button_request-3')));
+      await tester.pumpAndSettle();
+
       final snapshot = await fakeFirestore
           .collection('parents')
           .doc('parent-a')
@@ -177,6 +198,7 @@ void main() {
       expect(snapshot.data()!['status'], 'approved');
       expect(snapshot.data()!['respondedAt'], isA<Timestamp>());
       expect(snapshot.data()!['expiresAt'], isA<Timestamp>());
+      expect(snapshot.data()!['parentReply'], 'Approved for homework');
 
       await tester.tap(find.text('History'));
       await tester.pumpAndSettle();

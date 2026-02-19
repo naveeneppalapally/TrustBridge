@@ -3081,6 +3081,41 @@ high-frequency user pain points.
 
 ---
 
+## Day 77 - Parent Request Approval Modal (Week 16 Day 2)
+
+Program goal: make parent approvals/denials clearer and safer by replacing
+inline actions with a confirmation modal that supports optional reply text.
+
+### Commit entries
+
+1. **2026-02-19**  
+   Commit: `[pending]`  
+   Message: `Implement Day 77 parent approval modal flow`  
+   Changes:
+   - Updated `lib/screens/parent_requests_screen.dart`:
+     - replaced inline reply toggle with approve/deny decision modal
+     - added modal summary + optional parent reply field
+     - added explicit confirm actions (`Approve Now` / `Deny Now`)
+     - preserved pending state when parent cancels (`Keep Pending`)
+     - added stable widget keys for modal interaction tests
+   - Updated localizations:
+     - `lib/l10n/app_en.arb`
+     - `lib/l10n/app_hi.arb`
+     - regenerated:
+       - `lib/l10n/app_localizations.dart`
+       - `lib/l10n/app_localizations_en.dart`
+       - `lib/l10n/app_localizations_hi.dart`
+   - Updated tests:
+     - `test/screens/parent_requests_screen_test.dart`
+       - verify decision modal opens from approve action
+       - verify keep-pending path does not mutate status
+       - verify approval confirmation stores reply text
+   Validation:
+   - `flutter analyze` passed.
+   - `flutter test` passed (237/237).
+
+---
+
 ## Day 76 - Hindi Language Support (Week 16 Day 1)
 
 Program goal: localize TrustBridge for Indian families with Hindi support,
