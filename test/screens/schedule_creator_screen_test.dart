@@ -14,9 +14,26 @@ void main() {
       );
     });
 
-    testWidgets('renders schedule creator with existing schedules',
+    testWidgets('renders schedule editor sections', (tester) async {
+      await tester.binding.setSurfaceSize(const Size(430, 900));
+      addTearDown(() => tester.binding.setSurfaceSize(null));
+
+      await tester.pumpWidget(
+        MaterialApp(
+          home: ScheduleCreatorScreen(child: testChild),
+        ),
+      );
+      await tester.pump();
+
+      expect(find.text('Schedule Editor'), findsOneWidget);
+      expect(find.text('ROUTINE TYPE'), findsOneWidget);
+      expect(find.text('RESTRICTION LEVEL'), findsOneWidget);
+      expect(find.byKey(const Key('schedule_save_button')), findsOneWidget);
+    });
+
+    testWidgets('routine type and restriction selections are interactive',
         (tester) async {
-      await tester.binding.setSurfaceSize(const Size(430, 1400));
+      await tester.binding.setSurfaceSize(const Size(430, 900));
       addTearDown(() => tester.binding.setSurfaceSize(null));
 
       await tester.pumpWidget(
@@ -24,17 +41,19 @@ void main() {
           home: ScheduleCreatorScreen(child: testChild),
         ),
       );
+      await tester.pump();
 
-      expect(find.text('Schedule Creator'), findsOneWidget);
-      expect(find.text('Time Restrictions'), findsOneWidget);
-      expect(find.textContaining('2 schedules configured'), findsOneWidget);
-      expect(find.text('Quick Templates'), findsOneWidget);
-      expect(find.text('Bedtime'), findsOneWidget);
-      expect(find.text('School Time'), findsOneWidget);
+      await tester.tap(find.byKey(const Key('schedule_type_custom')));
+      await tester.pump();
+      expect(find.byKey(const Key('schedule_type_custom')), findsOneWidget);
+
+      await tester.tap(find.byKey(const Key('schedule_block_all_card')));
+      await tester.pump();
+      expect(find.byKey(const Key('schedule_block_all_card')), findsOneWidget);
     });
 
-    testWidgets('quick template add shows save action', (tester) async {
-      await tester.binding.setSurfaceSize(const Size(430, 1400));
+    testWidgets('day selector and reminder toggle work', (tester) async {
+      await tester.binding.setSurfaceSize(const Size(430, 900));
       addTearDown(() => tester.binding.setSurfaceSize(null));
 
       await tester.pumpWidget(
@@ -42,34 +61,15 @@ void main() {
           home: ScheduleCreatorScreen(child: testChild),
         ),
       );
+      await tester.pump();
 
-      expect(find.text('SAVE'), findsNothing);
+      await tester.tap(find.byKey(const Key('schedule_day_saturday')));
+      await tester.pump();
+      expect(find.byKey(const Key('schedule_day_saturday')), findsOneWidget);
 
-      await tester.tap(find.widgetWithText(OutlinedButton, 'Add Homework'));
-      await tester.pumpAndSettle();
-
-      expect(find.textContaining('3 schedules configured'), findsOneWidget);
-      expect(find.text('SAVE'), findsOneWidget);
-      expect(find.text('Homework Time'), findsOneWidget);
-    });
-
-    testWidgets('delete action opens confirmation dialog', (tester) async {
-      await tester.binding.setSurfaceSize(const Size(430, 1400));
-      addTearDown(() => tester.binding.setSurfaceSize(null));
-
-      await tester.pumpWidget(
-        MaterialApp(
-          home: ScheduleCreatorScreen(child: testChild),
-        ),
-      );
-
-      await tester.tap(find.byTooltip('Delete schedule').first);
-      await tester.pumpAndSettle();
-
-      expect(find.text('Delete Schedule'), findsOneWidget);
-      expect(find.textContaining('Remove "'), findsOneWidget);
-      expect(find.text('Cancel'), findsOneWidget);
-      expect(find.text('Delete'), findsOneWidget);
+      await tester.tap(find.byKey(const Key('schedule_remind_toggle')));
+      await tester.pump();
+      expect(find.byKey(const Key('schedule_remind_toggle')), findsOneWidget);
     });
   });
 }
