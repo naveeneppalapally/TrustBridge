@@ -8,6 +8,35 @@ import 'package:trustbridge_app/services/firestore_service.dart';
 
 void main() {
   group('DashboardScreen', () {
+    testWidgets('renders greeting header and trust summary hero',
+        (tester) async {
+      final fakeFirestore = FakeFirebaseFirestore();
+      final firestoreService = FirestoreService(firestore: fakeFirestore);
+
+      await fakeFirestore.collection('parents').doc('parent-greeting').set({
+        'displayName': 'Sarah Jenkins',
+        'preferences': {
+          'vpnProtectionEnabled': true,
+        },
+      });
+
+      await tester.pumpWidget(
+        MaterialApp(
+          home: DashboardScreen(
+            parentIdOverride: 'parent-greeting',
+            firestoreService: firestoreService,
+          ),
+        ),
+      );
+
+      await tester.pumpAndSettle();
+
+      expect(find.textContaining('Good '), findsOneWidget);
+      expect(find.text('Sarah Jenkins'), findsOneWidget);
+      expect(find.text('Trust Summary'), findsOneWidget);
+      expect(find.text('SHIELD ACTIVE'), findsOneWidget);
+    });
+
     testWidgets('shows empty state when no children', (tester) async {
       final fakeFirestore = FakeFirebaseFirestore();
       final firestoreService = FirestoreService(firestore: fakeFirestore);

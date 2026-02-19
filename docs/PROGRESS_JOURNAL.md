@@ -3653,3 +3653,30 @@ experiences with stable tab state and request awareness.
 - `flutter build apk --debug` passed.
 
 ---
+
+## Day 90 - Dashboard Greeting + Trust Summary Hero (Week 19 Day 1)
+
+Program goal: replace the old dashboard stat-strip with a greeting header and
+hero trust summary card aligned to the redesigned parent dashboard direction.
+
+### Commit entries
+
+1. **2026-02-19 18:00:00 +05:30**  
+   Message: `Implement Day 90 dashboard greeting and trust summary hero`  
+   Changes:
+   - Updated `lib/screens/dashboard_screen.dart`:
+     - added greeting header with time-of-day salutation and parent display name
+     - added top-right request bell with badge in dashboard header
+     - added overflow actions menu for analytics/settings/sign-out
+     - added redesigned `Trust Summary` hero card with:
+       - `SHIELD ACTIVE`/`SHIELD OFF` pill
+       - total screen time metric card + progress bar
+       - active threats metric card
+     - removed old three-metric summary strip (`Managed Profiles`, `Blocked Categories`, `Schedules`)
+   - Updated `test/screens/dashboard_screen_test.dart`:
+     - added greeting + hero card assertions
+   Validation:
+   - `flutter analyze` passed.
+   - `flutter test test/screens/dashboard_screen_test.dart` passed.
+
+---
