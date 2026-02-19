@@ -3089,7 +3089,7 @@ and child views, and formalize expiration smoke verification before release.
 ### Commit entries
 
 1. **2026-02-19 14:23:01 +05:30**  
-   Commit: `[pending]`  
+   Commit: `cff682c`  
    Message: `Implement Day 84 request expiration UX polish and checklist`  
    Changes:
    - Added `lib/utils/expiry_label_utils.dart`:
