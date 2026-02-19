@@ -106,6 +106,7 @@ class _FakeVpnService implements VpnServiceBase {
   Future<bool> updateFilterRules({
     required List<String> blockedCategories,
     required List<String> blockedDomains,
+    List<String> temporaryAllowedDomains = const <String>[],
   }) async {
     updateFilterRulesCalls += 1;
     lastUpdatedCategories = List<String>.from(blockedCategories);

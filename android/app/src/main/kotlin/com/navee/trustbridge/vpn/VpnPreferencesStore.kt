@@ -7,6 +7,7 @@ internal data class PersistedVpnConfig(
     val enabled: Boolean,
     val blockedCategories: List<String>,
     val blockedDomains: List<String>,
+    val temporaryAllowedDomains: List<String>,
     val upstreamDns: String
 )
 
@@ -16,6 +17,7 @@ internal class VpnPreferencesStore(context: Context) {
         private const val KEY_ENABLED = "vpn_enabled"
         private const val KEY_BLOCKED_CATEGORIES = "vpn_blocked_categories"
         private const val KEY_BLOCKED_DOMAINS = "vpn_blocked_domains"
+        private const val KEY_TEMP_ALLOWED_DOMAINS = "vpn_temp_allowed_domains"
         private const val KEY_UPSTREAM_DNS = "vpn_upstream_dns"
         private const val DEFAULT_UPSTREAM_DNS = "8.8.8.8"
     }
@@ -34,6 +36,9 @@ internal class VpnPreferencesStore(context: Context) {
             blockedDomains = decodeStringList(
                 prefs.getString(KEY_BLOCKED_DOMAINS, "[]")
             ),
+            temporaryAllowedDomains = decodeStringList(
+                prefs.getString(KEY_TEMP_ALLOWED_DOMAINS, "[]")
+            ),
             upstreamDns = normalizeUpstreamDns(
                 prefs.getString(KEY_UPSTREAM_DNS, DEFAULT_UPSTREAM_DNS)
             )
@@ -43,11 +48,13 @@ internal class VpnPreferencesStore(context: Context) {
     fun saveRules(
         categories: List<String>,
         domains: List<String>,
+        temporaryAllowedDomains: List<String>,
         upstreamDns: String? = null
     ) {
         prefs.edit()
             .putString(KEY_BLOCKED_CATEGORIES, encodeStringList(categories))
             .putString(KEY_BLOCKED_DOMAINS, encodeStringList(domains))
+            .putString(KEY_TEMP_ALLOWED_DOMAINS, encodeStringList(temporaryAllowedDomains))
             .putString(KEY_UPSTREAM_DNS, normalizeUpstreamDns(upstreamDns))
             .apply()
     }

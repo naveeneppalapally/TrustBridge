@@ -3081,6 +3081,50 @@ high-frequency user pain points.
 
 ---
 
+## Day 80 - Temporary Exception Handling (Week 16 Day 5)
+
+Program goal: allow time-bound approved requests to temporarily bypass DNS
+blocking so approved access works immediately without disabling protection.
+
+### Commit entries
+
+1. **2026-02-19 13:31:51 +05:30**  
+   Commit: `[pending]`  
+   Message: `Implement Day 80 temporary exception handling pipeline`  
+   Changes:
+   - Updated `lib/services/vpn_service.dart`:
+     - extended `updateFilterRules()` with `temporaryAllowedDomains`
+     - sends temporary allow domains to Android method channel
+   - Updated `lib/services/firestore_service.dart`:
+     - added `getActiveApprovedExceptionDomains()` to fetch active approved request domains
+     - added domain normalization/filtering helpers for safe allowlist entries
+   - Updated `lib/services/policy_vpn_sync_service.dart`:
+     - merges approved active exception domains into VPN sync payload
+     - includes temp allowlist for both normal and empty-child sync paths
+   - Updated Android VPN stack:
+     - `android/app/src/main/kotlin/com/navee/trustbridge/MainActivity.kt`
+     - `android/app/src/main/kotlin/com/navee/trustbridge/vpn/DnsVpnService.kt`
+     - `android/app/src/main/kotlin/com/navee/trustbridge/vpn/DnsFilterEngine.kt`
+     - `android/app/src/main/kotlin/com/navee/trustbridge/vpn/VpnPreferencesStore.kt`
+     - `android/app/src/main/kotlin/com/navee/trustbridge/vpn/VpnBootReceiver.kt`
+     - propagates/persists temp allow domains across start, update, restart, and boot restore
+     - enforces allowlist precedence before blocklist checks
+   - Updated tests:
+     - `test/services/firestore_service_test.dart`
+     - `test/services/policy_vpn_sync_service_test.dart`
+     - `test/services/vpn_service_test.dart`
+     - `test/screens/vpn_test_screen_test.dart`
+     - `test/screens/domain_policy_tester_screen_test.dart`
+     - `test/screens/dns_query_log_screen_test.dart`
+     - `test/screens/nextdns_settings_screen_test.dart`
+     - `test/screens/vpn_protection_screen_test.dart`
+   Validation:
+   - `flutter analyze` passed.
+   - `flutter test` passed (245/245).
+   - `flutter build apk --debug` produced `build/app/outputs/flutter-apk/app-debug.apk`.
+
+---
+
 ## Day 77 - Parent Request Approval Modal (Week 16 Day 2)
 
 Program goal: make parent approvals/denials clearer and safer by replacing

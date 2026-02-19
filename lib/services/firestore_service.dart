@@ -1148,4 +1148,110 @@ class FirestoreService {
               .toList(),
         );
   }
+
+  /// Returns active approved request domains that should be temporarily allowed.
+  ///
+  /// Domains are normalized (lowercase host only) and filtered for:
+  /// - status == approved
+  /// - not expired (or no expiry)
+  /// - valid domain-like `appOrSite` values
+  Future<List<String>> getActiveApprovedExceptionDomains({
+    required String parentId,
+    String? childId,
+    int limit = 200,
+  }) async {
+    if (parentId.trim().isEmpty) {
+      throw ArgumentError.value(parentId, 'parentId', 'Parent ID is required.');
+    }
+    if (limit <= 0) {
+      throw ArgumentError.value(
+        limit,
+        'limit',
+        'Limit must be greater than 0.',
+      );
+    }
+
+    final snapshot = await _firestore
+        .collection('parents')
+        .doc(parentId)
+        .collection('access_requests')
+        .where('status', isEqualTo: RequestStatus.approved.name)
+        .orderBy('requestedAt', descending: true)
+        .limit(limit)
+        .get();
+
+    final now = DateTime.now();
+    final normalizedChildId = childId?.trim();
+    final exceptionDomains = <String>{};
+
+    for (final doc in snapshot.docs) {
+      AccessRequest request;
+      try {
+        request = AccessRequest.fromFirestore(doc);
+      } catch (_) {
+        continue;
+      }
+
+      if (normalizedChildId != null &&
+          normalizedChildId.isNotEmpty &&
+          request.childId != normalizedChildId) {
+        continue;
+      }
+
+      final expiresAt = request.expiresAt;
+      if (expiresAt != null && !expiresAt.isAfter(now)) {
+        continue;
+      }
+
+      final domain = _normalizeExceptionDomain(request.appOrSite);
+      if (domain != null) {
+        exceptionDomains.add(domain);
+      }
+    }
+
+    final ordered = exceptionDomains.toList()..sort();
+    return ordered;
+  }
+
+  String? _normalizeExceptionDomain(String raw) {
+    var value = raw.trim().toLowerCase();
+    if (value.isEmpty || value.contains(' ')) {
+      return null;
+    }
+
+    if (value.startsWith('http://')) {
+      value = value.substring('http://'.length);
+    } else if (value.startsWith('https://')) {
+      value = value.substring('https://'.length);
+    }
+
+    final slashIndex = value.indexOf('/');
+    if (slashIndex >= 0) {
+      value = value.substring(0, slashIndex);
+    }
+
+    final queryIndex = value.indexOf('?');
+    if (queryIndex >= 0) {
+      value = value.substring(0, queryIndex);
+    }
+
+    final hashIndex = value.indexOf('#');
+    if (hashIndex >= 0) {
+      value = value.substring(0, hashIndex);
+    }
+
+    if (value.startsWith('www.')) {
+      value = value.substring(4);
+    }
+    while (value.endsWith('.')) {
+      value = value.substring(0, value.length - 1);
+    }
+
+    final domainPattern = RegExp(r'^[a-z0-9.-]+\.[a-z]{2,}$');
+    if (!domainPattern.hasMatch(value)) {
+      return null;
+    }
+
+    return value;
+  }
 }

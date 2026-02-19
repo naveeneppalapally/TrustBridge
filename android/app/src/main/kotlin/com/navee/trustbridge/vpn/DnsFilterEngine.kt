@@ -11,6 +11,7 @@ class DnsFilterEngine(private val context: Context) {
     private val blocklistStore = BlocklistStore(context)
     private val blockedDomains = mutableSetOf<String>()
     private val blockedCategories = mutableSetOf<String>()
+    private val temporaryAllowedDomains = mutableSetOf<String>()
 
     data class DomainEvaluation(
         val inputDomain: String,
@@ -30,11 +31,18 @@ class DnsFilterEngine(private val context: Context) {
         }
 
         val normalizedDomain = normalizeDomain(domain)
+        if (findMatchingAllowRule(normalizedDomain) != null) {
+            return false
+        }
         return findMatchingRule(normalizedDomain) != null
     }
 
     @Synchronized
-    fun updateFilterRules(categories: List<String>, customDomains: List<String>) {
+    fun updateFilterRules(
+        categories: List<String>,
+        customDomains: List<String>,
+        allowedDomains: List<String> = emptyList()
+    ) {
         val nextCategories = categories
             .map { it.trim() }
             .filter { it.isNotEmpty() }
@@ -45,16 +53,21 @@ class DnsFilterEngine(private val context: Context) {
         nextCategories.forEach { category ->
             nextDomains.addAll(loadCategoryDomains(category).map(::normalizeDomain))
         }
+        val nextAllowedDomains = allowedDomains
+            .map(::normalizeDomain)
+            .filter { it.isNotEmpty() }
+            .toSet()
 
         applyRules(
             categories = nextCategories,
             domains = nextDomains,
+            allowedDomains = nextAllowedDomains,
             persist = true
         )
 
         Log.d(
             TAG,
-            "Filter rules updated. categories=${blockedCategories.size}, domains=${blockedDomains.size}"
+            "Filter rules updated. categories=${blockedCategories.size}, domains=${blockedDomains.size}, temporaryAllowed=${temporaryAllowedDomains.size}"
         )
     }
 
@@ -70,6 +83,7 @@ class DnsFilterEngine(private val context: Context) {
             blocklistStore.clearRules()
             blockedCategories.clear()
             blockedDomains.clear()
+            temporaryAllowedDomains.clear()
             Log.d(TAG, "Cleared persisted and in-memory blocklist rules")
         } catch (error: Exception) {
             Log.e(TAG, "Failed clearing blocklist rules", error)
@@ -96,12 +110,15 @@ class DnsFilterEngine(private val context: Context) {
     private fun applyRules(
         categories: Set<String>,
         domains: Set<String>,
+        allowedDomains: Set<String>,
         persist: Boolean
     ) {
         blockedCategories.clear()
         blockedCategories.addAll(categories)
         blockedDomains.clear()
         blockedDomains.addAll(domains)
+        temporaryAllowedDomains.clear()
+        temporaryAllowedDomains.addAll(allowedDomains)
 
         if (persist) {
             try {
@@ -121,17 +138,19 @@ class DnsFilterEngine(private val context: Context) {
             applyRules(
                 categories = snapshot.categories,
                 domains = snapshot.domains,
+                allowedDomains = emptySet(),
                 persist = false
             )
             Log.d(
                 TAG,
-                "Loaded persisted rules. categories=${blockedCategories.size}, domains=${blockedDomains.size}"
+                "Loaded persisted rules. categories=${blockedCategories.size}, domains=${blockedDomains.size}, temporaryAllowed=${temporaryAllowedDomains.size}"
             )
         } catch (error: Exception) {
             Log.e(TAG, "Failed to load persisted rules. Falling back to empty rules.", error)
             applyRules(
                 categories = emptySet(),
                 domains = emptySet(),
+                allowedDomains = emptySet(),
                 persist = false
             )
         }
@@ -247,6 +266,18 @@ class DnsFilterEngine(private val context: Context) {
         for (blocked in blockedDomains) {
             if (normalizedDomain.endsWith(".$blocked")) {
                 return blocked
+            }
+        }
+        return null
+    }
+
+    private fun findMatchingAllowRule(normalizedDomain: String): String? {
+        if (temporaryAllowedDomains.contains(normalizedDomain)) {
+            return normalizedDomain
+        }
+        for (allowed in temporaryAllowedDomains) {
+            if (normalizedDomain.endsWith(".$allowed")) {
+                return allowed
             }
         }
         return null

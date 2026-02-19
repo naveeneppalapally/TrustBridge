@@ -59,6 +59,7 @@ class _FakeVpnServiceForNextDnsScreen implements VpnServiceBase {
   Future<bool> updateFilterRules({
     required List<String> blockedCategories,
     required List<String> blockedDomains,
+    List<String> temporaryAllowedDomains = const <String>[],
   }) async {
     return true;
   }

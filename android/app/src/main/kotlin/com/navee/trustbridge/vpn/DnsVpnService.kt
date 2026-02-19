@@ -33,6 +33,7 @@ class DnsVpnService : VpnService() {
         const val ACTION_CLEAR_QUERY_LOGS = "com.navee.trustbridge.vpn.CLEAR_QUERY_LOGS"
         const val EXTRA_BLOCKED_CATEGORIES = "blockedCategories"
         const val EXTRA_BLOCKED_DOMAINS = "blockedDomains"
+        const val EXTRA_TEMP_ALLOWED_DOMAINS = "temporaryAllowedDomains"
         const val EXTRA_UPSTREAM_DNS = "upstreamDns"
 
         @Volatile
@@ -127,6 +128,7 @@ class DnsVpnService : VpnService() {
     private lateinit var vpnPreferencesStore: VpnPreferencesStore
     private var lastAppliedCategories: List<String> = emptyList()
     private var lastAppliedDomains: List<String> = emptyList()
+    private var lastAppliedAllowedDomains: List<String> = emptyList()
     private var lastAppliedUpstreamDns: String = DEFAULT_UPSTREAM_DNS
 
     @Volatile
@@ -141,6 +143,9 @@ class DnsVpnService : VpnService() {
         if (persisted.blockedCategories.isNotEmpty() || persisted.blockedDomains.isNotEmpty()) {
             lastAppliedCategories = persisted.blockedCategories
             lastAppliedDomains = persisted.blockedDomains
+        }
+        if (persisted.temporaryAllowedDomains.isNotEmpty()) {
+            lastAppliedAllowedDomains = persisted.temporaryAllowedDomains
         }
         filterEngine = DnsFilterEngine(this)
         blockedCategoryCount = filterEngine.blockedCategoryCount()
@@ -161,10 +166,13 @@ class DnsVpnService : VpnService() {
                 val domains =
                     intent?.getStringArrayListExtra(EXTRA_BLOCKED_DOMAINS)?.toList()
                         ?: lastAppliedDomains
+                val allowedDomains =
+                    intent?.getStringArrayListExtra(EXTRA_TEMP_ALLOWED_DOMAINS)?.toList()
+                        ?: lastAppliedAllowedDomains
                 val upstreamDns =
                     intent?.getStringExtra(EXTRA_UPSTREAM_DNS) ?: lastAppliedUpstreamDns
                 applyUpstreamDns(upstreamDns)
-                applyFilterRules(categories, domains)
+                applyFilterRules(categories, domains, allowedDomains)
                 startVpn()
                 START_STICKY
             }
@@ -173,13 +181,17 @@ class DnsVpnService : VpnService() {
                 val categories =
                     intent?.getStringArrayListExtra(EXTRA_BLOCKED_CATEGORIES) ?: arrayListOf()
                 val domains = intent?.getStringArrayListExtra(EXTRA_BLOCKED_DOMAINS) ?: arrayListOf()
-                applyFilterRules(categories, domains)
+                val allowedDomains =
+                    intent?.getStringArrayListExtra(EXTRA_TEMP_ALLOWED_DOMAINS)?.toList()
+                        ?: lastAppliedAllowedDomains
+                applyFilterRules(categories, domains, allowedDomains)
                 START_STICKY
             }
 
             ACTION_RESTART -> {
                 val hasCategories = intent?.hasExtra(EXTRA_BLOCKED_CATEGORIES) == true
                 val hasDomains = intent?.hasExtra(EXTRA_BLOCKED_DOMAINS) == true
+                val hasAllowedDomains = intent?.hasExtra(EXTRA_TEMP_ALLOWED_DOMAINS) == true
                 val hasUpstreamDns = intent?.hasExtra(EXTRA_UPSTREAM_DNS) == true
                 val categories = if (hasCategories) {
                     intent?.getStringArrayListExtra(EXTRA_BLOCKED_CATEGORIES)
@@ -193,6 +205,12 @@ class DnsVpnService : VpnService() {
                 } else {
                     lastAppliedDomains
                 }
+                val allowedDomains = if (hasAllowedDomains) {
+                    intent?.getStringArrayListExtra(EXTRA_TEMP_ALLOWED_DOMAINS)
+                        ?.toList() ?: emptyList()
+                } else {
+                    lastAppliedAllowedDomains
+                }
                 val upstreamDns = if (hasUpstreamDns) {
                     intent?.getStringExtra(EXTRA_UPSTREAM_DNS)
                 } else {
@@ -201,7 +219,7 @@ class DnsVpnService : VpnService() {
 
                 stopVpn(stopService = false, markDisabled = false)
                 applyUpstreamDns(upstreamDns)
-                applyFilterRules(categories, domains)
+                applyFilterRules(categories, domains, allowedDomains)
                 startVpn()
                 START_STICKY
             }
@@ -372,16 +390,19 @@ class DnsVpnService : VpnService() {
 
     private fun applyFilterRules(
         categories: List<String>,
-        domains: List<String>
+        domains: List<String>,
+        temporaryAllowedDomains: List<String>
     ) {
         lastAppliedCategories = categories
         lastAppliedDomains = domains
+        lastAppliedAllowedDomains = temporaryAllowedDomains
         vpnPreferencesStore.saveRules(
             categories = categories,
             domains = domains,
+            temporaryAllowedDomains = temporaryAllowedDomains,
             upstreamDns = lastAppliedUpstreamDns
         )
-        filterEngine.updateFilterRules(categories, domains)
+        filterEngine.updateFilterRules(categories, domains, temporaryAllowedDomains)
         blockedCategoryCount = filterEngine.blockedCategoryCount()
         blockedDomainCount = filterEngine.blockedDomainCount()
         lastRuleUpdateEpochMs = System.currentTimeMillis()
@@ -393,6 +414,7 @@ class DnsVpnService : VpnService() {
         vpnPreferencesStore.saveRules(
             categories = lastAppliedCategories,
             domains = lastAppliedDomains,
+            temporaryAllowedDomains = lastAppliedAllowedDomains,
             upstreamDns = lastAppliedUpstreamDns
         )
         lastRuleUpdateEpochMs = System.currentTimeMillis()

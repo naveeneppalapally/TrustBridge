@@ -39,6 +39,10 @@ class VpnBootReceiver : BroadcastReceiver() {
                 DnsVpnService.EXTRA_BLOCKED_DOMAINS,
                 ArrayList(config.blockedDomains)
             )
+            putStringArrayListExtra(
+                DnsVpnService.EXTRA_TEMP_ALLOWED_DOMAINS,
+                ArrayList(config.temporaryAllowedDomains)
+            )
         }
 
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {

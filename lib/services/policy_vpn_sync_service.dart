@@ -221,10 +221,18 @@ class PolicyVpnSyncService extends ChangeNotifier {
         return result;
       }
 
+      final parentId = _resolveParentId();
+      final temporaryAllowedDomains = parentId == null || parentId.isEmpty
+          ? const <String>[]
+          : await _firestoreService.getActiveApprovedExceptionDomains(
+              parentId: parentId,
+            );
+
       if (children.isEmpty) {
         final cleared = await _vpnService.updateFilterRules(
           blockedCategories: const <String>[],
           blockedDomains: const <String>[],
+          temporaryAllowedDomains: temporaryAllowedDomains,
         );
         final result = SyncResult(
           success: cleared,
@@ -254,6 +262,7 @@ class PolicyVpnSyncService extends ChangeNotifier {
       final updated = await _vpnService.updateFilterRules(
         blockedCategories: categories,
         blockedDomains: domains,
+        temporaryAllowedDomains: temporaryAllowedDomains,
       );
 
       final result = SyncResult(

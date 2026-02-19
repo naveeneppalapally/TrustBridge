@@ -67,6 +67,8 @@ class MainActivity : FlutterFragmentActivity() {
                     call.argument<List<String>>("blockedCategories") ?: emptyList()
                 val blockedDomains =
                     call.argument<List<String>>("blockedDomains") ?: emptyList()
+                val temporaryAllowedDomains =
+                    call.argument<List<String>>("temporaryAllowedDomains") ?: emptyList()
                 val upstreamDns = call.argument<String>("upstreamDns")
                     ?.trim()
                     ?.takeIf { it.isNotEmpty() }
@@ -80,6 +82,10 @@ class MainActivity : FlutterFragmentActivity() {
                     putStringArrayListExtra(
                         DnsVpnService.EXTRA_BLOCKED_DOMAINS,
                         ArrayList(blockedDomains)
+                    )
+                    putStringArrayListExtra(
+                        DnsVpnService.EXTRA_TEMP_ALLOWED_DOMAINS,
+                        ArrayList(temporaryAllowedDomains)
                     )
                     if (upstreamDns != null) {
                         putExtra(DnsVpnService.EXTRA_UPSTREAM_DNS, upstreamDns)
@@ -103,6 +109,8 @@ class MainActivity : FlutterFragmentActivity() {
                     call.argument<List<String>>("blockedCategories") ?: emptyList()
                 val blockedDomains =
                     call.argument<List<String>>("blockedDomains") ?: emptyList()
+                val temporaryAllowedDomains =
+                    call.argument<List<String>>("temporaryAllowedDomains") ?: emptyList()
                 val upstreamDns = call.argument<String>("upstreamDns")
                     ?.trim()
                     ?.takeIf { it.isNotEmpty() }
@@ -116,6 +124,10 @@ class MainActivity : FlutterFragmentActivity() {
                     putStringArrayListExtra(
                         DnsVpnService.EXTRA_BLOCKED_DOMAINS,
                         ArrayList(blockedDomains)
+                    )
+                    putStringArrayListExtra(
+                        DnsVpnService.EXTRA_TEMP_ALLOWED_DOMAINS,
+                        ArrayList(temporaryAllowedDomains)
                     )
                     if (upstreamDns != null) {
                         putExtra(DnsVpnService.EXTRA_UPSTREAM_DNS, upstreamDns)
@@ -194,6 +206,10 @@ class MainActivity : FlutterFragmentActivity() {
                             DnsVpnService.EXTRA_BLOCKED_DOMAINS,
                             arrayListOf()
                         )
+                        putStringArrayListExtra(
+                            DnsVpnService.EXTRA_TEMP_ALLOWED_DOMAINS,
+                            arrayListOf()
+                        )
                     }
                     startServiceCompat(serviceIntent)
                 }
@@ -232,6 +248,8 @@ class MainActivity : FlutterFragmentActivity() {
                     call.argument<List<String>>("blockedCategories") ?: emptyList()
                 val blockedDomains =
                     call.argument<List<String>>("blockedDomains") ?: emptyList()
+                val temporaryAllowedDomains =
+                    call.argument<List<String>>("temporaryAllowedDomains") ?: emptyList()
 
                 val serviceIntent = Intent(this, DnsVpnService::class.java).apply {
                     action = DnsVpnService.ACTION_UPDATE_RULES
@@ -242,6 +260,10 @@ class MainActivity : FlutterFragmentActivity() {
                     putStringArrayListExtra(
                         DnsVpnService.EXTRA_BLOCKED_DOMAINS,
                         ArrayList(blockedDomains)
+                    )
+                    putStringArrayListExtra(
+                        DnsVpnService.EXTRA_TEMP_ALLOWED_DOMAINS,
+                        ArrayList(temporaryAllowedDomains)
                     )
                 }
                 startServiceCompat(serviceIntent)
@@ -266,6 +288,7 @@ class MainActivity : FlutterFragmentActivity() {
                     vpnPreferencesStore.saveRules(
                         categories = config.blockedCategories,
                         domains = config.blockedDomains,
+                        temporaryAllowedDomains = config.temporaryAllowedDomains,
                         upstreamDns = upstreamDns
                     )
                 }

@@ -65,6 +65,7 @@ void main() {
         () async {
       Map<dynamic, dynamic>? startArguments;
       Map<dynamic, dynamic>? restartArguments;
+      Map<dynamic, dynamic>? updateArguments;
 
       TestDefaultBinaryMessengerBinding.instance.defaultBinaryMessenger
           .setMockMethodCallHandler(channel, (call) async {
@@ -89,6 +90,7 @@ void main() {
           return true;
         }
         if (call.method == 'updateFilterRules') {
+          updateArguments = call.arguments as Map<dynamic, dynamic>?;
           return true;
         }
         if (call.method == 'setUpstreamDns') {
@@ -164,6 +166,7 @@ void main() {
         await service.updateFilterRules(
           blockedCategories: const ['adult-content'],
           blockedDomains: const ['example.com'],
+          temporaryAllowedDomains: const ['instagram.com'],
         ),
         isTrue,
       );
@@ -194,6 +197,10 @@ void main() {
       expect(await service.stopVpn(), isTrue);
       expect(startArguments?['upstreamDns'], 'abc123.dns.nextdns.io');
       expect(restartArguments?['upstreamDns'], 'abc123.dns.nextdns.io');
+      expect(
+        updateArguments?['temporaryAllowedDomains'],
+        const ['instagram.com'],
+      );
     });
   });
 }

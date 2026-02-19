@@ -700,6 +700,118 @@ void main() {
       );
     });
 
+    test('getActiveApprovedExceptionDomains returns normalized active domains',
+        () async {
+      final now = DateTime.now();
+      final requestsRef = fakeFirestore
+          .collection('parents')
+          .doc('parent-a')
+          .collection('access_requests');
+
+      await requestsRef.doc('r1').set({
+        'childId': 'child-a',
+        'parentId': 'parent-a',
+        'childNickname': 'Aarav',
+        'appOrSite': 'https://WWW.YouTube.com/watch?v=1',
+        'durationLabel': '30 min',
+        'durationMinutes': 30,
+        'status': 'approved',
+        'requestedAt':
+            Timestamp.fromDate(now.subtract(const Duration(minutes: 4))),
+        'respondedAt':
+            Timestamp.fromDate(now.subtract(const Duration(minutes: 3))),
+        'expiresAt': Timestamp.fromDate(now.add(const Duration(minutes: 20))),
+      });
+      await requestsRef.doc('r2').set({
+        'childId': 'child-a',
+        'parentId': 'parent-a',
+        'childNickname': 'Aarav',
+        'appOrSite': 'instagram.com',
+        'durationLabel': '15 min',
+        'durationMinutes': 15,
+        'status': 'approved',
+        'requestedAt':
+            Timestamp.fromDate(now.subtract(const Duration(minutes: 5))),
+        'respondedAt':
+            Timestamp.fromDate(now.subtract(const Duration(minutes: 4))),
+        'expiresAt':
+            Timestamp.fromDate(now.subtract(const Duration(minutes: 1))),
+      });
+      await requestsRef.doc('r3').set({
+        'childId': 'child-a',
+        'parentId': 'parent-a',
+        'childNickname': 'Aarav',
+        'appOrSite': 'reddit.com',
+        'durationLabel': '30 min',
+        'durationMinutes': 30,
+        'status': 'pending',
+        'requestedAt': Timestamp.fromDate(now),
+        'respondedAt': null,
+        'expiresAt': null,
+      });
+      await requestsRef.doc('r4').set({
+        'childId': 'child-a',
+        'parentId': 'parent-a',
+        'childNickname': 'Aarav',
+        'appOrSite': 'Instagram App',
+        'durationLabel': '30 min',
+        'durationMinutes': 30,
+        'status': 'approved',
+        'requestedAt':
+            Timestamp.fromDate(now.subtract(const Duration(minutes: 2))),
+        'respondedAt':
+            Timestamp.fromDate(now.subtract(const Duration(minutes: 1))),
+        'expiresAt': null,
+      });
+
+      final domains = await firestoreService.getActiveApprovedExceptionDomains(
+        parentId: 'parent-a',
+      );
+
+      expect(domains, equals(<String>['youtube.com']));
+    });
+
+    test('getActiveApprovedExceptionDomains filters by childId', () async {
+      final now = DateTime.now();
+      final requestsRef = fakeFirestore
+          .collection('parents')
+          .doc('parent-a')
+          .collection('access_requests');
+
+      await requestsRef.doc('c1').set({
+        'childId': 'child-a',
+        'parentId': 'parent-a',
+        'childNickname': 'Aarav',
+        'appOrSite': 'youtube.com',
+        'durationLabel': '30 min',
+        'durationMinutes': 30,
+        'status': 'approved',
+        'requestedAt': Timestamp.fromDate(now),
+        'respondedAt': Timestamp.fromDate(now),
+        'expiresAt': Timestamp.fromDate(now.add(const Duration(minutes: 10))),
+      });
+      await requestsRef.doc('c2').set({
+        'childId': 'child-b',
+        'parentId': 'parent-a',
+        'childNickname': 'Maya',
+        'appOrSite': 'reddit.com',
+        'durationLabel': '30 min',
+        'durationMinutes': 30,
+        'status': 'approved',
+        'requestedAt': Timestamp.fromDate(now),
+        'respondedAt': Timestamp.fromDate(now),
+        'expiresAt': Timestamp.fromDate(now.add(const Duration(minutes: 10))),
+      });
+
+      final childADomains =
+          await firestoreService.getActiveApprovedExceptionDomains(
+        parentId: 'parent-a',
+        childId: 'child-a',
+      );
+
+      expect(childADomains, equals(<String>['youtube.com']));
+    });
+
     test('getAllRequestsStream returns pending and history requests', () async {
       final pending = AccessRequest.create(
         childId: 'child-a',

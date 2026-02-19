@@ -314,6 +314,7 @@ abstract class VpnServiceBase {
   Future<bool> updateFilterRules({
     required List<String> blockedCategories,
     required List<String> blockedDomains,
+    List<String> temporaryAllowedDomains = const [],
   });
 
   Future<bool> setUpstreamDns({String? upstreamDns});
@@ -648,6 +649,7 @@ class VpnService implements VpnServiceBase {
   Future<bool> updateFilterRules({
     required List<String> blockedCategories,
     required List<String> blockedDomains,
+    List<String> temporaryAllowedDomains = const [],
   }) async {
     if (!_supported) {
       return false;
@@ -659,6 +661,8 @@ class VpnService implements VpnServiceBase {
             {
               'blockedCategories': blockedCategories,
               'blockedDomains': blockedDomains,
+              if (temporaryAllowedDomains.isNotEmpty)
+                'temporaryAllowedDomains': temporaryAllowedDomains,
             },
           ) ??
           false;

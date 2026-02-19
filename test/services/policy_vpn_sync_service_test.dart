@@ -14,6 +14,7 @@ class _FakeVpnService implements VpnServiceBase {
   int updateCalls = 0;
   List<String> lastCategories = const <String>[];
   List<String> lastDomains = const <String>[];
+  List<String> lastAllowedDomains = const <String>[];
 
   @override
   Future<bool> isVpnRunning() async => vpnRunning;
@@ -22,10 +23,12 @@ class _FakeVpnService implements VpnServiceBase {
   Future<bool> updateFilterRules({
     required List<String> blockedCategories,
     required List<String> blockedDomains,
+    List<String> temporaryAllowedDomains = const <String>[],
   }) async {
     updateCalls += 1;
     lastCategories = List<String>.from(blockedCategories)..sort();
     lastDomains = List<String>.from(blockedDomains)..sort();
+    lastAllowedDomains = List<String>.from(temporaryAllowedDomains)..sort();
     return updateSuccess;
   }
 
@@ -95,6 +98,7 @@ class _FakeFirestoreService extends FirestoreService {
   _FakeFirestoreService() : super(firestore: FakeFirebaseFirestore());
 
   List<ChildProfile> children = <ChildProfile>[];
+  List<String> exceptionDomains = <String>[];
   final StreamController<List<ChildProfile>> _streamController =
       StreamController<List<ChildProfile>>.broadcast();
   bool streamRequested = false;
@@ -107,6 +111,14 @@ class _FakeFirestoreService extends FirestoreService {
     streamRequested = true;
     return _streamController.stream;
   }
+
+  @override
+  Future<List<String>> getActiveApprovedExceptionDomains({
+    required String parentId,
+    String? childId,
+    int limit = 200,
+  }) async =>
+      List<String>.from(exceptionDomains);
 
   void emit(List<ChildProfile> nextChildren) {
     _streamController.add(nextChildren);
@@ -184,6 +196,25 @@ void main() {
       expect(fakeVpn.lastCategories.contains('gambling'), isTrue);
       expect(fakeVpn.lastDomains,
           containsAll(<String>['example.com', 'reddit.com']));
+    });
+
+    test('syncNow forwards active approved exception domains to VPN', () async {
+      fakeVpn.vpnRunning = true;
+      final child = ChildProfile.create(
+        nickname: 'Child',
+        ageBand: AgeBand.middle,
+      );
+      fakeFirestore.children = <ChildProfile>[child];
+      fakeFirestore.exceptionDomains = <String>['instagram.com', 'youtube.com'];
+
+      final result = await syncService.syncNow();
+
+      expect(result.success, isTrue);
+      expect(fakeVpn.updateCalls, 1);
+      expect(
+        fakeVpn.lastAllowedDomains,
+        containsAll(<String>['instagram.com', 'youtube.com']),
+      );
     });
 
     test('syncNow clears rules when children list is empty', () async {
