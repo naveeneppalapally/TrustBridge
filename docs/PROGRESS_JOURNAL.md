@@ -3081,6 +3081,46 @@ high-frequency user pain points.
 
 ---
 
+## Day 84 - Expiration UX Polish and Sign-off (Week 17 Day 4)
+
+Program goal: make request expiration state clear at a glance for both parent
+and child views, and formalize expiration smoke verification before release.
+
+### Commit entries
+
+1. **2026-02-19 14:23:01 +05:30**  
+   Commit: `[pending]`  
+   Message: `Implement Day 84 request expiration UX polish and checklist`  
+   Changes:
+   - Added `lib/utils/expiry_label_utils.dart`:
+     - shared relative label formatter (`Ends in ...` / `Expired ... ago`)
+   - Updated `lib/models/access_request.dart`:
+     - retained `effectiveStatus()` based soft-expiration behavior
+   - Updated child/parent UX surfaces:
+     - `lib/screens/child_requests_screen.dart`
+       - expiry line now uses relative labels and status-aware colors
+     - `lib/screens/parent_requests_screen.dart`
+       - history cards show expiry meta (`Ends in ...`, `Expired ... ago`,
+         or no-fixed-expiry note)
+     - `lib/screens/child_status_screen.dart`
+       - active access rows now show relative expiry labels
+   - Added/updated tests:
+     - `test/utils/expiry_label_utils_test.dart`
+     - `test/screens/child_requests_screen_test.dart`
+     - `test/screens/parent_requests_screen_test.dart`
+     - `test/screens/child_status_screen_test.dart`
+   - Added verification docs:
+     - `docs/REQUEST_EXPIRATION_SMOKE_CHECKLIST.md`
+   - Updated security checklist:
+     - `docs/SECURITY_CHECKLIST.md`
+       - includes approved->expired rule path and exception-removal sync note
+   Validation:
+   - `flutter analyze` passed.
+   - `flutter test` passed (262/262).
+   - `flutter build apk --debug` passed.
+
+---
+
 ## Day 83 - Expiration Consistency Hardening (Week 17 Day 3)
 
 Program goal: ensure expired approvals are reflected immediately in app UI

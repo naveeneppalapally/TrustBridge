@@ -6,6 +6,7 @@ import '../models/child_profile.dart';
 import '../models/schedule.dart';
 import '../services/auth_service.dart';
 import '../services/firestore_service.dart';
+import '../utils/expiry_label_utils.dart';
 import 'child_requests_screen.dart';
 import 'child_request_screen.dart';
 
@@ -782,14 +783,10 @@ class _ChildStatusScreenState extends State<ChildStatusScreen>
   List<AccessRequest> _activeApprovedRequests(List<AccessRequest> requests) {
     final now = DateTime.now();
     final active = requests.where((request) {
-      if (request.status != RequestStatus.approved) {
+      if (request.effectiveStatus(now: now) != RequestStatus.approved) {
         return false;
       }
-      final expiresAt = request.expiresAt;
-      if (expiresAt == null) {
-        return true;
-      }
-      return expiresAt.isAfter(now);
+      return true;
     }).toList();
 
     active.sort((a, b) {
@@ -811,14 +808,9 @@ class _ChildStatusScreenState extends State<ChildStatusScreen>
 
   String _accessWindowLabel(DateTime? expiresAt) {
     if (expiresAt == null) {
-      return 'Available for now';
+      return 'No fixed expiry (until schedule ends)';
     }
-
-    final time = TimeOfDay.fromDateTime(expiresAt);
-    final hour = time.hourOfPeriod == 0 ? 12 : time.hourOfPeriod;
-    final minute = time.minute.toString().padLeft(2, '0');
-    final period = time.period == DayPeriod.am ? 'AM' : 'PM';
-    return 'Ends at $hour:$minute $period';
+    return buildExpiryRelativeLabel(expiresAt);
   }
 
   String _formattedDate() {

@@ -4,6 +4,7 @@ import '../models/access_request.dart';
 import '../models/child_profile.dart';
 import '../services/auth_service.dart';
 import '../services/firestore_service.dart';
+import '../utils/expiry_label_utils.dart';
 
 enum _RequestFilter {
   all,
@@ -362,7 +363,9 @@ class _RequestStatusCard extends StatelessWidget {
               Text(
                 expiryLabel,
                 style: Theme.of(context).textTheme.bodySmall?.copyWith(
-                      color: Colors.green[700],
+                      color: effectiveStatus == RequestStatus.expired
+                          ? Colors.grey[700]
+                          : Colors.green[700],
                       fontWeight: FontWeight.w600,
                     ),
               ),
@@ -390,14 +393,7 @@ class _RequestStatusCard extends StatelessWidget {
     if (expiresAt == null) {
       return null;
     }
-    if (DateTime.now().isAfter(expiresAt)) {
-      return 'This access window has ended.';
-    }
-    final time = TimeOfDay.fromDateTime(expiresAt);
-    final hourLabel = time.hourOfPeriod == 0 ? 12 : time.hourOfPeriod;
-    final minuteLabel = time.minute.toString().padLeft(2, '0');
-    final period = time.period == DayPeriod.am ? 'AM' : 'PM';
-    return 'Access available until $hourLabel:$minuteLabel $period';
+    return buildExpiryRelativeLabel(expiresAt);
   }
 
   String _timeAgo(DateTime dateTime) {

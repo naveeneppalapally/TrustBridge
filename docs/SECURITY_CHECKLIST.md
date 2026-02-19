@@ -6,6 +6,7 @@
 - [x] `children` collection is parent-owned via `parentId == auth.uid`
 - [x] `access_requests` create requires parent auth and `status == pending`
 - [x] `access_requests` update restricted to parent and `pending -> approved/denied`
+- [x] `access_requests` supports parent-only `approved -> expired` for early revocation
 - [x] `notification_queue` is client write-only and client read denied
 - [x] Catch-all deny enabled for all non-whitelisted paths
 
@@ -39,6 +40,7 @@
 - [x] VPN boot recovery path implemented
 - [x] DNS logs respect privacy mode and can be cleared
 - [x] No raw browsing history uploaded to TrustBridge servers
+- [x] Temporary exception removal syncs after approval expiry and manual revoke
 
 ## Notifications
 - [x] FCM token persisted per parent profile

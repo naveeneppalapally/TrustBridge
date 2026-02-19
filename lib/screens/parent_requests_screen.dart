@@ -5,6 +5,7 @@ import 'package:trustbridge_app/l10n/app_localizations_en.dart';
 import '../models/access_request.dart';
 import '../services/auth_service.dart';
 import '../services/firestore_service.dart';
+import '../utils/expiry_label_utils.dart';
 
 class ParentRequestsScreen extends StatefulWidget {
   const ParentRequestsScreen({
@@ -918,6 +919,7 @@ class _HistoryCardState extends State<_HistoryCard> {
               ),
             ],
           ),
+          ..._buildExpiryMeta(context, request, effectiveStatus),
           if (request.parentReply != null &&
               request.parentReply!.isNotEmpty) ...<Widget>[
             const SizedBox(height: 8),
@@ -956,6 +958,44 @@ class _HistoryCardState extends State<_HistoryCard> {
         ],
       ),
     );
+  }
+
+  List<Widget> _buildExpiryMeta(
+    BuildContext context,
+    AccessRequest request,
+    RequestStatus effectiveStatus,
+  ) {
+    final expiresAt = request.expiresAt;
+    if (expiresAt == null) {
+      if (effectiveStatus == RequestStatus.approved) {
+        return <Widget>[
+          const SizedBox(height: 6),
+          Text(
+            'No fixed expiry (until schedule ends)',
+            style: Theme.of(context).textTheme.bodySmall?.copyWith(
+                  color: Colors.green[700],
+                ),
+          ),
+        ];
+      }
+      return const <Widget>[];
+    }
+
+    final label = buildExpiryRelativeLabel(expiresAt);
+    final color = effectiveStatus == RequestStatus.expired
+        ? Colors.grey[700]
+        : Colors.green[700];
+
+    return <Widget>[
+      const SizedBox(height: 6),
+      Text(
+        label,
+        style: Theme.of(context).textTheme.bodySmall?.copyWith(
+              color: color,
+              fontWeight: FontWeight.w600,
+            ),
+      ),
+    ];
   }
 
   Color _statusColor(RequestStatus status) {

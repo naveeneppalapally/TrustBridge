@@ -107,10 +107,42 @@ void main() {
       await tester.pumpAndSettle();
 
       expect(find.text('Expired'), findsOneWidget);
+      expect(find.textContaining('Expired'), findsWidgets);
       expect(
         find.byKey(const Key('request_end_access_button_request-soft-expired')),
         findsNothing,
       );
+    });
+
+    testWidgets('history shows remaining access window for active approvals',
+        (tester) async {
+      await _seedRequest(
+        firestore: fakeFirestore,
+        parentId: 'parent-a',
+        requestId: 'request-soft-active',
+        childNickname: 'Aarav',
+        appOrSite: 'youtube.com',
+        durationLabel: '30 min',
+        durationMinutes: 30,
+        status: 'approved',
+        respondedAt: DateTime.now().subtract(const Duration(minutes: 2)),
+        expiresAt: DateTime.now().add(const Duration(minutes: 20)),
+      );
+
+      await tester.pumpWidget(
+        MaterialApp(
+          home: ParentRequestsScreen(
+            parentIdOverride: 'parent-a',
+            firestoreService: firestoreService,
+          ),
+        ),
+      );
+      await tester.pumpAndSettle();
+
+      await tester.tap(find.text('History'));
+      await tester.pumpAndSettle();
+
+      expect(find.textContaining('Ends in'), findsOneWidget);
     });
 
     testWidgets('pending card shows child, app, duration, and reason',

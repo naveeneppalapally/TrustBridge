@@ -137,6 +137,7 @@ void main() {
           findsOneWidget);
       expect(find.text('Access available now'), findsOneWidget);
       expect(find.text('youtube.com'), findsOneWidget);
+      expect(find.textContaining('Ends in'), findsOneWidget);
     });
   });
 }

@@ -170,8 +170,34 @@ void main() {
       );
       await tester.pumpAndSettle();
 
-      expect(find.textContaining('Expired'), findsOneWidget);
-      expect(find.text('This access window has ended.'), findsOneWidget);
+      expect(find.textContaining('Expired'), findsWidgets);
+      expect(find.textContaining('Expired '), findsOneWidget);
+    });
+
+    testWidgets('approved request with future expiresAt shows remaining time',
+        (tester) async {
+      await _seedRequest(
+        firestore: fakeFirestore,
+        parentId: 'parent-a',
+        childId: child.id,
+        requestId: 'request-active-soft',
+        appOrSite: 'khanacademy.org',
+        status: 'approved',
+        expiresAt: DateTime.now().add(const Duration(minutes: 25)),
+      );
+
+      await tester.pumpWidget(
+        MaterialApp(
+          home: ChildRequestsScreen(
+            child: child,
+            firestoreService: firestoreService,
+            parentIdOverride: 'parent-a',
+          ),
+        ),
+      );
+      await tester.pumpAndSettle();
+
+      expect(find.textContaining('Ends in'), findsOneWidget);
     });
   });
 }
