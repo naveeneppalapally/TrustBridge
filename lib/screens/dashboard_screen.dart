@@ -462,9 +462,8 @@ class _DashboardScreenState extends State<DashboardScreen>
     final l10n = _l10n(context);
     final parentId = _parentId;
     final isDark = Theme.of(context).brightness == Brightness.dark;
-    final surfaceColor = isDark ? const Color(0xFF1F2937) : Colors.white;
-    final backgroundColor =
-        isDark ? const Color(0xFF101A22) : const Color(0xFFF5F7F8);
+    final surfaceColor = Theme.of(context).cardColor;
+    final backgroundColor = Theme.of(context).scaffoldBackgroundColor;
 
     if (parentId == null) {
       return Scaffold(
@@ -680,7 +679,9 @@ class _DashboardScreenState extends State<DashboardScreen>
                             'MANAGED DEVICES',
                             style:
                                 Theme.of(context).textTheme.bodySmall?.copyWith(
-                                      color: Colors.grey.shade500,
+                                      color: Theme.of(context)
+                                          .colorScheme
+                                          .onSurfaceVariant,
                                       letterSpacing: 0.8,
                                       fontWeight: FontWeight.w800,
                                     ),
@@ -938,7 +939,7 @@ class _DashboardHeader extends StatelessWidget {
               Text(
                 greeting,
                 style: Theme.of(context).textTheme.bodyMedium?.copyWith(
-                      color: Colors.grey.shade500,
+                      color: Theme.of(context).colorScheme.onSurfaceVariant,
                     ),
               ),
               const SizedBox(height: 4),
@@ -1016,7 +1017,10 @@ class _TrustSummaryCard extends StatelessWidget {
                 decoration: BoxDecoration(
                   color: shieldActive
                       ? const Color(0xFF1E88E5).withValues(alpha: 0.14)
-                      : Colors.grey.withValues(alpha: 0.18),
+                      : Theme.of(context)
+                          .colorScheme
+                          .onSurfaceVariant
+                          .withValues(alpha: 0.18),
                   borderRadius: BorderRadius.circular(999),
                 ),
                 child: Text(
@@ -1024,7 +1028,7 @@ class _TrustSummaryCard extends StatelessWidget {
                   style: TextStyle(
                     color: shieldActive
                         ? const Color(0xFF1E88E5)
-                        : Colors.grey.shade700,
+                        : Theme.of(context).colorScheme.onSurfaceVariant,
                     fontSize: 11,
                     fontWeight: FontWeight.w800,
                     letterSpacing: 0.4,
@@ -1042,7 +1046,7 @@ class _TrustSummaryCard extends StatelessWidget {
                   value: totalScreenTime,
                   trailingLabel: 'Today',
                   valueColor: Theme.of(context).textTheme.titleLarge?.color ??
-                      Colors.black87,
+                      Theme.of(context).colorScheme.onSurface,
                   progress: progress,
                   progressColor: Theme.of(context).colorScheme.primary,
                   progressTrackColor: Theme.of(context)
@@ -1108,7 +1112,7 @@ class _TrustMetricTile extends StatelessWidget {
           Text(
             label,
             style: TextStyle(
-              color: Colors.grey.shade500,
+              color: Theme.of(context).colorScheme.onSurfaceVariant,
               letterSpacing: 0.6,
               fontWeight: FontWeight.w700,
               fontSize: 11,
@@ -1137,7 +1141,7 @@ class _TrustMetricTile extends StatelessWidget {
           Text(
             trailingLabel,
             style: Theme.of(context).textTheme.bodySmall?.copyWith(
-                  color: Colors.grey.shade500,
+                  color: Theme.of(context).colorScheme.onSurfaceVariant,
                 ),
           ),
         ],

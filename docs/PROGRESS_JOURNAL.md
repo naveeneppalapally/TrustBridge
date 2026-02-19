@@ -3868,3 +3868,40 @@ empty-state component and clear CTA language across list-heavy screens.
    - `flutter test` (impacted suites) passed.
 
 ---
+
+## Day 111 - Dark Theme Proper Implementation (Week 23 Day 2)
+
+Program goal: align dark mode to explicit design tokens instead of partial
+default dark behavior, and fix key readability issues across core screens.
+
+### Commit entries
+
+1. **2026-02-19 20:10:00 +05:30**  
+   Message: `Implement Day 111 dark theme token alignment`  
+   Changes:
+   - Updated `lib/theme/app_theme.dart`:
+     - dark tokens:
+       - scaffold `#0D1117`
+       - card `#161B22`
+       - surface `#21262D`
+       - divider `#30363D`
+       - text primary `#F0F6FC`
+       - text secondary `#8B949E`
+     - wired dark `ColorScheme` `onSurface`, `onSurfaceVariant`, `outline`
+     - added dark divider/input border token mapping
+   - Updated `lib/screens/dashboard_screen.dart`:
+     - removed hardcoded dark background/surface values
+     - moved greeting/section labels and trust-summary secondary text to
+       theme-driven `onSurfaceVariant`
+   - Updated `lib/screens/parent_settings_screen.dart`:
+     - profile subtitle, section headers, and privacy-note text now use
+       theme-driven secondary text color
+   - Updated `lib/screens/vpn_protection_screen.dart`:
+     - intro/sync metric secondary text now uses `onSurfaceVariant`
+   - Added tests:
+     - `test/theme/dark_theme_test.dart`
+   Validation:
+   - `flutter analyze` passed.
+   - `flutter test` (theme + impacted screens) passed.
+
+---

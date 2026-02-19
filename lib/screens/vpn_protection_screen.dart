@@ -125,7 +125,7 @@ class _VpnProtectionScreenState extends State<VpnProtectionScreen> {
           Text(
             l10n.vpnIntroSubtitle,
             style: Theme.of(context).textTheme.bodyMedium?.copyWith(
-                  color: Colors.grey.shade600,
+                  color: Theme.of(context).colorScheme.onSurfaceVariant,
                 ),
           ),
           const SizedBox(height: 16),
@@ -270,7 +270,7 @@ class _VpnProtectionScreenState extends State<VpnProtectionScreen> {
               Text(
                 l10n.notYetSyncedMessage,
                 style: Theme.of(context).textTheme.bodySmall?.copyWith(
-                      color: Colors.grey.shade600,
+                      color: Theme.of(context).colorScheme.onSurfaceVariant,
                     ),
               )
             else if (!result.success)
@@ -322,7 +322,11 @@ class _VpnProtectionScreenState extends State<VpnProtectionScreen> {
       padding: const EdgeInsets.only(bottom: 6),
       child: Row(
         children: [
-          Icon(icon, size: 16, color: Colors.grey.shade600),
+          Icon(
+            icon,
+            size: 16,
+            color: Theme.of(context).colorScheme.onSurfaceVariant,
+          ),
           const SizedBox(width: 8),
           Text(
             label,

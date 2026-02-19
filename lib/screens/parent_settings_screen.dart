@@ -226,7 +226,8 @@ class _ParentSettingsScreenState extends State<ParentSettingsScreen> {
                     Text(
                       email,
                       style: Theme.of(context).textTheme.bodySmall?.copyWith(
-                            color: Colors.grey.shade600,
+                            color:
+                                Theme.of(context).colorScheme.onSurfaceVariant,
                           ),
                     ),
                   ],
@@ -408,7 +409,7 @@ class _ParentSettingsScreenState extends State<ParentSettingsScreen> {
             child: Text(
               'TrustBridge never sells your family\'s data.',
               style: Theme.of(context).textTheme.bodySmall?.copyWith(
-                    color: Colors.grey.shade600,
+                    color: Theme.of(context).colorScheme.onSurfaceVariant,
                     fontStyle: FontStyle.italic,
                   ),
             ),
@@ -502,7 +503,7 @@ class _ParentSettingsScreenState extends State<ParentSettingsScreen> {
           fontSize: 12,
           fontWeight: FontWeight.w700,
           letterSpacing: 0.7,
-          color: Colors.grey.shade600,
+          color: Theme.of(context).colorScheme.onSurfaceVariant,
         ),
       ),
     );
