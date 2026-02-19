@@ -1,11 +1,10 @@
 import 'package:flutter/material.dart';
 
-import '../l10n/app_localizations.dart';
-import '../l10n/app_localizations_en.dart';
 import '../models/access_request.dart';
 import '../models/child_profile.dart';
 import '../screens/dashboard_screen.dart';
 import '../screens/schedule_creator_screen.dart';
+import '../screens/usage_reports_screen.dart';
 import '../screens/vpn_protection_screen.dart';
 import '../services/auth_service.dart';
 import '../services/firestore_service.dart';
@@ -107,7 +106,7 @@ class _ParentShellState extends State<ParentShell> {
         firestoreService: widget.firestoreService,
         parentIdOverride: widget.parentIdOverride,
       ),
-      const _UsageReportsPlaceholderScreen(),
+      const UsageReportsScreen(),
       VpnProtectionScreen(
         authService: widget.authService,
         firestoreService: widget.firestoreService,
@@ -302,30 +301,6 @@ class _ParentScheduleTabState extends State<_ParentScheduleTab> {
           parentIdOverride: widget.parentIdOverride,
         );
       },
-    );
-  }
-}
-
-class _UsageReportsPlaceholderScreen extends StatelessWidget {
-  const _UsageReportsPlaceholderScreen();
-
-  @override
-  Widget build(BuildContext context) {
-    final l10n = AppLocalizations.of(context) ?? AppLocalizationsEn();
-
-    return Scaffold(
-      appBar: AppBar(
-        title: Text(l10n.analyticsTitle),
-      ),
-      body: const Center(
-        child: Padding(
-          padding: EdgeInsets.all(24),
-          child: Text(
-            'Usage reports dashboard is coming soon.\n\nThis tab is reserved for weekly trend and activity insights.',
-            textAlign: TextAlign.center,
-          ),
-        ),
-      ),
     );
   }
 }

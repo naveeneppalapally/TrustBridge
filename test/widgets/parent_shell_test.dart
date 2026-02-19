@@ -84,7 +84,21 @@ void main() {
       await tester.tap(find.text('Schedule'));
       await tester.pumpAndSettle();
 
-      expect(find.text('Schedule Creator'), findsOneWidget);
+      expect(find.text('Schedule Editor'), findsOneWidget);
+    });
+
+    testWidgets('reports tab opens usage reports screen', (tester) async {
+      const parentId = 'parent-shell-b2';
+      await seedChild(parentId);
+
+      await tester.pumpWidget(buildTestShell(parentId: parentId));
+      await tester.pumpAndSettle();
+
+      await tester.tap(find.text('Reports'));
+      await tester.pumpAndSettle();
+
+      expect(find.text('Usage Reports'), findsOneWidget);
+      expect(find.text('By Category'), findsOneWidget);
     });
 
     testWidgets('shows dashboard badge when pending requests exist',
@@ -120,7 +134,7 @@ void main() {
           .tap(find.byKey(const Key('dashboard_bedtime_schedule_button')));
       await tester.pumpAndSettle();
 
-      expect(find.text('Schedule Creator'), findsOneWidget);
+      expect(find.text('Schedule Editor'), findsOneWidget);
     });
   });
 }
