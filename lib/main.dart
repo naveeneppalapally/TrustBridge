@@ -17,7 +17,6 @@ import 'package:trustbridge_app/screens/add_child_screen.dart';
 import 'package:trustbridge_app/screens/beta_feedback_history_screen.dart';
 import 'package:trustbridge_app/screens/beta_feedback_screen.dart';
 import 'package:trustbridge_app/screens/child_requests_screen.dart';
-import 'package:trustbridge_app/screens/child_status_screen.dart';
 import 'package:trustbridge_app/screens/dns_analytics_screen.dart';
 import 'package:trustbridge_app/screens/login_screen.dart';
 import 'package:trustbridge_app/screens/onboarding_screen.dart';
@@ -190,7 +189,10 @@ class _MyAppState extends State<MyApp> {
           '/child-status': (context) {
             final child =
                 ModalRoute.of(context)!.settings.arguments as ChildProfile;
-            return ChildStatusScreen(child: child);
+            return ChildShell(
+              child: child,
+              initialIndex: 0,
+            );
           },
           '/child-requests': (context) {
             final child =

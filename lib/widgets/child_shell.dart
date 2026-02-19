@@ -1,10 +1,12 @@
 import 'package:flutter/material.dart';
 import 'package:flutter/scheduler.dart';
+import 'package:shared_preferences/shared_preferences.dart';
 
 import '../models/child_profile.dart';
 import '../screens/blocked_overlay_screen.dart';
 import '../screens/child_requests_screen.dart';
 import '../screens/child_status_screen.dart';
+import '../screens/child_tutorial_screen.dart';
 import '../services/auth_service.dart';
 import '../services/firestore_service.dart';
 import '../services/vpn_service.dart';
@@ -18,6 +20,7 @@ class ChildShell extends StatefulWidget {
     this.firestoreService,
     this.parentIdOverride,
     this.initialIndex = 0,
+    this.enableTutorialGate = true,
   });
 
   final ChildProfile child;
@@ -25,6 +28,7 @@ class ChildShell extends StatefulWidget {
   final FirestoreService? firestoreService;
   final String? parentIdOverride;
   final int initialIndex;
+  final bool enableTutorialGate;
 
   @override
   State<ChildShell> createState() => _ChildShellState();
@@ -44,6 +48,7 @@ class _ChildShellState extends State<ChildShell> {
         : rawIndex > 2
             ? 2
             : rawIndex;
+    _scheduleTutorialGateCheck();
     _registerBlockedDomainListener();
   }
 
@@ -83,6 +88,38 @@ class _ChildShellState extends State<ChildShell> {
         _overlayVisible = false;
       });
     });
+  }
+
+  void _scheduleTutorialGateCheck() {
+    if (!widget.enableTutorialGate) {
+      return;
+    }
+    SchedulerBinding.instance.addPostFrameCallback((_) {
+      _showTutorialIfNeeded();
+    });
+  }
+
+  Future<void> _showTutorialIfNeeded() async {
+    try {
+      final prefs = await SharedPreferences.getInstance();
+      final key = 'child_tutorial_seen_${widget.child.id}';
+      final seen = prefs.getBool(key) ?? false;
+      if (seen || !mounted) {
+        return;
+      }
+      await prefs.setBool(key, true);
+      if (!mounted) {
+        return;
+      }
+      await Navigator.of(context).push(
+        MaterialPageRoute(
+          fullscreenDialog: true,
+          builder: (_) => const ChildTutorialScreen(),
+        ),
+      );
+    } catch (_) {
+      // If local prefs are unavailable, skip tutorial gate gracefully.
+    }
   }
 
   @override

@@ -20,6 +20,7 @@ void main() {
             firestore: FakeFirebaseFirestore(),
           ),
           parentIdOverride: 'parent-child-shell',
+          enableTutorialGate: false,
         ),
       );
     }
