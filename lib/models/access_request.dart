@@ -95,6 +95,22 @@ class AccessRequest {
   final DateTime? respondedAt;
   final DateTime? expiresAt;
 
+  bool isExpiredAt(DateTime now) {
+    final expiry = expiresAt;
+    if (expiry == null) {
+      return false;
+    }
+    return !expiry.isAfter(now);
+  }
+
+  RequestStatus effectiveStatus({DateTime? now}) {
+    final reference = now ?? DateTime.now();
+    if (status == RequestStatus.approved && isExpiredAt(reference)) {
+      return RequestStatus.expired;
+    }
+    return status;
+  }
+
   factory AccessRequest.create({
     required String childId,
     required String parentId,

@@ -35,7 +35,8 @@ void main() {
       await tester.pumpAndSettle();
 
       expect(find.text('Request Updates'), findsOneWidget);
-      expect(find.byKey(const Key('child_requests_empty_state')), findsOneWidget);
+      expect(
+          find.byKey(const Key('child_requests_empty_state')), findsOneWidget);
     });
 
     testWidgets('renders request details and parent reply', (tester) async {
@@ -62,7 +63,8 @@ void main() {
       await tester.pumpAndSettle();
 
       expect(find.text('youtube.com'), findsOneWidget);
-      expect(find.textContaining('Reason: Need this for class'), findsOneWidget);
+      expect(
+          find.textContaining('Reason: Need this for class'), findsOneWidget);
       expect(find.textContaining('Message from parent: Okay for learning.'),
           findsOneWidget);
       expect(find.byType(Card), findsWidgets);
@@ -137,11 +139,39 @@ void main() {
       );
       await tester.pumpAndSettle();
 
-      await tester.tap(find.byKey(const Key('child_requests_filter_responded')));
+      await tester
+          .tap(find.byKey(const Key('child_requests_filter_responded')));
       await tester.pumpAndSettle();
 
       expect(find.text('khanacademy.org'), findsOneWidget);
       expect(find.text('example.com'), findsNothing);
+    });
+
+    testWidgets('approved request with past expiresAt renders as expired',
+        (tester) async {
+      await _seedRequest(
+        firestore: fakeFirestore,
+        parentId: 'parent-a',
+        childId: child.id,
+        requestId: 'request-expired-soft',
+        appOrSite: 'youtube.com',
+        status: 'approved',
+        expiresAt: DateTime.now().subtract(const Duration(minutes: 2)),
+      );
+
+      await tester.pumpWidget(
+        MaterialApp(
+          home: ChildRequestsScreen(
+            child: child,
+            firestoreService: firestoreService,
+            parentIdOverride: 'parent-a',
+          ),
+        ),
+      );
+      await tester.pumpAndSettle();
+
+      expect(find.textContaining('Expired'), findsOneWidget);
+      expect(find.text('This access window has ended.'), findsOneWidget);
     });
   });
 }
@@ -153,6 +183,7 @@ Future<void> _seedRequest({
   required String requestId,
   required String appOrSite,
   required String status,
+  DateTime? expiresAt,
   String? reason,
   String? parentReply,
 }) {
@@ -176,7 +207,9 @@ Future<void> _seedRequest({
         ? null
         : Timestamp.fromDate(DateTime(2026, 2, 17, 21, 8)),
     'expiresAt': status == 'approved'
-        ? Timestamp.fromDate(DateTime.now().add(const Duration(minutes: 30)))
+        ? Timestamp.fromDate(
+            expiresAt ?? DateTime.now().add(const Duration(minutes: 30)),
+          )
         : null,
   });
 }

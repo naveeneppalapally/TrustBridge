@@ -1,4 +1,5 @@
 import 'package:flutter_test/flutter_test.dart';
+import 'package:trustbridge_app/models/access_request.dart';
 import 'package:trustbridge_app/models/child_profile.dart';
 import 'package:trustbridge_app/models/policy.dart';
 import 'package:trustbridge_app/models/schedule.dart';
@@ -187,6 +188,45 @@ void main() {
       expect(a.duplicateKey, equals('vpn crash on enable'));
       expect(b.duplicateKey, equals('vpn crash on enable'));
       expect(a.duplicateKey, equals(b.duplicateKey));
+    });
+  });
+
+  group('AccessRequest', () {
+    test('effectiveStatus converts approved request to expired after expiry',
+        () {
+      final now = DateTime(2026, 2, 19, 14, 0);
+      final request = AccessRequest(
+        id: 'request-1',
+        childId: 'child-1',
+        parentId: 'parent-1',
+        childNickname: 'Aarav',
+        appOrSite: 'youtube.com',
+        duration: RequestDuration.thirtyMin,
+        status: RequestStatus.approved,
+        requestedAt: now.subtract(const Duration(minutes: 40)),
+        respondedAt: now.subtract(const Duration(minutes: 35)),
+        expiresAt: now.subtract(const Duration(minutes: 5)),
+      );
+
+      expect(request.effectiveStatus(now: now), RequestStatus.expired);
+    });
+
+    test('effectiveStatus keeps approved request active before expiry', () {
+      final now = DateTime(2026, 2, 19, 14, 0);
+      final request = AccessRequest(
+        id: 'request-2',
+        childId: 'child-1',
+        parentId: 'parent-1',
+        childNickname: 'Aarav',
+        appOrSite: 'youtube.com',
+        duration: RequestDuration.thirtyMin,
+        status: RequestStatus.approved,
+        requestedAt: now.subtract(const Duration(minutes: 10)),
+        respondedAt: now.subtract(const Duration(minutes: 5)),
+        expiresAt: now.add(const Duration(minutes: 10)),
+      );
+
+      expect(request.effectiveStatus(now: now), RequestStatus.approved);
     });
   });
 }

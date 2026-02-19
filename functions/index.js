@@ -145,40 +145,65 @@ exports.expireApprovedAccessRequests = onSchedule(
   },
   async () => {
     const maxBatchSize = 200;
+    const sweepStartedAt = Date.now();
     let totalExpired = 0;
+    let batchesProcessed = 0;
+    let latestExpiryCutoff = null;
 
-    while (true) {
-      const now = admin.firestore.Timestamp.now();
-      const snapshot = await db
-          .collectionGroup("access_requests")
-          .where("status", "==", "approved")
-          .where("expiresAt", "<=", now)
-          .limit(maxBatchSize)
-          .get();
+    try {
+      while (true) {
+        const now = admin.firestore.Timestamp.now();
+        const snapshot = await db
+            .collectionGroup("access_requests")
+            .where("status", "==", "approved")
+            .where("expiresAt", "<=", now)
+            .orderBy("expiresAt", "asc")
+            .limit(maxBatchSize)
+            .get();
 
-      if (snapshot.empty) {
-        break;
+        if (snapshot.empty) {
+          break;
+        }
+
+        const batch = db.batch();
+        for (const doc of snapshot.docs) {
+          batch.update(doc.ref, {
+            status: "expired",
+            expiredAt: admin.firestore.FieldValue.serverTimestamp(),
+            updatedAt: admin.firestore.FieldValue.serverTimestamp(),
+          });
+        }
+
+        await batch.commit();
+        totalExpired += snapshot.size;
+        batchesProcessed += 1;
+
+        const lastDoc = snapshot.docs[snapshot.docs.length - 1];
+        const lastExpiresAt = lastDoc.get("expiresAt");
+        if (lastExpiresAt && typeof lastExpiresAt.toDate === "function") {
+          latestExpiryCutoff = lastExpiresAt.toDate().toISOString();
+        }
+
+        if (snapshot.size < maxBatchSize) {
+          break;
+        }
       }
 
-      const batch = db.batch();
-      for (const doc of snapshot.docs) {
-        batch.update(doc.ref, {
-          status: "expired",
-          expiredAt: admin.firestore.FieldValue.serverTimestamp(),
-          updatedAt: admin.firestore.FieldValue.serverTimestamp(),
-        });
-      }
-
-      await batch.commit();
-      totalExpired += snapshot.size;
-
-      if (snapshot.size < maxBatchSize) {
-        break;
-      }
+      logger.info("Expired access requests sweep complete.", {
+        totalExpired,
+        batchesProcessed,
+        durationMs: Date.now() - sweepStartedAt,
+        latestExpiryCutoff,
+      });
+    } catch (error) {
+      logger.error("Expired access requests sweep failed.", {
+        totalExpired,
+        batchesProcessed,
+        durationMs: Date.now() - sweepStartedAt,
+        latestExpiryCutoff,
+        error,
+      });
+      throw error;
     }
-
-    logger.info("Expired access requests sweep complete.", {
-      totalExpired,
-    });
   },
 );

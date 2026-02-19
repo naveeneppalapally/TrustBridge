@@ -78,6 +78,41 @@ void main() {
       expect(find.text('Aarav -> youtube.com'), findsOneWidget);
     });
 
+    testWidgets('history treats approved past-expiry request as expired',
+        (tester) async {
+      await _seedRequest(
+        firestore: fakeFirestore,
+        parentId: 'parent-a',
+        requestId: 'request-soft-expired',
+        childNickname: 'Aarav',
+        appOrSite: 'youtube.com',
+        durationLabel: '30 min',
+        durationMinutes: 30,
+        status: 'approved',
+        respondedAt: DateTime.now().subtract(const Duration(minutes: 20)),
+        expiresAt: DateTime.now().subtract(const Duration(minutes: 1)),
+      );
+
+      await tester.pumpWidget(
+        MaterialApp(
+          home: ParentRequestsScreen(
+            parentIdOverride: 'parent-a',
+            firestoreService: firestoreService,
+          ),
+        ),
+      );
+      await tester.pumpAndSettle();
+
+      await tester.tap(find.text('History'));
+      await tester.pumpAndSettle();
+
+      expect(find.text('Expired'), findsOneWidget);
+      expect(
+        find.byKey(const Key('request_end_access_button_request-soft-expired')),
+        findsNothing,
+      );
+    });
+
     testWidgets('pending card shows child, app, duration, and reason',
         (tester) async {
       await _seedRequest(

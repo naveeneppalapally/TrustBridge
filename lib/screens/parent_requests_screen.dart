@@ -176,7 +176,9 @@ class _ParentRequestsScreenState extends State<ParentRequestsScreen>
 
         final allRequests = snapshot.data ?? const <AccessRequest>[];
         final history = allRequests
-            .where((request) => request.status != RequestStatus.pending)
+            .where(
+              (request) => request.effectiveStatus() != RequestStatus.pending,
+            )
             .toList();
 
         if (history.isEmpty) {
@@ -862,7 +864,8 @@ class _HistoryCardState extends State<_HistoryCard> {
   @override
   Widget build(BuildContext context) {
     final request = widget.request;
-    final color = _statusColor(request.status);
+    final effectiveStatus = request.effectiveStatus();
+    final color = _statusColor(effectiveStatus);
 
     return Container(
       decoration: BoxDecoration(
@@ -878,7 +881,7 @@ class _HistoryCardState extends State<_HistoryCard> {
         children: <Widget>[
           Row(
             children: <Widget>[
-              Text(request.status.emoji, style: const TextStyle(fontSize: 18)),
+              Text(effectiveStatus.emoji, style: const TextStyle(fontSize: 18)),
               const SizedBox(width: 10),
               Expanded(
                 child: Text(
@@ -889,7 +892,7 @@ class _HistoryCardState extends State<_HistoryCard> {
                 ),
               ),
               Text(
-                _statusText(context, request.status),
+                _statusText(context, effectiveStatus),
                 style: Theme.of(context).textTheme.bodySmall?.copyWith(
                       color: color,
                       fontWeight: FontWeight.w600,

@@ -3081,6 +3081,45 @@ high-frequency user pain points.
 
 ---
 
+## Day 83 - Expiration Consistency Hardening (Week 17 Day 3)
+
+Program goal: ensure expired approvals are reflected immediately in app UI
+and improve scheduled expiry observability in backend logs.
+
+### Commit entries
+
+1. **2026-02-19 14:11:32 +05:30**  
+   Commit: `[pending]`  
+   Message: `Implement Day 83 expiration consistency hardening`  
+   Changes:
+   - Updated `lib/models/access_request.dart`:
+     - added `isExpiredAt()` helper
+     - added `effectiveStatus()` (treats `approved` + past `expiresAt` as `expired`)
+   - Updated `lib/screens/parent_requests_screen.dart`:
+     - history tab/status rendering now uses effective status
+     - approved-but-expired entries display as expired immediately
+   - Updated `lib/screens/child_requests_screen.dart`:
+     - filters and status badge now use effective status
+     - approved-but-expired entries display as expired immediately
+   - Updated `functions/index.js` (`expireApprovedAccessRequests`):
+     - added deterministic `orderBy('expiresAt', 'asc')`
+     - added run metrics (`batchesProcessed`, `durationMs`, `latestExpiryCutoff`)
+     - added explicit error logging + rethrow for failed sweeps
+   - Updated tests:
+     - `test/models_test.dart`
+       - added `effectiveStatus()` model coverage
+     - `test/screens/child_requests_screen_test.dart`
+       - verifies soft-expired approved request renders as expired
+     - `test/screens/parent_requests_screen_test.dart`
+       - verifies history treats approved past-expiry requests as expired
+   Validation:
+   - `flutter analyze` passed.
+   - `flutter test` passed (257/257).
+   - `flutter build apk --debug` passed.
+   - `node --check functions/index.js` passed.
+
+---
+
 ## Day 82 - Manual Early Expiration (Week 17 Day 2)
 
 Program goal: let parents immediately end an active approved access window

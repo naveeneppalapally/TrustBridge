@@ -233,11 +233,15 @@ class _ChildRequestsScreenState extends State<ChildRequestsScreen> {
         return requests;
       case _RequestFilter.pending:
         return requests
-            .where((request) => request.status == RequestStatus.pending)
+            .where(
+              (request) => request.effectiveStatus() == RequestStatus.pending,
+            )
             .toList();
       case _RequestFilter.responded:
         return requests
-            .where((request) => request.status != RequestStatus.pending)
+            .where(
+              (request) => request.effectiveStatus() != RequestStatus.pending,
+            )
             .toList();
     }
   }
@@ -253,7 +257,8 @@ class _RequestStatusCard extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final statusColor = _statusColor(request.status);
+    final effectiveStatus = request.effectiveStatus();
+    final statusColor = _statusColor(effectiveStatus);
     final requestAge = _timeAgo(request.requestedAt);
     final hasReply =
         request.parentReply != null && request.parentReply!.trim().isNotEmpty;
@@ -275,7 +280,7 @@ class _RequestStatusCard extends StatelessWidget {
                     borderRadius: BorderRadius.circular(10),
                   ),
                   child: Text(
-                    '${request.status.emoji} ${request.status.displayName}',
+                    '${effectiveStatus.emoji} ${effectiveStatus.displayName}',
                     style: Theme.of(context).textTheme.bodySmall?.copyWith(
                           color: statusColor,
                           fontWeight: FontWeight.w700,
@@ -322,7 +327,8 @@ class _RequestStatusCard extends StatelessWidget {
                 ),
               ],
             ),
-            if (request.reason != null && request.reason!.trim().isNotEmpty) ...[
+            if (request.reason != null &&
+                request.reason!.trim().isNotEmpty) ...[
               const SizedBox(height: 10),
               Text(
                 'Reason: ${request.reason}',
