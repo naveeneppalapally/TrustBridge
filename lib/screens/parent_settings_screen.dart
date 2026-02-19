@@ -8,6 +8,7 @@ import 'package:trustbridge_app/screens/family_management_screen.dart';
 import 'package:trustbridge_app/screens/help_support_screen.dart';
 import 'package:trustbridge_app/screens/onboarding_screen.dart';
 import 'package:trustbridge_app/screens/privacy_center_screen.dart';
+import 'package:trustbridge_app/screens/premium_screen.dart';
 import 'package:trustbridge_app/screens/security_controls_screen.dart';
 import 'package:trustbridge_app/services/auth_service.dart';
 import 'package:trustbridge_app/services/firestore_service.dart';
@@ -338,9 +339,9 @@ class _ParentSettingsScreenState extends State<ParentSettingsScreen> {
           ],
         ),
         onTap: () {
-          ScaffoldMessenger.of(context).showSnackBar(
-            const SnackBar(
-              content: Text('Premium upgrade screen will arrive on Day 108.'),
+          Navigator.of(context).push(
+            MaterialPageRoute(
+              builder: (_) => const PremiumScreen(),
             ),
           );
         },

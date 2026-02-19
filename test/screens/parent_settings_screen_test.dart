@@ -175,6 +175,33 @@ void main() {
       expect(find.byKey(const Key('family_admins_card')), findsOneWidget);
     });
 
+    testWidgets('opens premium screen from subscription tile', (tester) async {
+      await seedParent('parent-settings-premium');
+
+      await tester.pumpWidget(
+        MaterialApp(
+          home: ParentSettingsScreen(
+            parentIdOverride: 'parent-settings-premium',
+            firestoreService: firestoreService,
+          ),
+        ),
+      );
+      await tester.pumpAndSettle();
+
+      await tester.dragUntilVisible(
+        find.byKey(const Key('settings_subscription_tile')),
+        find.byType(ListView),
+        const Offset(0, -160),
+      );
+      await tester.pumpAndSettle();
+
+      await tester.tap(find.byKey(const Key('settings_subscription_tile')));
+      await tester.pumpAndSettle();
+
+      expect(find.textContaining('TrustBridge'), findsOneWidget);
+      expect(find.byKey(const Key('premium_header_card')), findsOneWidget);
+    });
+
     testWidgets('navigates to feedback history from about section',
         (tester) async {
       await seedParent('parent-settings-e');
