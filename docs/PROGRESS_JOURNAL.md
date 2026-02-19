@@ -3119,3 +3119,52 @@ fatal capture, contextual keys, and manual non-fatal logging.
    - `flutter build apk --release --target-platform android-arm64` passed.
 
 ---
+
+## Day 75 - Firebase Performance Monitoring (Week 15 Day 5)
+
+Program goal: add production performance visibility for startup, critical
+flows, and telemetry-backed threshold tracking before v1.0.
+
+### Commit entries
+
+1. **2026-02-19 10:42:01 +0530**  
+   Commit: `df82cb9`  
+   Message: `Implement Day 75 Firebase Performance Monitoring`  
+   Changes:
+   - Added `firebase_performance` dependency in `pubspec.yaml`.
+   - Updated Android Gradle plugin setup:
+     - `android/settings.gradle.kts` added `com.google.firebase.firebase-perf`
+     - `android/app/build.gradle.kts` applied Firebase Performance plugin
+   - Updated `lib/main.dart`:
+     - added `_initPerformance()` startup initialization
+     - enabled/disables collection by build mode (`!kDebugMode`)
+   - Created `lib/services/performance_service.dart`:
+     - singleton trace service
+     - safe no-op behavior in debug/test
+     - `startTrace()`, `stopTrace()`, `traceOperation()`
+     - custom metrics/attributes helpers
+     - threshold annotation helper (`PerformanceThresholds`)
+   - Updated `lib/services/vpn_service.dart`:
+     - traced `startVpn()` and `stopVpn()`
+     - added duration and operation metrics with thresholds
+   - Updated `lib/services/policy_vpn_sync_service.dart`:
+     - traced `syncNow()`
+     - added metrics for children/categories/domains and success state
+   - Updated `lib/services/firestore_service.dart`:
+     - wrapped `getChildrenOnce()` with traced operation
+   - Updated `lib/screens/dashboard_screen.dart`:
+     - added one-time `dashboard_load` trace around first frame render
+   - Updated `lib/screens/vpn_protection_screen.dart`:
+     - traced telemetry refresh flow
+     - added metrics for queries processed/blocked/allowed
+     - added derived `dns_queries_per_sec_x100` and `dns_block_rate_pct`
+     - added threshold annotations
+   - Added tests:
+     - `test/services/performance_service_test.dart`
+   Validation:
+   - `flutter analyze` passed.
+   - `flutter test` passed (233/233).
+   - `flutter build apk --release --target-platform android-arm64` passed.
+   - Release APK output size: ~21.6 MB.
+
+---
