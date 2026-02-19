@@ -3089,7 +3089,7 @@ and ensure VPN exceptions refresh as soon as request status changes.
 ### Commit entries
 
 1. **2026-02-19 14:01:01 +05:30**  
-   Commit: `[pending]`  
+   Commit: `c588417`  
    Message: `Implement Day 82 manual early expiration for approved access`  
    Changes:
    - Updated `lib/services/firestore_service.dart`:
