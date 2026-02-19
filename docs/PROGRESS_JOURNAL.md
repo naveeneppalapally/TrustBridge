@@ -3058,3 +3058,64 @@ bulk-action entries to instantly refocus duplicate triage filters.
    - `flutter test` passed.
 
 ---
+
+## Day 73 - Duplicate Analytics Dashboard (Week 15 Day 3)
+
+Program goal: visualize duplicate trends so roadmap decisions prioritize
+high-frequency user pain points.
+
+### Commit entries
+
+1. **2026-02-18 21:22:39 +0530**  
+   Commit: `aab07b9`  
+   Message: `Implement Day 73 duplicate analytics dashboard`  
+   Changes:
+   - Added duplicate analytics computation methods in `lib/services/firestore_service.dart`.
+   - Created `lib/screens/duplicate_analytics_screen.dart` with summary, top issues, velocity, category breakdown, and CSV export.
+   - Added analytics entry point from `lib/screens/beta_feedback_history_screen.dart`.
+   - Added `share_plus` dependency and lock updates.
+   - Added tests in `test/screens/duplicate_analytics_screen_test.dart`.
+   Validation:
+   - `flutter analyze` passed.
+   - `flutter test` passed.
+
+---
+## Day 74 - Firebase Crashlytics (Week 15 Day 4)
+
+Program goal: production-ready crash visibility for v1.0 with automatic
+fatal capture, contextual keys, and manual non-fatal logging.
+
+### Commit entries
+
+1. **2026-02-19 09:19:02 +0530**  
+   Commit: `66b5f74`  
+   Message: `Implement Day 74 Firebase Crashlytics error tracking`  
+   Changes:
+   - Added `firebase_crashlytics` dependency in `pubspec.yaml` / `pubspec.lock`.
+   - Enabled Crashlytics Gradle plugin:
+     - `android/settings.gradle.kts`
+     - `android/app/build.gradle.kts`
+   - Updated `lib/main.dart`:
+     - release-mode Crashlytics initialization
+     - Flutter and async global error forwarding
+     - auth-state driven Crashlytics user context keys
+   - Created `lib/services/crashlytics_service.dart` singleton:
+     - user ID helpers
+     - custom key helpers
+     - breadcrumb + non-fatal/fatal logging wrappers
+     - debug test crash helper
+   - Updated `lib/services/vpn_service.dart`:
+     - VPN lifecycle logs and error reporting
+     - custom `vpn_status` keys
+   - Updated `lib/services/firestore_service.dart`:
+     - non-fatal logging around critical write paths
+     - useful context keys on child/request flows
+   - Updated `lib/screens/parent_settings_screen.dart`:
+     - debug-only "Test Crashlytics" tile + confirm dialog
+   - Added tests: `test/services/crashlytics_service_test.dart`.
+   Validation:
+   - `flutter analyze` passed.
+   - `flutter test` passed (230/230).
+   - `flutter build apk --release --target-platform android-arm64` passed.
+
+---
