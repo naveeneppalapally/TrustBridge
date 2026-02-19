@@ -53,8 +53,11 @@ void main() {
 
       await tester.pumpAndSettle();
 
-      expect(find.text('No children yet'), findsOneWidget);
-      expect(find.text('Add your first child to get started'), findsOneWidget);
+      expect(find.text('Add your first child'), findsOneWidget);
+      expect(
+        find.text('Get started by adding a child profile.'),
+        findsOneWidget,
+      );
     });
 
     testWidgets('renders child from Firestore stream', (tester) async {

@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:trustbridge_app/services/auth_service.dart';
 import 'package:trustbridge_app/services/firestore_service.dart';
 import 'package:trustbridge_app/services/vpn_service.dart';
+import 'package:trustbridge_app/widgets/empty_state.dart';
 
 class DnsQueryLogScreen extends StatefulWidget {
   const DnsQueryLogScreen({
@@ -211,27 +212,14 @@ class _DnsQueryLogScreenState extends State<DnsQueryLogScreen> {
   }
 
   Widget _buildEmptyState(BuildContext context) {
-    return Card(
+    return const Card(
       child: Padding(
-        padding: const EdgeInsets.all(24),
-        child: Column(
-          children: [
-            Icon(Icons.hourglass_empty, size: 40, color: Colors.grey.shade500),
-            const SizedBox(height: 10),
-            Text(
-              key: const Key('dns_log_empty_state'),
-              'No DNS queries captured yet.',
-              style: Theme.of(context).textTheme.titleMedium,
-            ),
-            const SizedBox(height: 6),
-            Text(
-              'Open a few websites while VPN is enabled, then refresh this page.',
-              textAlign: TextAlign.center,
-              style: Theme.of(context).textTheme.bodySmall?.copyWith(
-                    color: Colors.grey.shade600,
-                  ),
-            ),
-          ],
+        padding: EdgeInsets.all(12),
+        child: EmptyState(
+          key: Key('dns_log_empty_state'),
+          icon: Text('\u{1F50D}'),
+          title: 'No queries yet',
+          subtitle: 'Start VPN to see DNS activity.',
         ),
       ),
     );

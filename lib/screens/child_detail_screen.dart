@@ -11,6 +11,7 @@ import 'package:trustbridge_app/screens/policy_overview_screen.dart';
 import 'package:trustbridge_app/services/auth_service.dart';
 import 'package:trustbridge_app/services/firestore_service.dart';
 import 'package:trustbridge_app/utils/app_lock_guard.dart';
+import 'package:trustbridge_app/widgets/empty_state.dart';
 
 class ChildDetailScreen extends StatefulWidget {
   const ChildDetailScreen({
@@ -517,11 +518,12 @@ class _ChildDetailScreenState extends State<ChildDetailScreen> {
             ),
             const SizedBox(height: 6),
             if (schedules.isEmpty)
-              Text(
-                'No schedules configured yet.',
-                style: Theme.of(context).textTheme.bodySmall?.copyWith(
-                      color: Colors.grey[600],
-                    ),
+              EmptyState(
+                icon: const Text('\u{1F4C6}'),
+                title: 'No schedules yet',
+                subtitle: 'Add a bedtime or school schedule.',
+                actionLabel: 'Add Schedule',
+                onAction: () => _openPolicyOverview(context),
               )
             else
               ...schedules.map(

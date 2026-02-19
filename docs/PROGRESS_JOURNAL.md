@@ -3829,3 +3829,42 @@ states with reusable shimmer skeleton placeholders across high-traffic screens.
    - `flutter test` passed.
 
 ---
+
+## Day 110 - Illustrated Empty States (Week 23 Day 1)
+
+Program goal: replace plain empty/blank states with a consistent friendly
+empty-state component and clear CTA language across list-heavy screens.
+
+### Commit entries
+
+1. **2026-02-19 19:30:00 +05:30**  
+   Message: `Implement Day 110 illustrated empty states across core screens`  
+   Changes:
+   - Added `lib/widgets/empty_state.dart`:
+     - reusable icon + title + subtitle + optional CTA action
+   - Updated `lib/screens/dashboard_screen.dart`:
+     - no-children state now uses `EmptyState`
+     - copy: `Add your first child` + `Get started by adding a child profile.`
+   - Updated `lib/screens/parent_requests_screen.dart`:
+     - pending/history empty cards now use shared `EmptyState`
+   - Updated `lib/screens/block_categories_screen.dart`:
+     - all-off guidance card:
+       - `No categories blocked`
+       - `Toggle categories to start filtering.`
+   - Updated `lib/screens/child_detail_screen.dart`:
+     - schedules-empty state with CTA:
+       - `No schedules yet`
+       - `Add Schedule`
+   - Updated `lib/screens/dns_query_log_screen.dart`:
+     - DNS-empty state:
+       - `No queries yet`
+       - `Start VPN to see DNS activity.`
+   - Added tests:
+     - `test/widgets/empty_state_test.dart`
+   - Updated tests:
+     - `test/screens/dashboard_screen_test.dart`
+   Validation:
+   - `flutter analyze` passed.
+   - `flutter test` (impacted suites) passed.
+
+---

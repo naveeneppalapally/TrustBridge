@@ -6,6 +6,7 @@ import '../models/access_request.dart';
 import '../services/auth_service.dart';
 import '../services/firestore_service.dart';
 import '../utils/expiry_label_utils.dart';
+import '../widgets/empty_state.dart';
 import '../widgets/skeleton_loaders.dart';
 import 'approval_success_screen.dart';
 
@@ -222,32 +223,10 @@ class _ParentRequestsScreenState extends State<ParentRequestsScreen>
     required String title,
     required String subtitle,
   }) {
-    return Center(
-      child: Padding(
-        padding: const EdgeInsets.all(48),
-        child: Column(
-          mainAxisAlignment: MainAxisAlignment.center,
-          children: <Widget>[
-            Text(emoji, style: const TextStyle(fontSize: 64)),
-            const SizedBox(height: 20),
-            Text(
-              title,
-              textAlign: TextAlign.center,
-              style: Theme.of(context).textTheme.headlineSmall?.copyWith(
-                    fontWeight: FontWeight.bold,
-                  ),
-            ),
-            const SizedBox(height: 12),
-            Text(
-              subtitle,
-              textAlign: TextAlign.center,
-              style: Theme.of(context).textTheme.bodyMedium?.copyWith(
-                    color: Colors.grey[600],
-                  ),
-            ),
-          ],
-        ),
-      ),
+    return EmptyState(
+      icon: Text(emoji),
+      title: title,
+      subtitle: subtitle,
     );
   }
 }

@@ -15,6 +15,7 @@ import 'package:trustbridge_app/services/performance_service.dart';
 import 'package:trustbridge_app/services/policy_vpn_sync_service.dart';
 import 'package:trustbridge_app/utils/app_lock_guard.dart';
 import 'package:trustbridge_app/widgets/child_card.dart';
+import 'package:trustbridge_app/widgets/empty_state.dart';
 import 'package:trustbridge_app/widgets/skeleton_loaders.dart';
 
 class DashboardScreen extends StatefulWidget {
@@ -600,56 +601,19 @@ class _DashboardScreenState extends State<DashboardScreen>
                     ),
                     SliverFillRemaining(
                       hasScrollBody: false,
-                      child: Center(
-                        child: Padding(
-                          padding: const EdgeInsets.symmetric(horizontal: 24),
-                          child: Column(
-                            mainAxisAlignment: MainAxisAlignment.center,
-                            children: [
-                              if (snapshot.connectionState ==
-                                  ConnectionState.waiting)
-                                const Padding(
-                                  padding: EdgeInsets.only(bottom: 16),
-                                  child:
-                                      CircularProgressIndicator(strokeWidth: 2),
-                                ),
-                              Icon(
-                                Icons.family_restroom,
-                                size: 92,
-                                color: Colors.grey.shade400,
-                              ),
-                              const SizedBox(height: 20),
-                              Text(
-                                l10n.noChildrenMessage,
-                                style:
-                                    Theme.of(context).textTheme.headlineSmall,
-                              ),
-                              const SizedBox(height: 8),
-                              Text(
-                                l10n.noChildrenSubtitle,
-                                textAlign: TextAlign.center,
-                                style: Theme.of(context)
-                                    .textTheme
-                                    .bodyMedium
-                                    ?.copyWith(
-                                      color: Colors.grey.shade600,
-                                    ),
-                              ),
-                              const SizedBox(height: 28),
-                              FilledButton.icon(
-                                onPressed: () {
-                                  Navigator.of(context).push(
-                                    MaterialPageRoute(
-                                      builder: (_) => const AddChildScreen(),
-                                    ),
-                                  );
-                                },
-                                icon: const Icon(Icons.add),
-                                label: Text(l10n.addChildButton),
-                              ),
-                            ],
-                          ),
-                        ),
+                      child: EmptyState(
+                        icon: const Text(
+                            '\u{1F468}\u200D\u{1F469}\u200D\u{1F467}'),
+                        title: 'Add your first child',
+                        subtitle: 'Get started by adding a child profile.',
+                        actionLabel: l10n.addChildButton,
+                        onAction: () {
+                          Navigator.of(context).push(
+                            MaterialPageRoute(
+                              builder: (_) => const AddChildScreen(),
+                            ),
+                          );
+                        },
                       ),
                     ),
                   ],

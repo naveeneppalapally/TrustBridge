@@ -5,6 +5,7 @@ import 'package:trustbridge_app/models/policy.dart';
 import 'package:trustbridge_app/services/auth_service.dart';
 import 'package:trustbridge_app/services/firestore_service.dart';
 import 'package:trustbridge_app/services/vpn_service.dart';
+import 'package:trustbridge_app/widgets/empty_state.dart';
 
 class BlockCategoriesScreen extends StatefulWidget {
   const BlockCategoriesScreen({
@@ -70,8 +71,7 @@ class _BlockCategoriesScreenState extends State<BlockCategoriesScreen> {
       return ContentCategories.allCategories;
     }
     return ContentCategories.allCategories.where((category) {
-      final haystack =
-          '${category.name} ${category.description}'.toLowerCase();
+      final haystack = '${category.name} ${category.description}'.toLowerCase();
       return haystack.contains(normalized);
     }).toList(growable: false);
   }
@@ -115,6 +115,26 @@ class _BlockCategoriesScreenState extends State<BlockCategoriesScreen> {
                 ),
           ),
           const SizedBox(height: 10),
+          if (_query.trim().isEmpty && _blockedKnownCategoryCount == 0) ...[
+            Card(
+              key: const Key('block_categories_empty_state'),
+              margin: const EdgeInsets.only(bottom: 12),
+              child: EmptyState(
+                icon: const Text('\u{1F6E1}'),
+                title: 'No categories blocked',
+                subtitle: 'Toggle categories to start filtering.',
+                actionLabel: 'Block First Category',
+                onAction: _isLoading
+                    ? null
+                    : () {
+                        setState(() {
+                          _blockedCategories
+                              .add(ContentCategories.allCategories.first.id);
+                        });
+                      },
+              ),
+            ),
+          ],
           if (_visibleCategories.isEmpty)
             Padding(
               padding: const EdgeInsets.symmetric(vertical: 20),
@@ -281,7 +301,8 @@ class _BlockCategoriesScreenState extends State<BlockCategoriesScreen> {
         padding: const EdgeInsets.fromLTRB(14, 10, 14, 10),
         decoration: BoxDecoration(
           color: Theme.of(context).scaffoldBackgroundColor,
-          border: Border(top: BorderSide(color: Colors.grey.withValues(alpha: 0.25))),
+          border: Border(
+              top: BorderSide(color: Colors.grey.withValues(alpha: 0.25))),
         ),
         child: Row(
           children: [
@@ -333,7 +354,8 @@ class _BlockCategoriesScreenState extends State<BlockCategoriesScreen> {
             ),
             FilledButton(
               key: const Key('block_categories_add_domain_confirm'),
-              onPressed: () => Navigator.of(context).pop(controller.text.trim()),
+              onPressed: () =>
+                  Navigator.of(context).pop(controller.text.trim()),
               child: const Text('Add'),
             ),
           ],
@@ -377,9 +399,9 @@ class _BlockCategoriesScreenState extends State<BlockCategoriesScreen> {
       }
 
       final updatedPolicy = widget.child.policy.copyWith(
-            blockedCategories: _orderedBlockedCategories(_blockedCategories),
-            blockedDomains: _orderedBlockedDomains(_blockedDomains),
-          );
+        blockedCategories: _orderedBlockedCategories(_blockedCategories),
+        blockedDomains: _orderedBlockedDomains(_blockedDomains),
+      );
       final updatedChild = widget.child.copyWith(policy: updatedPolicy);
 
       await _resolvedFirestoreService.updateChild(
