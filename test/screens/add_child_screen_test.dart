@@ -1,6 +1,5 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
-import 'package:trustbridge_app/models/child_profile.dart';
 import 'package:trustbridge_app/screens/add_child_screen.dart';
 
 void main() {
@@ -14,9 +13,10 @@ void main() {
         ),
       );
 
-      expect(find.text('Add a new child profile'), findsOneWidget);
+      expect(find.text('Add Child · STEP 1 OF 2'), findsOneWidget);
       expect(find.byType(TextFormField), findsOneWidget);
-      expect(find.byType(Radio<AgeBand>), findsNWidgets(3));
+      expect(find.byKey(const Key('add_child_avatar_picker_button')),
+          findsOneWidget);
       expect(find.byKey(const Key('add_child_submit')), findsOneWidget);
     });
 
@@ -51,7 +51,7 @@ void main() {
         ),
       );
 
-      await tester.enterText(find.byType(TextFormField), 'A');
+      await tester.enterText(find.byKey(const Key('add_child_nickname_input')), 'A');
       final submitButton = find.byKey(const Key('add_child_submit'));
       await tester.scrollUntilVisible(
         submitButton,
@@ -74,7 +74,8 @@ void main() {
         ),
       );
 
-      await tester.enterText(find.byType(TextFormField), 'ABCDEFGHIJKLMNOPQRSTU');
+      await tester.enterText(
+          find.byKey(const Key('add_child_nickname_input')), 'ABCDEFGHIJKLMNOPQRSTU');
       final submitButton = find.byKey(const Key('add_child_submit'));
       await tester.scrollUntilVisible(
         submitButton,
@@ -88,7 +89,7 @@ void main() {
       expect(find.text('Nickname must be less than 20 characters'), findsOneWidget);
     });
 
-    testWidgets('age band selection updates policy preview', (tester) async {
+    testWidgets('renders protection level cards', (tester) async {
       await tester.binding.setSurfaceSize(const Size(430, 1400));
       addTearDown(() => tester.binding.setSurfaceSize(null));
       await tester.pumpWidget(
@@ -97,13 +98,15 @@ void main() {
         ),
       );
 
-      expect(find.text('Social Networks'), findsOneWidget);
+      expect(find.text('Strict'), findsOneWidget);
+      expect(find.text('Moderate'), findsOneWidget);
+      expect(find.text('Light'), findsOneWidget);
 
-      await tester.tap(find.text('14-17 years'));
+      await tester.tap(find.byKey(const Key('add_child_level_light')));
       await tester.pump();
 
-      expect(find.text('Social Networks'), findsNothing);
-      expect(find.text('What will be blocked?'), findsOneWidget);
+      expect(find.byKey(const Key('add_child_level_light')), findsOneWidget);
+      expect(find.text('Continue to Pairing ->'), findsOneWidget);
     });
   });
 }

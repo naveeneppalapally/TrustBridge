@@ -2,8 +2,6 @@ import 'package:flutter/material.dart';
 import 'package:trustbridge_app/l10n/app_localizations.dart';
 import 'package:trustbridge_app/l10n/app_localizations_en.dart';
 import 'package:trustbridge_app/models/child_profile.dart';
-import 'package:trustbridge_app/models/policy.dart';
-import 'package:trustbridge_app/screens/age_band_presets_screen.dart';
 import 'package:trustbridge_app/services/auth_service.dart';
 import 'package:trustbridge_app/services/firestore_service.dart';
 
@@ -30,9 +28,12 @@ class _AddChildScreenState extends State<AddChildScreen> {
   AuthService? _authService;
   FirestoreService? _firestoreService;
 
-  AgeBand _selectedAgeBand = AgeBand.young;
+  AgeBand _selectedAgeBand = AgeBand.middle;
   bool _isLoading = false;
   String? _errorMessage;
+  String _selectedAvatar = '🙂';
+
+  static const _avatarOptions = <String>['🙂', '😎', '🧒', '👧', '👦', '🧑'];
 
   AuthService get _resolvedAuthService {
     _authService ??= widget.authService ?? AuthService();
@@ -53,222 +54,126 @@ class _AddChildScreenState extends State<AddChildScreen> {
   @override
   Widget build(BuildContext context) {
     final l10n = _l10n(context);
-    final isDark = Theme.of(context).brightness == Brightness.dark;
-    final borderColor = isDark
-        ? Colors.white.withValues(alpha: 0.08)
-        : Colors.black.withValues(alpha: 0.06);
-    final surfaceColor = isDark ? const Color(0xFF1F2937) : Colors.white;
-    final pageWidth = MediaQuery.sizeOf(context).width;
-    final isTablet = pageWidth >= 600;
 
     return Scaffold(
-      appBar: AppBar(
-        title: Text(l10n.addChildTitle),
-        actions: [
-          IconButton(
-            icon: const Icon(Icons.info_outline),
-            tooltip: l10n.ageBandGuideTooltip,
-            onPressed: () {
-              Navigator.of(context).push(
-                MaterialPageRoute(
-                  builder: (_) => const AgeBandPresetsScreen(),
-                ),
-              );
-            },
-          ),
-        ],
-      ),
+      appBar: AppBar(title: Text(l10n.addChildTitle)),
       body: Form(
         key: _formKey,
         child: ListView(
-          padding: EdgeInsets.fromLTRB(
-            isTablet ? 28 : 20,
-            12,
-            isTablet ? 28 : 20,
-            28,
-          ),
+          padding: const EdgeInsets.fromLTRB(20, 16, 20, 24),
           children: [
-            ConstrainedBox(
-              constraints: const BoxConstraints(maxWidth: 720),
-              child: Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  Text(
-                    l10n.addChildHeadline,
-                    style: Theme.of(context).textTheme.headlineSmall,
+            Text(
+              'Add Child · STEP 1 OF 2',
+              style: Theme.of(context).textTheme.titleSmall?.copyWith(
+                    color: Colors.grey[700],
+                    fontWeight: FontWeight.w700,
+                    letterSpacing: 0.4,
                   ),
-                  const SizedBox(height: 8),
-                  Text(
-                    l10n.addChildSubtitle,
-                    style: Theme.of(context).textTheme.bodyMedium?.copyWith(
-                          color: Colors.grey.shade600,
-                        ),
-                  ),
-                  const SizedBox(height: 24),
-                  Container(
-                    padding: const EdgeInsets.all(16),
-                    decoration: BoxDecoration(
-                      color: surfaceColor,
-                      borderRadius: BorderRadius.circular(16),
-                      border: Border.all(color: borderColor),
-                    ),
-                    child: Column(
-                      crossAxisAlignment: CrossAxisAlignment.start,
-                      children: [
-                        TextFormField(
-                          controller: _nicknameController,
-                          decoration: InputDecoration(
-                            labelText: l10n.childNicknameLabel,
-                            hintText: l10n.nicknameHint,
-                            prefixIcon: const Icon(Icons.person_outline),
-                            border: const OutlineInputBorder(),
-                            helperText: l10n.nicknameHelper,
-                          ),
-                          textCapitalization: TextCapitalization.words,
-                          validator: (value) {
-                            final trimmed = value?.trim() ?? '';
-                            if (trimmed.isEmpty) {
-                              return l10n.enterNicknameError;
-                            }
-                            if (trimmed.length < 2) {
-                              return l10n.nicknameMinError;
-                            }
-                            if (trimmed.length > 20) {
-                              return l10n.nicknameMaxError;
-                            }
-                            return null;
-                          },
-                        ),
-                        const SizedBox(height: 24),
-                        LayoutBuilder(
-                          builder: (context, constraints) {
-                            final isCompact = constraints.maxWidth < 370;
-                            return Row(
-                              children: [
-                                Expanded(
-                                  child: Text(
-                                    l10n.ageGroupLabel,
-                                    style:
-                                        Theme.of(context).textTheme.titleMedium,
-                                  ),
-                                ),
-                                if (isCompact)
-                                  IconButton(
-                                    icon: const Icon(Icons.help_outline),
-                                    tooltip: l10n.whichAgeBandLabel,
-                                    onPressed: () {
-                                      Navigator.of(context).push(
-                                        MaterialPageRoute(
-                                          builder: (_) =>
-                                              const AgeBandPresetsScreen(),
-                                        ),
-                                      );
-                                    },
-                                  )
-                                else
-                                  TextButton.icon(
-                                    onPressed: () {
-                                      Navigator.of(context).push(
-                                        MaterialPageRoute(
-                                          builder: (_) =>
-                                              const AgeBandPresetsScreen(),
-                                        ),
-                                      );
-                                    },
-                                    icon: const Icon(Icons.help_outline, size: 16),
-                                    label: Text(l10n.whichAgeBandLabel),
-                                  ),
-                              ],
-                            );
-                          },
-                        ),
-                        const SizedBox(height: 12),
-                        RadioGroup<AgeBand>(
-                          groupValue: _selectedAgeBand,
-                          onChanged: (value) {
-                            if (value != null) {
-                              setState(() {
-                                _selectedAgeBand = value;
-                              });
-                            }
-                          },
-                          child: Column(
-                            children: [
-                              _buildAgeBandOption(
-                                ageBand: AgeBand.young,
-                                title: l10n.youngAgeBand,
-                                subtitle: l10n.ageYoungSubtitle,
-                                icon: Icons.child_care,
-                              ),
-                              const SizedBox(height: 10),
-                              _buildAgeBandOption(
-                                ageBand: AgeBand.middle,
-                                title: l10n.middleAgeBand,
-                                subtitle: l10n.ageMiddleSubtitle,
-                                icon: Icons.school,
-                              ),
-                              const SizedBox(height: 10),
-                              _buildAgeBandOption(
-                                ageBand: AgeBand.teen,
-                                title: l10n.teenAgeBand,
-                                subtitle: l10n.ageTeenSubtitle,
-                                icon: Icons.face,
-                              ),
-                            ],
-                          ),
-                        ),
-                      ],
-                    ),
-                  ),
-                  const SizedBox(height: 18),
-                  _buildPolicyPreview(),
-                  if (_errorMessage != null) ...[
-                    const SizedBox(height: 14),
-                    Container(
-                      padding: const EdgeInsets.all(12),
-                      decoration: BoxDecoration(
-                        color: isDark
-                            ? Colors.red.withValues(alpha: 0.15)
-                            : Colors.red.shade50,
-                        borderRadius: BorderRadius.circular(10),
-                        border: Border.all(color: Colors.red.shade300),
-                      ),
-                      child: Row(
-                        children: [
-                          Icon(Icons.error_outline, color: Colors.red.shade700),
-                          const SizedBox(width: 10),
-                          Expanded(
-                            child: Text(
-                              _errorMessage!,
-                              style: TextStyle(color: Colors.red.shade700),
-                            ),
-                          ),
-                        ],
-                      ),
-                    ),
-                  ],
-                  const SizedBox(height: 20),
-                  SizedBox(
-                    width: double.infinity,
-                    height: 54,
-                    child: FilledButton(
-                      key: const Key('add_child_submit'),
-                      onPressed: _isLoading ? null : _saveChild,
-                      child: _isLoading
-                          ? const SizedBox(
-                              height: 20,
-                              width: 20,
-                              child: CircularProgressIndicator(
-                                strokeWidth: 2,
-                                valueColor:
-                                    AlwaysStoppedAnimation<Color>(Colors.white),
-                              ),
-                            )
-                          : Text(l10n.addChildButton),
-                    ),
-                  ),
-                ],
+            ),
+            const SizedBox(height: 8),
+            ClipRRect(
+              borderRadius: BorderRadius.circular(8),
+              child: const LinearProgressIndicator(
+                value: 0.5,
+                minHeight: 8,
               ),
+            ),
+            const SizedBox(height: 24),
+            _buildAvatarPicker(),
+            const SizedBox(height: 24),
+            TextFormField(
+              controller: _nicknameController,
+              key: const Key('add_child_nickname_input'),
+              decoration: InputDecoration(
+                labelText: l10n.childNicknameLabel,
+                hintText: l10n.nicknameHint,
+                border: const OutlineInputBorder(),
+              ),
+              textCapitalization: TextCapitalization.words,
+              validator: (value) {
+                final trimmed = value?.trim() ?? '';
+                if (trimmed.isEmpty) {
+                  return l10n.enterNicknameError;
+                }
+                if (trimmed.length < 2) {
+                  return l10n.nicknameMinError;
+                }
+                if (trimmed.length > 20) {
+                  return l10n.nicknameMaxError;
+                }
+                return null;
+              },
+            ),
+            const SizedBox(height: 22),
+            Text(
+              'PROTECTION LEVEL',
+              style: Theme.of(context).textTheme.titleSmall?.copyWith(
+                    fontWeight: FontWeight.w800,
+                    letterSpacing: 0.4,
+                  ),
+            ),
+            const SizedBox(height: 10),
+            _buildProtectionCard(
+              key: const Key('add_child_level_strict'),
+              title: 'Strict',
+              subtitle:
+                  'Highest safety and content filtering. Manual approval for all new apps.',
+              color: const Color(0xFFD32F2F),
+              selected: _selectedAgeBand == AgeBand.young,
+              onTap: () => setState(() => _selectedAgeBand = AgeBand.young),
+            ),
+            const SizedBox(height: 10),
+            _buildProtectionCard(
+              key: const Key('add_child_level_moderate'),
+              title: 'Moderate',
+              subtitle:
+                  'Balanced freedom and automation. Safe-search and filtering enabled.',
+              color: const Color(0xFF1976D2),
+              selected: _selectedAgeBand == AgeBand.middle,
+              onTap: () => setState(() => _selectedAgeBand = AgeBand.middle),
+            ),
+            const SizedBox(height: 10),
+            _buildProtectionCard(
+              key: const Key('add_child_level_light'),
+              title: 'Light',
+              subtitle:
+                  'Trust-based monitoring with minimal blocking and fewer restrictions.',
+              color: const Color(0xFF2E7D32),
+              selected: _selectedAgeBand == AgeBand.teen,
+              onTap: () => setState(() => _selectedAgeBand = AgeBand.teen),
+            ),
+            if (_errorMessage != null) ...[
+              const SizedBox(height: 14),
+              _buildErrorCard(),
+            ],
+            const SizedBox(height: 18),
+            SizedBox(
+              width: double.infinity,
+              height: 54,
+              child: FilledButton(
+                key: const Key('add_child_submit'),
+                onPressed: _isLoading ? null : _saveChild,
+                child: _isLoading
+                    ? const SizedBox(
+                        height: 20,
+                        width: 20,
+                        child: CircularProgressIndicator(
+                          strokeWidth: 2,
+                          valueColor: AlwaysStoppedAnimation<Color>(Colors.white),
+                        ),
+                      )
+                    : const Text('Continue to Pairing ->'),
+              ),
+            ),
+            const SizedBox(height: 10),
+            Text(
+              'PRIVACY-FIRST ENCRYPTION ENABLED',
+              textAlign: TextAlign.center,
+              style: Theme.of(context).textTheme.bodySmall?.copyWith(
+                    color: Colors.grey[600],
+                    fontWeight: FontWeight.w700,
+                    letterSpacing: 0.6,
+                  ),
             ),
           ],
         ),
@@ -276,47 +181,91 @@ class _AddChildScreenState extends State<AddChildScreen> {
     );
   }
 
-  Widget _buildAgeBandOption({
-    required AgeBand ageBand,
+  Widget _buildAvatarPicker() {
+    return Column(
+      children: [
+        Stack(
+          clipBehavior: Clip.none,
+          children: [
+            Container(
+              width: 108,
+              height: 108,
+              decoration: BoxDecoration(
+                shape: BoxShape.circle,
+                color: Colors.blue.withValues(alpha: 0.10),
+                border: Border.all(
+                  color: Colors.blue.withValues(alpha: 0.35),
+                  width: 2,
+                ),
+              ),
+              child: Center(
+                child: Text(
+                  _selectedAvatar,
+                  style: const TextStyle(fontSize: 42),
+                ),
+              ),
+            ),
+            Positioned(
+              right: -2,
+              bottom: -2,
+              child: InkWell(
+                key: const Key('add_child_avatar_picker_button'),
+                onTap: _openAvatarPicker,
+                borderRadius: BorderRadius.circular(18),
+                child: Container(
+                  width: 34,
+                  height: 34,
+                  decoration: const BoxDecoration(
+                    color: Color(0xFF207CF8),
+                    shape: BoxShape.circle,
+                  ),
+                  child: const Icon(
+                    Icons.camera_alt_rounded,
+                    color: Colors.white,
+                    size: 18,
+                  ),
+                ),
+              ),
+            ),
+          ],
+        ),
+        const SizedBox(height: 10),
+        Text(
+          'Choose an avatar',
+          style: Theme.of(context).textTheme.bodyMedium?.copyWith(
+                color: Colors.grey[700],
+              ),
+        ),
+      ],
+    );
+  }
+
+  Widget _buildProtectionCard({
+    required Key key,
     required String title,
     required String subtitle,
-    required IconData icon,
+    required Color color,
+    required bool selected,
+    required VoidCallback onTap,
   }) {
-    final isSelected = _selectedAgeBand == ageBand;
-
     return InkWell(
-      onTap: () {
-        setState(() {
-          _selectedAgeBand = ageBand;
-        });
-      },
-      borderRadius: BorderRadius.circular(12),
+      key: key,
+      onTap: onTap,
+      borderRadius: BorderRadius.circular(14),
       child: Container(
         padding: const EdgeInsets.all(14),
         decoration: BoxDecoration(
+          borderRadius: BorderRadius.circular(14),
           border: Border.all(
-            color: isSelected
-                ? Theme.of(context).colorScheme.primary
-                : Colors.grey.shade300,
-            width: isSelected ? 2 : 1,
+            color: selected ? const Color(0xFF207CF8) : Colors.grey.withValues(alpha: 0.35),
+            width: selected ? 2 : 1,
           ),
-          borderRadius: BorderRadius.circular(12),
-          color: isSelected
-              ? Theme.of(context).colorScheme.primary.withValues(alpha: 0.08)
-              : null,
+          color: selected ? const Color(0x1A207CF8) : Colors.transparent,
         ),
         child: Row(
+          crossAxisAlignment: CrossAxisAlignment.start,
           children: [
-            Radio<AgeBand>(
-              value: ageBand,
-            ),
-            const SizedBox(width: 6),
-            Icon(
-              icon,
-              color: isSelected
-                  ? Theme.of(context).colorScheme.primary
-                  : Colors.grey.shade600,
-            ),
+            Icon(Icons.shield_rounded, color: color),
             const SizedBox(width: 12),
             Expanded(
               child: Column(
@@ -324,149 +273,98 @@ class _AddChildScreenState extends State<AddChildScreen> {
                 children: [
                   Text(
                     title,
-                    style: Theme.of(context).textTheme.titleMedium?.copyWith(
-                          color: isSelected
-                              ? Theme.of(context).colorScheme.primary
-                              : null,
-                          fontWeight:
-                              isSelected ? FontWeight.w700 : FontWeight.w500,
-                        ),
+                    style: const TextStyle(
+                      fontWeight: FontWeight.w700,
+                      fontSize: 16,
+                    ),
                   ),
-                  const SizedBox(height: 3),
+                  const SizedBox(height: 4),
                   Text(
                     subtitle,
-                    style: Theme.of(context).textTheme.bodySmall?.copyWith(
-                          color: Colors.grey.shade600,
-                        ),
+                    style: TextStyle(
+                      color: Colors.grey[700],
+                      height: 1.3,
+                    ),
                   ),
                 ],
               ),
             ),
+            if (selected)
+              const Icon(
+                Icons.check_circle,
+                color: Color(0xFF207CF8),
+              ),
           ],
         ),
       ),
     );
   }
 
-  Widget _buildPolicyPreview() {
-    final l10n = _l10n(context);
-    final policy = Policy.presetForAgeBand(_selectedAgeBand);
-    final isDark = Theme.of(context).brightness == Brightness.dark;
-    final bgColor =
-        isDark ? const Color(0xFF172638) : const Color(0xFFEFF7FF);
-    final borderColor =
-        isDark ? Colors.blue.withValues(alpha: 0.35) : const Color(0xFFBFDBFE);
-
+  Widget _buildErrorCard() {
     return Container(
-      padding: const EdgeInsets.all(16),
+      padding: const EdgeInsets.all(12),
       decoration: BoxDecoration(
-        color: bgColor,
-        borderRadius: BorderRadius.circular(12),
-        border: Border.all(color: borderColor),
+        color: Colors.red.withValues(alpha: 0.08),
+        borderRadius: BorderRadius.circular(10),
+        border: Border.all(color: Colors.red.withValues(alpha: 0.30)),
       ),
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
+      child: Row(
         children: [
-          Row(
-            children: [
-              Icon(Icons.info_outline, color: Colors.blue.shade700),
-              const SizedBox(width: 8),
-              Expanded(
-                child: Text(
-                  l10n.whatWillBeBlockedLabel,
-                  style: Theme.of(context).textTheme.titleMedium?.copyWith(
-                        color: isDark ? Colors.white : Colors.blue.shade900,
-                        fontWeight: FontWeight.w700,
-                      ),
-                ),
-              ),
-            ],
-          ),
-          const SizedBox(height: 12),
-          if (policy.blockedCategories.isNotEmpty) ...[
-            Text(
-              l10n.contentLabel,
-              style: Theme.of(context).textTheme.bodyMedium?.copyWith(
-                    fontWeight: FontWeight.w700,
-                  ),
+          const Icon(Icons.error_outline, color: Colors.red),
+          const SizedBox(width: 10),
+          Expanded(
+            child: Text(
+              _errorMessage!,
+              style: const TextStyle(color: Colors.red),
             ),
-            const SizedBox(height: 4),
-            ...policy.blockedCategories.map(
-              (category) => Padding(
-                padding: const EdgeInsets.only(left: 8, top: 4),
-                child: Row(
-                  children: [
-                    Icon(Icons.block, size: 16, color: Colors.blue.shade700),
-                    const SizedBox(width: 8),
-                    Expanded(
-                      child: Text(
-                        _formatCategoryName(category),
-                        style: Theme.of(context).textTheme.bodyMedium,
-                      ),
-                    ),
-                  ],
-                ),
-              ),
-            ),
-            const SizedBox(height: 10),
-          ],
-          if (policy.schedules.isNotEmpty) ...[
-            Text(
-              l10n.timeRestrictionsLabel,
-              style: Theme.of(context).textTheme.bodyMedium?.copyWith(
-                    fontWeight: FontWeight.w700,
-                  ),
-            ),
-            const SizedBox(height: 4),
-            ...policy.schedules.map(
-              (schedule) => Padding(
-                padding: const EdgeInsets.only(left: 8, top: 4),
-                child: Row(
-                  children: [
-                    Icon(Icons.schedule, size: 16, color: Colors.blue.shade700),
-                    const SizedBox(width: 8),
-                    Expanded(
-                      child: Text(
-                        '${schedule.name}: ${schedule.startTime} - ${schedule.endTime}',
-                        style: Theme.of(context).textTheme.bodyMedium,
-                      ),
-                    ),
-                  ],
-                ),
-              ),
-            ),
-            const SizedBox(height: 10),
-          ],
-          if (policy.safeSearchEnabled)
-            Padding(
-              padding: const EdgeInsets.only(left: 8, top: 4),
-              child: Row(
-                children: [
-                  Icon(Icons.search, size: 16, color: Colors.blue.shade700),
-                  const SizedBox(width: 8),
-                  Text(l10n.safeSearchEnabledLabel),
-                ],
-              ),
-            ),
-          const SizedBox(height: 10),
-          Text(
-            l10n.customizeLaterHint,
-            style: Theme.of(context).textTheme.bodySmall?.copyWith(
-                  color: Colors.grey.shade700,
-                  fontStyle: FontStyle.italic,
-                ),
           ),
         ],
       ),
     );
   }
 
-  String _formatCategoryName(String category) {
-    return category
-        .split('-')
-        .where((word) => word.isNotEmpty)
-        .map((word) => '${word[0].toUpperCase()}${word.substring(1)}')
-        .join(' ');
+  Future<void> _openAvatarPicker() async {
+    final selected = await showModalBottomSheet<String>(
+      context: context,
+      builder: (context) {
+        return SafeArea(
+          child: Padding(
+            padding: const EdgeInsets.fromLTRB(16, 14, 16, 20),
+            child: Wrap(
+              spacing: 10,
+              runSpacing: 10,
+              children: _avatarOptions
+                  .map(
+                    (avatar) => InkWell(
+                      onTap: () => Navigator.of(context).pop(avatar),
+                      borderRadius: BorderRadius.circular(14),
+                      child: Container(
+                        width: 58,
+                        height: 58,
+                        alignment: Alignment.center,
+                        decoration: BoxDecoration(
+                          color: Colors.grey.withValues(alpha: 0.10),
+                          borderRadius: BorderRadius.circular(14),
+                        ),
+                        child: Text(
+                          avatar,
+                          style: const TextStyle(fontSize: 30),
+                        ),
+                      ),
+                    ),
+                  )
+                  .toList(),
+            ),
+          ),
+        );
+      },
+    );
+
+    if (selected != null && mounted) {
+      setState(() {
+        _selectedAvatar = selected;
+      });
+    }
   }
 
   Future<void> _saveChild() async {
@@ -502,9 +400,7 @@ class _AddChildScreenState extends State<AddChildScreen> {
       ScaffoldMessenger.of(context).showSnackBar(
         SnackBar(
           content: Text(
-            _l10n(context).childAddedSuccessMessage(
-              child.nickname,
-            ),
+            _l10n(context).childAddedSuccessMessage(child.nickname),
           ),
           backgroundColor: Colors.green,
         ),
@@ -536,4 +432,3 @@ class _AddChildScreenState extends State<AddChildScreen> {
 AppLocalizations _l10n(BuildContext context) {
   return AppLocalizations.of(context) ?? AppLocalizationsEn();
 }
-
