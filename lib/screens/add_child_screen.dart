@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import 'package:flutter_gen/gen_l10n/app_localizations.dart';
 import 'package:trustbridge_app/models/child_profile.dart';
 import 'package:trustbridge_app/models/policy.dart';
 import 'package:trustbridge_app/screens/age_band_presets_screen.dart';
@@ -50,6 +51,7 @@ class _AddChildScreenState extends State<AddChildScreen> {
 
   @override
   Widget build(BuildContext context) {
+    final l10n = AppLocalizations.of(context)!;
     final isDark = Theme.of(context).brightness == Brightness.dark;
     final borderColor = isDark
         ? Colors.white.withValues(alpha: 0.08)
@@ -60,11 +62,11 @@ class _AddChildScreenState extends State<AddChildScreen> {
 
     return Scaffold(
       appBar: AppBar(
-        title: const Text('Add Child'),
+        title: Text(l10n.addChildTitle),
         actions: [
           IconButton(
             icon: const Icon(Icons.info_outline),
-            tooltip: 'Age Band Guide',
+            tooltip: l10n.ageBandGuideTooltip,
             onPressed: () {
               Navigator.of(context).push(
                 MaterialPageRoute(
@@ -91,12 +93,12 @@ class _AddChildScreenState extends State<AddChildScreen> {
                 crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
                   Text(
-                    'Add a new child profile',
+                    l10n.addChildHeadline,
                     style: Theme.of(context).textTheme.headlineSmall,
                   ),
                   const SizedBox(height: 8),
                   Text(
-                    'We will set up age-appropriate content filters',
+                    l10n.addChildSubtitle,
                     style: Theme.of(context).textTheme.bodyMedium?.copyWith(
                           color: Colors.grey.shade600,
                         ),
@@ -114,24 +116,24 @@ class _AddChildScreenState extends State<AddChildScreen> {
                       children: [
                         TextFormField(
                           controller: _nicknameController,
-                          decoration: const InputDecoration(
-                            labelText: 'Nickname',
-                            hintText: 'e.g., Alex, Sam, Priya',
+                          decoration: InputDecoration(
+                            labelText: l10n.childNicknameLabel,
+                            hintText: l10n.nicknameHint,
                             prefixIcon: Icon(Icons.person_outline),
                             border: OutlineInputBorder(),
-                            helperText: 'What should we call this child?',
+                            helperText: l10n.nicknameHelper,
                           ),
                           textCapitalization: TextCapitalization.words,
                           validator: (value) {
                             final trimmed = value?.trim() ?? '';
                             if (trimmed.isEmpty) {
-                              return 'Please enter a nickname';
+                              return l10n.enterNicknameError;
                             }
                             if (trimmed.length < 2) {
-                              return 'Nickname must be at least 2 characters';
+                              return l10n.nicknameMinError;
                             }
                             if (trimmed.length > 20) {
-                              return 'Nickname must be less than 20 characters';
+                              return l10n.nicknameMaxError;
                             }
                             return null;
                           },
@@ -144,7 +146,7 @@ class _AddChildScreenState extends State<AddChildScreen> {
                               children: [
                                 Expanded(
                                   child: Text(
-                                    'Age Group',
+                                    l10n.ageGroupLabel,
                                     style:
                                         Theme.of(context).textTheme.titleMedium,
                                   ),
@@ -152,7 +154,7 @@ class _AddChildScreenState extends State<AddChildScreen> {
                                 if (isCompact)
                                   IconButton(
                                     icon: const Icon(Icons.help_outline),
-                                    tooltip: 'Which age band?',
+                                    tooltip: l10n.whichAgeBandLabel,
                                     onPressed: () {
                                       Navigator.of(context).push(
                                         MaterialPageRoute(
@@ -173,7 +175,7 @@ class _AddChildScreenState extends State<AddChildScreen> {
                                       );
                                     },
                                     icon: const Icon(Icons.help_outline, size: 16),
-                                    label: const Text('Which age band?'),
+                                    label: Text(l10n.whichAgeBandLabel),
                                   ),
                               ],
                             );
@@ -193,22 +195,22 @@ class _AddChildScreenState extends State<AddChildScreen> {
                             children: [
                               _buildAgeBandOption(
                                 ageBand: AgeBand.young,
-                                title: '6-9 years',
-                                subtitle: 'Young children - strictest filters',
+                                title: l10n.youngAgeBand,
+                                subtitle: l10n.ageYoungSubtitle,
                                 icon: Icons.child_care,
                               ),
                               const SizedBox(height: 10),
                               _buildAgeBandOption(
                                 ageBand: AgeBand.middle,
-                                title: '10-13 years',
-                                subtitle: 'Middle schoolers - moderate filters',
+                                title: l10n.middleAgeBand,
+                                subtitle: l10n.ageMiddleSubtitle,
                                 icon: Icons.school,
                               ),
                               const SizedBox(height: 10),
                               _buildAgeBandOption(
                                 ageBand: AgeBand.teen,
-                                title: '14-17 years',
-                                subtitle: 'Teenagers - balanced approach',
+                                title: l10n.teenAgeBand,
+                                subtitle: l10n.ageTeenSubtitle,
                                 icon: Icons.face,
                               ),
                             ],
@@ -261,7 +263,7 @@ class _AddChildScreenState extends State<AddChildScreen> {
                                     AlwaysStoppedAnimation<Color>(Colors.white),
                               ),
                             )
-                          : const Text('Add Child'),
+                          : Text(l10n.addChildButton),
                     ),
                   ),
                 ],
@@ -346,6 +348,7 @@ class _AddChildScreenState extends State<AddChildScreen> {
   }
 
   Widget _buildPolicyPreview() {
+    final l10n = AppLocalizations.of(context)!;
     final policy = Policy.presetForAgeBand(_selectedAgeBand);
     final isDark = Theme.of(context).brightness == Brightness.dark;
     final bgColor =
@@ -369,7 +372,7 @@ class _AddChildScreenState extends State<AddChildScreen> {
               const SizedBox(width: 8),
               Expanded(
                 child: Text(
-                  'What will be blocked?',
+                  l10n.whatWillBeBlockedLabel,
                   style: Theme.of(context).textTheme.titleMedium?.copyWith(
                         color: isDark ? Colors.white : Colors.blue.shade900,
                         fontWeight: FontWeight.w700,
@@ -381,7 +384,7 @@ class _AddChildScreenState extends State<AddChildScreen> {
           const SizedBox(height: 12),
           if (policy.blockedCategories.isNotEmpty) ...[
             Text(
-              'Content:',
+              l10n.contentLabel,
               style: Theme.of(context).textTheme.bodyMedium?.copyWith(
                     fontWeight: FontWeight.w700,
                   ),
@@ -408,7 +411,7 @@ class _AddChildScreenState extends State<AddChildScreen> {
           ],
           if (policy.schedules.isNotEmpty) ...[
             Text(
-              'Time restrictions:',
+              l10n.timeRestrictionsLabel,
               style: Theme.of(context).textTheme.bodyMedium?.copyWith(
                     fontWeight: FontWeight.w700,
                   ),
@@ -440,13 +443,13 @@ class _AddChildScreenState extends State<AddChildScreen> {
                 children: [
                   Icon(Icons.search, size: 16, color: Colors.blue.shade700),
                   const SizedBox(width: 8),
-                  const Text('Safe search enabled'),
+                  Text(l10n.safeSearchEnabledLabel),
                 ],
               ),
             ),
           const SizedBox(height: 10),
           Text(
-            'You can customize these settings later',
+            l10n.customizeLaterHint,
             style: Theme.of(context).textTheme.bodySmall?.copyWith(
                   color: Colors.grey.shade700,
                   fontStyle: FontStyle.italic,
@@ -497,7 +500,11 @@ class _AddChildScreenState extends State<AddChildScreen> {
 
       ScaffoldMessenger.of(context).showSnackBar(
         SnackBar(
-          content: Text('${child.nickname} added successfully!'),
+          content: Text(
+            AppLocalizations.of(context)!.childAddedSuccessMessage(
+              child.nickname,
+            ),
+          ),
           backgroundColor: Colors.green,
         ),
       );
@@ -509,7 +516,9 @@ class _AddChildScreenState extends State<AddChildScreen> {
       }
       setState(() {
         _isLoading = false;
-        _errorMessage = 'Failed to add child: ${_messageFromError(error)}';
+        _errorMessage = AppLocalizations.of(context)!.failedToAddChildMessage(
+          _messageFromError(error),
+        );
       });
     }
   }

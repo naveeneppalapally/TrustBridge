@@ -3080,6 +3080,47 @@ high-frequency user pain points.
    - `flutter test` passed.
 
 ---
+
+## Day 76 - Hindi Language Support (Week 16 Day 1)
+
+Program goal: localize TrustBridge for Indian families with Hindi support,
+runtime language switching, and locale-aware formatting.
+
+### Commit entries
+
+1. **2026-02-19 11:08:49 +05:30**  
+   Commit: `[pending]`  
+   Message: `Implement Day 76 Hindi language support (i18n)`  
+   Changes:
+   - Updated `pubspec.yaml`:
+     - added `flutter_localizations`
+     - updated `intl` to `^0.20.2`
+     - enabled `flutter.generate: true`
+   - Added localization config:
+     - `l10n.yaml`
+     - `lib/l10n/app_en.arb`
+     - `lib/l10n/app_hi.arb`
+   - Updated `lib/main.dart`:
+     - added localization delegates and supported locales
+     - converted `MyApp` to stateful locale host
+     - locale persistence via `SharedPreferences` (`language_code`)
+   - Updated `lib/screens/parent_settings_screen.dart`:
+     - language dropdown now uses localized labels
+     - language change immediately switches app locale
+     - locale persisted to `SharedPreferences`
+   - Updated localized UI strings in key screens:
+     - `lib/screens/dashboard_screen.dart`
+     - `lib/screens/vpn_protection_screen.dart`
+     - `lib/screens/add_child_screen.dart`
+     - `lib/screens/parent_requests_screen.dart`
+   - Added tests:
+     - `test/l10n_test.dart`
+   Validation:
+   - `flutter gen-l10n` pending (`flutter` CLI unavailable in this shell).
+   - `flutter analyze` pending (`flutter` CLI unavailable in this shell).
+   - `flutter test` pending (`flutter` CLI unavailable in this shell).
+
+---
 ## Day 74 - Firebase Crashlytics (Week 15 Day 4)
 
 Program goal: production-ready crash visibility for v1.0 with automatic

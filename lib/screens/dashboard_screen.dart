@@ -1,5 +1,6 @@
 import 'dart:async';
 
+import 'package:flutter_gen/gen_l10n/app_localizations.dart';
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 import 'package:trustbridge_app/models/access_request.dart';
@@ -153,12 +154,13 @@ class _DashboardScreenState extends State<DashboardScreen>
   }
 
   Widget _buildRequestsAction() {
+    final l10n = AppLocalizations.of(context)!;
     final pendingRequestsStream = _pendingRequestsStream;
     if (pendingRequestsStream == null) {
       return IconButton(
         key: const Key('dashboard_requests_button'),
         icon: const Icon(Icons.notifications_outlined),
-        tooltip: 'Access Requests',
+        tooltip: l10n.accessRequestsTitle,
         onPressed: () {
           Navigator.of(context).pushNamed('/parent-requests');
         },
@@ -177,7 +179,7 @@ class _DashboardScreenState extends State<DashboardScreen>
             IconButton(
               key: const Key('dashboard_requests_button'),
               icon: const Icon(Icons.notifications_outlined),
-              tooltip: 'Access Requests',
+              tooltip: l10n.accessRequestsTitle,
               onPressed: () {
                 Navigator.of(context).pushNamed('/parent-requests');
               },
@@ -216,6 +218,7 @@ class _DashboardScreenState extends State<DashboardScreen>
 
   @override
   Widget build(BuildContext context) {
+    final l10n = AppLocalizations.of(context)!;
     final parentId = _parentId;
     final isDark = Theme.of(context).brightness == Brightness.dark;
     final surfaceColor = isDark ? const Color(0xFF1F2937) : Colors.white;
@@ -224,8 +227,8 @@ class _DashboardScreenState extends State<DashboardScreen>
 
     if (parentId == null) {
       return Scaffold(
-        appBar: AppBar(title: const Text('TrustBridge')),
-        body: const Center(child: Text('Not logged in')),
+        appBar: AppBar(title: Text(l10n.appTitle)),
+        body: Center(child: Text(l10n.notLoggedInMessage)),
       );
     }
     _ensureParentStreams(parentId);
@@ -233,7 +236,7 @@ class _DashboardScreenState extends State<DashboardScreen>
     return Scaffold(
       backgroundColor: backgroundColor,
       appBar: AppBar(
-        title: const Text('TrustBridge'),
+        title: Text(l10n.appTitle),
         centerTitle: false,
         backgroundColor: Colors.transparent,
         elevation: 0,
@@ -242,7 +245,7 @@ class _DashboardScreenState extends State<DashboardScreen>
           IconButton(
             key: const Key('dashboard_analytics_button'),
             icon: const Icon(Icons.bar_chart_outlined),
-            tooltip: 'Protection Analytics',
+            tooltip: l10n.analyticsTitle,
             onPressed: () {
               Navigator.of(context).pushNamed('/dns-analytics');
             },
@@ -290,7 +293,7 @@ class _DashboardScreenState extends State<DashboardScreen>
                     const SizedBox(height: 18),
                     FilledButton(
                       onPressed: () => setState(() {}),
-                      child: const Text('Retry'),
+                      child: Text(l10n.retryButton),
                     ),
                   ],
                 ),
@@ -327,12 +330,12 @@ class _DashboardScreenState extends State<DashboardScreen>
                     ),
                     const SizedBox(height: 20),
                     Text(
-                      'No children yet',
+                      l10n.noChildrenMessage,
                       style: Theme.of(context).textTheme.headlineSmall,
                     ),
                     const SizedBox(height: 8),
                     Text(
-                      'Add your first child to get started',
+                      l10n.welcomeSubtitle,
                       textAlign: TextAlign.center,
                       style: Theme.of(context).textTheme.bodyMedium?.copyWith(
                             color: Colors.grey.shade600,
@@ -348,7 +351,7 @@ class _DashboardScreenState extends State<DashboardScreen>
                         );
                       },
                       icon: const Icon(Icons.add),
-                      label: const Text('Add Child'),
+                      label: Text(l10n.addChildButton),
                     ),
                   ],
                 ),
@@ -393,7 +396,7 @@ class _DashboardScreenState extends State<DashboardScreen>
                       children: [
                         Expanded(
                           child: _SummaryMetric(
-                            label: 'MANAGED PROFILES',
+                            label: l10n.managedProfilesLabel,
                             value: '${children.length}',
                             icon: Icons.people_alt_outlined,
                             iconColor: Theme.of(context).colorScheme.primary,
@@ -401,7 +404,7 @@ class _DashboardScreenState extends State<DashboardScreen>
                         ),
                         Expanded(
                           child: _SummaryMetric(
-                            label: 'BLOCKED CATEGORIES',
+                            label: l10n.blockedCategoriesLabel,
                             value: '$totalBlockedCategories',
                             icon: Icons.block_outlined,
                             iconColor: Colors.redAccent,
@@ -409,7 +412,7 @@ class _DashboardScreenState extends State<DashboardScreen>
                         ),
                         Expanded(
                           child: _SummaryMetric(
-                            label: 'SCHEDULES',
+                            label: l10n.schedulesLabel,
                             value: '$totalSchedules',
                             icon: Icons.schedule_outlined,
                             iconColor: Colors.orangeAccent,
@@ -551,6 +554,7 @@ class ChildCard extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    final l10n = AppLocalizations.of(context)!;
     final isDark = Theme.of(context).brightness == Brightness.dark;
     final surfaceColor = isDark ? const Color(0xFF1F2937) : Colors.white;
 
@@ -603,13 +607,13 @@ class ChildCard extends StatelessWidget {
                     ),
                     const SizedBox(height: 4),
                     Text(
-                      'Age: ${child.ageBand.value}',
+                      l10n.ageLabel(child.ageBand.value),
                       style: Theme.of(context).textTheme.bodyMedium?.copyWith(
                             color: Colors.grey.shade600,
                           ),
                     ),
                     const SizedBox(height: 10),
-                    _buildPolicyChips(child),
+                    _buildPolicyChips(context, child),
                   ],
                 ),
               ),
@@ -622,7 +626,8 @@ class ChildCard extends StatelessWidget {
     );
   }
 
-  Widget _buildPolicyChips(ChildProfile child) {
+  Widget _buildPolicyChips(BuildContext context, ChildProfile child) {
+    final l10n = AppLocalizations.of(context)!;
     final blockedCount = child.policy.blockedCategories.length;
     final scheduleCount = child.policy.schedules.length;
     final paused =
@@ -634,7 +639,7 @@ class ChildCard extends StatelessWidget {
       children: [
         if (paused)
           Chip(
-            label: const Text('Paused'),
+            label: Text(l10n.pausedLabel),
             avatar: const Icon(Icons.pause_circle_outline, size: 15),
             visualDensity: VisualDensity.compact,
             backgroundColor: Colors.red.shade50,
@@ -643,13 +648,13 @@ class ChildCard extends StatelessWidget {
           ),
         if (blockedCount > 0)
           Chip(
-            label: Text('$blockedCount categories blocked'),
+            label: Text(l10n.categoriesBlockedCount(blockedCount)),
             avatar: const Icon(Icons.block, size: 15),
             visualDensity: VisualDensity.compact,
           ),
         if (scheduleCount > 0)
           Chip(
-            label: Text('$scheduleCount schedules'),
+            label: Text(l10n.schedulesCount(scheduleCount)),
             avatar: const Icon(Icons.schedule, size: 15),
             visualDensity: VisualDensity.compact,
           ),

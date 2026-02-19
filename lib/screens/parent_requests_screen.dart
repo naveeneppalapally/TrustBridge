@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import 'package:flutter_gen/gen_l10n/app_localizations.dart';
 
 import '../models/access_request.dart';
 import '../services/auth_service.dart';
@@ -67,6 +68,7 @@ class _ParentRequestsScreenState extends State<ParentRequestsScreen>
 
   @override
   Widget build(BuildContext context) {
+    final l10n = AppLocalizations.of(context)!;
     final parentId =
         widget.parentIdOverride ?? _resolvedAuthService.currentUser?.uid;
     if (parentId != null) {
@@ -75,19 +77,19 @@ class _ParentRequestsScreenState extends State<ParentRequestsScreen>
 
     return Scaffold(
       appBar: AppBar(
-        title: const Text('Access Requests'),
+        title: Text(l10n.accessRequestsTitle),
         centerTitle: true,
         bottom: TabBar(
           controller: _tabController,
-          tabs: const <Tab>[
-            Tab(text: 'Pending'),
-            Tab(text: 'History'),
+          tabs: <Tab>[
+            Tab(text: l10n.pendingTabTitle),
+            Tab(text: l10n.historyTitle),
           ],
         ),
       ),
       body: parentId == null
-          ? const Center(
-              child: Text('Not logged in'),
+          ? Center(
+              child: Text(l10n.notLoggedInMessage),
             )
           : TabBarView(
               controller: _tabController,
@@ -116,8 +118,9 @@ class _ParentRequestsScreenState extends State<ParentRequestsScreen>
         }
 
         if (snapshot.hasError) {
+          final l10n = AppLocalizations.of(context)!;
           return Center(
-            child: Text('Error: ${snapshot.error}'),
+            child: Text(l10n.errorWithValue('${snapshot.error}')),
           );
         }
 
@@ -125,8 +128,8 @@ class _ParentRequestsScreenState extends State<ParentRequestsScreen>
         if (requests.isEmpty) {
           return _buildEmptyState(
             emoji: '\u2705',
-            title: 'All caught up!',
-            subtitle: 'No pending requests from your children.',
+            title: AppLocalizations.of(context)!.allCaughtUpTitle,
+            subtitle: AppLocalizations.of(context)!.noPendingRequestsSubtitle,
           );
         }
 
@@ -164,8 +167,9 @@ class _ParentRequestsScreenState extends State<ParentRequestsScreen>
         }
 
         if (snapshot.hasError) {
+          final l10n = AppLocalizations.of(context)!;
           return Center(
-            child: Text('Error: ${snapshot.error}'),
+            child: Text(l10n.errorWithValue('${snapshot.error}')),
           );
         }
 
@@ -177,8 +181,8 @@ class _ParentRequestsScreenState extends State<ParentRequestsScreen>
         if (history.isEmpty) {
           return _buildEmptyState(
             emoji: '\u{1F4CB}',
-            title: 'No history yet',
-            subtitle: 'Approved and denied requests will appear here.',
+            title: AppLocalizations.of(context)!.noHistoryYetTitle,
+            subtitle: AppLocalizations.of(context)!.noHistoryYetSubtitle,
           );
         }
 
@@ -283,8 +287,8 @@ class _RequestCardState extends State<_RequestCard> {
         SnackBar(
           content: Text(
             status == RequestStatus.approved
-                ? 'Request approved.'
-                : 'Request denied.',
+                ? AppLocalizations.of(context)!.requestApprovedMessage
+                : AppLocalizations.of(context)!.requestDeniedMessage,
           ),
         ),
       );
@@ -298,13 +302,18 @@ class _RequestCardState extends State<_RequestCard> {
         _hiddenOptimistically = false;
       });
       ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(content: Text('Error: $error')),
+        SnackBar(
+          content: Text(
+            AppLocalizations.of(context)!.errorWithValue('$error'),
+          ),
+        ),
       );
     }
   }
 
   @override
   Widget build(BuildContext context) {
+    final l10n = AppLocalizations.of(context)!;
     if (_hiddenOptimistically) {
       return const SizedBox.shrink();
     }
@@ -351,7 +360,7 @@ class _RequestCardState extends State<_RequestCard> {
                           ),
                     ),
                     Text(
-                      _timeAgo(request.requestedAt),
+                      _timeAgo(context, request.requestedAt),
                       style: Theme.of(context).textTheme.bodySmall?.copyWith(
                             color: Colors.grey[500],
                           ),
@@ -367,7 +376,7 @@ class _RequestCardState extends State<_RequestCard> {
                     borderRadius: BorderRadius.circular(10),
                   ),
                   child: Text(
-                    '\u23F3 Pending',
+                    '⏳ ${l10n.statusPending}',
                     style: Theme.of(context).textTheme.bodySmall?.copyWith(
                           color: Colors.orange[800],
                           fontWeight: FontWeight.w600,
@@ -386,7 +395,7 @@ class _RequestCardState extends State<_RequestCard> {
                     crossAxisAlignment: CrossAxisAlignment.start,
                     children: <Widget>[
                       Text(
-                        'Wants access to',
+                        l10n.wantsAccessToLabel,
                         style: Theme.of(context).textTheme.bodySmall?.copyWith(
                               color: Colors.grey[500],
                             ),
@@ -456,7 +465,7 @@ class _RequestCardState extends State<_RequestCard> {
                 maxLines: 2,
                 maxLength: 200,
                 decoration: InputDecoration(
-                  hintText: 'Message to ${request.childNickname}... (optional)',
+                  hintText: l10n.requestReplyHint(request.childNickname),
                   hintStyle: TextStyle(
                     color: Colors.grey[400],
                     fontSize: 13,
@@ -482,7 +491,9 @@ class _RequestCardState extends State<_RequestCard> {
                   icon: Icon(_showReplyField ? Icons.close : Icons.reply,
                       size: 16),
                   label: Text(
-                    _showReplyField ? 'Cancel reply' : 'Add reply',
+                    _showReplyField
+                        ? l10n.cancelReplyButton
+                        : l10n.addReplyButton,
                     style: const TextStyle(fontSize: 13),
                   ),
                 ),
@@ -510,7 +521,7 @@ class _RequestCardState extends State<_RequestCard> {
                           height: 14,
                           child: CircularProgressIndicator(strokeWidth: 2),
                         )
-                      : const Text('Deny'),
+                      : Text(l10n.denyButton),
                 ),
                 const SizedBox(width: 10),
                 ElevatedButton(
@@ -540,7 +551,7 @@ class _RequestCardState extends State<_RequestCard> {
                                     AlwaysStoppedAnimation<Color>(Colors.white),
                               ),
                             )
-                          : const Text('Approve'),
+                          : Text(l10n.approveButton),
                 ),
               ],
             ),
@@ -585,7 +596,7 @@ class _HistoryCard extends StatelessWidget {
                 ),
               ),
               Text(
-                request.status.displayName,
+                _statusText(context, request.status),
                 style: Theme.of(context).textTheme.bodySmall?.copyWith(
                       color: color,
                       fontWeight: FontWeight.w600,
@@ -604,7 +615,7 @@ class _HistoryCard extends StatelessWidget {
               ),
               const SizedBox(width: 12),
               Text(
-                _timeAgo(request.requestedAt),
+                _timeAgo(context, request.requestedAt),
                 style: Theme.of(context).textTheme.bodySmall?.copyWith(
                       color: Colors.grey[500],
                     ),
@@ -639,18 +650,33 @@ class _HistoryCard extends StatelessWidget {
         return Colors.grey;
     }
   }
+
+  String _statusText(BuildContext context, RequestStatus status) {
+    final l10n = AppLocalizations.of(context)!;
+    switch (status) {
+      case RequestStatus.pending:
+        return l10n.statusPending;
+      case RequestStatus.approved:
+        return l10n.statusApproved;
+      case RequestStatus.denied:
+        return l10n.statusDenied;
+      case RequestStatus.expired:
+        return l10n.statusExpired;
+    }
+  }
 }
 
-String _timeAgo(DateTime timestamp) {
+String _timeAgo(BuildContext context, DateTime timestamp) {
+  final l10n = AppLocalizations.of(context)!;
   final difference = DateTime.now().difference(timestamp);
   if (difference.inSeconds < 60) {
-    return 'just now';
+    return l10n.justNow;
   }
   if (difference.inMinutes < 60) {
-    return '${difference.inMinutes}m ago';
+    return l10n.minutesAgo(difference.inMinutes);
   }
   if (difference.inHours < 24) {
-    return '${difference.inHours}h ago';
+    return l10n.hoursAgo(difference.inHours);
   }
-  return '${difference.inDays}d ago';
+  return l10n.daysAgo(difference.inDays);
 }

@@ -1,0 +1,204 @@
+{
+  "@@locale": "en",
+  "appTitle": "TrustBridge",
+  "dashboardTitle": "Dashboard",
+  "childrenTitle": "Children",
+  "settingsTitle": "Settings",
+  "protectionTitle": "Protection",
+  "addChildButton": "Add Child",
+  "editButton": "Edit",
+  "deleteButton": "Delete",
+  "saveButton": "Save",
+  "retryButton": "Retry",
+  "cancelButton": "Cancel",
+  "continueButton": "Continue",
+  "welcomeMessage": "Welcome to TrustBridge",
+  "welcomeSubtitle": "Set healthy digital boundaries for your family",
+  "childNicknameLabel": "Nickname",
+  "childAgeBandLabel": "Age Band",
+  "youngAgeBand": "6-9 years",
+  "middleAgeBand": "10-13 years",
+  "teenAgeBand": "14-17 years",
+  "vpnProtectionTitle": "VPN Protection",
+  "enableProtectionButton": "Enable Protection",
+  "disableProtectionButton": "Disable Protection",
+  "protectionActiveMessage": "Protection is active",
+  "protectionInactiveMessage": "Protection is off",
+  "requestAccessTitle": "Request Access",
+  "requestAccessButton": "Ask for Access",
+  "appOrSiteLabel": "App or website",
+  "durationLabel": "Duration",
+  "reasonLabel": "Reason (optional)",
+  "submitRequestButton": "Send Request",
+  "pendingRequestsTitle": "Pending Requests",
+  "historyTitle": "History",
+  "approveButton": "Approve",
+  "denyButton": "Deny",
+  "notificationSettingsTitle": "Notifications",
+  "notificationEnabledMessage": "Enabled",
+  "notificationDisabledMessage": "Tap to enable",
+  "languageSettingsTitle": "Language",
+  "languageEnglish": "English",
+  "languageHindi": "Hindi (\u0939\u093f\u0902\u0926\u0940)",
+  "feedbackTitle": "Feedback",
+  "analyticsTitle": "Analytics",
+  "noChildrenMessage": "No children added yet",
+  "noRequestsMessage": "No pending requests",
+  "errorGeneric": "Something went wrong",
+  "errorNetwork": "Network error. Please try again.",
+  "errorPermission": "Permission denied",
+  "durationFifteenMin": "15 minutes",
+  "durationThirtyMin": "30 minutes",
+  "durationOneHour": "1 hour",
+  "durationUntilEnd": "Until schedule ends",
+  "statusPending": "Pending",
+  "statusApproved": "Approved",
+  "statusDenied": "Denied",
+  "statusExpired": "Expired",
+  "notLoggedInMessage": "Not logged in",
+  "accessRequestsTitle": "Access Requests",
+  "pendingTabTitle": "Pending",
+  "allCaughtUpTitle": "All caught up!",
+  "noPendingRequestsSubtitle": "No pending requests from your children.",
+  "noHistoryYetTitle": "No history yet",
+  "noHistoryYetSubtitle": "Approved and denied requests will appear here.",
+  "wantsAccessToLabel": "Wants access to",
+  "addReplyButton": "Add reply",
+  "cancelReplyButton": "Cancel reply",
+  "requestApprovedMessage": "Request approved.",
+  "requestDeniedMessage": "Request denied.",
+  "requestReplyHint": "Message to {childName}... (optional)",
+  "@requestReplyHint": {
+    "placeholders": {
+      "childName": {}
+    }
+  },
+  "errorWithValue": "Error: {value}",
+  "@errorWithValue": {
+    "placeholders": {
+      "value": {}
+    }
+  },
+  "justNow": "just now",
+  "minutesAgo": "{count}m ago",
+  "@minutesAgo": {
+    "placeholders": {
+      "count": {
+        "type": "int"
+      }
+    }
+  },
+  "hoursAgo": "{count}h ago",
+  "@hoursAgo": {
+    "placeholders": {
+      "count": {
+        "type": "int"
+      }
+    }
+  },
+  "daysAgo": "{count}d ago",
+  "@daysAgo": {
+    "placeholders": {
+      "count": {
+        "type": "int"
+      }
+    }
+  },
+  "ageLabel": "Age: {ageBand}",
+  "@ageLabel": {
+    "placeholders": {
+      "ageBand": {}
+    }
+  },
+  "pausedLabel": "Paused",
+  "categoriesBlockedCount": "{count} categories blocked",
+  "@categoriesBlockedCount": {
+    "placeholders": {
+      "count": {
+        "type": "int"
+      }
+    }
+  },
+  "schedulesCount": "{count} schedules",
+  "@schedulesCount": {
+    "placeholders": {
+      "count": {
+        "type": "int"
+      }
+    }
+  },
+  "managedProfilesLabel": "MANAGED PROFILES",
+  "blockedCategoriesLabel": "BLOCKED CATEGORIES",
+  "schedulesLabel": "SCHEDULES",
+  "addChildTitle": "Add Child",
+  "ageBandGuideTooltip": "Age Band Guide",
+  "addChildHeadline": "Add a new child profile",
+  "addChildSubtitle": "We will set up age-appropriate content filters",
+  "nicknameHint": "e.g., Alex, Sam, Priya",
+  "nicknameHelper": "What should we call this child?",
+  "enterNicknameError": "Please enter a nickname",
+  "nicknameMinError": "Nickname must be at least 2 characters",
+  "nicknameMaxError": "Nickname must be less than 20 characters",
+  "ageGroupLabel": "Age Group",
+  "whichAgeBandLabel": "Which age band?",
+  "ageYoungSubtitle": "Young children - strictest filters",
+  "ageMiddleSubtitle": "Middle schoolers - moderate filters",
+  "ageTeenSubtitle": "Teenagers - balanced approach",
+  "whatWillBeBlockedLabel": "What will be blocked?",
+  "contentLabel": "Content:",
+  "timeRestrictionsLabel": "Time restrictions:",
+  "safeSearchEnabledLabel": "Safe search enabled",
+  "customizeLaterHint": "You can customize these settings later",
+  "childAddedSuccessMessage": "{childName} added successfully!",
+  "@childAddedSuccessMessage": {
+    "placeholders": {
+      "childName": {}
+    }
+  },
+  "failedToAddChildMessage": "Failed to add child: {error}",
+  "@failedToAddChildMessage": {
+    "placeholders": {
+      "error": {}
+    }
+  },
+  "vpnProtectionEngineTitle": "VPN Protection Engine",
+  "dnsFilteringFoundationTitle": "DNS Filtering Foundation",
+  "vpnIntroSubtitle": "Enable Android VPN permission to run TrustBridge network protection.",
+  "currentStatusLabel": "Current Status",
+  "refreshStatusTooltip": "Refresh status",
+  "policySyncTitle": "Policy Sync",
+  "syncNowButton": "Sync Now",
+  "syncingButton": "Syncing...",
+  "notYetSyncedMessage": "Not yet synced.",
+  "syncFailedMessage": "Sync failed: {error}",
+  "@syncFailedMessage": {
+    "placeholders": {
+      "error": {}
+    }
+  },
+  "childrenSyncedLabel": "Children synced",
+  "categoriesBlockedMetricLabel": "Categories blocked",
+  "domainsBlockedMetricLabel": "Domains blocked",
+  "lastSyncedLabel": "Last synced",
+  "processingLabel": "Processing...",
+  "notAvailableLabel": "Not Available",
+  "syncPolicyRulesButton": "Sync Policy Rules",
+  "restartVpnServiceButton": "Restart VPN Service",
+  "restartingButton": "Restarting...",
+  "viewDnsQueryLogsButton": "View DNS Query Logs",
+  "nextDnsIntegrationButton": "NextDNS Integration",
+  "domainPolicyTesterButton": "Domain Policy Tester",
+  "vpnAndroidOnlyMessage": "VPN engine is available on Android only.",
+  "vpnPermissionRequiredMessage": "VPN permission is required before protection can start.",
+  "startProtectionHint": "Start protection to enforce category and domain policies.",
+  "protectionChangesHint": "Protection changes apply immediately. Sync after policy edits.",
+  "permissionRecoveryTitle": "Permission Recovery",
+  "vpnPermissionGrantedLabel": "VPN permission granted",
+  "vpnPermissionRequiredLabel": "VPN permission required",
+  "requestPermissionButton": "Request Permission",
+  "requestingButton": "Requesting...",
+  "vpnSettingsButton": "VPN Settings",
+  "settingsUpdatedSuccessMessage": "Settings updated successfully",
+  "languageChangedMessage": "Language changed",
+  "languageChangedHindiMessage": "\u092d\u093e\u0937\u093e \u092c\u0926\u0932 \u0926\u0940 \u0917\u0908"
+}

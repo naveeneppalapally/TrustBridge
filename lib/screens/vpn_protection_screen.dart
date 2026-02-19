@@ -1,6 +1,8 @@
 import 'dart:async';
 
+import 'package:flutter_gen/gen_l10n/app_localizations.dart';
 import 'package:flutter/material.dart';
+import 'package:intl/intl.dart';
 import 'package:provider/provider.dart';
 import 'package:trustbridge_app/services/auth_service.dart';
 import 'package:trustbridge_app/services/dns_filter_engine.dart';
@@ -97,22 +99,23 @@ class _VpnProtectionScreenState extends State<VpnProtectionScreen> {
 
   @override
   Widget build(BuildContext context) {
+    final l10n = AppLocalizations.of(context)!;
     return Scaffold(
       appBar: AppBar(
-        title: const Text('VPN Protection Engine'),
+        title: Text(l10n.vpnProtectionEngineTitle),
       ),
       body: ListView(
         padding: const EdgeInsets.fromLTRB(16, 8, 16, 28),
         children: [
           Text(
-            'DNS Filtering Foundation',
+            l10n.dnsFilteringFoundationTitle,
             style: Theme.of(context).textTheme.headlineSmall?.copyWith(
                   fontWeight: FontWeight.w700,
                 ),
           ),
           const SizedBox(height: 8),
           Text(
-            'Enable Android VPN permission to run TrustBridge network protection.',
+            l10n.vpnIntroSubtitle,
             style: Theme.of(context).textTheme.bodyMedium?.copyWith(
                   color: Colors.grey.shade600,
                 ),
@@ -145,8 +148,9 @@ class _VpnProtectionScreenState extends State<VpnProtectionScreen> {
   }
 
   Widget _buildStatusCard(BuildContext context) {
+    final l10n = AppLocalizations.of(context)!;
     final statusColor = _statusColor(_status);
-    final statusLabel = _statusLabel(_status);
+    final statusLabel = _statusLabel(context, _status);
 
     return Card(
       elevation: 0,
@@ -174,7 +178,7 @@ class _VpnProtectionScreenState extends State<VpnProtectionScreen> {
                 crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
                   Text(
-                    'Current Status',
+                    l10n.currentStatusLabel,
                     style: Theme.of(context).textTheme.titleMedium?.copyWith(
                           fontWeight: FontWeight.w700,
                         ),
@@ -193,7 +197,7 @@ class _VpnProtectionScreenState extends State<VpnProtectionScreen> {
             ),
             IconButton(
               key: const Key('vpn_refresh_button'),
-              tooltip: 'Refresh status',
+              tooltip: l10n.refreshStatusTooltip,
               onPressed: _isBusy ? null : _refreshStatus,
               icon: const Icon(Icons.refresh),
             ),
@@ -204,6 +208,7 @@ class _VpnProtectionScreenState extends State<VpnProtectionScreen> {
   }
 
   Widget _buildSyncStatusCard(BuildContext context) {
+    final l10n = AppLocalizations.of(context)!;
     final syncService = context.watch<PolicyVpnSyncService?>();
     if (syncService == null) {
       return const SizedBox.shrink();
@@ -233,7 +238,7 @@ class _VpnProtectionScreenState extends State<VpnProtectionScreen> {
                 Icon(Icons.sync, color: iconColor),
                 const SizedBox(width: 8),
                 Text(
-                  'Policy Sync',
+                  l10n.policySyncTitle,
                   style: Theme.of(context).textTheme.titleMedium?.copyWith(
                         fontWeight: FontWeight.w700,
                       ),
@@ -248,21 +253,21 @@ class _VpnProtectionScreenState extends State<VpnProtectionScreen> {
                           height: 16,
                           child: CircularProgressIndicator(strokeWidth: 2),
                         )
-                      : const Text('Sync Now'),
+                      : Text(l10n.syncNowButton),
                 ),
               ],
             ),
             const SizedBox(height: 10),
             if (result == null)
               Text(
-                'Not yet synced.',
+                l10n.notYetSyncedMessage,
                 style: Theme.of(context).textTheme.bodySmall?.copyWith(
                       color: Colors.grey.shade600,
                     ),
               )
             else if (!result.success)
               Text(
-                'Sync failed: ${result.error ?? 'Unknown error'}',
+                l10n.syncFailedMessage(result.error ?? l10n.errorGeneric),
                 style: Theme.of(context).textTheme.bodySmall?.copyWith(
                       color: Colors.red.shade700,
                     ),
@@ -271,25 +276,25 @@ class _VpnProtectionScreenState extends State<VpnProtectionScreen> {
               _buildSyncMetricRow(
                 context,
                 icon: Icons.people_outline,
-                label: 'Children synced',
+                label: l10n.childrenSyncedLabel,
                 value: '${result.childrenSynced}',
               ),
               _buildSyncMetricRow(
                 context,
                 icon: Icons.block,
-                label: 'Categories blocked',
+                label: l10n.categoriesBlockedMetricLabel,
                 value: '${result.totalCategories}',
               ),
               _buildSyncMetricRow(
                 context,
                 icon: Icons.domain,
-                label: 'Domains blocked',
+                label: l10n.domainsBlockedMetricLabel,
                 value: '${result.totalDomains}',
               ),
               _buildSyncMetricRow(
                 context,
                 icon: Icons.access_time,
-                label: 'Last synced',
+                label: l10n.lastSyncedLabel,
                 value: _formatSyncTime(result.timestamp),
               ),
             ],
@@ -328,6 +333,7 @@ class _VpnProtectionScreenState extends State<VpnProtectionScreen> {
   }
 
   Widget _buildActionCard(BuildContext context) {
+    final l10n = AppLocalizations.of(context)!;
     final canEnable = _status.supported && !_status.isRunning;
     final canDisable = _status.supported && _status.isRunning;
     final canSyncRules = _status.supported &&
@@ -374,12 +380,12 @@ class _VpnProtectionScreenState extends State<VpnProtectionScreen> {
                           : Icons.block),
               label: Text(
                 _isBusy
-                    ? 'Processing...'
+                    ? l10n.processingLabel
                     : canEnable
-                        ? 'Enable Protection'
+                        ? l10n.enableProtectionButton
                         : canDisable
-                            ? 'Disable Protection'
-                            : 'Not Available',
+                            ? l10n.disableProtectionButton
+                            : l10n.notAvailableLabel,
               ),
             ),
             const SizedBox(height: 10),
@@ -395,7 +401,9 @@ class _VpnProtectionScreenState extends State<VpnProtectionScreen> {
                     )
                   : const Icon(Icons.sync),
               label: Text(
-                _isSyncingRules ? 'Syncing...' : 'Sync Policy Rules',
+                _isSyncingRules
+                    ? l10n.syncingButton
+                    : l10n.syncPolicyRulesButton,
               ),
             ),
             const SizedBox(height: 10),
@@ -411,7 +419,9 @@ class _VpnProtectionScreenState extends State<VpnProtectionScreen> {
                     )
                   : const Icon(Icons.restart_alt),
               label: Text(
-                _isRestartingVpn ? 'Restarting...' : 'Restart VPN Service',
+                _isRestartingVpn
+                    ? l10n.restartingButton
+                    : l10n.restartVpnServiceButton,
               ),
             ),
             const SizedBox(height: 8),
@@ -419,45 +429,45 @@ class _VpnProtectionScreenState extends State<VpnProtectionScreen> {
               key: const Key('vpn_view_logs_button'),
               onPressed: _status.supported ? _openDnsQueryLogs : null,
               icon: const Icon(Icons.list_alt),
-              label: const Text('View DNS Query Logs'),
+              label: Text(l10n.viewDnsQueryLogsButton),
             ),
             TextButton.icon(
               key: const Key('vpn_nextdns_button'),
               onPressed: _status.supported ? _openNextDnsSettings : null,
               icon: const Icon(Icons.dns_outlined),
-              label: const Text('NextDNS Integration'),
+              label: Text(l10n.nextDnsIntegrationButton),
             ),
             TextButton.icon(
               key: const Key('vpn_domain_tester_button'),
               onPressed: _status.supported ? _openDomainTester : null,
               icon: const Icon(Icons.rule_folder_outlined),
-              label: const Text('Domain Policy Tester'),
+              label: Text(l10n.domainPolicyTesterButton),
             ),
             const SizedBox(height: 10),
             if (!_status.supported)
               Text(
-                'VPN engine is available on Android only.',
+                l10n.vpnAndroidOnlyMessage,
                 style: Theme.of(context).textTheme.bodySmall?.copyWith(
                       color: Colors.grey.shade600,
                     ),
               )
             else if (!_status.permissionGranted)
               Text(
-                'VPN permission is required before protection can start.',
+                l10n.vpnPermissionRequiredMessage,
                 style: Theme.of(context).textTheme.bodySmall?.copyWith(
                       color: Colors.orange.shade700,
                     ),
               )
             else if (!_status.isRunning)
               Text(
-                'Start protection to enforce category and domain policies.',
+                l10n.startProtectionHint,
                 style: Theme.of(context).textTheme.bodySmall?.copyWith(
                       color: Colors.grey.shade600,
                     ),
               )
             else
               Text(
-                'Protection changes apply immediately. Sync after policy edits.',
+                l10n.protectionChangesHint,
                 style: Theme.of(context).textTheme.bodySmall?.copyWith(
                       color: Colors.grey.shade600,
                     ),
@@ -469,6 +479,7 @@ class _VpnProtectionScreenState extends State<VpnProtectionScreen> {
   }
 
   Widget _buildPermissionRecoveryCard(BuildContext context) {
+    final l10n = AppLocalizations.of(context)!;
     if (!_status.supported) {
       return const SizedBox.shrink();
     }
@@ -477,8 +488,8 @@ class _VpnProtectionScreenState extends State<VpnProtectionScreen> {
         ? Colors.green.shade700
         : Colors.orange.shade700;
     final permissionLabel = _status.permissionGranted
-        ? 'VPN permission granted'
-        : 'VPN permission required';
+        ? l10n.vpnPermissionGrantedLabel
+        : l10n.vpnPermissionRequiredLabel;
 
     return Card(
       elevation: 0,
@@ -500,7 +511,7 @@ class _VpnProtectionScreenState extends State<VpnProtectionScreen> {
                 ),
                 const SizedBox(width: 8),
                 Text(
-                  'Permission Recovery',
+                  l10n.permissionRecoveryTitle,
                   style: Theme.of(context).textTheme.titleMedium?.copyWith(
                         fontWeight: FontWeight.w700,
                       ),
@@ -535,8 +546,8 @@ class _VpnProtectionScreenState extends State<VpnProtectionScreen> {
                       : const Icon(Icons.vpn_key_outlined),
                   label: Text(
                     _isRequestingPermission
-                        ? 'Requesting...'
-                        : 'Request Permission',
+                        ? l10n.requestingButton
+                        : l10n.requestPermissionButton,
                   ),
                 ),
                 OutlinedButton.icon(
@@ -544,7 +555,7 @@ class _VpnProtectionScreenState extends State<VpnProtectionScreen> {
                   onPressed:
                       _isOpeningVpnSettings ? null : _openVpnSettingsShortcut,
                   icon: const Icon(Icons.settings_ethernet),
-                  label: const Text('VPN Settings'),
+                  label: Text(l10n.vpnSettingsButton),
                 ),
               ],
             ),
@@ -1100,17 +1111,18 @@ class _VpnProtectionScreenState extends State<VpnProtectionScreen> {
     return Colors.blue.shade700;
   }
 
-  String _statusLabel(VpnStatus status) {
+  String _statusLabel(BuildContext context, VpnStatus status) {
+    final l10n = AppLocalizations.of(context)!;
     if (!status.supported) {
-      return 'Unsupported on this platform';
+      return l10n.notAvailableLabel;
     }
     if (!status.permissionGranted) {
-      return 'Permission required';
+      return l10n.vpnPermissionRequiredLabel;
     }
     if (status.isRunning) {
-      return 'Protection running';
+      return l10n.protectionActiveMessage;
     }
-    return 'Ready to start';
+    return l10n.protectionInactiveMessage;
   }
 
   Widget _buildMetricRow(
@@ -1147,41 +1159,41 @@ class _VpnProtectionScreenState extends State<VpnProtectionScreen> {
   }
 
   String _formatDateTime(DateTime dateTime) {
-    final hours = dateTime.hour.toString().padLeft(2, '0');
-    final minutes = dateTime.minute.toString().padLeft(2, '0');
-    final seconds = dateTime.second.toString().padLeft(2, '0');
-    return '${dateTime.year}-${dateTime.month.toString().padLeft(2, '0')}-${dateTime.day.toString().padLeft(2, '0')} $hours:$minutes:$seconds';
+    final locale = Localizations.localeOf(context).toLanguageTag();
+    return DateFormat.yMd(locale).add_jms().format(dateTime);
   }
 
   String _formatRelativeTime(DateTime dateTime) {
+    final l10n = AppLocalizations.of(context)!;
     final diff = DateTime.now().difference(dateTime);
     if (diff.inSeconds < 5) {
-      return 'just now';
+      return l10n.justNow;
     }
     if (diff.inMinutes < 1) {
-      return '${diff.inSeconds}s ago';
+      return l10n.justNow;
     }
     if (diff.inHours < 1) {
-      return '${diff.inMinutes}m ago';
+      return l10n.minutesAgo(diff.inMinutes);
     }
     if (diff.inDays < 1) {
-      return '${diff.inHours}h ago';
+      return l10n.hoursAgo(diff.inHours);
     }
-    return '${diff.inDays}d ago';
+    return l10n.daysAgo(diff.inDays);
   }
 
   String _formatSyncTime(DateTime time) {
+    final l10n = AppLocalizations.of(context)!;
     final diff = DateTime.now().difference(time);
     if (diff.inSeconds < 60) {
-      return 'just now';
+      return l10n.justNow;
     }
     if (diff.inMinutes < 60) {
-      return '${diff.inMinutes}m ago';
+      return l10n.minutesAgo(diff.inMinutes);
     }
     if (diff.inHours < 24) {
-      return '${diff.inHours}h ago';
+      return l10n.hoursAgo(diff.inHours);
     }
-    return '${diff.inDays}d ago';
+    return l10n.daysAgo(diff.inDays);
   }
 
   String _formatUptime(DateTime? startedAt) {

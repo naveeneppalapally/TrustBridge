@@ -2,6 +2,9 @@ import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:firebase_messaging/firebase_messaging.dart';
+import 'package:flutter_gen/gen_l10n/app_localizations.dart';
+import 'package:shared_preferences/shared_preferences.dart';
+import 'package:trustbridge_app/main.dart';
 import 'package:trustbridge_app/screens/beta_feedback_history_screen.dart';
 import 'package:trustbridge_app/screens/beta_feedback_screen.dart';
 import 'package:trustbridge_app/screens/help_support_screen.dart';
@@ -34,7 +37,7 @@ class ParentSettingsScreen extends StatefulWidget {
 class _ParentSettingsScreenState extends State<ParentSettingsScreen> {
   static const Map<String, String> _languageOptions = {
     'en': 'English',
-    'hi': 'Hindi',
+    'hi': 'हिंदी',
   };
   static const List<String> _timezoneOptions = [
     'Asia/Kolkata',
@@ -90,17 +93,18 @@ class _ParentSettingsScreenState extends State<ParentSettingsScreen> {
 
   @override
   Widget build(BuildContext context) {
+    final l10n = AppLocalizations.of(context)!;
     final parentId = _parentId;
     if (parentId == null) {
       return Scaffold(
-        appBar: AppBar(title: const Text('Settings')),
-        body: const Center(child: Text('Not logged in')),
+        appBar: AppBar(title: Text(l10n.settingsTitle)),
+        body: Center(child: Text(l10n.notLoggedInMessage)),
       );
     }
 
     return Scaffold(
       appBar: AppBar(
-        title: const Text('Settings'),
+        title: Text(l10n.settingsTitle),
         actions: [
           if (_hasChanges)
             TextButton(
@@ -111,8 +115,8 @@ class _ParentSettingsScreenState extends State<ParentSettingsScreen> {
                       height: 20,
                       child: CircularProgressIndicator(strokeWidth: 2),
                     )
-                  : const Text(
-                      'SAVE',
+                  : Text(
+                      l10n.saveButton.toUpperCase(),
                       style: TextStyle(fontWeight: FontWeight.w700),
                     ),
             ),
@@ -317,6 +321,8 @@ class _ParentSettingsScreenState extends State<ParentSettingsScreen> {
   }
 
   Widget _buildPreferencesCard(BuildContext context) {
+    final l10n = AppLocalizations.of(context)!;
+
     return Card(
       elevation: 0,
       shape: RoundedRectangleBorder(
@@ -330,15 +336,21 @@ class _ParentSettingsScreenState extends State<ParentSettingsScreen> {
               key: const Key('settings_language_dropdown'),
               initialValue: _language,
               isExpanded: true,
-              decoration: const InputDecoration(
-                labelText: 'Language',
+              decoration: InputDecoration(
+                labelText: l10n.languageSettingsTitle,
                 border: OutlineInputBorder(),
               ),
               items: _languageOptions.entries
                   .map(
                     (entry) => DropdownMenuItem<String>(
                       value: entry.key,
-                      child: Text(entry.value),
+                      child: Text(
+                        _localizedLanguageLabel(
+                          l10n,
+                          entry.key,
+                          entry.value,
+                        ),
+                      ),
                     ),
                   )
                   .toList(),
@@ -348,10 +360,7 @@ class _ParentSettingsScreenState extends State<ParentSettingsScreen> {
                       if (value == null || value == _language) {
                         return;
                       }
-                      setState(() {
-                        _language = value;
-                        _hasChanges = true;
-                      });
+                      _changeLanguage(value);
                     },
             ),
             const SizedBox(height: 12),
@@ -746,6 +755,49 @@ class _ParentSettingsScreenState extends State<ParentSettingsScreen> {
     );
   }
 
+  String _localizedLanguageLabel(
+    AppLocalizations l10n,
+    String languageCode,
+    String fallback,
+  ) {
+    switch (languageCode) {
+      case 'en':
+        return l10n.languageEnglish;
+      case 'hi':
+        return l10n.languageHindi;
+      default:
+        return fallback;
+    }
+  }
+
+  Future<void> _changeLanguage(String languageCode) async {
+    final prefs = await SharedPreferences.getInstance();
+    await prefs.setString('language_code', languageCode);
+    if (!mounted) {
+      return;
+    }
+
+    await MyApp.setLocale(context, Locale(languageCode));
+    if (!mounted) {
+      return;
+    }
+
+    final l10n = AppLocalizations.of(context)!;
+    setState(() {
+      _language = languageCode;
+      _hasChanges = true;
+    });
+    ScaffoldMessenger.of(context).showSnackBar(
+      SnackBar(
+        content: Text(
+          languageCode == 'hi'
+              ? l10n.languageChangedHindiMessage
+              : l10n.languageChangedMessage,
+        ),
+      ),
+    );
+  }
+
   Future<void> _saveSettings() async {
     if (_isSaving || !_hasChanges) {
       return;
@@ -781,8 +833,8 @@ class _ParentSettingsScreenState extends State<ParentSettingsScreen> {
       });
 
       ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(
-          content: Text('Settings updated successfully'),
+        SnackBar(
+          content: Text(AppLocalizations.of(context)!.settingsUpdatedSuccessMessage),
           backgroundColor: Colors.green,
         ),
       );

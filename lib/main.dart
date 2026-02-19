@@ -7,7 +7,10 @@ import 'package:firebase_crashlytics/firebase_crashlytics.dart';
 import 'package:firebase_performance/firebase_performance.dart';
 import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
+import 'package:flutter_gen/gen_l10n/app_localizations.dart';
+import 'package:flutter_localizations/flutter_localizations.dart';
 import 'package:provider/provider.dart';
+import 'package:shared_preferences/shared_preferences.dart';
 import 'package:trustbridge_app/firebase_options.dart';
 import 'package:trustbridge_app/models/child_profile.dart';
 import 'package:trustbridge_app/screens/add_child_screen.dart';
@@ -78,8 +81,60 @@ Future<void> _initPerformance() async {
   }
 }
 
-class MyApp extends StatelessWidget {
+class MyApp extends StatefulWidget {
   const MyApp({super.key});
+
+  static Future<void> setLocale(
+    BuildContext context,
+    Locale locale,
+  ) async {
+    final state = context.findAncestorStateOfType<_MyAppState>();
+    if (state == null) {
+      return;
+    }
+    await state._updateLocale(locale, persist: true);
+  }
+
+  @override
+  State<MyApp> createState() => _MyAppState();
+}
+
+class _MyAppState extends State<MyApp> {
+  Locale? _locale;
+
+  @override
+  void initState() {
+    super.initState();
+    unawaited(_loadSavedLocale());
+  }
+
+  Future<void> _loadSavedLocale() async {
+    final prefs = await SharedPreferences.getInstance();
+    final languageCode = prefs.getString('language_code');
+    if (!mounted || languageCode == null || languageCode.trim().isEmpty) {
+      return;
+    }
+    final locale = Locale(languageCode.trim());
+    await _updateLocale(locale, persist: false);
+  }
+
+  Future<void> _updateLocale(
+    Locale locale, {
+    required bool persist,
+  }) async {
+    if (persist) {
+      final prefs = await SharedPreferences.getInstance();
+      await prefs.setString('language_code', locale.languageCode);
+    }
+
+    if (!mounted) {
+      return;
+    }
+
+    setState(() {
+      _locale = locale;
+    });
+  }
 
   @override
   Widget build(BuildContext context) {
@@ -99,6 +154,14 @@ class MyApp extends StatelessWidget {
               defaultValue: false,
             ),
         title: 'TrustBridge',
+        locale: _locale,
+        localizationsDelegates: const [
+          AppLocalizations.delegate,
+          GlobalMaterialLocalizations.delegate,
+          GlobalWidgetsLocalizations.delegate,
+          GlobalCupertinoLocalizations.delegate,
+        ],
+        supportedLocales: AppLocalizations.supportedLocales,
         theme: ThemeData(
           colorScheme: ColorScheme.fromSeed(
             seedColor: primaryColor,

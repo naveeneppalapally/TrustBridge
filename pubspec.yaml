@@ -30,6 +30,8 @@ environment:
 dependencies:
   flutter:
     sdk: flutter
+  flutter_localizations:
+    sdk: flutter
 
   # Firebase - Backend services
   firebase_core: ^4.4.0
@@ -56,7 +58,7 @@ dependencies:
   path: ^1.8.3
 
   # Utilities
-  intl: ^0.18.1
+  intl: ^0.20.2
   uuid: ^4.2.2
 
   # UI - Charts and loading effects
@@ -74,6 +76,7 @@ dev_dependencies:
 
 # The following section is specific to Flutter packages.
 flutter:
+  generate: true
 
   # The following line ensures that the Material Icons font is
   # included with your application, so that you can use the icons in
