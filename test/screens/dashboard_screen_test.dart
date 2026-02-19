@@ -5,6 +5,7 @@ import 'package:flutter_test/flutter_test.dart';
 import 'package:trustbridge_app/models/child_profile.dart';
 import 'package:trustbridge_app/screens/dashboard_screen.dart';
 import 'package:trustbridge_app/services/firestore_service.dart';
+import 'package:trustbridge_app/widgets/child_card.dart';
 
 void main() {
   group('DashboardScreen', () {
@@ -87,7 +88,7 @@ void main() {
       await tester.pumpAndSettle();
 
       expect(find.text('Leo'), findsOneWidget);
-      expect(find.text('Age: 6-9'), findsOneWidget);
+      expect(find.text('MANAGED DEVICES'), findsOneWidget);
     });
 
     testWidgets('shows pending requests badge when requests exist',
@@ -151,7 +152,9 @@ void main() {
       );
 
       expect(find.text('Test Child'), findsOneWidget);
-      expect(find.text('Age: 6-9'), findsOneWidget);
+      expect(find.byKey(const Key('child_card_mode_badge')), findsOneWidget);
+      expect(find.textContaining('TIME USAGE'), findsOneWidget);
+      expect(find.byKey(const Key('child_card_pause_button')), findsOneWidget);
     });
   });
 }

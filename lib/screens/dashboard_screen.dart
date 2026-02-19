@@ -14,6 +14,7 @@ import 'package:trustbridge_app/services/firestore_service.dart';
 import 'package:trustbridge_app/services/performance_service.dart';
 import 'package:trustbridge_app/services/policy_vpn_sync_service.dart';
 import 'package:trustbridge_app/utils/app_lock_guard.dart';
+import 'package:trustbridge_app/widgets/child_card.dart';
 
 class DashboardScreen extends StatefulWidget {
   const DashboardScreen({
@@ -297,6 +298,65 @@ class _DashboardScreenState extends State<DashboardScreen>
     return preferences['vpnProtectionEnabled'] == true;
   }
 
+  bool _isPausedNow(ChildProfile child) {
+    final pausedUntil = child.pausedUntil;
+    return pausedUntil != null && pausedUntil.isAfter(DateTime.now());
+  }
+
+  Future<void> _toggleChildPause(ChildProfile child) async {
+    final parentId = _parentId;
+    if (parentId == null || parentId.trim().isEmpty) {
+      return;
+    }
+
+    final willResume = _isPausedNow(child);
+    final updatedChild = willResume
+        ? child.copyWith(clearPausedUntil: true)
+        : child.copyWith(
+            pausedUntil: DateTime.now().add(const Duration(hours: 1)));
+
+    try {
+      await _resolvedFirestoreService.updateChild(
+        parentId: parentId,
+        child: updatedChild,
+      );
+      if (!mounted) {
+        return;
+      }
+      final messenger = ScaffoldMessenger.of(context);
+      messenger.showSnackBar(
+        SnackBar(
+          content: Text(willResume
+              ? 'Internet resumed for ${child.nickname}'
+              : 'Internet paused for ${child.nickname}'),
+        ),
+      );
+    } catch (error) {
+      if (!mounted) {
+        return;
+      }
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text('Unable to update child pause state: $error')),
+      );
+    }
+  }
+
+  void _openLocateStub(ChildProfile child) {
+    ScaffoldMessenger.of(context).showSnackBar(
+      SnackBar(
+        content: Text('Locate ${child.nickname} is coming soon.'),
+      ),
+    );
+  }
+
+  void _openManageDevicesStub() {
+    ScaffoldMessenger.of(context).showSnackBar(
+      const SnackBar(
+        content: Text('Device management overview is coming soon.'),
+      ),
+    );
+  }
+
   String _formatDurationLabel(Duration duration) {
     final hours = duration.inHours;
     final minutes = duration.inMinutes.remainder(60);
@@ -551,12 +611,41 @@ class _DashboardScreenState extends State<DashboardScreen>
                       ),
                     ),
                   ),
+                  SliverToBoxAdapter(
+                    child: Padding(
+                      padding: EdgeInsets.fromLTRB(
+                        isTablet ? 24 : 16,
+                        18,
+                        isTablet ? 24 : 16,
+                        10,
+                      ),
+                      child: Row(
+                        children: [
+                          Text(
+                            'MANAGED DEVICES',
+                            style:
+                                Theme.of(context).textTheme.bodySmall?.copyWith(
+                                      color: Colors.grey.shade500,
+                                      letterSpacing: 0.8,
+                                      fontWeight: FontWeight.w800,
+                                    ),
+                          ),
+                          const Spacer(),
+                          TextButton(
+                            key: const Key('dashboard_view_all_devices_button'),
+                            onPressed: _openManageDevicesStub,
+                            child: const Text('View All'),
+                          ),
+                        ],
+                      ),
+                    ),
+                  ),
                   SliverPadding(
                     padding: EdgeInsets.fromLTRB(
                       isTablet ? 24 : 16,
-                      20,
+                      0,
                       isTablet ? 24 : 16,
-                      100,
+                      12,
                     ),
                     sliver: isTablet
                         ? SliverGrid(
@@ -565,7 +654,7 @@ class _DashboardScreenState extends State<DashboardScreen>
                               crossAxisCount: 2,
                               crossAxisSpacing: 16,
                               mainAxisSpacing: 16,
-                              childAspectRatio: 1.5,
+                              childAspectRatio: 0.95,
                             ),
                             delegate: SliverChildBuilderDelegate(
                               (context, index) {
@@ -581,6 +670,11 @@ class _DashboardScreenState extends State<DashboardScreen>
                                       ),
                                     );
                                   },
+                                  onPauseInternet: () =>
+                                      _toggleChildPause(child),
+                                  onResumeInternet: () =>
+                                      _toggleChildPause(child),
+                                  onLocate: () => _openLocateStub(child),
                                 );
                               },
                               childCount: children.length,
@@ -603,12 +697,66 @@ class _DashboardScreenState extends State<DashboardScreen>
                                         ),
                                       );
                                     },
+                                    onPauseInternet: () =>
+                                        _toggleChildPause(child),
+                                    onResumeInternet: () =>
+                                        _toggleChildPause(child),
+                                    onLocate: () => _openLocateStub(child),
                                   ),
                                 );
                               },
                               childCount: children.length,
                             ),
                           ),
+                  ),
+                  SliverToBoxAdapter(
+                    child: Padding(
+                      padding: EdgeInsets.fromLTRB(
+                        isTablet ? 24 : 16,
+                        0,
+                        isTablet ? 24 : 16,
+                        100,
+                      ),
+                      child: InkWell(
+                        key: const Key('dashboard_connect_new_device_cta'),
+                        borderRadius: BorderRadius.circular(16),
+                        onTap: _openManageDevicesStub,
+                        child: Container(
+                          padding: const EdgeInsets.symmetric(
+                            horizontal: 16,
+                            vertical: 14,
+                          ),
+                          decoration: BoxDecoration(
+                            borderRadius: BorderRadius.circular(16),
+                            border: Border.all(
+                              color: Theme.of(context)
+                                  .colorScheme
+                                  .primary
+                                  .withValues(alpha: 0.5),
+                              style: BorderStyle.solid,
+                              width: 1.2,
+                            ),
+                          ),
+                          child: Row(
+                            mainAxisAlignment: MainAxisAlignment.center,
+                            children: [
+                              Icon(
+                                Icons.add_circle_outline,
+                                color: Theme.of(context).colorScheme.primary,
+                              ),
+                              const SizedBox(width: 10),
+                              Text(
+                                'Connect New Device',
+                                style: Theme.of(context)
+                                    .textTheme
+                                    .titleSmall
+                                    ?.copyWith(fontWeight: FontWeight.w700),
+                              ),
+                            ],
+                          ),
+                        ),
+                      ),
+                    ),
                   ),
                 ],
               );
@@ -859,139 +1007,6 @@ class _TrustMetricTile extends StatelessWidget {
         ],
       ),
     );
-  }
-}
-
-/// Widget for displaying a child profile card
-class ChildCard extends StatelessWidget {
-  const ChildCard({
-    super.key,
-    required this.child,
-    required this.onTap,
-  });
-
-  final ChildProfile child;
-  final VoidCallback onTap;
-
-  @override
-  Widget build(BuildContext context) {
-    final l10n = _l10n(context);
-    final isDark = Theme.of(context).brightness == Brightness.dark;
-    final surfaceColor = isDark ? const Color(0xFF1F2937) : Colors.white;
-
-    return Card(
-      margin: EdgeInsets.zero,
-      color: surfaceColor,
-      elevation: 0,
-      shape: RoundedRectangleBorder(
-        borderRadius: BorderRadius.circular(16),
-        side: BorderSide(
-          color: isDark
-              ? Colors.white.withValues(alpha: 0.07)
-              : Colors.black.withValues(alpha: 0.06),
-        ),
-      ),
-      child: InkWell(
-        onTap: onTap,
-        borderRadius: BorderRadius.circular(16),
-        child: Padding(
-          padding: const EdgeInsets.all(16),
-          child: Row(
-            crossAxisAlignment: CrossAxisAlignment.start,
-            children: [
-              CircleAvatar(
-                radius: 28,
-                backgroundColor: _getAvatarColor(child.ageBand),
-                child: Text(
-                  child.nickname.isNotEmpty
-                      ? child.nickname[0].toUpperCase()
-                      : '?',
-                  style: const TextStyle(
-                    fontSize: 22,
-                    fontWeight: FontWeight.w700,
-                    color: Colors.white,
-                  ),
-                ),
-              ),
-              const SizedBox(width: 14),
-              Expanded(
-                child: Column(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: [
-                    Text(
-                      child.nickname,
-                      maxLines: 1,
-                      overflow: TextOverflow.ellipsis,
-                      style: Theme.of(context).textTheme.titleMedium?.copyWith(
-                            fontWeight: FontWeight.w700,
-                          ),
-                    ),
-                    const SizedBox(height: 4),
-                    Text(
-                      l10n.ageLabel(child.ageBand.value),
-                      style: Theme.of(context).textTheme.bodyMedium?.copyWith(
-                            color: Colors.grey.shade600,
-                          ),
-                    ),
-                    const SizedBox(height: 10),
-                    _buildPolicyChips(context, child),
-                  ],
-                ),
-              ),
-              const SizedBox(width: 8),
-              const Icon(Icons.chevron_right),
-            ],
-          ),
-        ),
-      ),
-    );
-  }
-
-  Widget _buildPolicyChips(BuildContext context, ChildProfile child) {
-    final l10n = _l10n(context);
-    final blockedCount = child.policy.blockedCategories.length;
-    final scheduleCount = child.policy.schedules.length;
-    final paused =
-        child.pausedUntil != null && child.pausedUntil!.isAfter(DateTime.now());
-
-    return Wrap(
-      spacing: 8,
-      runSpacing: 8,
-      children: [
-        if (paused)
-          Chip(
-            label: Text(l10n.pausedLabel),
-            avatar: const Icon(Icons.pause_circle_outline, size: 15),
-            visualDensity: VisualDensity.compact,
-            backgroundColor: Colors.red.shade50,
-            side: BorderSide(color: Colors.red.shade200),
-            labelStyle: TextStyle(color: Colors.red.shade900),
-          ),
-        if (blockedCount > 0)
-          Chip(
-            label: Text(l10n.categoriesBlockedCount(blockedCount)),
-            avatar: const Icon(Icons.block, size: 15),
-            visualDensity: VisualDensity.compact,
-          ),
-        if (scheduleCount > 0)
-          Chip(
-            label: Text(l10n.schedulesCount(scheduleCount)),
-            avatar: const Icon(Icons.schedule, size: 15),
-            visualDensity: VisualDensity.compact,
-          ),
-      ],
-    );
-  }
-
-  Color _getAvatarColor(AgeBand ageBand) {
-    switch (ageBand) {
-      case AgeBand.young:
-        return Colors.blue;
-      case AgeBand.middle:
-        return Colors.green;
-      case AgeBand.teen:
-        return Colors.orange;
-    }
   }
 }
 

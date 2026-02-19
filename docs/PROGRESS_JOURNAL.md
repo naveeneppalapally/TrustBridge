@@ -3680,3 +3680,30 @@ hero trust summary card aligned to the redesigned parent dashboard direction.
    - `flutter test test/screens/dashboard_screen_test.dart` passed.
 
 ---
+
+## Day 91 - Dashboard Child Cards Redesign (Week 19 Day 2)
+
+Program goal: redesign managed child cards to show live status, current mode,
+usage progress, and one-tap actions.
+
+### Commit entries
+
+1. **2026-02-19 18:00:00 +05:30**  
+   Message: `Implement Day 91 dashboard child cards redesign`  
+   Changes:
+   - Added `lib/widgets/child_card.dart`:
+     - avatar with online/offline status dot
+     - mode badge (`Free Time`, `Focus Mode`, `Bedtime`, `School`)
+     - usage line + progress bar
+     - `Pause Internet` / `Resume` + `Locate` actions
+   - Updated `lib/screens/dashboard_screen.dart`:
+     - migrated to new `ChildCard` widget
+     - added `MANAGED DEVICES — View All` section header
+     - added `Connect New Device` CTA at list bottom
+     - wired pause/resume action to Firestore child updates
+   - Updated `test/screens/dashboard_screen_test.dart`:
+     - child card assertions adapted to redesigned layout
+   Validation:
+   - `flutter test test/screens/dashboard_screen_test.dart test/widgets/parent_shell_test.dart` passed.
+
+---
