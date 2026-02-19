@@ -185,8 +185,8 @@ void main() {
         find.byKey(const Key('request_modal_reply_input_request-3')),
         'Approved for homework',
       );
-      await tester
-          .tap(find.byKey(const Key('request_confirm_approve_button_request-3')));
+      await tester.tap(
+          find.byKey(const Key('request_confirm_approve_button_request-3')));
       await tester.pumpAndSettle();
 
       final snapshot = await fakeFirestore
@@ -205,6 +205,104 @@ void main() {
 
       expect(find.text('Leo -> reddit.com'), findsOneWidget);
       expect(find.text('Approved'), findsOneWidget);
+    });
+
+    testWidgets('approval modal duration override updates expiresAt',
+        (tester) async {
+      await _seedRequest(
+        firestore: fakeFirestore,
+        parentId: 'parent-a',
+        requestId: 'request-4',
+        childNickname: 'Nia',
+        appOrSite: 'example.com',
+        durationLabel: '1 hour',
+        durationMinutes: 60,
+        status: 'pending',
+      );
+
+      await tester.pumpWidget(
+        MaterialApp(
+          home: ParentRequestsScreen(
+            parentIdOverride: 'parent-a',
+            firestoreService: firestoreService,
+          ),
+        ),
+      );
+      await tester.pumpAndSettle();
+
+      await tester
+          .tap(find.byKey(const Key('request_approve_button_request-4')));
+      await tester.pumpAndSettle();
+
+      await tester.tap(find
+          .byKey(const Key('request_duration_option_request-4_fifteenMin')));
+      await tester.pumpAndSettle();
+
+      await tester.tap(
+          find.byKey(const Key('request_confirm_approve_button_request-4')));
+      await tester.pumpAndSettle();
+
+      final snapshot = await fakeFirestore
+          .collection('parents')
+          .doc('parent-a')
+          .collection('access_requests')
+          .doc('request-4')
+          .get();
+      final data = snapshot.data()!;
+
+      final respondedAt = (data['respondedAt'] as Timestamp).toDate();
+      final expiresAt = (data['expiresAt'] as Timestamp).toDate();
+      final diffMinutes = expiresAt.difference(respondedAt).inMinutes;
+
+      expect(data['status'], 'approved');
+      expect(diffMinutes, inInclusiveRange(14, 16));
+    });
+
+    testWidgets('approval modal until schedule ends keeps expiresAt null',
+        (tester) async {
+      await _seedRequest(
+        firestore: fakeFirestore,
+        parentId: 'parent-a',
+        requestId: 'request-5',
+        childNickname: 'Riya',
+        appOrSite: 'instagram.com',
+        durationLabel: '30 min',
+        durationMinutes: 30,
+        status: 'pending',
+      );
+
+      await tester.pumpWidget(
+        MaterialApp(
+          home: ParentRequestsScreen(
+            parentIdOverride: 'parent-a',
+            firestoreService: firestoreService,
+          ),
+        ),
+      );
+      await tester.pumpAndSettle();
+
+      await tester
+          .tap(find.byKey(const Key('request_approve_button_request-5')));
+      await tester.pumpAndSettle();
+
+      await tester.tap(find.byKey(
+          const Key('request_duration_option_request-5_untilScheduleEnds')));
+      await tester.pumpAndSettle();
+
+      await tester.tap(
+          find.byKey(const Key('request_confirm_approve_button_request-5')));
+      await tester.pumpAndSettle();
+
+      final snapshot = await fakeFirestore
+          .collection('parents')
+          .doc('parent-a')
+          .collection('access_requests')
+          .doc('request-5')
+          .get();
+      final data = snapshot.data()!;
+
+      expect(data['status'], 'approved');
+      expect(data['expiresAt'], isNull);
     });
   });
 }

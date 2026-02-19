@@ -1049,6 +1049,7 @@ class FirestoreService {
     required String requestId,
     required RequestStatus status,
     String? reply,
+    RequestDuration? approvedDurationOverride,
   }) async {
     if (parentId.trim().isEmpty) {
       throw ArgumentError.value(parentId, 'parentId', 'Parent ID is required.');
@@ -1067,6 +1068,13 @@ class FirestoreService {
         'Status must be approved or denied.',
       );
     }
+    if (status != RequestStatus.approved && approvedDurationOverride != null) {
+      throw ArgumentError.value(
+        approvedDurationOverride,
+        'approvedDurationOverride',
+        'Duration override is only allowed for approved requests.',
+      );
+    }
 
     try {
       final requestRef = _firestore
@@ -1082,13 +1090,15 @@ class FirestoreService {
 
       DateTime? expiresAt;
       if (status == RequestStatus.approved) {
-        final data = requestSnapshot.data();
-        final minutesValue = data?['durationMinutes'];
-        int? minutes;
-        if (minutesValue is int) {
-          minutes = minutesValue;
-        } else if (minutesValue is num) {
-          minutes = minutesValue.toInt();
+        int? minutes = approvedDurationOverride?.minutes;
+        if (approvedDurationOverride == null) {
+          final data = requestSnapshot.data();
+          final minutesValue = data?['durationMinutes'];
+          if (minutesValue is int) {
+            minutes = minutesValue;
+          } else if (minutesValue is num) {
+            minutes = minutesValue.toInt();
+          }
         }
 
         if (minutes != null && minutes > 0) {

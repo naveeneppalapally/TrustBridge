@@ -265,6 +265,7 @@ class _RequestCardState extends State<_RequestCard> {
   Future<void> _respond(
     RequestStatus status, {
     required String reply,
+    RequestDuration? approvedDurationOverride,
   }) async {
     if (_isResponding) {
       return;
@@ -282,6 +283,7 @@ class _RequestCardState extends State<_RequestCard> {
         requestId: widget.request.id,
         status: status,
         reply: reply,
+        approvedDurationOverride: approvedDurationOverride,
       );
       if (!mounted) {
         return;
@@ -321,59 +323,112 @@ class _RequestCardState extends State<_RequestCard> {
 
     final request = widget.request;
     final l10n = _l10n(context);
+    _replyController.text = '';
+    var selectedDuration = request.duration;
 
     final confirmed = await showDialog<bool>(
       context: context,
       builder: (BuildContext dialogContext) {
-        return AlertDialog(
-          key: Key('request_decision_dialog_${request.id}'),
-          title: Text(_decisionTitle(l10n, status)),
-          content: Column(
-            mainAxisSize: MainAxisSize.min,
-            crossAxisAlignment: CrossAxisAlignment.start,
-            children: <Widget>[
-              Text(
-                _decisionSummary(l10n, request),
-                style: Theme.of(dialogContext).textTheme.bodyMedium,
-              ),
-              const SizedBox(height: 12),
-              TextField(
-                key: Key('request_modal_reply_input_${request.id}'),
-                controller: _replyController,
-                maxLines: 3,
-                maxLength: 200,
-                decoration: InputDecoration(
-                  labelText: l10n.parentReplyOptionalLabel,
-                  hintText: l10n.requestReplyHint(request.childNickname),
-                  border: const OutlineInputBorder(),
+        return StatefulBuilder(
+          builder: (BuildContext context, StateSetter setDialogState) {
+            return AlertDialog(
+              key: Key('request_decision_dialog_${request.id}'),
+              title: Text(_decisionTitle(l10n, status)),
+              content: SingleChildScrollView(
+                child: Column(
+                  mainAxisSize: MainAxisSize.min,
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: <Widget>[
+                    Text(
+                      _decisionSummary(l10n, request),
+                      style: Theme.of(dialogContext).textTheme.bodyMedium,
+                    ),
+                    if (status == RequestStatus.approved) ...<Widget>[
+                      const SizedBox(height: 16),
+                      Text(
+                        l10n.approvalDurationLabel,
+                        style: Theme.of(dialogContext)
+                            .textTheme
+                            .bodySmall
+                            ?.copyWith(
+                              fontWeight: FontWeight.w600,
+                            ),
+                      ),
+                      const SizedBox(height: 8),
+                      Wrap(
+                        spacing: 8,
+                        runSpacing: 8,
+                        children: RequestDuration.values
+                            .map(
+                              (duration) => ChoiceChip(
+                                key: Key(
+                                  'request_duration_option_${request.id}_${duration.name}',
+                                ),
+                                label: Text(_durationLabel(l10n, duration)),
+                                selected: selectedDuration == duration,
+                                onSelected: (_) {
+                                  setDialogState(() {
+                                    selectedDuration = duration;
+                                  });
+                                },
+                              ),
+                            )
+                            .toList(growable: false),
+                      ),
+                      const SizedBox(height: 8),
+                      Text(
+                        _approvalExpiryPreview(
+                            dialogContext, l10n, selectedDuration),
+                        key: Key('request_expiry_preview_${request.id}'),
+                        style: Theme.of(dialogContext)
+                            .textTheme
+                            .bodySmall
+                            ?.copyWith(
+                              color: Colors.grey[600],
+                            ),
+                      ),
+                    ],
+                    const SizedBox(height: 12),
+                    TextField(
+                      key: Key('request_modal_reply_input_${request.id}'),
+                      controller: _replyController,
+                      maxLines: 3,
+                      maxLength: 200,
+                      decoration: InputDecoration(
+                        labelText: l10n.parentReplyOptionalLabel,
+                        hintText: l10n.requestReplyHint(request.childNickname),
+                        border: const OutlineInputBorder(),
+                      ),
+                    ),
+                  ],
                 ),
               ),
-            ],
-          ),
-          actions: <Widget>[
-            TextButton(
-              onPressed: () => Navigator.of(dialogContext).pop(false),
-              child: Text(l10n.keepPendingButton),
-            ),
-            FilledButton(
-              key: Key(
-                status == RequestStatus.approved
-                    ? 'request_confirm_approve_button_${request.id}'
-                    : 'request_confirm_deny_button_${request.id}',
-              ),
-              style: FilledButton.styleFrom(
-                backgroundColor: status == RequestStatus.approved
-                    ? Colors.green
-                    : Colors.orange,
-              ),
-              onPressed: () => Navigator.of(dialogContext).pop(true),
-              child: Text(
-                status == RequestStatus.approved
-                    ? l10n.confirmApproveButton
-                    : l10n.confirmDenyButton,
-              ),
-            ),
-          ],
+              actions: <Widget>[
+                TextButton(
+                  onPressed: () => Navigator.of(dialogContext).pop(false),
+                  child: Text(l10n.keepPendingButton),
+                ),
+                FilledButton(
+                  key: Key(
+                    status == RequestStatus.approved
+                        ? 'request_confirm_approve_button_${request.id}'
+                        : 'request_confirm_deny_button_${request.id}',
+                  ),
+                  style: FilledButton.styleFrom(
+                    backgroundColor: status == RequestStatus.approved
+                        ? Colors.green
+                        : Colors.orange,
+                  ),
+                  onPressed: () => Navigator.of(dialogContext).pop(true),
+                  child: Text(
+                    status == RequestStatus.approved
+                        ? l10n.confirmApproveButton
+                        : l10n.confirmDenyButton,
+                  ),
+                ),
+              ],
+            );
+          },
         );
       },
     );
@@ -383,7 +438,41 @@ class _RequestCardState extends State<_RequestCard> {
     }
 
     final reply = _replyController.text.trim();
-    await _respond(status, reply: reply);
+    await _respond(
+      status,
+      reply: reply,
+      approvedDurationOverride:
+          status == RequestStatus.approved ? selectedDuration : null,
+    );
+  }
+
+  String _durationLabel(AppLocalizations l10n, RequestDuration duration) {
+    switch (duration) {
+      case RequestDuration.fifteenMin:
+        return l10n.durationFifteenMin;
+      case RequestDuration.thirtyMin:
+        return l10n.durationThirtyMin;
+      case RequestDuration.oneHour:
+        return l10n.durationOneHour;
+      case RequestDuration.untilScheduleEnds:
+        return l10n.durationUntilEnd;
+    }
+  }
+
+  String _approvalExpiryPreview(
+    BuildContext context,
+    AppLocalizations l10n,
+    RequestDuration duration,
+  ) {
+    final minutes = duration.minutes;
+    if (minutes == null || minutes <= 0) {
+      return l10n.approvalUntilSchedulePreview;
+    }
+    final materialLocalizations = MaterialLocalizations.of(context);
+    final expiresAt = DateTime.now().add(Duration(minutes: minutes));
+    final formattedTime = materialLocalizations
+        .formatTimeOfDay(TimeOfDay.fromDateTime(expiresAt));
+    return l10n.approvalExpiresPreview(formattedTime);
   }
 
   String _decisionTitle(AppLocalizations l10n, RequestStatus status) {
@@ -736,4 +825,3 @@ String _timeAgo(BuildContext context, DateTime timestamp) {
 AppLocalizations _l10n(BuildContext context) {
   return AppLocalizations.of(context) ?? AppLocalizationsEn();
 }
-

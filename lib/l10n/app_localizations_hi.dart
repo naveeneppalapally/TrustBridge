@@ -227,6 +227,18 @@ class AppLocalizationsHi extends AppLocalizations {
   }
 
   @override
+  String get approvalDurationLabel => 'कितनी देर के लिए स्वीकृत करें';
+
+  @override
+  String approvalExpiresPreview(Object time) {
+    return 'एक्सेस लगभग $time पर समाप्त होगा।';
+  }
+
+  @override
+  String get approvalUntilSchedulePreview =>
+      'शेड्यूल समाप्त होने तक एक्सेस अनुमति रहेगी।';
+
+  @override
   String get parentReplyOptionalLabel => 'बच्चे के लिए जवाब (वैकल्पिक)';
 
   @override

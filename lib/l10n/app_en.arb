@@ -78,6 +78,14 @@
       "duration": {}
     }
   },
+  "approvalDurationLabel": "Approve for",
+  "approvalExpiresPreview": "Access will expire around {time}.",
+  "@approvalExpiresPreview": {
+    "placeholders": {
+      "time": {}
+    }
+  },
+  "approvalUntilSchedulePreview": "Access stays allowed until schedule ends.",
   "parentReplyOptionalLabel": "Reply to child (optional)",
   "keepPendingButton": "Keep Pending",
   "confirmApproveButton": "Approve Now",

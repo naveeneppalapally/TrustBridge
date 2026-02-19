@@ -645,6 +645,61 @@ void main() {
       expect(data['expiresAt'], isNull);
     });
 
+    test('respondToAccessRequest applies approved duration override', () async {
+      final request = AccessRequest.create(
+        childId: 'child-c',
+        parentId: 'parent-a',
+        childNickname: 'Nia',
+        appOrSite: 'example.com',
+        duration: RequestDuration.oneHour,
+      );
+      final requestId = await firestoreService.submitAccessRequest(request);
+
+      await firestoreService.respondToAccessRequest(
+        parentId: 'parent-a',
+        requestId: requestId,
+        status: RequestStatus.approved,
+        approvedDurationOverride: RequestDuration.fifteenMin,
+      );
+
+      final snapshot = await fakeFirestore
+          .collection('parents')
+          .doc('parent-a')
+          .collection('access_requests')
+          .doc(requestId)
+          .get();
+      final data = snapshot.data()!;
+
+      final respondedAt = (data['respondedAt'] as Timestamp).toDate();
+      final expiresAt = (data['expiresAt'] as Timestamp).toDate();
+      final diffMinutes = expiresAt.difference(respondedAt).inMinutes;
+
+      expect(data['status'], RequestStatus.approved.name);
+      expect(diffMinutes, inInclusiveRange(14, 16));
+    });
+
+    test('respondToAccessRequest rejects duration override for denied status',
+        () async {
+      final request = AccessRequest.create(
+        childId: 'child-d',
+        parentId: 'parent-a',
+        childNickname: 'Maya',
+        appOrSite: 'reddit.com',
+        duration: RequestDuration.oneHour,
+      );
+      final requestId = await firestoreService.submitAccessRequest(request);
+
+      await expectLater(
+        () => firestoreService.respondToAccessRequest(
+          parentId: 'parent-a',
+          requestId: requestId,
+          status: RequestStatus.denied,
+          approvedDurationOverride: RequestDuration.fifteenMin,
+        ),
+        throwsA(isA<ArgumentError>()),
+      );
+    });
+
     test('getAllRequestsStream returns pending and history requests', () async {
       final pending = AccessRequest.create(
         childId: 'child-a',

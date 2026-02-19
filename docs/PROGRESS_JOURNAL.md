@@ -3089,7 +3089,7 @@ inline actions with a confirmation modal that supports optional reply text.
 ### Commit entries
 
 1. **2026-02-19**  
-   Commit: `[pending]`  
+   Commit: `ebed682`  
    Message: `Implement Day 77 parent approval modal flow`  
    Changes:
    - Updated `lib/screens/parent_requests_screen.dart`:
@@ -3113,6 +3113,45 @@ inline actions with a confirmation modal that supports optional reply text.
    Validation:
    - `flutter analyze` passed.
    - `flutter test` passed (237/237).
+
+---
+
+## Day 78 - Approval Duration Override In Modal (Week 16 Day 3)
+
+Program goal: give parents finer control while approving requests by letting
+them choose approved duration directly in the decision modal.
+
+### Commit entries
+
+1. **2026-02-19**  
+   Commit: `[pending]`  
+   Message: `Implement Day 78 approval duration override flow`  
+   Changes:
+   - Updated `lib/screens/parent_requests_screen.dart`:
+     - added duration choice chips in approval modal (`15m`, `30m`, `1h`, `until schedule ends`)
+     - added real-time expiry preview text in modal
+     - wired selected duration to approval action
+   - Updated `lib/services/firestore_service.dart`:
+     - extended `respondToAccessRequest()` with optional `approvedDurationOverride`
+     - applies override when approved
+     - rejects duration override for denied requests
+   - Updated localization sources:
+     - `lib/l10n/app_en.arb`
+     - `lib/l10n/app_hi.arb`
+     - regenerated:
+       - `lib/l10n/app_localizations.dart`
+       - `lib/l10n/app_localizations_en.dart`
+       - `lib/l10n/app_localizations_hi.dart`
+   - Updated tests:
+     - `test/screens/parent_requests_screen_test.dart`
+       - verifies duration override updates approval expiry
+       - verifies `until schedule ends` keeps expiry null
+     - `test/services/firestore_service_test.dart`
+       - verifies service-level override behavior and validation
+   Validation:
+   - `flutter gen-l10n` passed.
+   - `flutter analyze` passed.
+   - `flutter test` passed (241/241).
 
 ---
 

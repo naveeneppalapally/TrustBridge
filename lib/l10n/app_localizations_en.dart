@@ -228,6 +228,18 @@ class AppLocalizationsEn extends AppLocalizations {
   }
 
   @override
+  String get approvalDurationLabel => 'Approve for';
+
+  @override
+  String approvalExpiresPreview(Object time) {
+    return 'Access will expire around $time.';
+  }
+
+  @override
+  String get approvalUntilSchedulePreview =>
+      'Access stays allowed until schedule ends.';
+
+  @override
   String get parentReplyOptionalLabel => 'Reply to child (optional)';
 
   @override

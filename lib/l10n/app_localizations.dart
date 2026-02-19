@@ -525,6 +525,24 @@ abstract class AppLocalizations {
   String approvalModalSummary(
       Object childName, Object appOrSite, Object duration);
 
+  /// No description provided for @approvalDurationLabel.
+  ///
+  /// In en, this message translates to:
+  /// **'Approve for'**
+  String get approvalDurationLabel;
+
+  /// No description provided for @approvalExpiresPreview.
+  ///
+  /// In en, this message translates to:
+  /// **'Access will expire around {time}.'**
+  String approvalExpiresPreview(Object time);
+
+  /// No description provided for @approvalUntilSchedulePreview.
+  ///
+  /// In en, this message translates to:
+  /// **'Access stays allowed until schedule ends.'**
+  String get approvalUntilSchedulePreview;
+
   /// No description provided for @parentReplyOptionalLabel.
   ///
   /// In en, this message translates to:
