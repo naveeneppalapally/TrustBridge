@@ -11,6 +11,7 @@ import 'package:trustbridge_app/screens/policy_overview_screen.dart';
 import 'package:trustbridge_app/services/auth_service.dart';
 import 'package:trustbridge_app/services/firestore_service.dart';
 import 'package:trustbridge_app/utils/app_lock_guard.dart';
+import 'package:trustbridge_app/utils/spring_animation.dart';
 import 'package:trustbridge_app/widgets/empty_state.dart';
 
 class ChildDetailScreen extends StatefulWidget {
@@ -36,6 +37,7 @@ class _ChildDetailScreenState extends State<ChildDetailScreen> {
   AuthService? _authService;
   FirestoreService? _firestoreService;
   _QuickMode? _quickModeOverride;
+  final Set<String> _pressedQuickActions = <String>{};
 
   AuthService get _resolvedAuthService =>
       _authService ??= widget.authService ?? AuthService();
@@ -246,11 +248,19 @@ class _ChildDetailScreenState extends State<ChildDetailScreen> {
               key: const Key('child_detail_timer_ring'),
               width: 188,
               height: 188,
-              child: CustomPaint(
-                painter: _CircularTimerRingPainter(
-                  progress: progress,
-                  color: modeColor,
-                ),
+              child: TweenAnimationBuilder<double>(
+                tween: Tween<double>(begin: 0, end: progress),
+                duration: SpringAnimation.standardDuration,
+                curve: SpringAnimation.springCurve,
+                builder: (context, animatedProgress, child) {
+                  return CustomPaint(
+                    painter: _CircularTimerRingPainter(
+                      progress: animatedProgress,
+                      color: modeColor,
+                    ),
+                    child: child,
+                  );
+                },
                 child: Column(
                   mainAxisAlignment: MainAxisAlignment.center,
                   children: [
@@ -358,33 +368,49 @@ class _ChildDetailScreenState extends State<ChildDetailScreen> {
     required bool selected,
     required VoidCallback onTap,
   }) {
+    final isPressed = _pressedQuickActions.contains(label);
+
     return InkWell(
       borderRadius: BorderRadius.circular(16),
+      onHighlightChanged: (pressed) {
+        setState(() {
+          if (pressed) {
+            _pressedQuickActions.add(label);
+          } else {
+            _pressedQuickActions.remove(label);
+          }
+        });
+      },
       onTap: onTap,
-      child: Container(
-        decoration: BoxDecoration(
-          borderRadius: BorderRadius.circular(16),
-          color: selected ? color.withValues(alpha: 0.14) : Colors.white,
-          border: Border.all(
-            color: selected ? color : const Color(0xFFD8E1EE),
-            width: selected ? 1.6 : 1,
-          ),
-        ),
-        padding: const EdgeInsets.all(12),
-        child: Column(
-          crossAxisAlignment: CrossAxisAlignment.start,
-          mainAxisAlignment: MainAxisAlignment.center,
-          children: [
-            Icon(icon, color: color, size: 24),
-            const SizedBox(height: 10),
-            Text(
-              label,
-              style: Theme.of(context).textTheme.titleSmall?.copyWith(
-                    fontWeight: FontWeight.w800,
-                    color: color,
-                  ),
+      child: AnimatedScale(
+        duration: const Duration(milliseconds: 180),
+        curve: SpringAnimation.springCurve,
+        scale: isPressed ? 0.97 : 1.0,
+        child: Container(
+          decoration: BoxDecoration(
+            borderRadius: BorderRadius.circular(16),
+            color: selected ? color.withValues(alpha: 0.14) : Colors.white,
+            border: Border.all(
+              color: selected ? color : const Color(0xFFD8E1EE),
+              width: selected ? 1.6 : 1,
             ),
-          ],
+          ),
+          padding: const EdgeInsets.all(12),
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            mainAxisAlignment: MainAxisAlignment.center,
+            children: [
+              Icon(icon, color: color, size: 24),
+              const SizedBox(height: 10),
+              Text(
+                label,
+                style: Theme.of(context).textTheme.titleSmall?.copyWith(
+                      fontWeight: FontWeight.w800,
+                      color: color,
+                    ),
+              ),
+            ],
+          ),
         ),
       ),
     );

@@ -3905,3 +3905,37 @@ default dark behavior, and fix key readability issues across core screens.
    - `flutter test` (theme + impacted screens) passed.
 
 ---
+
+## Day 112 - Motion & Micro-Animations (Week 23 Day 3)
+
+Program goal: apply spring-physics motion patterns to high-touch interactions
+and key transitions to make the UI feel responsive and intentional.
+
+### Commit entries
+
+1. **2026-02-19 21:00:00 +05:30**  
+   Message: `Implement Day 112 spring motion and micro-animations`  
+   Changes:
+   - Added `lib/utils/spring_animation.dart`:
+     - design token constants: stiffness `300`, damping `20`
+     - reusable spring curve (`SpringCurve`)
+     - `slidePageRoute()` helper for spring slide+fade page transitions
+   - Updated `lib/screens/child_request_screen.dart`:
+     - duration chips animate with spring scale on selection
+     - quick app chip animation curve switched to spring
+   - Updated `lib/screens/child_detail_screen.dart`:
+     - quick action cards now animate press scale-down feedback
+     - circular timer ring now animates progress from `0 -> value`
+   - Updated `lib/screens/child_status_screen.dart`:
+     - circular timer ring now animates progress from `0 -> value`
+     - request/history navigation now uses spring slide transitions
+   - Updated `lib/screens/dashboard_screen.dart`:
+     - add-child FAB scales in with spring
+     - key dashboard navigations switched to spring slide transitions
+   - Added tests:
+     - `test/utils/spring_animation_test.dart`
+   Validation:
+   - `flutter analyze` passed.
+   - `flutter test` (animation + impacted screens) passed.
+
+---

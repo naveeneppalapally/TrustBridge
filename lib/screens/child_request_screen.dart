@@ -4,6 +4,7 @@ import '../models/access_request.dart';
 import '../models/child_profile.dart';
 import '../services/auth_service.dart';
 import '../services/firestore_service.dart';
+import '../utils/spring_animation.dart';
 import 'request_sent_screen.dart';
 
 class ChildRequestScreen extends StatefulWidget {
@@ -214,11 +215,13 @@ class _ChildRequestScreenState extends State<ChildRequestScreen> {
       },
       child: AnimatedContainer(
         duration: const Duration(milliseconds: 180),
-        curve: Curves.easeOutBack,
+        curve: SpringAnimation.springCurve,
         width: 72,
         padding: const EdgeInsets.symmetric(vertical: 10),
         decoration: BoxDecoration(
-          color: selected ? const Color(0x1A207CF8) : Colors.grey.withValues(alpha: 0.08),
+          color: selected
+              ? const Color(0x1A207CF8)
+              : Colors.grey.withValues(alpha: 0.08),
           borderRadius: BorderRadius.circular(14),
           border: Border.all(
             color: selected ? const Color(0xFF207CF8) : Colors.transparent,
@@ -227,7 +230,8 @@ class _ChildRequestScreenState extends State<ChildRequestScreen> {
         ),
         child: Column(
           children: [
-            Icon(app.icon, color: selected ? const Color(0xFF207CF8) : Colors.grey[700]),
+            Icon(app.icon,
+                color: selected ? const Color(0xFF207CF8) : Colors.grey[700]),
             const SizedBox(height: 6),
             Text(
               app.name,
@@ -273,22 +277,29 @@ class _ChildRequestScreenState extends State<ChildRequestScreen> {
           _selectedDuration = duration;
         });
       },
-      child: AnimatedContainer(
-        duration: const Duration(milliseconds: 220),
-        curve: Curves.easeOutBack,
-        padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 10),
-        decoration: BoxDecoration(
-          color: selected ? const Color(0xFF207CF8) : Colors.transparent,
-          borderRadius: BorderRadius.circular(22),
-          border: Border.all(
-            color: selected ? const Color(0xFF207CF8) : Colors.grey.withValues(alpha: 0.40),
+      child: AnimatedScale(
+        duration: const Duration(milliseconds: 320),
+        curve: SpringAnimation.springCurve,
+        scale: selected ? 1.06 : 1.0,
+        child: AnimatedContainer(
+          duration: const Duration(milliseconds: 220),
+          curve: SpringAnimation.springCurve,
+          padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 10),
+          decoration: BoxDecoration(
+            color: selected ? const Color(0xFF207CF8) : Colors.transparent,
+            borderRadius: BorderRadius.circular(22),
+            border: Border.all(
+              color: selected
+                  ? const Color(0xFF207CF8)
+                  : Colors.grey.withValues(alpha: 0.40),
+            ),
           ),
-        ),
-        child: Text(
-          _durationChipLabel(duration),
-          style: TextStyle(
-            color: selected ? Colors.white : Colors.grey[800],
-            fontWeight: selected ? FontWeight.bold : FontWeight.w500,
+          child: Text(
+            _durationChipLabel(duration),
+            style: TextStyle(
+              color: selected ? Colors.white : Colors.grey[800],
+              fontWeight: selected ? FontWeight.bold : FontWeight.w500,
+            ),
           ),
         ),
       ),
@@ -365,7 +376,8 @@ class _ChildRequestScreenState extends State<ChildRequestScreen> {
                     const CircleAvatar(
                       radius: 14,
                       backgroundColor: Color(0x1A207CF8),
-                      child: Icon(Icons.apps_rounded, color: Color(0xFF207CF8), size: 16),
+                      child: Icon(Icons.apps_rounded,
+                          color: Color(0xFF207CF8), size: 16),
                     ),
                     const SizedBox(width: 10),
                     Expanded(
@@ -375,14 +387,16 @@ class _ChildRequestScreenState extends State<ChildRequestScreen> {
                       ),
                     ),
                     Container(
-                      padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
+                      padding: const EdgeInsets.symmetric(
+                          horizontal: 8, vertical: 3),
                       decoration: BoxDecoration(
                         color: Colors.white,
                         borderRadius: BorderRadius.circular(10),
                       ),
                       child: const Text(
                         'Draft',
-                        style: TextStyle(fontSize: 11, fontWeight: FontWeight.w700),
+                        style: TextStyle(
+                            fontSize: 11, fontWeight: FontWeight.w700),
                       ),
                     ),
                   ],
@@ -410,7 +424,8 @@ class _ChildRequestScreenState extends State<ChildRequestScreen> {
                         width: 18,
                         child: CircularProgressIndicator(
                           strokeWidth: 2,
-                          valueColor: AlwaysStoppedAnimation<Color>(Colors.white),
+                          valueColor:
+                              AlwaysStoppedAnimation<Color>(Colors.white),
                         ),
                       )
                     : const Text(

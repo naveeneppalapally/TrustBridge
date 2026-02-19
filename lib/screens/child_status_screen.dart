@@ -9,6 +9,7 @@ import '../models/schedule.dart';
 import '../services/auth_service.dart';
 import '../services/firestore_service.dart';
 import '../utils/expiry_label_utils.dart';
+import '../utils/spring_animation.dart';
 import '../widgets/skeleton_loaders.dart';
 import 'child_request_screen.dart';
 import 'child_requests_screen.dart';
@@ -361,11 +362,20 @@ class _ChildStatusScreenState extends State<ChildStatusScreen> {
               key: const Key('child_status_timer_ring'),
               width: 200,
               height: 200,
-              child: CustomPaint(
-                painter: _CircularTimerRingPainter(
-                  progress: timer?.remainingProgress ?? 0,
-                  color: modeColor,
-                ),
+              child: TweenAnimationBuilder<double>(
+                tween:
+                    Tween<double>(begin: 0, end: timer?.remainingProgress ?? 0),
+                duration: SpringAnimation.standardDuration,
+                curve: SpringAnimation.springCurve,
+                builder: (context, animatedProgress, child) {
+                  return CustomPaint(
+                    painter: _CircularTimerRingPainter(
+                      progress: animatedProgress,
+                      color: modeColor,
+                    ),
+                    child: child,
+                  );
+                },
                 child: Center(
                   child: Column(
                     mainAxisAlignment: MainAxisAlignment.center,
@@ -609,7 +619,7 @@ class _ChildStatusScreenState extends State<ChildStatusScreen> {
         key: const Key('child_status_request_access_button'),
         onPressed: () {
           Navigator.of(context).push(
-            MaterialPageRoute(
+            SpringAnimation.slidePageRoute(
               builder: (_) => ChildRequestScreen(
                 child: widget.child,
                 authService: widget.authService,
@@ -635,7 +645,7 @@ class _ChildStatusScreenState extends State<ChildStatusScreen> {
         key: const Key('child_status_request_updates_button'),
         onPressed: () {
           Navigator.of(context).push(
-            MaterialPageRoute(
+            SpringAnimation.slidePageRoute(
               builder: (_) => ChildRequestsScreen(
                 child: widget.child,
                 authService: widget.authService,

@@ -14,6 +14,7 @@ import 'package:trustbridge_app/services/firestore_service.dart';
 import 'package:trustbridge_app/services/performance_service.dart';
 import 'package:trustbridge_app/services/policy_vpn_sync_service.dart';
 import 'package:trustbridge_app/utils/app_lock_guard.dart';
+import 'package:trustbridge_app/utils/spring_animation.dart';
 import 'package:trustbridge_app/widgets/child_card.dart';
 import 'package:trustbridge_app/widgets/empty_state.dart';
 import 'package:trustbridge_app/widgets/skeleton_loaders.dart';
@@ -48,12 +49,21 @@ class _DashboardScreenState extends State<DashboardScreen>
   PerformanceTrace? _dashboardLoadTrace;
   Stopwatch? _dashboardLoadStopwatch;
   bool _isUpdatingPauseAll = false;
+  bool _fabVisible = false;
 
   @override
   void initState() {
     super.initState();
     WidgetsBinding.instance.addObserver(this);
     unawaited(_startDashboardLoadTrace());
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (!mounted) {
+        return;
+      }
+      setState(() {
+        _fabVisible = true;
+      });
+    });
   }
 
   @override
@@ -608,7 +618,7 @@ class _DashboardScreenState extends State<DashboardScreen>
                         actionLabel: l10n.addChildButton,
                         onAction: () {
                           Navigator.of(context).push(
-                            MaterialPageRoute(
+                            SpringAnimation.slidePageRoute(
                               builder: (_) => const AddChildScreen(),
                             ),
                           );
@@ -719,7 +729,7 @@ class _DashboardScreenState extends State<DashboardScreen>
                                   child: child,
                                   onTap: () {
                                     Navigator.of(context).push(
-                                      MaterialPageRoute(
+                                      SpringAnimation.slidePageRoute(
                                         builder: (_) => ChildDetailScreen(
                                           child: child,
                                         ),
@@ -746,7 +756,7 @@ class _DashboardScreenState extends State<DashboardScreen>
                                     child: child,
                                     onTap: () {
                                       Navigator.of(context).push(
-                                        MaterialPageRoute(
+                                        SpringAnimation.slidePageRoute(
                                           builder: (_) => ChildDetailScreen(
                                             child: child,
                                           ),
@@ -846,12 +856,17 @@ class _DashboardScreenState extends State<DashboardScreen>
       floatingActionButton: FloatingActionButton(
         onPressed: () {
           Navigator.of(context).push(
-            MaterialPageRoute(
+            SpringAnimation.slidePageRoute(
               builder: (_) => const AddChildScreen(),
             ),
           );
         },
-        child: const Icon(Icons.add),
+        child: AnimatedScale(
+          duration: const Duration(milliseconds: 420),
+          curve: SpringAnimation.springCurve,
+          scale: _fabVisible ? 1.0 : 0.8,
+          child: const Icon(Icons.add),
+        ),
       ),
     );
   }
