@@ -3089,7 +3089,7 @@ triggering an automatic policy re-sync at the nearest exception expiry.
 ### Commit entries
 
 1. **2026-02-19 13:45:35 +05:30**  
-   Commit: `[pending]`  
+   Commit: `8b09179`  
    Message: `Implement Day 81 automatic temporary exception expiry refresh`  
    Changes:
    - Updated `lib/services/firestore_service.dart`:
