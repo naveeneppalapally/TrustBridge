@@ -1,7 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:trustbridge_app/models/child_profile.dart';
-import 'package:trustbridge_app/models/policy.dart';
 import 'package:trustbridge_app/models/content_categories.dart';
+import 'package:trustbridge_app/models/policy.dart';
 import 'package:trustbridge_app/services/auth_service.dart';
 import 'package:trustbridge_app/services/firestore_service.dart';
 import 'package:trustbridge_app/services/vpn_service.dart';
@@ -32,9 +32,12 @@ class _BlockCategoriesScreenState extends State<BlockCategoriesScreen> {
   VpnServiceBase? _vpnService;
 
   late final Set<String> _initialBlockedCategories;
+  late final Set<String> _initialBlockedDomains;
   late Set<String> _blockedCategories;
+  late Set<String> _blockedDomains;
 
   bool _isLoading = false;
+  String _query = '';
 
   AuthService get _resolvedAuthService {
     _authService ??= widget.authService ?? AuthService();
@@ -51,242 +54,310 @@ class _BlockCategoriesScreenState extends State<BlockCategoriesScreen> {
     return _vpnService!;
   }
 
-  bool get _hasChanges =>
-      !_setEquals(_initialBlockedCategories, _blockedCategories);
+  bool get _hasChanges {
+    return !_setEquals(_initialBlockedCategories, _blockedCategories) ||
+        !_setEquals(_initialBlockedDomains, _blockedDomains);
+  }
 
-  int get _knownBlockedCount {
+  int get _blockedKnownCategoryCount {
     final knownIds = ContentCategories.allCategories.map((c) => c.id).toSet();
     return _blockedCategories.where(knownIds.contains).length;
+  }
+
+  List<ContentCategory> get _visibleCategories {
+    final normalized = _query.trim().toLowerCase();
+    if (normalized.isEmpty) {
+      return ContentCategories.allCategories;
+    }
+    return ContentCategories.allCategories.where((category) {
+      final haystack =
+          '${category.name} ${category.description}'.toLowerCase();
+      return haystack.contains(normalized);
+    }).toList(growable: false);
   }
 
   @override
   void initState() {
     super.initState();
     _initialBlockedCategories = widget.child.policy.blockedCategories.toSet();
+    _initialBlockedDomains = widget.child.policy.blockedDomains.toSet();
     _blockedCategories = widget.child.policy.blockedCategories.toSet();
+    _blockedDomains = widget.child.policy.blockedDomains.toSet();
   }
 
   @override
   Widget build(BuildContext context) {
     return Scaffold(
       appBar: AppBar(
-        title: const Text('Block Categories'),
-        actions: [
-          if (_hasChanges)
-            TextButton(
-              onPressed: _isLoading ? null : _saveChanges,
-              child: _isLoading
-                  ? const SizedBox(
-                      width: 18,
-                      height: 18,
-                      child: CircularProgressIndicator(strokeWidth: 2),
-                    )
-                  : const Text(
-                      'SAVE',
-                      style: TextStyle(fontWeight: FontWeight.w700),
-                    ),
-            ),
-        ],
+        title: const Text('Category Blocking'),
       ),
+      bottomNavigationBar: _hasChanges ? _buildSaveBar() : null,
       body: ListView(
-        padding: const EdgeInsets.fromLTRB(16, 8, 16, 28),
+        padding: const EdgeInsets.fromLTRB(16, 12, 16, 24),
         children: [
-          Text(
-            'Choose Content to Block',
-            style: Theme.of(context).textTheme.headlineSmall?.copyWith(
-                  fontWeight: FontWeight.w700,
-                ),
-          ),
-          const SizedBox(height: 8),
-          Text(
-            '$_knownBlockedCount of ${ContentCategories.allCategories.length} categories blocked',
-            style: Theme.of(context).textTheme.bodyMedium?.copyWith(
-                  color: Colors.grey.shade600,
-                ),
-          ),
-          const SizedBox(height: 14),
-          Row(
-            children: [
-              Expanded(
-                child: OutlinedButton.icon(
-                  onPressed: _isLoading ? null : _selectAll,
-                  icon: const Icon(Icons.check_box_outlined, size: 18),
-                  label: const Text('Select All'),
-                ),
+          TextField(
+            key: const Key('block_categories_search'),
+            onChanged: (value) => setState(() => _query = value),
+            decoration: InputDecoration(
+              hintText: 'Search categories or apps',
+              prefixIcon: const Icon(Icons.search),
+              border: OutlineInputBorder(
+                borderRadius: BorderRadius.circular(14),
               ),
-              const SizedBox(width: 12),
-              Expanded(
-                child: OutlinedButton.icon(
-                  onPressed: _isLoading ? null : _clearAll,
-                  icon: const Icon(Icons.check_box_outline_blank, size: 18),
-                  label: const Text('Clear All'),
+            ),
+          ),
+          const SizedBox(height: 16),
+          Text(
+            'APP CATEGORIES',
+            style: Theme.of(context).textTheme.titleSmall?.copyWith(
+                  fontWeight: FontWeight.w800,
+                  letterSpacing: 0.5,
                 ),
+          ),
+          const SizedBox(height: 10),
+          if (_visibleCategories.isEmpty)
+            Padding(
+              padding: const EdgeInsets.symmetric(vertical: 20),
+              child: Text(
+                'No categories match your search.',
+                style: Theme.of(context).textTheme.bodyMedium?.copyWith(
+                      color: Colors.grey[600],
+                    ),
               ),
-            ],
+            )
+          else
+            ..._visibleCategories
+                .map((category) => _buildCategoryCard(category)),
+          const SizedBox(height: 18),
+          Text(
+            'CUSTOM BLOCKED SITES',
+            style: Theme.of(context).textTheme.titleSmall?.copyWith(
+                  fontWeight: FontWeight.w800,
+                  letterSpacing: 0.5,
+                ),
           ),
-          const SizedBox(height: 20),
-          _buildCategorySection(
-            context,
-            title: 'High Risk',
-            subtitle: 'Recommended to block for all children',
-            categories: ContentCategories.highRisk,
-          ),
-          const SizedBox(height: 20),
-          _buildCategorySection(
-            context,
-            title: 'Medium Risk',
-            subtitle: 'Age-dependent, based on child maturity',
-            categories: ContentCategories.mediumRisk,
-          ),
-          const SizedBox(height: 20),
-          _buildCategorySection(
-            context,
-            title: 'Low Risk',
-            subtitle: 'Optional based on family preference',
-            categories: ContentCategories.lowRisk,
-          ),
+          const SizedBox(height: 10),
+          ..._buildCustomDomains(),
+          const SizedBox(height: 10),
+          _buildAddDomainButton(),
         ],
       ),
     );
   }
 
-  Widget _buildCategorySection(
-    BuildContext context, {
-    required String title,
-    required String subtitle,
-    required List<ContentCategory> categories,
-  }) {
-    final color = categories.first.riskLevel.color;
+  Widget _buildCategoryCard(ContentCategory category) {
+    final isBlocked = _blockedCategories.contains(category.id);
+    final iconColor = _categoryColor(category.id);
 
-    return Column(
-      crossAxisAlignment: CrossAxisAlignment.start,
-      children: [
-        Row(
+    return Card(
+      margin: const EdgeInsets.only(bottom: 10),
+      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(14)),
+      child: Padding(
+        padding: const EdgeInsets.all(12),
+        child: Row(
           children: [
             Container(
-              width: 4,
-              height: 24,
+              width: 38,
+              height: 38,
               decoration: BoxDecoration(
-                color: color,
-                borderRadius: BorderRadius.circular(2),
+                color: iconColor.withValues(alpha: 0.14),
+                borderRadius: BorderRadius.circular(10),
               ),
+              child: Icon(category.icon, color: iconColor),
             ),
-            const SizedBox(width: 10),
+            const SizedBox(width: 12),
             Expanded(
               child: Column(
                 crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
                   Text(
-                    title,
-                    style: Theme.of(context).textTheme.titleMedium?.copyWith(
-                          color: color,
-                          fontWeight: FontWeight.w700,
-                        ),
+                    category.name,
+                    style: const TextStyle(fontWeight: FontWeight.w700),
                   ),
+                  const SizedBox(height: 2),
                   Text(
-                    subtitle,
-                    style: Theme.of(context).textTheme.bodySmall?.copyWith(
-                          color: Colors.grey.shade600,
-                        ),
+                    _categoryExamples(category.id),
+                    style: TextStyle(
+                      color: Colors.grey[600],
+                      fontSize: 12,
+                    ),
                   ),
                 ],
               ),
             ),
+            Switch(
+              value: isBlocked,
+              onChanged: _isLoading
+                  ? null
+                  : (enabled) {
+                      setState(() {
+                        if (enabled) {
+                          _blockedCategories.add(category.id);
+                        } else {
+                          _blockedCategories.remove(category.id);
+                        }
+                      });
+                    },
+            ),
           ],
         ),
-        const SizedBox(height: 10),
-        ...categories.map((category) => _buildCategoryTile(context, category)),
-      ],
-    );
-  }
-
-  Widget _buildCategoryTile(BuildContext context, ContentCategory category) {
-    final isBlocked = _blockedCategories.contains(category.id);
-
-    return Card(
-      elevation: 0,
-      margin: const EdgeInsets.only(bottom: 8),
-      shape: RoundedRectangleBorder(
-        borderRadius: BorderRadius.circular(12),
-      ),
-      child: SwitchListTile(
-        value: isBlocked,
-        onChanged: _isLoading
-            ? null
-            : (enabled) {
-                setState(() {
-                  if (enabled) {
-                    _blockedCategories.add(category.id);
-                  } else {
-                    _blockedCategories.remove(category.id);
-                  }
-                });
-              },
-        secondary: Container(
-          padding: const EdgeInsets.all(8),
-          decoration: BoxDecoration(
-            color: category.riskLevel.color.withValues(alpha: 0.12),
-            borderRadius: BorderRadius.circular(8),
-          ),
-          child: Icon(
-            category.icon,
-            color: category.riskLevel.color,
-          ),
-        ),
-        title: Text(
-          category.name,
-          style: const TextStyle(fontWeight: FontWeight.w700),
-        ),
-        subtitle: Text(category.description),
       ),
     );
   }
 
-  void _selectAll() {
-    setState(() {
-      _blockedCategories = ContentCategories.allCategories
-          .map((category) => category.id)
-          .toSet();
-    });
-  }
-
-  void _clearAll() {
-    if (_blockedCategories.isEmpty) {
-      return;
+  List<Widget> _buildCustomDomains() {
+    final sorted = _blockedDomains.toList()..sort();
+    if (sorted.isEmpty) {
+      return [
+        Text(
+          'No custom blocked sites yet.',
+          style: TextStyle(color: Colors.grey[600]),
+        ),
+      ];
     }
 
-    showDialog<void>(
+    return sorted
+        .map(
+          (domain) => Container(
+            margin: const EdgeInsets.only(bottom: 8),
+            padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
+            decoration: BoxDecoration(
+              color: Colors.grey.withValues(alpha: 0.08),
+              borderRadius: BorderRadius.circular(12),
+            ),
+            child: Row(
+              children: [
+                const Icon(Icons.public_rounded, size: 18),
+                const SizedBox(width: 10),
+                Expanded(
+                  child: Text(domain),
+                ),
+                InkWell(
+                  key: Key('custom_domain_remove_$domain'),
+                  onTap: _isLoading
+                      ? null
+                      : () => setState(() {
+                            _blockedDomains.remove(domain);
+                          }),
+                  child: const Icon(Icons.remove_circle_outline, size: 20),
+                ),
+              ],
+            ),
+          ),
+        )
+        .toList(growable: false);
+  }
+
+  Widget _buildAddDomainButton() {
+    return InkWell(
+      key: const Key('block_categories_add_domain'),
+      onTap: _isLoading ? null : _showAddDomainDialog,
+      borderRadius: BorderRadius.circular(12),
+      child: Container(
+        height: 52,
+        alignment: Alignment.center,
+        decoration: BoxDecoration(
+          borderRadius: BorderRadius.circular(12),
+          border: Border.all(
+            color: Colors.blue.withValues(alpha: 0.55),
+            style: BorderStyle.solid,
+          ),
+        ),
+        child: const Text(
+          '+ Add Custom Site',
+          style: TextStyle(
+            color: Color(0xFF207CF8),
+            fontWeight: FontWeight.w700,
+          ),
+        ),
+      ),
+    );
+  }
+
+  Widget _buildSaveBar() {
+    return SafeArea(
+      top: false,
+      child: Container(
+        padding: const EdgeInsets.fromLTRB(14, 10, 14, 10),
+        decoration: BoxDecoration(
+          color: Theme.of(context).scaffoldBackgroundColor,
+          border: Border(top: BorderSide(color: Colors.grey.withValues(alpha: 0.25))),
+        ),
+        child: Row(
+          children: [
+            Expanded(
+              child: Text(
+                'Safe Mode Active - $_blockedKnownCategoryCount Categories Restricted',
+                style: Theme.of(context).textTheme.bodySmall?.copyWith(
+                      fontWeight: FontWeight.w600,
+                    ),
+              ),
+            ),
+            const SizedBox(width: 12),
+            ElevatedButton(
+              key: const Key('block_categories_save_button'),
+              onPressed: _isLoading ? null : _saveChanges,
+              child: _isLoading
+                  ? const SizedBox(
+                      width: 16,
+                      height: 16,
+                      child: CircularProgressIndicator(strokeWidth: 2),
+                    )
+                  : const Text('Save Changes'),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+
+  Future<void> _showAddDomainDialog() async {
+    final controller = TextEditingController();
+    final value = await showDialog<String>(
       context: context,
       builder: (context) {
         return AlertDialog(
-          title: const Text('Clear All Categories?'),
-          content: const Text(
-            'This will unblock all content categories. Your child may get unrestricted access to all content types.',
+          title: const Text('Add Custom Site'),
+          content: TextField(
+            key: const Key('block_categories_domain_input'),
+            controller: controller,
+            decoration: const InputDecoration(
+              hintText: 'e.g., reddit.com',
+              border: OutlineInputBorder(),
+            ),
           ),
           actions: [
             TextButton(
-              onPressed: () {
-                Navigator.of(context).pop();
-              },
+              onPressed: () => Navigator.of(context).pop(),
               child: const Text('Cancel'),
             ),
             FilledButton(
-              onPressed: () {
-                Navigator.of(context).pop();
-                setState(() {
-                  _blockedCategories.clear();
-                });
-              },
-              style: FilledButton.styleFrom(
-                backgroundColor: Colors.orange,
-                foregroundColor: Colors.white,
-              ),
-              child: const Text('Clear All'),
+              key: const Key('block_categories_add_domain_confirm'),
+              onPressed: () => Navigator.of(context).pop(controller.text.trim()),
+              child: const Text('Add'),
             ),
           ],
         );
       },
     );
+
+    if (value == null || value.isEmpty) {
+      return;
+    }
+    final normalized = _normalizeDomain(value);
+    if (!_isValidDomain(normalized)) {
+      if (!mounted) {
+        return;
+      }
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('Enter a valid domain, e.g. reddit.com')),
+      );
+      return;
+    }
+
+    setState(() {
+      _blockedDomains.add(normalized);
+    });
   }
 
   Future<void> _saveChanges() async {
@@ -306,8 +377,9 @@ class _BlockCategoriesScreenState extends State<BlockCategoriesScreen> {
       }
 
       final updatedPolicy = widget.child.policy.copyWith(
-        blockedCategories: _orderedBlockedCategories(_blockedCategories),
-      );
+            blockedCategories: _orderedBlockedCategories(_blockedCategories),
+            blockedDomains: _orderedBlockedDomains(_blockedDomains),
+          );
       final updatedChild = widget.child.copyWith(policy: updatedPolicy);
 
       await _resolvedFirestoreService.updateChild(
@@ -319,7 +391,6 @@ class _BlockCategoriesScreenState extends State<BlockCategoriesScreen> {
       if (!mounted) {
         return;
       }
-
       ScaffoldMessenger.of(context).showSnackBar(
         const SnackBar(
           content: Text('Category blocks updated successfully!'),
@@ -334,23 +405,18 @@ class _BlockCategoriesScreenState extends State<BlockCategoriesScreen> {
       setState(() {
         _isLoading = false;
       });
-
       showDialog<void>(
         context: context,
-        builder: (context) {
-          return AlertDialog(
-            title: const Text('Save Failed'),
-            content: Text('Failed to update categories: $error'),
-            actions: [
-              TextButton(
-                onPressed: () {
-                  Navigator.of(context).pop();
-                },
-                child: const Text('OK'),
-              ),
-            ],
-          );
-        },
+        builder: (context) => AlertDialog(
+          title: const Text('Save Failed'),
+          content: Text('Failed to update categories: $error'),
+          actions: [
+            TextButton(
+              onPressed: () => Navigator.of(context).pop(),
+              child: const Text('OK'),
+            ),
+          ],
+        ),
       );
     }
   }
@@ -367,7 +433,64 @@ class _BlockCategoriesScreenState extends State<BlockCategoriesScreen> {
         blockedDomains: updatedPolicy.blockedDomains,
       );
     } catch (_) {
-      // Saving policy should succeed even if VPN sync is unavailable.
+      // Saving policy should still succeed if runtime VPN sync is unavailable.
+    }
+  }
+
+  String _normalizeDomain(String value) {
+    var normalized = value.trim().toLowerCase();
+    if (normalized.startsWith('http://')) {
+      normalized = normalized.substring(7);
+    } else if (normalized.startsWith('https://')) {
+      normalized = normalized.substring(8);
+    }
+    if (normalized.startsWith('www.')) {
+      normalized = normalized.substring(4);
+    }
+    if (normalized.endsWith('/')) {
+      normalized = normalized.substring(0, normalized.length - 1);
+    }
+    return normalized;
+  }
+
+  bool _isValidDomain(String value) {
+    final pattern = RegExp(r'^[a-z0-9][a-z0-9.-]*\.[a-z]{2,}$');
+    return pattern.hasMatch(value) && !value.contains('..');
+  }
+
+  String _categoryExamples(String categoryId) {
+    switch (categoryId) {
+      case 'social-networks':
+        return 'Instagram, TikTok, Snapchat';
+      case 'games':
+        return 'Roblox, Minecraft, Fortnite';
+      case 'streaming':
+        return 'YouTube, Twitch, Netflix';
+      case 'adult-content':
+        return 'Adult websites and explicit portals';
+      case 'shopping':
+        return 'Amazon, Flipkart, Myntra';
+      default:
+        final category = ContentCategories.findById(categoryId);
+        return category?.description ?? 'Restricted by policy';
+    }
+  }
+
+  Color _categoryColor(String categoryId) {
+    switch (categoryId) {
+      case 'social-networks':
+        return const Color(0xFF1E88E5);
+      case 'games':
+        return const Color(0xFF2E7D32);
+      case 'streaming':
+        return const Color(0xFFD32F2F);
+      case 'adult-content':
+        return const Color(0xFFF57C00);
+      case 'shopping':
+        return const Color(0xFFF9A825);
+      default:
+        final category = ContentCategories.findById(categoryId);
+        return category?.riskLevel.color ?? Colors.blueGrey;
     }
   }
 
@@ -375,15 +498,19 @@ class _BlockCategoriesScreenState extends State<BlockCategoriesScreen> {
     final knownOrder = ContentCategories.allCategories
         .where((category) => selectedIds.contains(category.id))
         .map((category) => category.id)
-        .toList();
+        .toList(growable: false);
 
     final extras = selectedIds
-        .where((id) => !ContentCategories.allCategories
-            .any((category) => category.id == id))
+        .where((id) => !ContentCategories.allCategories.any((c) => c.id == id))
         .toList()
       ..sort();
-
     return [...knownOrder, ...extras];
+  }
+
+  List<String> _orderedBlockedDomains(Set<String> selectedDomains) {
+    final ordered = selectedDomains.map(_normalizeDomain).toSet().toList();
+    ordered.sort();
+    return ordered;
   }
 
   bool _setEquals(Set<String> left, Set<String> right) {
