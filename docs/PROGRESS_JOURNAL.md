@@ -3707,3 +3707,36 @@ usage progress, and one-tap actions.
    - `flutter test test/screens/dashboard_screen_test.dart test/widgets/parent_shell_test.dart` passed.
 
 ---
+
+## Day 92 - Dashboard Security Quick-Actions (Week 19 Day 3)
+
+Program goal: add high-priority security quick-actions to the dashboard for
+global pause control and fast bedtime schedule navigation.
+
+### Commit entries
+
+1. **2026-02-19 18:00:00 +05:30**  
+   Message: `Implement Day 92 dashboard security quick-actions`  
+   Changes:
+   - Updated `lib/screens/dashboard_screen.dart`:
+     - added `SliverAppBar` to dashboard scroll structure
+     - added `Security Quick-Actions` section
+     - added `Pause All Devices` switch action
+     - added `Bedtime Schedule` shortcut with schedule-tab handoff
+   - Updated `lib/services/firestore_service.dart`:
+     - added `pauseAllChildren(parentId)` batch update
+     - added `resumeAllChildren(parentId)` batch update
+   - Updated `lib/widgets/parent_shell.dart`:
+     - wired dashboard quick-action callback to switch shell tab to `Schedule`
+   - Updated tests:
+     - `test/screens/dashboard_screen_test.dart`
+       - security quick-actions render assertions
+     - `test/widgets/parent_shell_test.dart`
+       - bedtime quick action switches to schedule tab
+     - `test/services/firestore_service_test.dart`
+       - pause-all and resume-all persistence tests
+   Validation:
+   - `flutter analyze` passed.
+   - `flutter test test/screens/dashboard_screen_test.dart test/widgets/parent_shell_test.dart test/services/firestore_service_test.dart` passed.
+
+---

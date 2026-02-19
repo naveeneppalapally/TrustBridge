@@ -68,7 +68,7 @@ void main() {
       await tester.pumpAndSettle();
 
       expect(find.byKey(const Key('parent_shell_bottom_nav')), findsOneWidget);
-      expect(find.text('Dashboard'), findsOneWidget);
+      expect(find.text('Dashboard'), findsWidgets);
       expect(find.text('Schedule'), findsOneWidget);
       expect(find.text('Reports'), findsOneWidget);
       expect(find.text('Security'), findsOneWidget);
@@ -100,6 +100,27 @@ void main() {
         find.byKey(const Key('parent_shell_dashboard_badge')),
         findsOneWidget,
       );
+    });
+
+    testWidgets('bedtime quick action opens schedule tab', (tester) async {
+      const parentId = 'parent-shell-d';
+      await seedChild(parentId);
+
+      await tester.pumpWidget(buildTestShell(parentId: parentId));
+      await tester.pumpAndSettle();
+
+      await tester.dragUntilVisible(
+        find.byKey(const Key('dashboard_bedtime_schedule_button')),
+        find.byType(CustomScrollView),
+        const Offset(0, -240),
+      );
+      await tester.pumpAndSettle();
+
+      await tester
+          .tap(find.byKey(const Key('dashboard_bedtime_schedule_button')));
+      await tester.pumpAndSettle();
+
+      expect(find.text('Schedule Creator'), findsOneWidget);
     });
   });
 }

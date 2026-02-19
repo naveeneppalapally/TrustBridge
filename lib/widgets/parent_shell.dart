@@ -93,6 +93,14 @@ class _ParentShellState extends State<ParentShell> {
         authService: widget.authService,
         firestoreService: widget.firestoreService,
         parentIdOverride: widget.parentIdOverride,
+        onShellTabRequested: (int index) {
+          if (_currentIndex == index) {
+            return;
+          }
+          setState(() {
+            _currentIndex = index;
+          });
+        },
       ),
       _ParentScheduleTab(
         authService: widget.authService,

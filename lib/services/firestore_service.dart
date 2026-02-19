@@ -948,6 +948,65 @@ class FirestoreService {
     await _firestore.collection('children').doc(childId).delete();
   }
 
+  Future<void> pauseAllChildren(
+    String parentId, {
+    Duration duration = const Duration(hours: 8),
+  }) async {
+    if (parentId.trim().isEmpty) {
+      throw ArgumentError.value(parentId, 'parentId', 'Parent ID is required.');
+    }
+    if (duration.inMinutes <= 0) {
+      throw ArgumentError.value(
+        duration,
+        'duration',
+        'Pause duration must be greater than zero.',
+      );
+    }
+
+    final snapshot = await _firestore
+        .collection('children')
+        .where('parentId', isEqualTo: parentId)
+        .get();
+
+    if (snapshot.docs.isEmpty) {
+      return;
+    }
+
+    final pausedUntil = DateTime.now().add(duration);
+    final batch = _firestore.batch();
+    for (final doc in snapshot.docs) {
+      batch.update(doc.reference, <String, dynamic>{
+        'pausedUntil': Timestamp.fromDate(pausedUntil),
+        'updatedAt': Timestamp.fromDate(DateTime.now()),
+      });
+    }
+    await batch.commit();
+  }
+
+  Future<void> resumeAllChildren(String parentId) async {
+    if (parentId.trim().isEmpty) {
+      throw ArgumentError.value(parentId, 'parentId', 'Parent ID is required.');
+    }
+
+    final snapshot = await _firestore
+        .collection('children')
+        .where('parentId', isEqualTo: parentId)
+        .get();
+
+    if (snapshot.docs.isEmpty) {
+      return;
+    }
+
+    final batch = _firestore.batch();
+    for (final doc in snapshot.docs) {
+      batch.update(doc.reference, <String, dynamic>{
+        'pausedUntil': null,
+        'updatedAt': Timestamp.fromDate(DateTime.now()),
+      });
+    }
+    await batch.commit();
+  }
+
   /// Submit a new access request from child profile.
   Future<String> submitAccessRequest(AccessRequest request) async {
     if (request.parentId.trim().isEmpty) {

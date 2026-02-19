@@ -131,6 +131,53 @@ void main() {
           find.byKey(const Key('dashboard_requests_button')), findsOneWidget);
       expect(find.byKey(const Key('dashboard_requests_badge')), findsOneWidget);
     });
+
+    testWidgets('renders security quick-actions section', (tester) async {
+      final fakeFirestore = FakeFirebaseFirestore();
+      final firestoreService = FirestoreService(firestore: fakeFirestore);
+
+      await fakeFirestore.collection('children').doc('child-quick-actions').set(
+        {
+          'parentId': 'parent-quick-actions',
+          'nickname': 'Maya',
+          'ageBand': '10-13',
+          'deviceIds': <String>['Pixel 7'],
+          'policy': {
+            'blockedCategories': <String>['social-networks'],
+            'blockedDomains': <String>[],
+            'schedules': <Map<String, dynamic>>[],
+            'safeSearchEnabled': true,
+          },
+          'createdAt': Timestamp.fromDate(DateTime(2026, 2, 18, 8, 0)),
+          'updatedAt': Timestamp.fromDate(DateTime(2026, 2, 18, 8, 0)),
+        },
+      );
+
+      await tester.pumpWidget(
+        MaterialApp(
+          home: DashboardScreen(
+            parentIdOverride: 'parent-quick-actions',
+            firestoreService: firestoreService,
+          ),
+        ),
+      );
+
+      await tester.pumpAndSettle();
+      await tester.dragUntilVisible(
+        find.byKey(const Key('dashboard_security_quick_actions_card')),
+        find.byType(CustomScrollView),
+        const Offset(0, -240),
+      );
+      await tester.pumpAndSettle();
+
+      expect(find.text('Security Quick-Actions'), findsOneWidget);
+      expect(
+          find.byKey(const Key('dashboard_pause_all_switch')), findsOneWidget);
+      expect(
+        find.byKey(const Key('dashboard_bedtime_schedule_button')),
+        findsOneWidget,
+      );
+    });
   });
 
   group('ChildCard', () {

@@ -22,11 +22,13 @@ class DashboardScreen extends StatefulWidget {
     this.authService,
     this.firestoreService,
     this.parentIdOverride,
+    this.onShellTabRequested,
   });
 
   final AuthService? authService;
   final FirestoreService? firestoreService;
   final String? parentIdOverride;
+  final ValueChanged<int>? onShellTabRequested;
 
   @override
   State<DashboardScreen> createState() => _DashboardScreenState();
@@ -43,6 +45,7 @@ class _DashboardScreenState extends State<DashboardScreen>
   final PerformanceService _performanceService = PerformanceService();
   PerformanceTrace? _dashboardLoadTrace;
   Stopwatch? _dashboardLoadStopwatch;
+  bool _isUpdatingPauseAll = false;
 
   @override
   void initState() {
@@ -357,6 +360,64 @@ class _DashboardScreenState extends State<DashboardScreen>
     );
   }
 
+  Future<void> _togglePauseAllDevices({
+    required bool pauseAll,
+    required String parentId,
+  }) async {
+    if (_isUpdatingPauseAll) {
+      return;
+    }
+
+    setState(() {
+      _isUpdatingPauseAll = true;
+    });
+    try {
+      if (pauseAll) {
+        await _resolvedFirestoreService.pauseAllChildren(parentId);
+      } else {
+        await _resolvedFirestoreService.resumeAllChildren(parentId);
+      }
+      if (!mounted) {
+        return;
+      }
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text(
+            pauseAll
+                ? 'All child devices are now paused.'
+                : 'All child devices resumed.',
+          ),
+        ),
+      );
+    } catch (error) {
+      if (!mounted) {
+        return;
+      }
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text('Unable to update pause-all: $error')),
+      );
+    } finally {
+      if (mounted) {
+        setState(() {
+          _isUpdatingPauseAll = false;
+        });
+      }
+    }
+  }
+
+  void _openScheduleTabFromQuickAction() {
+    final callback = widget.onShellTabRequested;
+    if (callback != null) {
+      callback(1);
+      return;
+    }
+    ScaffoldMessenger.of(context).showSnackBar(
+      const SnackBar(
+        content: Text('Open Schedule from parent shell to configure bedtime.'),
+      ),
+    );
+  }
+
   String _formatDurationLabel(Duration duration) {
     final hours = duration.inHours;
     final minutes = duration.inMinutes.remainder(60);
@@ -477,10 +538,21 @@ class _DashboardScreenState extends State<DashboardScreen>
                   : _formatDurationLabel(
                       Duration(minutes: children.length * 65),
                     );
+              final allChildrenPaused =
+                  children.isNotEmpty && children.every(_isPausedNow);
 
               if (children.isEmpty) {
                 return CustomScrollView(
                   slivers: [
+                    SliverAppBar(
+                      pinned: true,
+                      floating: false,
+                      expandedHeight: 64,
+                      backgroundColor: backgroundColor,
+                      surfaceTintColor: Colors.transparent,
+                      elevation: 0,
+                      title: Text(l10n.dashboardTitle),
+                    ),
                     SliverToBoxAdapter(
                       child: Padding(
                         padding: EdgeInsets.fromLTRB(
@@ -576,6 +648,15 @@ class _DashboardScreenState extends State<DashboardScreen>
 
               return CustomScrollView(
                 slivers: [
+                  SliverAppBar(
+                    pinned: true,
+                    floating: false,
+                    expandedHeight: 64,
+                    backgroundColor: backgroundColor,
+                    surfaceTintColor: Colors.transparent,
+                    elevation: 0,
+                    title: Text(l10n.dashboardTitle),
+                  ),
                   SliverToBoxAdapter(
                     child: Padding(
                       padding: EdgeInsets.fromLTRB(
@@ -708,6 +789,29 @@ class _DashboardScreenState extends State<DashboardScreen>
                               childCount: children.length,
                             ),
                           ),
+                  ),
+                  SliverToBoxAdapter(
+                    child: Padding(
+                      padding: EdgeInsets.fromLTRB(
+                        isTablet ? 24 : 16,
+                        8,
+                        isTablet ? 24 : 16,
+                        16,
+                      ),
+                      child: _SecurityQuickActionsCard(
+                        pauseAllEnabled: allChildrenPaused,
+                        pauseAllBusy: _isUpdatingPauseAll,
+                        onPauseAllChanged: (bool value) {
+                          unawaited(
+                            _togglePauseAllDevices(
+                              pauseAll: value,
+                              parentId: parentId,
+                            ),
+                          );
+                        },
+                        onBedtimeTap: _openScheduleTabFromQuickAction,
+                      ),
+                    ),
                   ),
                   SliverToBoxAdapter(
                     child: Padding(
@@ -1006,6 +1110,94 @@ class _TrustMetricTile extends StatelessWidget {
           ),
         ],
       ),
+    );
+  }
+}
+
+class _SecurityQuickActionsCard extends StatelessWidget {
+  const _SecurityQuickActionsCard({
+    required this.pauseAllEnabled,
+    required this.pauseAllBusy,
+    required this.onPauseAllChanged,
+    required this.onBedtimeTap,
+  });
+
+  final bool pauseAllEnabled;
+  final bool pauseAllBusy;
+  final ValueChanged<bool> onPauseAllChanged;
+  final VoidCallback onBedtimeTap;
+
+  @override
+  Widget build(BuildContext context) {
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        Text(
+          'Security Quick-Actions',
+          style: Theme.of(context).textTheme.titleMedium?.copyWith(
+                fontWeight: FontWeight.w800,
+              ),
+        ),
+        const SizedBox(height: 10),
+        Card(
+          key: const Key('dashboard_security_quick_actions_card'),
+          margin: EdgeInsets.zero,
+          elevation: 0,
+          shape: RoundedRectangleBorder(
+            borderRadius: BorderRadius.circular(16),
+            side: BorderSide(
+              color:
+                  Theme.of(context).colorScheme.outline.withValues(alpha: 0.25),
+            ),
+          ),
+          child: Column(
+            children: [
+              ListTile(
+                leading: CircleAvatar(
+                  radius: 16,
+                  backgroundColor: const Color(0xFFEF4444).withValues(
+                    alpha: 0.14,
+                  ),
+                  child: const Icon(
+                    Icons.pause_circle_outline,
+                    color: Color(0xFFEF4444),
+                    size: 18,
+                  ),
+                ),
+                title: const Text('Pause All Devices'),
+                subtitle: const Text('Instantly stop all screen time'),
+                trailing: Switch(
+                  key: const Key('dashboard_pause_all_switch'),
+                  value: pauseAllEnabled,
+                  onChanged: pauseAllBusy ? null : onPauseAllChanged,
+                ),
+              ),
+              const Divider(height: 1),
+              ListTile(
+                key: const Key('dashboard_bedtime_schedule_button'),
+                leading: CircleAvatar(
+                  radius: 16,
+                  backgroundColor: const Color(0xFF6366F1).withValues(
+                    alpha: 0.14,
+                  ),
+                  child: const Icon(
+                    Icons.nights_stay_outlined,
+                    color: Color(0xFF6366F1),
+                    size: 18,
+                  ),
+                ),
+                title: const Text('Bedtime Schedule'),
+                subtitle: const Text('Active starting at 9:00 PM'),
+                trailing: IconButton(
+                  onPressed: onBedtimeTap,
+                  icon: const Icon(Icons.add_circle_outline),
+                ),
+                onTap: onBedtimeTap,
+              ),
+            ],
+          ),
+        ),
+      ],
     );
   }
 }

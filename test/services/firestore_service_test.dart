@@ -181,6 +181,76 @@ void main() {
       expect(snapshot.exists, isFalse);
     });
 
+    test('pauseAllChildren sets pausedUntil for all parent children', () async {
+      final childA = await firestoreService.addChild(
+        parentId: 'parentA',
+        nickname: 'A',
+        ageBand: AgeBand.young,
+      );
+      final childB = await firestoreService.addChild(
+        parentId: 'parentA',
+        nickname: 'B',
+        ageBand: AgeBand.middle,
+      );
+      await firestoreService.addChild(
+        parentId: 'parentB',
+        nickname: 'Other',
+        ageBand: AgeBand.teen,
+      );
+
+      await firestoreService.pauseAllChildren('parentA');
+
+      final snapshotA =
+          await fakeFirestore.collection('children').doc(childA.id).get();
+      final snapshotB =
+          await fakeFirestore.collection('children').doc(childB.id).get();
+      final otherSnapshot = await fakeFirestore
+          .collection('children')
+          .where('parentId', isEqualTo: 'parentB')
+          .get();
+
+      expect(snapshotA.data()!['pausedUntil'], isA<Timestamp>());
+      expect(snapshotB.data()!['pausedUntil'], isA<Timestamp>());
+      expect(otherSnapshot.docs.first.data()['pausedUntil'], isNull);
+    });
+
+    test('resumeAllChildren clears pausedUntil for all parent children',
+        () async {
+      final pausedUntil = Timestamp.fromDate(
+        DateTime.now().add(const Duration(hours: 2)),
+      );
+      await fakeFirestore.collection('children').doc('child-resume-a').set(
+            _childDocData(
+              parentId: 'parentA',
+              nickname: 'A',
+              ageBand: AgeBand.young,
+              createdAt: DateTime(2026, 2, 20, 10, 0),
+            )..['pausedUntil'] = pausedUntil,
+          );
+      await fakeFirestore.collection('children').doc('child-resume-b').set(
+            _childDocData(
+              parentId: 'parentA',
+              nickname: 'B',
+              ageBand: AgeBand.middle,
+              createdAt: DateTime(2026, 2, 20, 10, 0),
+            )..['pausedUntil'] = pausedUntil,
+          );
+
+      await firestoreService.resumeAllChildren('parentA');
+
+      final snapshotA = await fakeFirestore
+          .collection('children')
+          .doc('child-resume-a')
+          .get();
+      final snapshotB = await fakeFirestore
+          .collection('children')
+          .doc('child-resume-b')
+          .get();
+
+      expect(snapshotA.data()!['pausedUntil'], isNull);
+      expect(snapshotB.data()!['pausedUntil'], isNull);
+    });
+
     test('updateChild on missing document throws FirebaseException', () async {
       final missingChild = ChildProfile(
         id: 'missing-child-id',
