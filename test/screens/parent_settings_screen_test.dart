@@ -14,37 +14,27 @@ void main() {
       firestoreService = FirestoreService(firestore: fakeFirestore);
     });
 
-    Future<void> seedParent({
-      required String parentId,
-      required Map<String, dynamic> preferences,
-    }) {
+    Future<void> seedParent(String parentId) {
       return fakeFirestore.collection('parents').doc(parentId).set({
         'parentId': parentId,
-        'email': 'parent@test.com',
+        'displayName': 'Sarah Jenkins',
+        'email': 'sarah@test.com',
         'phone': '+919999999999',
-        'preferences': preferences,
-      });
-    }
-
-    testWidgets('renders settings sections', (tester) async {
-      await tester.binding.setSurfaceSize(const Size(430, 1400));
-      addTearDown(() => tester.binding.setSurfaceSize(null));
-
-      await seedParent(
-        parentId: 'parent-settings-a',
-        preferences: {
-          'language': 'en',
-          'timezone': 'Asia/Kolkata',
-          'pushNotificationsEnabled': true,
-          'weeklySummaryEnabled': true,
-          'securityAlertsEnabled': true,
-          'activityHistoryEnabled': true,
-          'crashReportsEnabled': true,
-          'personalizedTipsEnabled': true,
+        'subscription': {
+          'tier': 'free',
+        },
+        'preferences': {
           'biometricLoginEnabled': false,
           'incognitoModeEnabled': false,
         },
-      );
+      });
+    }
+
+    testWidgets('renders redesigned settings sections', (tester) async {
+      await tester.binding.setSurfaceSize(const Size(430, 1400));
+      addTearDown(() => tester.binding.setSurfaceSize(null));
+
+      await seedParent('parent-settings-a');
 
       await tester.pumpWidget(
         MaterialApp(
@@ -57,47 +47,18 @@ void main() {
       await tester.pumpAndSettle();
 
       expect(find.text('Settings'), findsOneWidget);
-      expect(find.text('Account & Preferences'), findsOneWidget);
-      expect(find.text('PREFERENCES'), findsOneWidget);
-      expect(find.text('NOTIFICATIONS'), findsOneWidget);
-
-      await tester.dragUntilVisible(
-        find.text('SUPPORT'),
-        find.byType(ListView),
-        const Offset(0, -300),
-      );
-      await tester.pumpAndSettle();
-
+      expect(find.byKey(const Key('settings_profile_card')), findsOneWidget);
+      expect(find.text('ACCOUNT'), findsOneWidget);
+      expect(find.text('SUBSCRIPTION'), findsOneWidget);
       expect(find.text('SECURITY & PRIVACY'), findsOneWidget);
-      expect(find.text('ANALYTICS'), findsOneWidget);
-      expect(find.text('SUPPORT'), findsOneWidget);
-      expect(find.text('Setup Guide'), findsOneWidget);
-      expect(find.text('Beta Feedback'), findsOneWidget);
-      expect(find.text('Feedback History'), findsOneWidget);
-      expect(find.text('Help & Support'), findsOneWidget);
+      expect(find.text('ABOUT'), findsOneWidget);
+      expect(find.text('Family Subscription'), findsOneWidget);
+      expect(find.text('FREE'), findsOneWidget);
     });
 
-    testWidgets('saves toggled notification preference to Firestore',
-        (tester) async {
-      await tester.binding.setSurfaceSize(const Size(430, 1400));
-      addTearDown(() => tester.binding.setSurfaceSize(null));
-
+    testWidgets('saves biometric toggle to Firestore', (tester) async {
       const parentId = 'parent-settings-b';
-      await seedParent(
-        parentId: parentId,
-        preferences: {
-          'language': 'en',
-          'timezone': 'Asia/Kolkata',
-          'pushNotificationsEnabled': true,
-          'weeklySummaryEnabled': true,
-          'securityAlertsEnabled': true,
-          'activityHistoryEnabled': true,
-          'crashReportsEnabled': true,
-          'personalizedTipsEnabled': true,
-          'biometricLoginEnabled': false,
-          'incognitoModeEnabled': false,
-        },
-      );
+      await seedParent(parentId);
 
       await tester.pumpWidget(
         MaterialApp(
@@ -109,12 +70,18 @@ void main() {
       );
       await tester.pumpAndSettle();
 
+      await tester.dragUntilVisible(
+        find.byKey(const Key('settings_biometric_login_switch')),
+        find.byType(ListView),
+        const Offset(0, -220),
+      );
+      await tester.pumpAndSettle();
+
       await tester
-          .tap(find.byKey(const Key('settings_push_notifications_switch')));
+          .tap(find.byKey(const Key('settings_biometric_login_switch')));
       await tester.pumpAndSettle();
 
       expect(find.text('SAVE'), findsOneWidget);
-
       await tester.tap(find.widgetWithText(TextButton, 'SAVE'));
       await tester.pumpAndSettle();
 
@@ -122,199 +89,89 @@ void main() {
           await fakeFirestore.collection('parents').doc(parentId).get();
       final preferences =
           snapshot.data()!['preferences'] as Map<String, dynamic>;
-
-      expect(preferences['pushNotificationsEnabled'], false);
+      expect(preferences['biometricLoginEnabled'], true);
     });
 
-    testWidgets('navigates to privacy center from security card',
+    testWidgets('navigates to privacy center from security section',
         (tester) async {
-      await tester.binding.setSurfaceSize(const Size(430, 1400));
-      addTearDown(() => tester.binding.setSurfaceSize(null));
-
-      const parentId = 'parent-settings-c';
-      await seedParent(
-        parentId: parentId,
-        preferences: {
-          'language': 'en',
-          'timezone': 'Asia/Kolkata',
-          'pushNotificationsEnabled': true,
-          'weeklySummaryEnabled': true,
-          'securityAlertsEnabled': true,
-        },
-      );
+      await seedParent('parent-settings-c');
 
       await tester.pumpWidget(
         MaterialApp(
           home: ParentSettingsScreen(
-            parentIdOverride: parentId,
+            parentIdOverride: 'parent-settings-c',
             firestoreService: firestoreService,
           ),
         ),
       );
       await tester.pumpAndSettle();
 
-      await tester.tap(find.text('Privacy Center'));
+      await tester.dragUntilVisible(
+        find.byKey(const Key('settings_privacy_center_tile')),
+        find.byType(ListView),
+        const Offset(0, -220),
+      );
+      await tester.pumpAndSettle();
+
+      await tester.tap(find.byKey(const Key('settings_privacy_center_tile')));
       await tester.pumpAndSettle();
 
       expect(find.text('Control Data Usage'), findsOneWidget);
     });
 
-    testWidgets('navigates to help support screen from support card',
-        (tester) async {
-      await tester.binding.setSurfaceSize(const Size(430, 1400));
-      addTearDown(() => tester.binding.setSurfaceSize(null));
-
-      const parentId = 'parent-settings-d';
-      await seedParent(
-        parentId: parentId,
-        preferences: {
-          'language': 'en',
-          'timezone': 'Asia/Kolkata',
-          'pushNotificationsEnabled': true,
-          'weeklySummaryEnabled': true,
-          'securityAlertsEnabled': true,
-        },
-      );
+    testWidgets('navigates to help support from about section', (tester) async {
+      await seedParent('parent-settings-d');
 
       await tester.pumpWidget(
         MaterialApp(
           home: ParentSettingsScreen(
-            parentIdOverride: parentId,
+            parentIdOverride: 'parent-settings-d',
             firestoreService: firestoreService,
           ),
         ),
       );
       await tester.pumpAndSettle();
+
       await tester.dragUntilVisible(
-        find.text('Help & Support'),
+        find.byKey(const Key('settings_help_support_tile')),
         find.byType(ListView),
-        const Offset(0, -300),
+        const Offset(0, -240),
       );
       await tester.pumpAndSettle();
 
-      await tester.tap(find.text('Help & Support'));
+      await tester.tap(find.byKey(const Key('settings_help_support_tile')));
       await tester.pumpAndSettle();
 
       expect(find.text('Get Help Quickly'), findsOneWidget);
       expect(find.text('Send Support Request'), findsOneWidget);
     });
 
-    testWidgets('navigates to beta feedback screen from support card',
+    testWidgets('navigates to feedback history from about section',
         (tester) async {
-      await tester.binding.setSurfaceSize(const Size(430, 1400));
-      addTearDown(() => tester.binding.setSurfaceSize(null));
-
-      const parentId = 'parent-settings-f';
-      await seedParent(
-        parentId: parentId,
-        preferences: {
-          'language': 'en',
-          'timezone': 'Asia/Kolkata',
-          'pushNotificationsEnabled': true,
-          'weeklySummaryEnabled': true,
-          'securityAlertsEnabled': true,
-        },
-      );
+      await seedParent('parent-settings-e');
 
       await tester.pumpWidget(
         MaterialApp(
           home: ParentSettingsScreen(
-            parentIdOverride: parentId,
+            parentIdOverride: 'parent-settings-e',
             firestoreService: firestoreService,
           ),
         ),
       );
       await tester.pumpAndSettle();
+
       await tester.dragUntilVisible(
-        find.text('Beta Feedback'),
+        find.byKey(const Key('settings_feedback_history_tile')),
         find.byType(ListView),
         const Offset(0, -300),
       );
       await tester.pumpAndSettle();
 
-      await tester.tap(find.text('Beta Feedback'));
-      await tester.pumpAndSettle();
-
-      expect(find.text('Help shape TrustBridge Beta'), findsOneWidget);
-      expect(
-          find.byKey(const Key('beta_feedback_submit_button')), findsOneWidget);
-    });
-
-    testWidgets('navigates to feedback history screen from support card',
-        (tester) async {
-      await tester.binding.setSurfaceSize(const Size(430, 1400));
-      addTearDown(() => tester.binding.setSurfaceSize(null));
-
-      const parentId = 'parent-settings-g';
-      await seedParent(
-        parentId: parentId,
-        preferences: {
-          'language': 'en',
-          'timezone': 'Asia/Kolkata',
-          'pushNotificationsEnabled': true,
-          'weeklySummaryEnabled': true,
-          'securityAlertsEnabled': true,
-        },
-      );
-
-      await tester.pumpWidget(
-        MaterialApp(
-          home: ParentSettingsScreen(
-            parentIdOverride: parentId,
-            firestoreService: firestoreService,
-          ),
-        ),
-      );
-      await tester.pumpAndSettle();
-      await tester.dragUntilVisible(
-        find.text('Feedback History'),
-        find.byType(ListView),
-        const Offset(0, -300),
-      );
-      await tester.pumpAndSettle();
-
-      await tester.tap(find.text('Feedback History'));
+      await tester.tap(find.byKey(const Key('settings_feedback_history_tile')));
       await tester.pumpAndSettle();
 
       expect(find.text('Feedback History'), findsOneWidget);
       expect(find.text('No feedback yet'), findsOneWidget);
-    });
-
-    testWidgets('shows access request alerts permission card', (tester) async {
-      await tester.binding.setSurfaceSize(const Size(430, 1400));
-      addTearDown(() => tester.binding.setSurfaceSize(null));
-
-      const parentId = 'parent-settings-e';
-      await seedParent(
-        parentId: parentId,
-        preferences: {
-          'language': 'en',
-          'timezone': 'Asia/Kolkata',
-          'pushNotificationsEnabled': true,
-          'weeklySummaryEnabled': true,
-          'securityAlertsEnabled': true,
-        },
-      );
-
-      await tester.pumpWidget(
-        MaterialApp(
-          home: ParentSettingsScreen(
-            parentIdOverride: parentId,
-            firestoreService: firestoreService,
-          ),
-        ),
-      );
-      await tester.pumpAndSettle();
-
-      expect(find.text('Access request alerts'), findsOneWidget);
-      expect(
-        find.byKey(const Key('settings_request_alert_permission_card')),
-        findsOneWidget,
-      );
-      expect(
-        find.byKey(const Key('settings_send_test_notification_button')),
-        findsOneWidget,
-      );
     });
   });
 }
