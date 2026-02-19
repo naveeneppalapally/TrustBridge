@@ -3089,7 +3089,7 @@ blocking so approved access works immediately without disabling protection.
 ### Commit entries
 
 1. **2026-02-19 13:31:51 +05:30**  
-   Commit: `[pending]`  
+   Commit: `81e9566`  
    Message: `Implement Day 80 temporary exception handling pipeline`  
    Changes:
    - Updated `lib/services/vpn_service.dart`:
