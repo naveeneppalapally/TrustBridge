@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
-import 'package:flutter_gen/gen_l10n/app_localizations.dart';
+import 'package:trustbridge_app/l10n/app_localizations.dart';
+import 'package:trustbridge_app/l10n/app_localizations_en.dart';
 import 'package:trustbridge_app/models/child_profile.dart';
 import 'package:trustbridge_app/models/policy.dart';
 import 'package:trustbridge_app/screens/age_band_presets_screen.dart';
@@ -51,7 +52,7 @@ class _AddChildScreenState extends State<AddChildScreen> {
 
   @override
   Widget build(BuildContext context) {
-    final l10n = AppLocalizations.of(context)!;
+    final l10n = _l10n(context);
     final isDark = Theme.of(context).brightness == Brightness.dark;
     final borderColor = isDark
         ? Colors.white.withValues(alpha: 0.08)
@@ -119,8 +120,8 @@ class _AddChildScreenState extends State<AddChildScreen> {
                           decoration: InputDecoration(
                             labelText: l10n.childNicknameLabel,
                             hintText: l10n.nicknameHint,
-                            prefixIcon: Icon(Icons.person_outline),
-                            border: OutlineInputBorder(),
+                            prefixIcon: const Icon(Icons.person_outline),
+                            border: const OutlineInputBorder(),
                             helperText: l10n.nicknameHelper,
                           ),
                           textCapitalization: TextCapitalization.words,
@@ -348,7 +349,7 @@ class _AddChildScreenState extends State<AddChildScreen> {
   }
 
   Widget _buildPolicyPreview() {
-    final l10n = AppLocalizations.of(context)!;
+    final l10n = _l10n(context);
     final policy = Policy.presetForAgeBand(_selectedAgeBand);
     final isDark = Theme.of(context).brightness == Brightness.dark;
     final bgColor =
@@ -501,7 +502,7 @@ class _AddChildScreenState extends State<AddChildScreen> {
       ScaffoldMessenger.of(context).showSnackBar(
         SnackBar(
           content: Text(
-            AppLocalizations.of(context)!.childAddedSuccessMessage(
+            _l10n(context).childAddedSuccessMessage(
               child.nickname,
             ),
           ),
@@ -516,7 +517,7 @@ class _AddChildScreenState extends State<AddChildScreen> {
       }
       setState(() {
         _isLoading = false;
-        _errorMessage = AppLocalizations.of(context)!.failedToAddChildMessage(
+        _errorMessage = _l10n(context).failedToAddChildMessage(
           _messageFromError(error),
         );
       });
@@ -531,3 +532,8 @@ class _AddChildScreenState extends State<AddChildScreen> {
     return raw;
   }
 }
+
+AppLocalizations _l10n(BuildContext context) {
+  return AppLocalizations.of(context) ?? AppLocalizationsEn();
+}
+

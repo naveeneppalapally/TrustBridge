@@ -1,6 +1,7 @@
 import 'dart:async';
 
-import 'package:flutter_gen/gen_l10n/app_localizations.dart';
+import 'package:trustbridge_app/l10n/app_localizations.dart';
+import 'package:trustbridge_app/l10n/app_localizations_en.dart';
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 import 'package:trustbridge_app/models/access_request.dart';
@@ -154,7 +155,7 @@ class _DashboardScreenState extends State<DashboardScreen>
   }
 
   Widget _buildRequestsAction() {
-    final l10n = AppLocalizations.of(context)!;
+    final l10n = _l10n(context);
     final pendingRequestsStream = _pendingRequestsStream;
     if (pendingRequestsStream == null) {
       return IconButton(
@@ -218,7 +219,7 @@ class _DashboardScreenState extends State<DashboardScreen>
 
   @override
   Widget build(BuildContext context) {
-    final l10n = AppLocalizations.of(context)!;
+    final l10n = _l10n(context);
     final parentId = _parentId;
     final isDark = Theme.of(context).brightness == Brightness.dark;
     final surfaceColor = isDark ? const Color(0xFF1F2937) : Colors.white;
@@ -335,7 +336,7 @@ class _DashboardScreenState extends State<DashboardScreen>
                     ),
                     const SizedBox(height: 8),
                     Text(
-                      l10n.welcomeSubtitle,
+                      l10n.noChildrenSubtitle,
                       textAlign: TextAlign.center,
                       style: Theme.of(context).textTheme.bodyMedium?.copyWith(
                             color: Colors.grey.shade600,
@@ -554,7 +555,7 @@ class ChildCard extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final l10n = AppLocalizations.of(context)!;
+    final l10n = _l10n(context);
     final isDark = Theme.of(context).brightness == Brightness.dark;
     final surfaceColor = isDark ? const Color(0xFF1F2937) : Colors.white;
 
@@ -627,7 +628,7 @@ class ChildCard extends StatelessWidget {
   }
 
   Widget _buildPolicyChips(BuildContext context, ChildProfile child) {
-    final l10n = AppLocalizations.of(context)!;
+    final l10n = _l10n(context);
     final blockedCount = child.policy.blockedCategories.length;
     final scheduleCount = child.policy.schedules.length;
     final paused =
@@ -673,3 +674,8 @@ class ChildCard extends StatelessWidget {
     }
   }
 }
+
+AppLocalizations _l10n(BuildContext context) {
+  return AppLocalizations.of(context) ?? AppLocalizationsEn();
+}
+

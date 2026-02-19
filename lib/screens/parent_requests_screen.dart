@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
-import 'package:flutter_gen/gen_l10n/app_localizations.dart';
+import 'package:trustbridge_app/l10n/app_localizations.dart';
+import 'package:trustbridge_app/l10n/app_localizations_en.dart';
 
 import '../models/access_request.dart';
 import '../services/auth_service.dart';
@@ -68,7 +69,7 @@ class _ParentRequestsScreenState extends State<ParentRequestsScreen>
 
   @override
   Widget build(BuildContext context) {
-    final l10n = AppLocalizations.of(context)!;
+    final l10n = _l10n(context);
     final parentId =
         widget.parentIdOverride ?? _resolvedAuthService.currentUser?.uid;
     if (parentId != null) {
@@ -118,7 +119,7 @@ class _ParentRequestsScreenState extends State<ParentRequestsScreen>
         }
 
         if (snapshot.hasError) {
-          final l10n = AppLocalizations.of(context)!;
+          final l10n = _l10n(context);
           return Center(
             child: Text(l10n.errorWithValue('${snapshot.error}')),
           );
@@ -128,8 +129,8 @@ class _ParentRequestsScreenState extends State<ParentRequestsScreen>
         if (requests.isEmpty) {
           return _buildEmptyState(
             emoji: '\u2705',
-            title: AppLocalizations.of(context)!.allCaughtUpTitle,
-            subtitle: AppLocalizations.of(context)!.noPendingRequestsSubtitle,
+            title: _l10n(context).allCaughtUpTitle,
+            subtitle: _l10n(context).noPendingRequestsSubtitle,
           );
         }
 
@@ -167,7 +168,7 @@ class _ParentRequestsScreenState extends State<ParentRequestsScreen>
         }
 
         if (snapshot.hasError) {
-          final l10n = AppLocalizations.of(context)!;
+          final l10n = _l10n(context);
           return Center(
             child: Text(l10n.errorWithValue('${snapshot.error}')),
           );
@@ -181,8 +182,8 @@ class _ParentRequestsScreenState extends State<ParentRequestsScreen>
         if (history.isEmpty) {
           return _buildEmptyState(
             emoji: '\u{1F4CB}',
-            title: AppLocalizations.of(context)!.noHistoryYetTitle,
-            subtitle: AppLocalizations.of(context)!.noHistoryYetSubtitle,
+            title: _l10n(context).noHistoryYetTitle,
+            subtitle: _l10n(context).noHistoryYetSubtitle,
           );
         }
 
@@ -287,8 +288,8 @@ class _RequestCardState extends State<_RequestCard> {
         SnackBar(
           content: Text(
             status == RequestStatus.approved
-                ? AppLocalizations.of(context)!.requestApprovedMessage
-                : AppLocalizations.of(context)!.requestDeniedMessage,
+                ? _l10n(context).requestApprovedMessage
+                : _l10n(context).requestDeniedMessage,
           ),
         ),
       );
@@ -304,7 +305,7 @@ class _RequestCardState extends State<_RequestCard> {
       ScaffoldMessenger.of(context).showSnackBar(
         SnackBar(
           content: Text(
-            AppLocalizations.of(context)!.errorWithValue('$error'),
+            _l10n(context).errorWithValue('$error'),
           ),
         ),
       );
@@ -313,7 +314,7 @@ class _RequestCardState extends State<_RequestCard> {
 
   @override
   Widget build(BuildContext context) {
-    final l10n = AppLocalizations.of(context)!;
+    final l10n = _l10n(context);
     if (_hiddenOptimistically) {
       return const SizedBox.shrink();
     }
@@ -652,7 +653,7 @@ class _HistoryCard extends StatelessWidget {
   }
 
   String _statusText(BuildContext context, RequestStatus status) {
-    final l10n = AppLocalizations.of(context)!;
+    final l10n = _l10n(context);
     switch (status) {
       case RequestStatus.pending:
         return l10n.statusPending;
@@ -667,7 +668,7 @@ class _HistoryCard extends StatelessWidget {
 }
 
 String _timeAgo(BuildContext context, DateTime timestamp) {
-  final l10n = AppLocalizations.of(context)!;
+  final l10n = _l10n(context);
   final difference = DateTime.now().difference(timestamp);
   if (difference.inSeconds < 60) {
     return l10n.justNow;
@@ -680,3 +681,8 @@ String _timeAgo(BuildContext context, DateTime timestamp) {
   }
   return l10n.daysAgo(difference.inDays);
 }
+
+AppLocalizations _l10n(BuildContext context) {
+  return AppLocalizations.of(context) ?? AppLocalizationsEn();
+}
+

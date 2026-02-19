@@ -1,6 +1,7 @@
 import 'dart:async';
 
-import 'package:flutter_gen/gen_l10n/app_localizations.dart';
+import 'package:trustbridge_app/l10n/app_localizations.dart';
+import 'package:trustbridge_app/l10n/app_localizations_en.dart';
 import 'package:flutter/material.dart';
 import 'package:intl/intl.dart';
 import 'package:provider/provider.dart';
@@ -99,7 +100,7 @@ class _VpnProtectionScreenState extends State<VpnProtectionScreen> {
 
   @override
   Widget build(BuildContext context) {
-    final l10n = AppLocalizations.of(context)!;
+    final l10n = _l10n(context);
     return Scaffold(
       appBar: AppBar(
         title: Text(l10n.vpnProtectionEngineTitle),
@@ -148,7 +149,7 @@ class _VpnProtectionScreenState extends State<VpnProtectionScreen> {
   }
 
   Widget _buildStatusCard(BuildContext context) {
-    final l10n = AppLocalizations.of(context)!;
+    final l10n = _l10n(context);
     final statusColor = _statusColor(_status);
     final statusLabel = _statusLabel(context, _status);
 
@@ -208,7 +209,7 @@ class _VpnProtectionScreenState extends State<VpnProtectionScreen> {
   }
 
   Widget _buildSyncStatusCard(BuildContext context) {
-    final l10n = AppLocalizations.of(context)!;
+    final l10n = _l10n(context);
     final syncService = context.watch<PolicyVpnSyncService?>();
     if (syncService == null) {
       return const SizedBox.shrink();
@@ -333,7 +334,7 @@ class _VpnProtectionScreenState extends State<VpnProtectionScreen> {
   }
 
   Widget _buildActionCard(BuildContext context) {
-    final l10n = AppLocalizations.of(context)!;
+    final l10n = _l10n(context);
     final canEnable = _status.supported && !_status.isRunning;
     final canDisable = _status.supported && _status.isRunning;
     final canSyncRules = _status.supported &&
@@ -479,7 +480,7 @@ class _VpnProtectionScreenState extends State<VpnProtectionScreen> {
   }
 
   Widget _buildPermissionRecoveryCard(BuildContext context) {
-    final l10n = AppLocalizations.of(context)!;
+    final l10n = _l10n(context);
     if (!_status.supported) {
       return const SizedBox.shrink();
     }
@@ -1112,9 +1113,9 @@ class _VpnProtectionScreenState extends State<VpnProtectionScreen> {
   }
 
   String _statusLabel(BuildContext context, VpnStatus status) {
-    final l10n = AppLocalizations.of(context)!;
+    final l10n = _l10n(context);
     if (!status.supported) {
-      return l10n.notAvailableLabel;
+      return l10n.unsupportedOnThisPlatform;
     }
     if (!status.permissionGranted) {
       return l10n.vpnPermissionRequiredLabel;
@@ -1164,7 +1165,7 @@ class _VpnProtectionScreenState extends State<VpnProtectionScreen> {
   }
 
   String _formatRelativeTime(DateTime dateTime) {
-    final l10n = AppLocalizations.of(context)!;
+    final l10n = _l10n(context);
     final diff = DateTime.now().difference(dateTime);
     if (diff.inSeconds < 5) {
       return l10n.justNow;
@@ -1182,7 +1183,7 @@ class _VpnProtectionScreenState extends State<VpnProtectionScreen> {
   }
 
   String _formatSyncTime(DateTime time) {
-    final l10n = AppLocalizations.of(context)!;
+    final l10n = _l10n(context);
     final diff = DateTime.now().difference(time);
     if (diff.inSeconds < 60) {
       return l10n.justNow;
@@ -1813,3 +1814,8 @@ class _ReadinessCheckItem {
   final bool passed;
   final String message;
 }
+
+AppLocalizations _l10n(BuildContext context) {
+  return AppLocalizations.of(context) ?? AppLocalizationsEn();
+}
+

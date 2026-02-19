@@ -2,7 +2,8 @@ import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:firebase_messaging/firebase_messaging.dart';
-import 'package:flutter_gen/gen_l10n/app_localizations.dart';
+import 'package:trustbridge_app/l10n/app_localizations.dart';
+import 'package:trustbridge_app/l10n/app_localizations_en.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 import 'package:trustbridge_app/main.dart';
 import 'package:trustbridge_app/screens/beta_feedback_history_screen.dart';
@@ -93,7 +94,7 @@ class _ParentSettingsScreenState extends State<ParentSettingsScreen> {
 
   @override
   Widget build(BuildContext context) {
-    final l10n = AppLocalizations.of(context)!;
+    final l10n = _l10n(context);
     final parentId = _parentId;
     if (parentId == null) {
       return Scaffold(
@@ -117,7 +118,7 @@ class _ParentSettingsScreenState extends State<ParentSettingsScreen> {
                     )
                   : Text(
                       l10n.saveButton.toUpperCase(),
-                      style: TextStyle(fontWeight: FontWeight.w700),
+                      style: const TextStyle(fontWeight: FontWeight.w700),
                     ),
             ),
         ],
@@ -321,7 +322,7 @@ class _ParentSettingsScreenState extends State<ParentSettingsScreen> {
   }
 
   Widget _buildPreferencesCard(BuildContext context) {
-    final l10n = AppLocalizations.of(context)!;
+    final l10n = _l10n(context);
 
     return Card(
       elevation: 0,
@@ -338,7 +339,7 @@ class _ParentSettingsScreenState extends State<ParentSettingsScreen> {
               isExpanded: true,
               decoration: InputDecoration(
                 labelText: l10n.languageSettingsTitle,
-                border: OutlineInputBorder(),
+                border: const OutlineInputBorder(),
               ),
               items: _languageOptions.entries
                   .map(
@@ -782,7 +783,7 @@ class _ParentSettingsScreenState extends State<ParentSettingsScreen> {
       return;
     }
 
-    final l10n = AppLocalizations.of(context)!;
+    final l10n = _l10n(context);
     setState(() {
       _language = languageCode;
       _hasChanges = true;
@@ -834,7 +835,7 @@ class _ParentSettingsScreenState extends State<ParentSettingsScreen> {
 
       ScaffoldMessenger.of(context).showSnackBar(
         SnackBar(
-          content: Text(AppLocalizations.of(context)!.settingsUpdatedSuccessMessage),
+          content: Text(_l10n(context).settingsUpdatedSuccessMessage),
           backgroundColor: Colors.green,
         ),
       );
@@ -1241,3 +1242,8 @@ class _SetPinDialogState extends State<_SetPinDialog> {
     );
   }
 }
+
+AppLocalizations _l10n(BuildContext context) {
+  return AppLocalizations.of(context) ?? AppLocalizationsEn();
+}
+
