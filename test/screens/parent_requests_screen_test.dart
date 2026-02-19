@@ -176,6 +176,41 @@ void main() {
           find.textContaining('Need for science assignment'), findsOneWidget);
     });
 
+    testWidgets('tapping pending request card opens approval bottom sheet',
+        (tester) async {
+      await _seedRequest(
+        firestore: fakeFirestore,
+        parentId: 'parent-a',
+        requestId: 'request-open-sheet',
+        childNickname: 'Maya',
+        appOrSite: 'instagram.com',
+        durationLabel: '30 min',
+        durationMinutes: 30,
+        status: 'pending',
+      );
+
+      await tester.pumpWidget(
+        MaterialApp(
+          home: ParentRequestsScreen(
+            parentIdOverride: 'parent-a',
+            firestoreService: firestoreService,
+          ),
+        ),
+      );
+      await tester.pumpAndSettle();
+
+      await tester.tap(find.byKey(const ValueKey<String>(
+        'request_card_request-open-sheet',
+      )));
+      await tester.pumpAndSettle();
+
+      expect(
+        find.byKey(const Key('request_decision_dialog_request-open-sheet')),
+        findsOneWidget,
+      );
+      expect(find.text('NEW REQUEST'), findsOneWidget);
+    });
+
     testWidgets('approve button opens decision modal with reply input',
         (tester) async {
       await _seedRequest(
@@ -205,10 +240,14 @@ void main() {
 
       expect(find.byKey(const Key('request_decision_dialog_request-2')),
           findsOneWidget);
-      expect(find.text('Approve request?'), findsOneWidget);
+      expect(find.text('Access Request'), findsOneWidget);
       expect(find.byKey(const Key('request_modal_reply_input_request-2')),
           findsOneWidget);
 
+      await _scrollUntilVisibleInSheet(
+        tester,
+        find.text('Keep Pending'),
+      );
       await tester.tap(find.text('Keep Pending'));
       await tester.pumpAndSettle();
 
@@ -251,6 +290,10 @@ void main() {
       await tester.enterText(
         find.byKey(const Key('request_modal_reply_input_request-3')),
         'Approved for homework',
+      );
+      await _scrollUntilVisibleInSheet(
+        tester,
+        find.byKey(const Key('request_confirm_approve_button_request-3')),
       );
       await tester.tap(
           find.byKey(const Key('request_confirm_approve_button_request-3')));
@@ -301,10 +344,18 @@ void main() {
           .tap(find.byKey(const Key('request_approve_button_request-4')));
       await tester.pumpAndSettle();
 
+      await _scrollUntilVisibleInSheet(
+        tester,
+        find.byKey(const Key('request_duration_option_request-4_fifteenMin')),
+      );
       await tester.tap(find
           .byKey(const Key('request_duration_option_request-4_fifteenMin')));
       await tester.pumpAndSettle();
 
+      await _scrollUntilVisibleInSheet(
+        tester,
+        find.byKey(const Key('request_confirm_approve_button_request-4')),
+      );
       await tester.tap(
           find.byKey(const Key('request_confirm_approve_button_request-4')));
       await tester.pumpAndSettle();
@@ -352,10 +403,18 @@ void main() {
           .tap(find.byKey(const Key('request_approve_button_request-5')));
       await tester.pumpAndSettle();
 
+      await _scrollUntilVisibleInSheet(
+        tester,
+        find.byKey(const Key('request_duration_option_request-5_untilScheduleEnds')),
+      );
       await tester.tap(find.byKey(
           const Key('request_duration_option_request-5_untilScheduleEnds')));
       await tester.pumpAndSettle();
 
+      await _scrollUntilVisibleInSheet(
+        tester,
+        find.byKey(const Key('request_confirm_approve_button_request-5')),
+      );
       await tester.tap(
           find.byKey(const Key('request_confirm_approve_button_request-5')));
       await tester.pumpAndSettle();
@@ -402,6 +461,10 @@ void main() {
           .tap(find.byKey(const Key('request_quick_reply_request-6_0')));
       await tester.pumpAndSettle();
 
+      await _scrollUntilVisibleInSheet(
+        tester,
+        find.byKey(const Key('request_confirm_deny_button_request-6')),
+      );
       await tester
           .tap(find.byKey(const Key('request_confirm_deny_button_request-6')));
       await tester.pumpAndSettle();
@@ -473,6 +536,18 @@ void main() {
       expect(data['expiresAt'], isA<Timestamp>());
     });
   });
+}
+
+Future<void> _scrollUntilVisibleInSheet(
+  WidgetTester tester,
+  Finder target,
+) async {
+  await tester.dragUntilVisible(
+    target,
+    find.byType(Scrollable).last,
+    const Offset(0, -220),
+  );
+  await tester.pumpAndSettle();
 }
 
 Future<void> _seedRequest({

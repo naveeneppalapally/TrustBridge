@@ -332,82 +332,158 @@ class _RequestCardState extends State<_RequestCard> {
     final l10n = _l10n(context);
     _replyController.text = '';
     var selectedDuration = request.duration;
+    var selectedStatus = status;
 
-    final confirmed = await showDialog<bool>(
+    final result = await showModalBottomSheet<RequestStatus?>(
       context: context,
-      builder: (BuildContext dialogContext) {
+      isScrollControlled: true,
+      backgroundColor: Colors.transparent,
+      builder: (BuildContext sheetContext) {
         return StatefulBuilder(
-          builder: (BuildContext context, StateSetter setDialogState) {
-            return AlertDialog(
+          builder: (BuildContext context, StateSetter setSheetState) {
+            final quickReplies = _quickReplyOptions(l10n, selectedStatus);
+            final childInitial = request.childNickname.isEmpty
+                ? '?'
+                : request.childNickname[0].toUpperCase();
+
+            return Container(
               key: Key('request_decision_dialog_${request.id}'),
-              title: Text(_decisionTitle(l10n, status)),
-              content: SingleChildScrollView(
+              decoration: const BoxDecoration(
+                color: Colors.white,
+                borderRadius: BorderRadius.vertical(top: Radius.circular(24)),
+              ),
+              padding: EdgeInsets.fromLTRB(
+                20,
+                12,
+                20,
+                20 + MediaQuery.of(sheetContext).viewInsets.bottom,
+              ),
+              child: SingleChildScrollView(
                 child: Column(
-                  mainAxisSize: MainAxisSize.min,
                   crossAxisAlignment: CrossAxisAlignment.start,
+                  mainAxisSize: MainAxisSize.min,
                   children: <Widget>[
-                    Text(
-                      _decisionSummary(l10n, request),
-                      style: Theme.of(dialogContext).textTheme.bodyMedium,
+                    Center(
+                      child: Container(
+                        width: 42,
+                        height: 4,
+                        decoration: BoxDecoration(
+                          color: Colors.grey.withValues(alpha: 0.30),
+                          borderRadius: BorderRadius.circular(10),
+                        ),
+                      ),
                     ),
-                    if (status == RequestStatus.approved) ...<Widget>[
-                      const SizedBox(height: 16),
-                      Text(
-                        l10n.approvalDurationLabel,
-                        style: Theme.of(dialogContext)
-                            .textTheme
-                            .bodySmall
-                            ?.copyWith(
-                              fontWeight: FontWeight.w600,
-                            ),
+                    const SizedBox(height: 12),
+                    Center(
+                      child: Container(
+                        padding: const EdgeInsets.symmetric(
+                          horizontal: 10,
+                          vertical: 5,
+                        ),
+                        decoration: BoxDecoration(
+                          color: Colors.blue.withValues(alpha: 0.10),
+                          borderRadius: BorderRadius.circular(14),
+                        ),
+                        child: const Text(
+                          'NEW REQUEST',
+                          style: TextStyle(
+                            color: Color(0xFF207CF8),
+                            fontSize: 11,
+                            fontWeight: FontWeight.w700,
+                            letterSpacing: 0.6,
+                          ),
+                        ),
                       ),
-                      const SizedBox(height: 8),
-                      Wrap(
-                        spacing: 8,
-                        runSpacing: 8,
-                        children: RequestDuration.values
-                            .map(
-                              (duration) => ChoiceChip(
-                                key: Key(
-                                  'request_duration_option_${request.id}_${duration.name}',
-                                ),
-                                label: Text(_durationLabel(l10n, duration)),
-                                selected: selectedDuration == duration,
-                                onSelected: (_) {
-                                  setDialogState(() {
-                                    selectedDuration = duration;
-                                  });
-                                },
+                    ),
+                    const SizedBox(height: 10),
+                    const Center(
+                      child: Text(
+                        'Access Request',
+                        style: TextStyle(
+                          fontSize: 22,
+                          fontWeight: FontWeight.w800,
+                        ),
+                      ),
+                    ),
+                    const SizedBox(height: 14),
+                    Center(
+                      child: CircleAvatar(
+                        radius: 38,
+                        backgroundColor: Colors.blue.withValues(alpha: 0.12),
+                        child: Text(
+                          childInitial,
+                          style: const TextStyle(
+                            color: Color(0xFF207CF8),
+                            fontSize: 28,
+                            fontWeight: FontWeight.w800,
+                          ),
+                        ),
+                      ),
+                    ),
+                    const SizedBox(height: 14),
+                    Center(
+                      child: RichText(
+                        textAlign: TextAlign.center,
+                        text: TextSpan(
+                          style: Theme.of(context).textTheme.bodyLarge?.copyWith(
+                                color: Colors.black87,
+                                height: 1.4,
                               ),
-                            )
-                            .toList(growable: false),
-                      ),
-                      const SizedBox(height: 8),
-                      Text(
-                        _approvalExpiryPreview(
-                            dialogContext, l10n, selectedDuration),
-                        key: Key('request_expiry_preview_${request.id}'),
-                        style: Theme.of(dialogContext)
-                            .textTheme
-                            .bodySmall
-                            ?.copyWith(
-                              color: Colors.grey[600],
+                          children: [
+                            TextSpan(
+                              text: '${request.childNickname} is asking to use ',
                             ),
+                            TextSpan(
+                              text: request.appOrSite,
+                              style: const TextStyle(
+                                color: Color(0xFF207CF8),
+                                fontWeight: FontWeight.w800,
+                              ),
+                            ),
+                          ],
+                        ),
+                      ),
+                    ),
+                    const SizedBox(height: 10),
+                    Row(
+                      mainAxisAlignment: MainAxisAlignment.center,
+                      children: [
+                        const Icon(Icons.schedule_rounded, size: 16),
+                        const SizedBox(width: 6),
+                        Text('Requested ${request.duration.label}'),
+                      ],
+                    ),
+                    if (request.reason != null &&
+                        request.reason!.trim().isNotEmpty) ...<Widget>[
+                      const SizedBox(height: 12),
+                      Container(
+                        width: double.infinity,
+                        padding: const EdgeInsets.all(12),
+                        decoration: BoxDecoration(
+                          color: Colors.grey.withValues(alpha: 0.08),
+                          borderRadius: BorderRadius.circular(12),
+                        ),
+                        child: Text(
+                          '"${request.reason}"',
+                          style: Theme.of(context).textTheme.bodyMedium?.copyWith(
+                                fontStyle: FontStyle.italic,
+                                color: Colors.grey[700],
+                              ),
+                        ),
                       ),
                     ],
                     const SizedBox(height: 12),
                     Text(
                       l10n.quickRepliesLabel,
-                      style:
-                          Theme.of(dialogContext).textTheme.bodySmall?.copyWith(
-                                fontWeight: FontWeight.w600,
-                              ),
+                      style: Theme.of(context).textTheme.bodySmall?.copyWith(
+                            fontWeight: FontWeight.w700,
+                          ),
                     ),
                     const SizedBox(height: 8),
                     Wrap(
                       spacing: 8,
                       runSpacing: 8,
-                      children: _quickReplyOptions(l10n, status)
+                      children: quickReplies
                           .asMap()
                           .entries
                           .map(
@@ -417,7 +493,7 @@ class _RequestCardState extends State<_RequestCard> {
                               ),
                               label: Text(entry.value),
                               onPressed: () {
-                                setDialogState(() {
+                                setSheetState(() {
                                   _replyController.text = entry.value;
                                   _replyController.selection =
                                       TextSelection.collapsed(
@@ -441,49 +517,119 @@ class _RequestCardState extends State<_RequestCard> {
                         border: const OutlineInputBorder(),
                       ),
                     ),
+                    if (selectedStatus == RequestStatus.approved) ...<Widget>[
+                      const SizedBox(height: 6),
+                      Text(
+                        l10n.approvalDurationLabel,
+                        style: Theme.of(context).textTheme.bodySmall?.copyWith(
+                              fontWeight: FontWeight.w700,
+                            ),
+                      ),
+                      const SizedBox(height: 8),
+                      Wrap(
+                        spacing: 8,
+                        runSpacing: 8,
+                        children: RequestDuration.values
+                            .map(
+                              (duration) => ChoiceChip(
+                                key: Key(
+                                  'request_duration_option_${request.id}_${duration.name}',
+                                ),
+                                label: Text(_durationLabel(l10n, duration)),
+                                selected: selectedDuration == duration,
+                                onSelected: (_) {
+                                  setSheetState(() {
+                                    selectedDuration = duration;
+                                  });
+                                },
+                              ),
+                            )
+                            .toList(growable: false),
+                      ),
+                      const SizedBox(height: 8),
+                      Text(
+                        _approvalExpiryPreview(context, l10n, selectedDuration),
+                        key: Key('request_expiry_preview_${request.id}'),
+                        style: Theme.of(context).textTheme.bodySmall?.copyWith(
+                              color: Colors.grey[600],
+                            ),
+                      ),
+                    ],
+                    const SizedBox(height: 14),
+                    SizedBox(
+                      width: double.infinity,
+                      child: ElevatedButton(
+                        key: Key('request_confirm_approve_button_${request.id}'),
+                        style: ElevatedButton.styleFrom(
+                          backgroundColor: const Color(0xFF68B901),
+                          foregroundColor: Colors.white,
+                          minimumSize: const Size.fromHeight(50),
+                        ),
+                        onPressed: () {
+                          setSheetState(() {
+                            selectedStatus = RequestStatus.approved;
+                          });
+                          Navigator.of(sheetContext).pop(
+                            RequestStatus.approved,
+                          );
+                        },
+                        child: const Text('Approve Request'),
+                      ),
+                    ),
+                    const SizedBox(height: 10),
+                    SizedBox(
+                      width: double.infinity,
+                      child: OutlinedButton(
+                        key: Key('request_confirm_deny_button_${request.id}'),
+                        style: OutlinedButton.styleFrom(
+                          minimumSize: const Size.fromHeight(50),
+                        ),
+                        onPressed: () {
+                          setSheetState(() {
+                            selectedStatus = RequestStatus.denied;
+                          });
+                          Navigator.of(sheetContext).pop(
+                            RequestStatus.denied,
+                          );
+                        },
+                        child: const Text('Deny'),
+                      ),
+                    ),
+                    const SizedBox(height: 6),
+                    Center(
+                      child: TextButton(
+                        onPressed: () => Navigator.of(sheetContext).pop(null),
+                        child: Text(l10n.keepPendingButton),
+                      ),
+                    ),
+                    Center(
+                      child: Text(
+                        'REQUESTED ${_timeAgo(context, request.requestedAt).toUpperCase()}',
+                        style: Theme.of(context).textTheme.bodySmall?.copyWith(
+                              color: Colors.grey[500],
+                              fontWeight: FontWeight.w600,
+                            ),
+                      ),
+                    ),
                   ],
                 ),
               ),
-              actions: <Widget>[
-                TextButton(
-                  onPressed: () => Navigator.of(dialogContext).pop(false),
-                  child: Text(l10n.keepPendingButton),
-                ),
-                FilledButton(
-                  key: Key(
-                    status == RequestStatus.approved
-                        ? 'request_confirm_approve_button_${request.id}'
-                        : 'request_confirm_deny_button_${request.id}',
-                  ),
-                  style: FilledButton.styleFrom(
-                    backgroundColor: status == RequestStatus.approved
-                        ? Colors.green
-                        : Colors.orange,
-                  ),
-                  onPressed: () => Navigator.of(dialogContext).pop(true),
-                  child: Text(
-                    status == RequestStatus.approved
-                        ? l10n.confirmApproveButton
-                        : l10n.confirmDenyButton,
-                  ),
-                ),
-              ],
             );
           },
         );
       },
     );
 
-    if (confirmed != true || !mounted) {
+    if (result == null || !mounted) {
       return;
     }
 
     final reply = _replyController.text.trim();
     await _respond(
-      status,
+      result,
       reply: reply,
       approvedDurationOverride:
-          status == RequestStatus.approved ? selectedDuration : null,
+          result == RequestStatus.approved ? selectedDuration : null,
     );
   }
 
@@ -533,20 +679,6 @@ class _RequestCardState extends State<_RequestCard> {
     ];
   }
 
-  String _decisionTitle(AppLocalizations l10n, RequestStatus status) {
-    return status == RequestStatus.approved
-        ? l10n.approvalModalTitle
-        : l10n.denialModalTitle;
-  }
-
-  String _decisionSummary(AppLocalizations l10n, AccessRequest request) {
-    return l10n.approvalModalSummary(
-      request.childNickname,
-      request.appOrSite,
-      request.duration.label,
-    );
-  }
-
   @override
   Widget build(BuildContext context) {
     final l10n = _l10n(context);
@@ -567,11 +699,16 @@ class _RequestCardState extends State<_RequestCard> {
           width: 1,
         ),
       ),
-      child: Padding(
-        padding: const EdgeInsets.all(20),
-        child: Column(
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: <Widget>[
+      child: InkWell(
+        borderRadius: BorderRadius.circular(16),
+        onTap: _isResponding
+            ? null
+            : () => _openDecisionModal(RequestStatus.approved),
+        child: Padding(
+          padding: const EdgeInsets.all(20),
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: <Widget>[
             Row(
               children: <Widget>[
                 CircleAvatar(
@@ -754,7 +891,8 @@ class _RequestCardState extends State<_RequestCard> {
                 ),
               ],
             ),
-          ],
+            ],
+          ),
         ),
       ),
     );
