@@ -1,3 +1,5 @@
+import 'dart:math' as math;
+
 import 'package:flutter/material.dart';
 
 import '../models/access_request.dart';
@@ -7,8 +9,8 @@ import '../models/schedule.dart';
 import '../services/auth_service.dart';
 import '../services/firestore_service.dart';
 import '../utils/expiry_label_utils.dart';
-import 'child_requests_screen.dart';
 import 'child_request_screen.dart';
+import 'child_requests_screen.dart';
 
 class ChildStatusScreen extends StatefulWidget {
   const ChildStatusScreen({
@@ -28,12 +30,9 @@ class ChildStatusScreen extends StatefulWidget {
   State<ChildStatusScreen> createState() => _ChildStatusScreenState();
 }
 
-class _ChildStatusScreenState extends State<ChildStatusScreen>
-    with SingleTickerProviderStateMixin {
+class _ChildStatusScreenState extends State<ChildStatusScreen> {
   AuthService? _authService;
   FirestoreService? _firestoreService;
-  late final AnimationController _pulseController;
-  late final Animation<double> _pulseAnimation;
   Stream<List<AccessRequest>>? _childRequestsStream;
   String? _childRequestsParentId;
   String? _childRequestsChildId;
@@ -73,7 +72,38 @@ class _ChildStatusScreenState extends State<ChildStatusScreen>
     );
   }
 
+  String? _resolveParentId() {
+    final override = widget.parentIdOverride?.trim();
+    if (override != null && override.isNotEmpty) {
+      return override;
+    }
+
+    try {
+      return _resolvedAuthService.currentUser?.uid;
+    } catch (_) {
+      return null;
+    }
+  }
+
   ActiveMode get _activeMode {
+    final schedule = _activeSchedule;
+    if (schedule == null) {
+      return ActiveMode.freeTime;
+    }
+
+    switch (schedule.type) {
+      case ScheduleType.bedtime:
+        return ActiveMode.bedtime;
+      case ScheduleType.school:
+        return ActiveMode.school;
+      case ScheduleType.homework:
+        return ActiveMode.homework;
+      case ScheduleType.custom:
+        return ActiveMode.custom;
+    }
+  }
+
+  Schedule? get _activeSchedule {
     final now = TimeOfDay.now();
     final today = Day.values[DateTime.now().weekday - 1];
 
@@ -84,23 +114,11 @@ class _ChildStatusScreenState extends State<ChildStatusScreen>
       if (!schedule.days.contains(today)) {
         continue;
       }
-      if (!_isTimeInRange(now, schedule.startTime, schedule.endTime)) {
-        continue;
-      }
-
-      switch (schedule.type) {
-        case ScheduleType.bedtime:
-          return ActiveMode.bedtime;
-        case ScheduleType.school:
-          return ActiveMode.school;
-        case ScheduleType.homework:
-          return ActiveMode.homework;
-        case ScheduleType.custom:
-          return ActiveMode.custom;
+      if (_isTimeInRange(now, schedule.startTime, schedule.endTime)) {
+        return schedule;
       }
     }
-
-    return ActiveMode.freeTime;
+    return null;
   }
 
   bool _isTimeInRange(TimeOfDay current, String start, String end) {
@@ -126,80 +144,113 @@ class _ChildStatusScreenState extends State<ChildStatusScreen>
     }
   }
 
-  @override
-  void initState() {
-    super.initState();
-    _pulseController = AnimationController(
-      vsync: this,
-      duration: const Duration(seconds: 2),
-    )..repeat(reverse: true);
-    _pulseAnimation = Tween<double>(begin: 1.0, end: 1.05).animate(
-      CurvedAnimation(
-        parent: _pulseController,
-        curve: Curves.easeInOut,
-      ),
+  _ModeTimerData? _timerDataForActiveSchedule() {
+    final schedule = _activeSchedule;
+    if (schedule == null) {
+      return null;
+    }
+
+    final now = DateTime.now();
+    final window = _resolveScheduleWindow(schedule, now);
+    final total = window.end.difference(window.start);
+    if (total.inSeconds <= 0) {
+      return null;
+    }
+
+    final remaining = window.end.isAfter(now)
+        ? window.end.difference(now)
+        : Duration.zero;
+    return _ModeTimerData(
+      remaining: remaining,
+      total: total,
     );
   }
 
-  @override
-  void dispose() {
-    _pulseController.dispose();
-    super.dispose();
+  ({DateTime start, DateTime end}) _resolveScheduleWindow(
+    Schedule schedule,
+    DateTime now,
+  ) {
+    final startTime = _parseTime(schedule.startTime);
+    final endTime = _parseTime(schedule.endTime);
+
+    DateTime start = DateTime(
+      now.year,
+      now.month,
+      now.day,
+      startTime.hour,
+      startTime.minute,
+    );
+    DateTime end = DateTime(
+      now.year,
+      now.month,
+      now.day,
+      endTime.hour,
+      endTime.minute,
+    );
+
+    final crossesMidnight =
+        (startTime.hour * 60 + startTime.minute) >
+            (endTime.hour * 60 + endTime.minute);
+
+    if (!crossesMidnight) {
+      return (start: start, end: end);
+    }
+
+    if (now.isBefore(end)) {
+      start = start.subtract(const Duration(days: 1));
+    } else {
+      end = end.add(const Duration(days: 1));
+    }
+
+    return (start: start, end: end);
+  }
+
+  TimeOfDay _parseTime(String value) {
+    final parts = value.split(':');
+    if (parts.length != 2) {
+      return const TimeOfDay(hour: 0, minute: 0);
+    }
+    final hour = int.tryParse(parts[0]) ?? 0;
+    final minute = int.tryParse(parts[1]) ?? 0;
+    return TimeOfDay(hour: hour, minute: minute);
   }
 
   @override
   Widget build(BuildContext context) {
     _ensureChildRequestsStream();
     final mode = _activeMode;
+    final timer = _timerDataForActiveSchedule();
     final modeColor = _modeColor(mode);
-    final pausedCategories = _activeMode == ActiveMode.freeTime
-        ? <String>[]
-        : widget.child.policy.blockedCategories;
+    final blockedCategories = widget.child.policy.blockedCategories;
 
     return Scaffold(
       body: SafeArea(
         child: ListView(
-          padding: const EdgeInsets.symmetric(horizontal: 16),
+          padding: const EdgeInsets.all(16),
           children: [
+            _buildHeader(context, modeColor),
             const SizedBox(height: 16),
-            _buildGreeting(context),
+            _buildTimerHeroCard(context, mode, modeColor, timer),
             const SizedBox(height: 16),
-            _buildHeroCard(context, mode, modeColor),
+            _buildBlockedSection(context, blockedCategories),
             const SizedBox(height: 16),
             if (_childRequestsStream != null) ...[
               _buildActiveAccessSection(context),
               const SizedBox(height: 16),
             ],
-            if (pausedCategories.isNotEmpty) ...[
-              _buildPausedCard(context, pausedCategories, mode),
-              const SizedBox(height: 16),
-            ],
             _buildRequestButton(context),
-            const SizedBox(height: 16),
+            const SizedBox(height: 12),
             _buildRequestUpdatesButton(context),
             const SizedBox(height: 16),
-            _buildActivityFeed(context),
-            const SizedBox(height: 32),
+            _buildMotivationCard(context),
+            const SizedBox(height: 24),
           ],
         ),
       ),
     );
   }
 
-  String? _resolveParentId() {
-    final override = widget.parentIdOverride?.trim();
-    if (override != null && override.isNotEmpty) {
-      return override;
-    }
-
-    try {
-      return _resolvedAuthService.currentUser?.uid;
-    } catch (_) {
-      return null;
-    }
-  }
-
-  Widget _buildGreeting(BuildContext context) {
+  Widget _buildHeader(BuildContext context, Color modeColor) {
     final hour = DateTime.now().hour;
     final greeting = hour < 12
         ? 'Good morning'
@@ -209,113 +260,226 @@ class _ChildStatusScreenState extends State<ChildStatusScreen>
 
     return Row(
       children: [
-        Expanded(
-          child: Column(
-            crossAxisAlignment: CrossAxisAlignment.start,
-            children: [
-              Text(
-                '$greeting, ${widget.child.nickname}! 👋',
-                style: Theme.of(context).textTheme.titleLarge?.copyWith(
-                      fontWeight: FontWeight.bold,
-                    ),
+        Container(
+          width: 48,
+          height: 48,
+          decoration: BoxDecoration(
+            shape: BoxShape.circle,
+            border: Border.all(
+              color: modeColor.withValues(alpha: 0.60),
+              width: 2,
+            ),
+            color: modeColor.withValues(alpha: 0.12),
+          ),
+          child: Center(
+            child: Text(
+              widget.child.nickname[0].toUpperCase(),
+              style: TextStyle(
+                fontWeight: FontWeight.bold,
+                color: modeColor,
+                fontSize: 20,
               ),
-              const SizedBox(height: 4),
-              Text(
-                _formattedDate(),
-                style: Theme.of(context).textTheme.bodySmall?.copyWith(
-                      color: Colors.grey[600],
-                    ),
-              ),
-            ],
+            ),
           ),
         ),
-        CircleAvatar(
-          radius: 24,
-          backgroundColor: _modeColor(_activeMode).withValues(alpha: 0.18),
+        const SizedBox(width: 12),
+        Expanded(
           child: Text(
-            widget.child.nickname[0].toUpperCase(),
-            style: TextStyle(
-              fontSize: 20,
-              fontWeight: FontWeight.bold,
-              color: _modeColor(_activeMode),
-            ),
+            '$greeting, ${widget.child.nickname}!',
+            style: Theme.of(context).textTheme.titleLarge?.copyWith(
+                  fontWeight: FontWeight.w800,
+                ),
+          ),
+        ),
+        Container(
+          width: 42,
+          height: 42,
+          decoration: BoxDecoration(
+            color: Colors.blue.withValues(alpha: 0.10),
+            borderRadius: BorderRadius.circular(12),
+          ),
+          child: const Icon(
+            Icons.shield_outlined,
+            color: Colors.blue,
           ),
         ),
       ],
     );
   }
 
-  Widget _buildHeroCard(
-      BuildContext context, ActiveMode mode, Color modeColor) {
-    return Container(
-      decoration: BoxDecoration(
-        borderRadius: BorderRadius.circular(20),
-        gradient: LinearGradient(
-          colors: [
-            modeColor.withValues(alpha: 0.20),
-            modeColor.withValues(alpha: 0.08),
-          ],
-          begin: Alignment.topLeft,
-          end: Alignment.bottomRight,
-        ),
-        border: Border.all(
-          color: modeColor.withValues(alpha: 0.30),
-        ),
-      ),
-      padding: const EdgeInsets.all(24),
-      child: Column(
-        children: [
-          ScaleTransition(
-            scale: _pulseAnimation,
-            child: Text(
-              mode.emoji,
-              style: const TextStyle(fontSize: 64),
+  Widget _buildTimerHeroCard(
+    BuildContext context,
+    ActiveMode mode,
+    Color modeColor,
+    _ModeTimerData? timer,
+  ) {
+    final modeLabel = _modeLabel(mode);
+    final remainingText =
+        timer == null ? 'Free Time' : _formatDuration(timer.remaining);
+
+    return Card(
+      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(20)),
+      child: Padding(
+        padding: const EdgeInsets.all(20),
+        child: Column(
+          children: [
+            Align(
+              alignment: Alignment.centerLeft,
+              child: Container(
+                padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
+                decoration: BoxDecoration(
+                  color: modeColor.withValues(alpha: 0.12),
+                  borderRadius: BorderRadius.circular(14),
+                ),
+                child: Row(
+                  mainAxisSize: MainAxisSize.min,
+                  children: [
+                    Container(
+                      width: 8,
+                      height: 8,
+                      decoration: BoxDecoration(
+                        color: modeColor,
+                        shape: BoxShape.circle,
+                      ),
+                    ),
+                    const SizedBox(width: 8),
+                    Text(
+                      '$modeLabel MODE',
+                      style: TextStyle(
+                        fontSize: 12,
+                        fontWeight: FontWeight.w800,
+                        color: modeColor,
+                        letterSpacing: 0.4,
+                      ),
+                    ),
+                  ],
+                ),
+              ),
             ),
-          ),
-          const SizedBox(height: 16),
-          Text(
-            mode.displayName,
-            style: Theme.of(context).textTheme.headlineSmall?.copyWith(
-                  fontWeight: FontWeight.bold,
+            const SizedBox(height: 20),
+            SizedBox(
+              key: const Key('child_status_timer_ring'),
+              width: 200,
+              height: 200,
+              child: CustomPaint(
+                painter: _CircularTimerRingPainter(
+                  progress: timer?.remainingProgress ?? 0,
                   color: modeColor,
                 ),
-          ),
-          const SizedBox(height: 8),
-          Text(
-            mode.explanation,
-            textAlign: TextAlign.center,
-            style: Theme.of(context).textTheme.bodyMedium?.copyWith(
-                  color: Colors.grey[700],
+                child: Center(
+                  child: Column(
+                    mainAxisAlignment: MainAxisAlignment.center,
+                    children: [
+                      Text(
+                        remainingText,
+                        style:
+                            Theme.of(context).textTheme.headlineSmall?.copyWith(
+                                  fontWeight: FontWeight.w800,
+                                ),
+                      ),
+                      const SizedBox(height: 4),
+                      Text(
+                        timer == null ? 'NO TIMER' : 'REMAINING',
+                        style: Theme.of(context).textTheme.bodySmall?.copyWith(
+                              color: Colors.grey[600],
+                              letterSpacing: 0.8,
+                              fontWeight: FontWeight.w700,
+                            ),
+                      ),
+                    ],
+                  ),
                 ),
-          ),
-          const SizedBox(height: 18),
-          _buildNextScheduleInfo(context, modeColor),
-        ],
+              ),
+            ),
+            const SizedBox(height: 16),
+            RichText(
+              textAlign: TextAlign.center,
+              text: TextSpan(
+                style: Theme.of(context).textTheme.bodyMedium?.copyWith(
+                      color: Colors.grey[700],
+                    ),
+                children: [
+                  const TextSpan(text: 'Until '),
+                  const TextSpan(
+                    text: 'Free Time',
+                    style: TextStyle(fontWeight: FontWeight.w700),
+                  ),
+                  TextSpan(text: timer == null ? ' is active now. Keep it up!' : ' begins. Keep it up!'),
+                ],
+              ),
+            ),
+          ],
+        ),
       ),
     );
   }
 
-  Widget _buildNextScheduleInfo(BuildContext context, Color modeColor) {
-    final nextChange = _getNextScheduleChange();
+  Widget _buildBlockedSection(BuildContext context, List<String> categories) {
+    return Card(
+      key: const Key('child_status_blocked_section'),
+      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
+      child: Padding(
+        padding: const EdgeInsets.all(16),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Row(
+              children: [
+                Text(
+                  "What's blocked?",
+                  style: Theme.of(context).textTheme.titleMedium?.copyWith(
+                        fontWeight: FontWeight.bold,
+                      ),
+                ),
+                const SizedBox(width: 6),
+                Icon(Icons.info_outline, size: 16, color: Colors.grey[600]),
+              ],
+            ),
+            const SizedBox(height: 12),
+            if (categories.isEmpty)
+              Text(
+                'No blocked categories right now.',
+                style: Theme.of(context).textTheme.bodySmall?.copyWith(
+                      color: Colors.grey[600],
+                    ),
+              )
+            else
+              Wrap(
+                spacing: 8,
+                runSpacing: 8,
+                children:
+                    categories.map((category) => _buildCategoryChip(category)).toList(),
+              ),
+          ],
+        ),
+      ),
+    );
+  }
 
+  Widget _buildCategoryChip(String category) {
+    final color = _categoryColor(category);
     return Container(
-      padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 10),
+      padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
       decoration: BoxDecoration(
-        color: modeColor.withValues(alpha: 0.14),
-        borderRadius: BorderRadius.circular(12),
+        color: color.withValues(alpha: 0.10),
+        borderRadius: BorderRadius.circular(24),
+        border: Border.all(color: color.withValues(alpha: 0.30)),
       ),
       child: Row(
         mainAxisSize: MainAxisSize.min,
         children: [
-          Icon(Icons.access_time, size: 18, color: modeColor),
-          const SizedBox(width: 8),
+          Icon(_categoryIcon(category), size: 16, color: color),
+          const SizedBox(width: 6),
           Text(
-            nextChange,
-            style: Theme.of(context).textTheme.bodySmall?.copyWith(
-                  color: modeColor,
-                  fontWeight: FontWeight.w700,
-                ),
+            _formatCategoryName(category),
+            style: TextStyle(
+              color: color,
+              fontWeight: FontWeight.w700,
+              fontSize: 12,
+            ),
           ),
+          const SizedBox(width: 6),
+          Icon(Icons.lock, size: 13, color: color),
         ],
       ),
     );
@@ -370,13 +534,6 @@ class _ChildStatusScreenState extends State<ChildStatusScreen>
                         child: _buildActiveAccessRow(context, request),
                       ),
                     ),
-                if (activeRequests.length > 3)
-                  Text(
-                    '+${activeRequests.length - 3} more active approvals',
-                    style: Theme.of(context).textTheme.bodySmall?.copyWith(
-                          color: Colors.grey[600],
-                        ),
-                  ),
               ],
             ),
           ),
@@ -433,84 +590,12 @@ class _ChildStatusScreenState extends State<ChildStatusScreen>
     );
   }
 
-  Widget _buildPausedCard(
-    BuildContext context,
-    List<String> categories,
-    ActiveMode mode,
-  ) {
-    return Card(
-      shape: RoundedRectangleBorder(
-        borderRadius: BorderRadius.circular(16),
-      ),
-      child: Padding(
-        padding: const EdgeInsets.all(20),
-        child: Column(
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            Text(
-              'Paused right now',
-              style: Theme.of(context).textTheme.titleMedium?.copyWith(
-                    fontWeight: FontWeight.bold,
-                  ),
-            ),
-            const SizedBox(height: 8),
-            Text(
-              'These are paused during ${mode.displayName.toLowerCase()} to help you focus 💪',
-              style: Theme.of(context).textTheme.bodySmall?.copyWith(
-                    color: Colors.grey[600],
-                  ),
-            ),
-            const SizedBox(height: 16),
-            Wrap(
-              spacing: 8,
-              runSpacing: 8,
-              children: categories
-                  .map((category) => _buildCategoryChip(context, category))
-                  .toList(),
-            ),
-          ],
-        ),
-      ),
-    );
-  }
-
-  Widget _buildCategoryChip(BuildContext context, String category) {
-    final color = _categoryColor(category);
-    return Container(
-      padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 8),
-      decoration: BoxDecoration(
-        color: color.withValues(alpha: 0.12),
-        borderRadius: BorderRadius.circular(20),
-        border: Border.all(color: color.withValues(alpha: 0.30)),
-      ),
-      child: Row(
-        mainAxisSize: MainAxisSize.min,
-        children: [
-          Icon(
-            _categoryIcon(category),
-            size: 16,
-            color: color,
-          ),
-          const SizedBox(width: 6),
-          Text(
-            _formatCategoryName(category),
-            style: Theme.of(context).textTheme.bodySmall?.copyWith(
-                  color: color,
-                  fontWeight: FontWeight.w700,
-                ),
-          ),
-        ],
-      ),
-    );
-  }
-
   Widget _buildRequestButton(BuildContext context) {
-    return Material(
-      color: Colors.transparent,
-      child: InkWell(
+    return SizedBox(
+      height: 50,
+      child: ElevatedButton.icon(
         key: const Key('child_status_request_access_button'),
-        borderRadius: BorderRadius.circular(16),
-        onTap: () {
+        onPressed: () {
           Navigator.of(context).push(
             MaterialPageRoute(
               builder: (_) => ChildRequestScreen(
@@ -522,36 +607,10 @@ class _ChildStatusScreenState extends State<ChildStatusScreen>
             ),
           );
         },
-        child: Container(
-          padding: const EdgeInsets.symmetric(horizontal: 24, vertical: 18),
-          decoration: BoxDecoration(
-            color:
-                Theme.of(context).colorScheme.primary.withValues(alpha: 0.10),
-            borderRadius: BorderRadius.circular(16),
-            border: Border.all(
-              color:
-                  Theme.of(context).colorScheme.primary.withValues(alpha: 0.30),
-            ),
-          ),
-          child: Row(
-            children: [
-              const Text('🙋', style: TextStyle(fontSize: 22)),
-              const SizedBox(width: 10),
-              Expanded(
-                child: Text(
-                  'Ask for Access',
-                  style: Theme.of(context).textTheme.titleMedium?.copyWith(
-                        fontWeight: FontWeight.bold,
-                        color: Theme.of(context).colorScheme.primary,
-                      ),
-                ),
-              ),
-              Icon(
-                Icons.chevron_right,
-                color: Theme.of(context).colorScheme.primary,
-              ),
-            ],
-          ),
+        icon: const Icon(Icons.send_rounded),
+        label: const Text(
+          'Ask for Access',
+          style: TextStyle(fontWeight: FontWeight.bold),
         ),
       ),
     );
@@ -580,204 +639,30 @@ class _ChildStatusScreenState extends State<ChildStatusScreen>
     );
   }
 
-  Widget _buildActivityFeed(BuildContext context) {
-    final upcomingSchedules = widget.child.policy.schedules
-        .where((schedule) => schedule.enabled)
-        .toList();
-
-    if (upcomingSchedules.isEmpty) {
-      return const SizedBox.shrink();
-    }
-
-    return Column(
-      crossAxisAlignment: CrossAxisAlignment.start,
-      children: [
-        Text(
-          'Your Schedule',
-          style: Theme.of(context).textTheme.titleMedium?.copyWith(
-                fontWeight: FontWeight.bold,
-              ),
-        ),
-        const SizedBox(height: 12),
-        ...upcomingSchedules.take(3).map(
-              (schedule) => Padding(
-                padding: const EdgeInsets.only(bottom: 10),
-                child: _buildActivityCard(
-                  context,
-                  icon: _scheduleIcon(schedule.type),
-                  title: schedule.name,
-                  subtitle: '${schedule.startTime} - ${schedule.endTime}',
-                  color: Colors.blue,
-                ),
-              ),
-            ),
-      ],
-    );
-  }
-
-  Widget _buildActivityCard(
-    BuildContext context, {
-    required String icon,
-    required String title,
-    required String subtitle,
-    required Color color,
-  }) {
+  Widget _buildMotivationCard(BuildContext context) {
     return Container(
+      padding: const EdgeInsets.all(16),
       decoration: BoxDecoration(
-        color: color.withValues(alpha: 0.06),
-        borderRadius: BorderRadius.circular(12),
-        border: Border(
-          left: BorderSide(color: color, width: 4),
-        ),
+        color: Colors.orange.withValues(alpha: 0.10),
+        borderRadius: BorderRadius.circular(14),
       ),
-      padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 14),
       child: Row(
+        crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          Text(icon, style: const TextStyle(fontSize: 22)),
-          const SizedBox(width: 14),
-          Column(
-            crossAxisAlignment: CrossAxisAlignment.start,
-            children: [
-              Text(
-                title,
-                style: Theme.of(context).textTheme.bodyMedium?.copyWith(
-                      fontWeight: FontWeight.bold,
-                    ),
-              ),
-              const SizedBox(height: 2),
-              Text(
-                subtitle,
-                style: Theme.of(context).textTheme.bodySmall?.copyWith(
-                      color: Colors.grey[600],
-                    ),
-              ),
-            ],
+          const Icon(Icons.auto_awesome, color: Colors.orange),
+          const SizedBox(width: 10),
+          Expanded(
+            child: Text(
+              "Focused effort leads to faster rewards. You're doing great, ${widget.child.nickname}!",
+              style: Theme.of(context).textTheme.bodyMedium?.copyWith(
+                    fontStyle: FontStyle.italic,
+                    color: Colors.grey[800],
+                  ),
+            ),
           ),
         ],
       ),
     );
-  }
-
-  Color _modeColor(ActiveMode mode) {
-    switch (mode) {
-      case ActiveMode.freeTime:
-        return const Color(0xFF10B981);
-      case ActiveMode.homework:
-        return const Color(0xFF3B82F6);
-      case ActiveMode.bedtime:
-        return const Color(0xFF8B5CF6);
-      case ActiveMode.school:
-        return const Color(0xFFF59E0B);
-      case ActiveMode.custom:
-        return const Color(0xFF6B7280);
-    }
-  }
-
-  Color _categoryColor(String category) {
-    switch (category) {
-      case 'social-networks':
-        return const Color(0xFF3B82F6);
-      case 'games':
-        return const Color(0xFF10B981);
-      case 'streaming':
-        return const Color(0xFFEF4444);
-      case 'adult-content':
-        return const Color(0xFF6B7280);
-      case 'gambling':
-        return const Color(0xFF8B5CF6);
-      case 'dating':
-        return const Color(0xFFEC4899);
-      case 'weapons':
-        return const Color(0xFF991B1B);
-      case 'drugs':
-        return const Color(0xFF92400E);
-      default:
-        return const Color(0xFF6B7280);
-    }
-  }
-
-  IconData _categoryIcon(String category) {
-    switch (category) {
-      case 'social-networks':
-        return Icons.people;
-      case 'games':
-        return Icons.sports_esports;
-      case 'streaming':
-        return Icons.play_circle;
-      case 'adult-content':
-        return Icons.block;
-      case 'gambling':
-        return Icons.casino;
-      case 'dating':
-        return Icons.favorite;
-      case 'weapons':
-        return Icons.gpp_bad;
-      case 'drugs':
-        return Icons.medication;
-      default:
-        return Icons.block;
-    }
-  }
-
-  String _formatCategoryName(String category) {
-    return category
-        .split('-')
-        .map((word) => word[0].toUpperCase() + word.substring(1))
-        .join(' ');
-  }
-
-  String _scheduleIcon(ScheduleType type) {
-    switch (type) {
-      case ScheduleType.bedtime:
-        return '🌙';
-      case ScheduleType.school:
-        return '🏫';
-      case ScheduleType.homework:
-        return '📚';
-      case ScheduleType.custom:
-        return '⏰';
-    }
-  }
-
-  String _getNextScheduleChange() {
-    final now = TimeOfDay.now();
-    final currentMinutes = now.hour * 60 + now.minute;
-    final today = Day.values[DateTime.now().weekday - 1];
-
-    if (_activeMode != ActiveMode.freeTime) {
-      for (final schedule in widget.child.policy.schedules) {
-        if (!schedule.enabled || !schedule.days.contains(today)) {
-          continue;
-        }
-        if (_isTimeInRange(now, schedule.startTime, schedule.endTime)) {
-          return 'Until ${schedule.endTime}';
-        }
-      }
-      return 'Active now';
-    }
-
-    var nearestStartMinutes = 24 * 60 + 1;
-    String? nearestMessage;
-    for (final schedule in widget.child.policy.schedules) {
-      if (!schedule.enabled || !schedule.days.contains(today)) {
-        continue;
-      }
-      try {
-        final parts = schedule.startTime.split(':');
-        if (parts.length != 2) {
-          continue;
-        }
-        final startMinutes = int.parse(parts[0]) * 60 + int.parse(parts[1]);
-        if (startMinutes > currentMinutes &&
-            startMinutes < nearestStartMinutes) {
-          nearestStartMinutes = startMinutes;
-          nearestMessage = '${schedule.name} starts at ${schedule.startTime}';
-        }
-      } catch (_) {
-        continue;
-      }
-    }
-    return nearestMessage ?? 'No schedules coming up today';
   }
 
   List<AccessRequest> _activeApprovedRequests(List<AccessRequest> requests) {
@@ -813,31 +698,152 @@ class _ChildStatusScreenState extends State<ChildStatusScreen>
     return buildExpiryRelativeLabel(expiresAt);
   }
 
-  String _formattedDate() {
-    final now = DateTime.now();
-    const days = <String>[
-      'Monday',
-      'Tuesday',
-      'Wednesday',
-      'Thursday',
-      'Friday',
-      'Saturday',
-      'Sunday',
-    ];
-    const months = <String>[
-      'Jan',
-      'Feb',
-      'Mar',
-      'Apr',
-      'May',
-      'Jun',
-      'Jul',
-      'Aug',
-      'Sep',
-      'Oct',
-      'Nov',
-      'Dec',
-    ];
-    return '${days[now.weekday - 1]}, ${months[now.month - 1]} ${now.day}';
+  String _modeLabel(ActiveMode mode) {
+    switch (mode) {
+      case ActiveMode.freeTime:
+        return 'FREE TIME';
+      case ActiveMode.homework:
+        return 'HOMEWORK';
+      case ActiveMode.bedtime:
+        return 'BEDTIME';
+      case ActiveMode.school:
+        return 'SCHOOL';
+      case ActiveMode.custom:
+        return 'CUSTOM';
+    }
+  }
+
+  String _formatDuration(Duration duration) {
+    final hours = duration.inHours;
+    final minutes = duration.inMinutes.remainder(60);
+    if (hours <= 0) {
+      return '${minutes}m';
+    }
+    if (minutes == 0) {
+      return '${hours}h';
+    }
+    return '${hours}h ${minutes}m';
+  }
+
+  Color _modeColor(ActiveMode mode) {
+    switch (mode) {
+      case ActiveMode.freeTime:
+        return const Color(0xFF10B981);
+      case ActiveMode.homework:
+        return const Color(0xFF3B82F6);
+      case ActiveMode.bedtime:
+        return const Color(0xFF8B5CF6);
+      case ActiveMode.school:
+        return const Color(0xFFF59E0B);
+      case ActiveMode.custom:
+        return const Color(0xFF6B7280);
+    }
+  }
+
+  Color _categoryColor(String category) {
+    switch (category) {
+      case 'social-networks':
+        return const Color(0xFF3B82F6);
+      case 'games':
+        return const Color(0xFF10B981);
+      case 'streaming':
+        return const Color(0xFFEF4444);
+      case 'adult-content':
+        return const Color(0xFFF59E0B);
+      case 'gambling':
+        return const Color(0xFF8B5CF6);
+      case 'dating':
+        return const Color(0xFFEC4899);
+      default:
+        return const Color(0xFF6B7280);
+    }
+  }
+
+  IconData _categoryIcon(String category) {
+    switch (category) {
+      case 'social-networks':
+        return Icons.people;
+      case 'games':
+        return Icons.sports_esports;
+      case 'streaming':
+        return Icons.play_circle;
+      case 'adult-content':
+        return Icons.warning_amber_rounded;
+      case 'gambling':
+        return Icons.casino;
+      case 'dating':
+        return Icons.favorite;
+      default:
+        return Icons.block;
+    }
+  }
+
+  String _formatCategoryName(String category) {
+    return category
+        .split('-')
+        .map((word) => word[0].toUpperCase() + word.substring(1))
+        .join(' ');
+  }
+}
+
+class _ModeTimerData {
+  const _ModeTimerData({
+    required this.remaining,
+    required this.total,
+  });
+
+  final Duration remaining;
+  final Duration total;
+
+  double get remainingProgress {
+    if (total.inMilliseconds <= 0) {
+      return 0;
+    }
+    final ratio = remaining.inMilliseconds / total.inMilliseconds;
+    return ratio.clamp(0.0, 1.0).toDouble();
+  }
+}
+
+class _CircularTimerRingPainter extends CustomPainter {
+  const _CircularTimerRingPainter({
+    required this.progress,
+    required this.color,
+  });
+
+  final double progress;
+  final Color color;
+
+  @override
+  void paint(Canvas canvas, Size size) {
+    final center = Offset(size.width / 2, size.height / 2);
+    final radius = math.min(size.width, size.height) / 2 - 10;
+
+    final trackPaint = Paint()
+      ..color = color.withValues(alpha: 0.16)
+      ..style = PaintingStyle.stroke
+      ..strokeWidth = 14
+      ..strokeCap = StrokeCap.round;
+
+    final progressPaint = Paint()
+      ..color = color
+      ..style = PaintingStyle.stroke
+      ..strokeWidth = 14
+      ..strokeCap = StrokeCap.round;
+
+    canvas.drawCircle(center, radius, trackPaint);
+
+    final sweep = 2 * math.pi * progress.clamp(0.0, 1.0);
+    canvas.drawArc(
+      Rect.fromCircle(center: center, radius: radius),
+      -math.pi / 2,
+      sweep,
+      false,
+      progressPaint,
+    );
+  }
+
+  @override
+  bool shouldRepaint(covariant _CircularTimerRingPainter oldDelegate) {
+    return oldDelegate.progress != progress || oldDelegate.color != color;
   }
 }

@@ -33,7 +33,7 @@ void main() {
       expect(find.textContaining('Aarav'), findsOneWidget);
     });
 
-    testWidgets('displays active mode name', (tester) async {
+    testWidgets('renders circular timer hero and blocked section', (tester) async {
       await tester.pumpWidget(
         MaterialApp(
           home: ChildStatusScreen(child: testChild),
@@ -41,16 +41,9 @@ void main() {
       );
       await tester.pump();
 
-      final modeFinder = find.byWidgetPredicate(
-        (widget) =>
-            widget is Text &&
-            (widget.data == 'Free Time' ||
-                widget.data == 'Homework Time' ||
-                widget.data == 'Bedtime' ||
-                widget.data == 'School Hours' ||
-                widget.data == 'Custom Schedule'),
-      );
-      expect(modeFinder, findsWidgets);
+      expect(find.byKey(const Key('child_status_timer_ring')), findsOneWidget);
+      expect(find.byKey(const Key('child_status_blocked_section')), findsOneWidget);
+      expect(find.text("What's blocked?"), findsOneWidget);
     });
 
     testWidgets('shows Ask for Access button', (tester) async {
@@ -61,7 +54,17 @@ void main() {
       );
       await tester.pump();
 
-      expect(find.text('Ask for Access'), findsOneWidget);
+      await tester.dragUntilVisible(
+        find.byKey(const Key('child_status_request_access_button')),
+        find.byType(ListView),
+        const Offset(0, -220),
+      );
+      await tester.pump();
+
+      expect(
+        find.byKey(const Key('child_status_request_access_button')),
+        findsOneWidget,
+      );
     });
 
     testWidgets('uses non-punitive wording', (tester) async {
@@ -88,9 +91,15 @@ void main() {
 
       final askForAccessFinder =
           find.byKey(const Key('child_status_request_access_button'));
+      await tester.dragUntilVisible(
+        askForAccessFinder,
+        find.byType(ListView),
+        const Offset(0, -220),
+      );
+      await tester.pump();
       await tester.ensureVisible(askForAccessFinder);
-      final requestButton = tester.widget<InkWell>(askForAccessFinder);
-      requestButton.onTap!.call();
+      final requestButton = tester.widget<ElevatedButton>(askForAccessFinder);
+      requestButton.onPressed!.call();
       await tester.pump();
       await tester.pump(const Duration(milliseconds: 500));
 
@@ -132,6 +141,12 @@ void main() {
       );
       await tester.pump();
       await tester.pump(const Duration(milliseconds: 400));
+      await tester.dragUntilVisible(
+        find.byKey(const Key('child_status_active_access_card')),
+        find.byType(ListView),
+        const Offset(0, -220),
+      );
+      await tester.pump();
 
       expect(find.byKey(const Key('child_status_active_access_card')),
           findsOneWidget);
