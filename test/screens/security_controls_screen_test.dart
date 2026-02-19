@@ -17,14 +17,19 @@ void main() {
     Future<void> seedParent(String parentId) {
       return fakeFirestore.collection('parents').doc(parentId).set({
         'parentId': parentId,
+        'email': 'parent@test.com',
         'preferences': {
           'biometricLoginEnabled': false,
           'incognitoModeEnabled': false,
         },
+        'security': {
+          'activeSessions': 2,
+          'twoFactorEnabled': false,
+        },
       });
     }
 
-    testWidgets('renders security controls content', (tester) async {
+    testWidgets('renders redesigned security controls layout', (tester) async {
       await tester.binding.setSurfaceSize(const Size(430, 1400));
       addTearDown(() => tester.binding.setSurfaceSize(null));
 
@@ -40,20 +45,23 @@ void main() {
       );
       await tester.pumpAndSettle();
 
-      expect(find.text('Security Controls'), findsOneWidget);
-      expect(find.text('Protect Your Account'), findsOneWidget);
+      expect(find.text('Security'), findsWidgets);
+      expect(find.text('ACCESS CONTROL'), findsOneWidget);
+      expect(find.text('CONFIGURATION'), findsOneWidget);
       expect(
           find.byKey(const Key('security_biometric_switch')), findsOneWidget);
+      expect(find.byKey(const Key('security_app_pin_tile')), findsOneWidget);
       expect(
-          find.byKey(const Key('security_incognito_switch')), findsOneWidget);
-      expect(find.byKey(const Key('security_vpn_button')), findsOneWidget);
-      expect(find.byKey(const Key('security_vpn_test_button')), findsOneWidget);
+          find.byKey(const Key('security_login_history_tile')), findsOneWidget);
+      expect(find.byKey(const Key('security_two_factor_tile')), findsOneWidget);
+      expect(
+        find.byKey(const Key('security_encryption_info_card')),
+        findsOneWidget,
+      );
     });
 
-    testWidgets('saves biometric toggle to firestore', (tester) async {
-      await tester.binding.setSurfaceSize(const Size(430, 1400));
-      addTearDown(() => tester.binding.setSurfaceSize(null));
-
+    testWidgets('biometric toggle persists to Firestore preferences',
+        (tester) async {
       const parentId = 'parent-security-b';
       await seedParent(parentId);
 
@@ -70,10 +78,6 @@ void main() {
       await tester.tap(find.byKey(const Key('security_biometric_switch')));
       await tester.pumpAndSettle();
 
-      expect(find.text('SAVE'), findsOneWidget);
-      await tester.tap(find.widgetWithText(TextButton, 'SAVE'));
-      await tester.pumpAndSettle();
-
       final snapshot =
           await fakeFirestore.collection('parents').doc(parentId).get();
       final preferences =
@@ -82,18 +86,8 @@ void main() {
     });
 
     testWidgets('change password opens change password screen', (tester) async {
-      await tester.binding.setSurfaceSize(const Size(430, 1400));
-      addTearDown(() => tester.binding.setSurfaceSize(null));
-
       const parentId = 'parent-security-c';
-      await fakeFirestore.collection('parents').doc(parentId).set({
-        'parentId': parentId,
-        'email': 'parent@test.com',
-        'preferences': {
-          'biometricLoginEnabled': false,
-          'incognitoModeEnabled': false,
-        },
-      });
+      await seedParent(parentId);
 
       await tester.pumpWidget(
         MaterialApp(
@@ -105,17 +99,14 @@ void main() {
       );
       await tester.pumpAndSettle();
 
-      await tester.tap(find.widgetWithText(OutlinedButton, 'Change Password'));
+      await tester.tap(find.byKey(const Key('security_change_password_tile')));
       await tester.pumpAndSettle();
 
       expect(find.text('Update Account Password'), findsOneWidget);
       expect(find.byKey(const Key('current_password_input')), findsOneWidget);
     });
 
-    testWidgets('vpn button opens vpn protection screen', (tester) async {
-      await tester.binding.setSurfaceSize(const Size(430, 1400));
-      addTearDown(() => tester.binding.setSurfaceSize(null));
-
+    testWidgets('two-factor row toggles security metadata', (tester) async {
       const parentId = 'parent-security-d';
       await seedParent(parentId);
 
@@ -129,35 +120,13 @@ void main() {
       );
       await tester.pumpAndSettle();
 
-      await tester.tap(find.byKey(const Key('security_vpn_button')));
+      await tester.tap(find.byKey(const Key('security_two_factor_tile')));
       await tester.pumpAndSettle();
 
-      expect(find.text('VPN Protection Engine'), findsWidgets);
-      expect(find.byKey(const Key('vpn_status_label')), findsOneWidget);
-    });
-
-    testWidgets('vpn test button opens vpn test screen', (tester) async {
-      await tester.binding.setSurfaceSize(const Size(430, 1400));
-      addTearDown(() => tester.binding.setSurfaceSize(null));
-
-      const parentId = 'parent-security-e';
-      await seedParent(parentId);
-
-      await tester.pumpWidget(
-        MaterialApp(
-          home: SecurityControlsScreen(
-            parentIdOverride: parentId,
-            firestoreService: firestoreService,
-          ),
-        ),
-      );
-      await tester.pumpAndSettle();
-
-      await tester.tap(find.byKey(const Key('security_vpn_test_button')));
-      await tester.pumpAndSettle();
-
-      expect(find.text('VPN Test (Dev)'), findsWidgets);
-      expect(find.byKey(const Key('vpn_test_status')), findsOneWidget);
+      final snapshot =
+          await fakeFirestore.collection('parents').doc(parentId).get();
+      final security = snapshot.data()!['security'] as Map<String, dynamic>;
+      expect(security['twoFactorEnabled'], true);
     });
   });
 }

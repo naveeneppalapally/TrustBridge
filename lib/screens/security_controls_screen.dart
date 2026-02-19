@@ -1,24 +1,21 @@
+import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:flutter/material.dart';
 import 'package:trustbridge_app/screens/change_password_screen.dart';
-import 'package:trustbridge_app/screens/vpn_protection_screen.dart';
-import 'package:trustbridge_app/screens/vpn_test_screen.dart';
+import 'package:trustbridge_app/services/app_lock_service.dart';
 import 'package:trustbridge_app/services/auth_service.dart';
 import 'package:trustbridge_app/services/firestore_service.dart';
-import 'package:trustbridge_app/services/vpn_service.dart';
-import 'package:trustbridge_app/utils/app_lock_guard.dart';
+import 'package:trustbridge_app/widgets/pin_entry_dialog.dart';
 
 class SecurityControlsScreen extends StatefulWidget {
   const SecurityControlsScreen({
     super.key,
     this.authService,
     this.firestoreService,
-    this.vpnService,
     this.parentIdOverride,
   });
 
   final AuthService? authService;
   final FirestoreService? firestoreService;
-  final VpnServiceBase? vpnService;
   final String? parentIdOverride;
 
   @override
@@ -28,11 +25,10 @@ class SecurityControlsScreen extends StatefulWidget {
 class _SecurityControlsScreenState extends State<SecurityControlsScreen> {
   AuthService? _authService;
   FirestoreService? _firestoreService;
+  AppLockService? _appLockService;
 
   bool _biometricLoginEnabled = false;
-  bool _incognitoModeEnabled = false;
-  bool _hasChanges = false;
-  bool _isSaving = false;
+  bool _isSavingBiometric = false;
 
   AuthService get _resolvedAuthService {
     _authService ??= widget.authService ?? AuthService();
@@ -44,6 +40,11 @@ class _SecurityControlsScreenState extends State<SecurityControlsScreen> {
     return _firestoreService!;
   }
 
+  AppLockService get _resolvedAppLockService {
+    _appLockService ??= AppLockService();
+    return _appLockService!;
+  }
+
   String? get _parentId {
     return widget.parentIdOverride ?? _resolvedAuthService.currentUser?.uid;
   }
@@ -51,32 +52,16 @@ class _SecurityControlsScreenState extends State<SecurityControlsScreen> {
   @override
   Widget build(BuildContext context) {
     final parentId = _parentId;
-    if (parentId == null) {
+    if (parentId == null || parentId.trim().isEmpty) {
       return Scaffold(
-        appBar: AppBar(title: const Text('Security Controls')),
+        appBar: AppBar(title: const Text('Security')),
         body: const Center(child: Text('Not logged in')),
       );
     }
 
     return Scaffold(
       appBar: AppBar(
-        title: const Text('Security Controls'),
-        actions: [
-          if (_hasChanges)
-            TextButton(
-              onPressed: _isSaving ? null : _saveChanges,
-              child: _isSaving
-                  ? const SizedBox(
-                      width: 20,
-                      height: 20,
-                      child: CircularProgressIndicator(strokeWidth: 2),
-                    )
-                  : const Text(
-                      'SAVE',
-                      style: TextStyle(fontWeight: FontWeight.w700),
-                    ),
-            ),
-        ],
+        title: const Text('Security'),
       ),
       body: StreamBuilder<Map<String, dynamic>?>(
         stream: _resolvedFirestoreService.watchParentProfile(parentId),
@@ -116,112 +101,74 @@ class _SecurityControlsScreenState extends State<SecurityControlsScreen> {
 
           final profile = snapshot.data;
           _hydrateFromProfile(profile);
+          final securityMap = _asMap(profile?['security']);
+          final appPinChangedAt =
+              _toDateTime(securityMap['appPinChangedAt']) ?? DateTime.now();
+          final activeSessions = _intValue(securityMap['activeSessions'], 1);
+          final twoFactorEnabled =
+              _boolValue(securityMap['twoFactorEnabled'], false);
           final accountEmail = _extractString(profile, 'email') ??
               (widget.parentIdOverride == null
                   ? _resolvedAuthService.currentUser?.email
                   : null);
 
           return ListView(
-            padding: const EdgeInsets.fromLTRB(16, 8, 16, 28),
+            padding: const EdgeInsets.fromLTRB(16, 12, 16, 28),
             children: [
               Text(
-                'Protect Your Account',
-                style: Theme.of(context).textTheme.headlineSmall?.copyWith(
-                      fontWeight: FontWeight.w700,
+                'Security',
+                style: Theme.of(context).textTheme.displaySmall?.copyWith(
+                      fontWeight: FontWeight.w800,
                     ),
               ),
-              const SizedBox(height: 8),
+              const SizedBox(height: 6),
               Text(
-                'Configure login security and privacy mode controls.',
+                'Manage your access and privacy settings',
                 style: Theme.of(context).textTheme.bodyMedium?.copyWith(
                       color: Colors.grey.shade600,
                     ),
               ),
-              const SizedBox(height: 16),
-              Card(
-                elevation: 0,
-                shape: RoundedRectangleBorder(
-                  borderRadius: BorderRadius.circular(16),
-                ),
-                child: Column(
-                  children: [
-                    SwitchListTile(
-                      key: const Key('security_biometric_switch'),
-                      value: _biometricLoginEnabled,
-                      title: const Text('Biometric Login'),
-                      subtitle: const Text(
-                        'Use fingerprint or face unlock to open app',
-                      ),
-                      onChanged: _isSaving
-                          ? null
-                          : (value) {
-                              setState(() {
-                                _biometricLoginEnabled = value;
-                                _hasChanges = true;
-                              });
-                            },
-                    ),
-                    const Divider(height: 1),
-                    SwitchListTile(
-                      key: const Key('security_incognito_switch'),
-                      value: _incognitoModeEnabled,
-                      title: const Text('Incognito Mode'),
-                      subtitle: const Text(
-                        'Hide sensitive activity details in shared spaces',
-                      ),
-                      onChanged: _isSaving
-                          ? null
-                          : (value) {
-                              setState(() {
-                                _incognitoModeEnabled = value;
-                                _hasChanges = true;
-                              });
-                            },
-                    ),
-                  ],
-                ),
-              ),
-              const SizedBox(height: 12),
-              OutlinedButton.icon(
-                onPressed: _isSaving
-                    ? null
-                    : () => _openChangePassword(context, accountEmail),
-                icon: const Icon(Icons.lock_outline),
-                label: const Text('Change Password'),
-              ),
-              const SizedBox(height: 10),
-              OutlinedButton.icon(
-                key: const Key('security_vpn_button'),
-                onPressed: _isSaving ? null : () => _openVpnProtection(context),
-                icon: const Icon(Icons.shield_outlined),
-                label: const Text('VPN Protection Engine'),
-              ),
+              const SizedBox(height: 18),
+              _buildSectionHeader('Access Control'),
+              _buildAccessControlCard(context, parentId),
               const SizedBox(height: 8),
-              TextButton(
-                key: const Key('security_vpn_test_button'),
-                onPressed: _isSaving ? null : () => _openVpnTest(context),
-                child: const Text('VPN Test (Dev)'),
+              Text(
+                'Biometric authentication helps prevent unauthorized access to parent controls.',
+                style: Theme.of(context).textTheme.bodySmall?.copyWith(
+                      color: Colors.grey.shade600,
+                    ),
               ),
-              const SizedBox(height: 16),
+              const SizedBox(height: 18),
+              _buildSectionHeader('Configuration'),
+              _buildConfigurationCard(
+                context,
+                parentId: parentId,
+                appPinChangedAt: appPinChangedAt,
+                activeSessions: activeSessions,
+                twoFactorEnabled: twoFactorEnabled,
+                accountEmail: accountEmail,
+              ),
+              const SizedBox(height: 18),
               Container(
-                padding: const EdgeInsets.all(12),
+                key: const Key('security_encryption_info_card'),
+                padding: const EdgeInsets.all(14),
                 decoration: BoxDecoration(
-                  color: Colors.green.shade50,
-                  borderRadius: BorderRadius.circular(10),
-                  border: Border.all(color: Colors.green.shade200),
+                  color: const Color(0xFFDBEAFE),
+                  borderRadius: BorderRadius.circular(14),
+                  border: Border.all(color: const Color(0xFF93C5FD)),
                 ),
-                child: Row(
+                child: const Row(
                   crossAxisAlignment: CrossAxisAlignment.start,
                   children: [
-                    Icon(Icons.shield_outlined,
-                        size: 18, color: Colors.green.shade700),
-                    const SizedBox(width: 10),
+                    Icon(Icons.lock_outline, color: Color(0xFF1D4ED8)),
+                    SizedBox(width: 10),
                     Expanded(
                       child: Text(
-                        'Security changes apply to this parent account only and sync across your signed-in devices.',
-                        style: Theme.of(context).textTheme.bodySmall?.copyWith(
-                              color: Colors.green.shade900,
-                            ),
+                        'Encryption Active — Your biometric data is stored locally and encrypted.',
+                        style: TextStyle(
+                          color: Color(0xFF1E3A8A),
+                          fontWeight: FontWeight.w600,
+                        ),
                       ),
                     ),
                   ],
@@ -234,41 +181,135 @@ class _SecurityControlsScreenState extends State<SecurityControlsScreen> {
     );
   }
 
-  Future<void> _saveChanges() async {
-    if (_isSaving || !_hasChanges) {
-      return;
-    }
+  Widget _buildSectionHeader(String title) {
+    return Padding(
+      padding: const EdgeInsets.only(left: 4, bottom: 6),
+      child: Text(
+        title.toUpperCase(),
+        style: TextStyle(
+          fontSize: 12,
+          fontWeight: FontWeight.w700,
+          letterSpacing: 0.7,
+          color: Colors.grey.shade600,
+        ),
+      ),
+    );
+  }
 
-    final parentId = _parentId;
-    if (parentId == null) {
-      _showInfo('Not logged in');
-      return;
-    }
+  Widget _buildAccessControlCard(BuildContext context, String parentId) {
+    return Card(
+      elevation: 0,
+      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
+      child: ListTile(
+        key: const Key('security_biometric_tile'),
+        leading: CircleAvatar(
+          radius: 18,
+          backgroundColor: Colors.blue.withValues(alpha: 0.14),
+          child: const Icon(Icons.fingerprint, color: Colors.blue),
+        ),
+        title: const Text('Biometric Unlock'),
+        subtitle: const Text('Face ID or Fingerprint'),
+        trailing: Switch(
+          key: const Key('security_biometric_switch'),
+          value: _biometricLoginEnabled,
+          onChanged: _isSavingBiometric
+              ? null
+              : (value) {
+                  _saveBiometricToggle(
+                    parentId: parentId,
+                    enabled: value,
+                  );
+                },
+        ),
+      ),
+    );
+  }
 
+  Widget _buildConfigurationCard(
+    BuildContext context, {
+    required String parentId,
+    required DateTime appPinChangedAt,
+    required int activeSessions,
+    required bool twoFactorEnabled,
+    required String? accountEmail,
+  }) {
+    final now = DateTime.now();
+    final daysSincePinChange = now.difference(appPinChangedAt).inDays;
+
+    return Card(
+      elevation: 0,
+      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
+      child: Column(
+        children: [
+          ListTile(
+            key: const Key('security_app_pin_tile'),
+            leading: CircleAvatar(
+              radius: 16,
+              backgroundColor: Colors.blueGrey.withValues(alpha: 0.16),
+              child: const Text(
+                '123',
+                style: TextStyle(fontWeight: FontWeight.w800, fontSize: 10),
+              ),
+            ),
+            title: const Text('App PIN'),
+            subtitle: Text('Last changed $daysSincePinChange days ago'),
+            trailing: const Icon(Icons.chevron_right),
+            onTap: () => _changePinFlow(parentId),
+          ),
+          const Divider(height: 1),
+          ListTile(
+            key: const Key('security_change_password_tile'),
+            leading: const Icon(Icons.lock_outline),
+            title: const Text('Change Password'),
+            trailing: const Icon(Icons.chevron_right),
+            onTap: () => _openChangePassword(context, accountEmail),
+          ),
+          const Divider(height: 1),
+          ListTile(
+            key: const Key('security_login_history_tile'),
+            leading: const Icon(Icons.history),
+            title: const Text('Login History'),
+            subtitle: Text('$activeSessions Active Sessions'),
+            trailing: const Icon(Icons.chevron_right),
+            onTap: () =>
+                _showInfo('Login history details screen is coming soon.'),
+          ),
+          const Divider(height: 1),
+          ListTile(
+            key: const Key('security_two_factor_tile'),
+            leading: const Icon(Icons.phonelink_lock_outlined),
+            title: const Text('Two-Factor Auth'),
+            subtitle: Text(twoFactorEnabled ? 'Enabled' : 'Disabled'),
+            trailing: const Icon(Icons.chevron_right),
+            onTap: () => _toggleTwoFactor(parentId, twoFactorEnabled),
+          ),
+        ],
+      ),
+    );
+  }
+
+  Future<void> _saveBiometricToggle({
+    required String parentId,
+    required bool enabled,
+  }) async {
     setState(() {
-      _isSaving = true;
+      _biometricLoginEnabled = enabled;
+      _isSavingBiometric = true;
     });
 
     try {
       await _resolvedFirestoreService.updateParentPreferences(
         parentId: parentId,
-        biometricLoginEnabled: _biometricLoginEnabled,
-        incognitoModeEnabled: _incognitoModeEnabled,
+        biometricLoginEnabled: enabled,
       );
-
       if (!mounted) {
         return;
       }
-
-      setState(() {
-        _isSaving = false;
-        _hasChanges = false;
-      });
-
       ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(
-          content: Text('Security settings updated successfully'),
-          backgroundColor: Colors.green,
+        SnackBar(
+          content: Text(
+            enabled ? 'Biometric unlock enabled' : 'Biometric unlock disabled',
+          ),
         ),
       );
     } catch (error) {
@@ -276,97 +317,138 @@ class _SecurityControlsScreenState extends State<SecurityControlsScreen> {
         return;
       }
       setState(() {
-        _isSaving = false;
+        _biometricLoginEnabled = !enabled;
       });
-      showDialog<void>(
-        context: context,
-        builder: (context) {
-          return AlertDialog(
-            title: const Text('Save Failed'),
-            content: Text('Unable to update security settings: $error'),
-            actions: [
-              TextButton(
-                onPressed: () => Navigator.of(context).pop(),
-                child: const Text('OK'),
-              ),
-            ],
-          );
-        },
-      );
+      _showInfo('Unable to update biometric setting: $error');
+    } finally {
+      if (mounted) {
+        setState(() {
+          _isSavingBiometric = false;
+        });
+      }
     }
   }
 
-  void _hydrateFromProfile(Map<String, dynamic>? profile) {
-    if (_hasChanges) {
+  Future<void> _changePinFlow(String parentId) async {
+    final lockEnabled = await _resolvedAppLockService.isEnabled();
+    if (!mounted) {
+      return;
+    }
+    if (lockEnabled) {
+      final unlocked = await showPinEntryDialog(context);
+      if (!unlocked) {
+        return;
+      }
+    }
+
+    final pin = await _showSetPinDialog();
+    if (pin == null) {
       return;
     }
 
-    final preferences = _mapValue(profile?['preferences']);
+    try {
+      await _resolvedAppLockService.setPin(pin);
+      await _resolvedFirestoreService.updateParentSecurityMetadata(
+        parentId: parentId,
+        appPinChangedAt: DateTime.now(),
+      );
+      if (!mounted) {
+        return;
+      }
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('App PIN updated')),
+      );
+    } catch (error) {
+      if (!mounted) {
+        return;
+      }
+      _showInfo('Unable to update App PIN: $error');
+    }
+  }
+
+  Future<void> _toggleTwoFactor(String parentId, bool current) async {
+    try {
+      await _resolvedFirestoreService.updateParentSecurityMetadata(
+        parentId: parentId,
+        twoFactorEnabled: !current,
+      );
+      if (!mounted) {
+        return;
+      }
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text(
+            !current ? 'Two-Factor Auth enabled' : 'Two-Factor Auth disabled',
+          ),
+        ),
+      );
+    } catch (error) {
+      if (!mounted) {
+        return;
+      }
+      _showInfo('Unable to update two-factor setting: $error');
+    }
+  }
+
+  Future<String?> _showSetPinDialog() {
+    return showDialog<String>(
+      context: context,
+      builder: (_) => const _SetPinDialog(),
+    );
+  }
+
+  Future<void> _openChangePassword(
+    BuildContext context,
+    String? accountEmail,
+  ) async {
+    await Navigator.of(context).push(
+      MaterialPageRoute(
+        builder: (_) => ChangePasswordScreen(
+          authService: widget.authService,
+          emailOverride: accountEmail,
+        ),
+      ),
+    );
+  }
+
+  void _hydrateFromProfile(Map<String, dynamic>? profile) {
+    final preferences = _asMap(profile?['preferences']);
     _biometricLoginEnabled =
         _boolValue(preferences['biometricLoginEnabled'], false);
-    _incognitoModeEnabled =
-        _boolValue(preferences['incognitoModeEnabled'], false);
   }
 
   bool _boolValue(Object? value, bool fallback) {
     return value is bool ? value : fallback;
   }
 
-  Map<String, dynamic> _mapValue(Object? value) {
+  int _intValue(Object? value, int fallback) {
+    if (value is int) {
+      return value;
+    }
+    if (value is num) {
+      return value.toInt();
+    }
+    return fallback;
+  }
+
+  DateTime? _toDateTime(Object? rawValue) {
+    if (rawValue is Timestamp) {
+      return rawValue.toDate();
+    }
+    if (rawValue is DateTime) {
+      return rawValue;
+    }
+    return null;
+  }
+
+  Map<String, dynamic> _asMap(Object? value) {
     if (value is Map<String, dynamic>) {
       return value;
     }
     if (value is Map) {
-      return value.map(
-        (key, mapValue) => MapEntry(key.toString(), mapValue),
-      );
+      return value.map((key, mapValue) => MapEntry(key.toString(), mapValue));
     }
-    return const {};
-  }
-
-  void _showInfo(String message) {
-    ScaffoldMessenger.of(context).showSnackBar(
-      SnackBar(content: Text(message)),
-    );
-  }
-
-  Future<void> _openChangePassword(BuildContext context, String? email) async {
-    await Navigator.of(context).push(
-      MaterialPageRoute(
-        builder: (_) => ChangePasswordScreen(
-          authService: widget.authService,
-          emailOverride: email,
-        ),
-      ),
-    );
-  }
-
-  Future<void> _openVpnProtection(BuildContext context) async {
-    await guardedNavigate(
-      context,
-      () async {
-        await Navigator.of(context).push(
-          MaterialPageRoute(
-            builder: (_) => VpnProtectionScreen(
-              authService: widget.authService,
-              firestoreService: widget.firestoreService,
-              vpnService: widget.vpnService,
-              parentIdOverride: widget.parentIdOverride,
-            ),
-          ),
-        );
-      },
-    );
-  }
-
-  Future<void> _openVpnTest(BuildContext context) async {
-    await Navigator.of(context).push(
-      MaterialPageRoute(
-        builder: (_) => VpnTestScreen(
-          vpnService: widget.vpnService,
-        ),
-      ),
-    );
+    return const <String, dynamic>{};
   }
 
   String? _extractString(Map<String, dynamic>? map, String key) {
@@ -375,5 +457,98 @@ class _SecurityControlsScreenState extends State<SecurityControlsScreen> {
       return value.trim();
     }
     return null;
+  }
+
+  void _showInfo(String message) {
+    ScaffoldMessenger.of(context).showSnackBar(
+      SnackBar(content: Text(message)),
+    );
+  }
+}
+
+class _SetPinDialog extends StatefulWidget {
+  const _SetPinDialog();
+
+  @override
+  State<_SetPinDialog> createState() => _SetPinDialogState();
+}
+
+class _SetPinDialogState extends State<_SetPinDialog> {
+  final TextEditingController _pinController = TextEditingController();
+  final TextEditingController _confirmPinController = TextEditingController();
+  String? _errorText;
+
+  @override
+  void dispose() {
+    _pinController.dispose();
+    _confirmPinController.dispose();
+    super.dispose();
+  }
+
+  void _submit() {
+    final pin = _pinController.text.trim();
+    final confirmPin = _confirmPinController.text.trim();
+
+    if (pin.length != 4 || int.tryParse(pin) == null) {
+      setState(() => _errorText = 'PIN must be exactly 4 digits.');
+      return;
+    }
+    if (pin != confirmPin) {
+      setState(() => _errorText = 'PINs do not match.');
+      return;
+    }
+
+    Navigator.of(context).pop(pin);
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return AlertDialog(
+      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(20)),
+      title: const Text('Set App PIN'),
+      content: Column(
+        mainAxisSize: MainAxisSize.min,
+        children: <Widget>[
+          TextField(
+            controller: _pinController,
+            keyboardType: TextInputType.number,
+            maxLength: 4,
+            obscureText: true,
+            decoration: const InputDecoration(
+              labelText: 'New 4-digit PIN',
+              counterText: '',
+            ),
+          ),
+          const SizedBox(height: 12),
+          TextField(
+            controller: _confirmPinController,
+            keyboardType: TextInputType.number,
+            maxLength: 4,
+            obscureText: true,
+            decoration: const InputDecoration(
+              labelText: 'Confirm PIN',
+              counterText: '',
+            ),
+          ),
+          if (_errorText != null) ...<Widget>[
+            const SizedBox(height: 8),
+            Text(
+              _errorText!,
+              style: const TextStyle(color: Colors.red, fontSize: 12),
+            ),
+          ],
+        ],
+      ),
+      actions: <Widget>[
+        TextButton(
+          onPressed: () => Navigator.of(context).pop(),
+          child: const Text('Cancel'),
+        ),
+        FilledButton(
+          onPressed: _submit,
+          child: const Text('Set PIN'),
+        ),
+      ],
+    );
   }
 }

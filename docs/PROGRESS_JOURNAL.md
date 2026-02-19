@@ -3767,3 +3767,35 @@ structure and profile-first layout.
    - `flutter test test/screens/parent_settings_screen_test.dart` passed.
 
 ---
+
+## Day 94 - Security Controls Screen Redesign (Week 19 Day 5)
+
+Program goal: redesign Security Controls with clearer access control,
+configuration, and encryption status presentation.
+
+### Commit entries
+
+1. **2026-02-19 18:00:00 +05:30**  
+   Message: `Implement Day 94 security controls redesign`  
+   Changes:
+   - Rebuilt `lib/screens/security_controls_screen.dart`:
+     - large `Security` heading + subtitle
+     - `ACCESS CONTROL` biometric unlock card
+     - `CONFIGURATION` rows for:
+       - App PIN (`Last changed N days ago`)
+       - Change Password
+       - Login History (`N Active Sessions`)
+       - Two-Factor Auth (`Enabled/Disabled`)
+     - blue encryption info card
+   - Updated `lib/services/firestore_service.dart`:
+     - added `updateParentSecurityMetadata(...)` for security subdocument fields
+   - Rewrote `test/screens/security_controls_screen_test.dart`:
+     - layout assertions for redesigned sections
+     - biometric persistence test
+     - change password navigation test
+     - two-factor metadata toggle test
+   Validation:
+   - `flutter analyze` passed.
+   - `flutter test test/screens/security_controls_screen_test.dart` passed.
+
+---

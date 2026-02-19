@@ -193,6 +193,38 @@ class FirestoreService {
         .map((snapshot) => snapshot.data());
   }
 
+  Future<void> updateParentSecurityMetadata({
+    required String parentId,
+    DateTime? appPinChangedAt,
+    int? activeSessions,
+    bool? twoFactorEnabled,
+  }) async {
+    if (parentId.trim().isEmpty) {
+      throw ArgumentError.value(parentId, 'parentId', 'Parent ID is required.');
+    }
+
+    final updates = <String, dynamic>{};
+    if (appPinChangedAt != null) {
+      updates['appPinChangedAt'] = Timestamp.fromDate(appPinChangedAt);
+    }
+    if (activeSessions != null) {
+      updates['activeSessions'] = activeSessions;
+    }
+    if (twoFactorEnabled != null) {
+      updates['twoFactorEnabled'] = twoFactorEnabled;
+    }
+    if (updates.isEmpty) {
+      return;
+    }
+
+    await _firestore.collection('parents').doc(parentId).set(
+      <String, dynamic>{
+        'security': updates,
+      },
+      SetOptions(merge: true),
+    );
+  }
+
   Future<void> updateParentPreferences({
     required String parentId,
     String? language,
