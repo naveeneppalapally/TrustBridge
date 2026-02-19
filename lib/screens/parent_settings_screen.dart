@@ -4,6 +4,7 @@ import 'package:trustbridge_app/l10n/app_localizations_en.dart';
 import 'package:trustbridge_app/screens/beta_feedback_history_screen.dart';
 import 'package:trustbridge_app/screens/beta_feedback_screen.dart';
 import 'package:trustbridge_app/screens/change_password_screen.dart';
+import 'package:trustbridge_app/screens/family_management_screen.dart';
 import 'package:trustbridge_app/screens/help_support_screen.dart';
 import 'package:trustbridge_app/screens/onboarding_screen.dart';
 import 'package:trustbridge_app/screens/privacy_center_screen.dart';
@@ -276,6 +277,15 @@ class _ParentSettingsScreenState extends State<ParentSettingsScreen> {
             onTap: () => ScaffoldMessenger.of(context).showSnackBar(
               const SnackBar(content: Text('Phone linking is coming soon.')),
             ),
+          ),
+          const Divider(height: 1),
+          ListTile(
+            key: const Key('settings_family_management_tile'),
+            leading: const Icon(Icons.family_restroom),
+            title: const Text('Family Management'),
+            subtitle: const Text('Manage parents and child seats'),
+            trailing: const Icon(Icons.chevron_right),
+            onTap: () => _openFamilyManagement(context),
           ),
           const Divider(height: 1),
           ListTile(
@@ -613,6 +623,18 @@ class _ParentSettingsScreenState extends State<ParentSettingsScreen> {
     await Navigator.of(context).push(
       MaterialPageRoute(
         builder: (_) => BetaFeedbackHistoryScreen(
+          authService: widget.authService,
+          firestoreService: widget.firestoreService,
+          parentIdOverride: widget.parentIdOverride,
+        ),
+      ),
+    );
+  }
+
+  Future<void> _openFamilyManagement(BuildContext context) async {
+    await Navigator.of(context).push(
+      MaterialPageRoute(
+        builder: (_) => FamilyManagementScreen(
           authService: widget.authService,
           firestoreService: widget.firestoreService,
           parentIdOverride: widget.parentIdOverride,

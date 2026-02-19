@@ -146,6 +146,35 @@ void main() {
       expect(find.text('Send Support Request'), findsOneWidget);
     });
 
+    testWidgets('navigates to family management from account section',
+        (tester) async {
+      await seedParent('parent-settings-family');
+
+      await tester.pumpWidget(
+        MaterialApp(
+          home: ParentSettingsScreen(
+            parentIdOverride: 'parent-settings-family',
+            firestoreService: firestoreService,
+          ),
+        ),
+      );
+      await tester.pumpAndSettle();
+
+      await tester.dragUntilVisible(
+        find.byKey(const Key('settings_family_management_tile')),
+        find.byType(ListView),
+        const Offset(0, -160),
+      );
+      await tester.pumpAndSettle();
+
+      await tester
+          .tap(find.byKey(const Key('settings_family_management_tile')));
+      await tester.pumpAndSettle();
+
+      expect(find.text('Family Management'), findsOneWidget);
+      expect(find.byKey(const Key('family_admins_card')), findsOneWidget);
+    });
+
     testWidgets('navigates to feedback history from about section',
         (tester) async {
       await seedParent('parent-settings-e');
