@@ -37,6 +37,7 @@ enum RequestDuration {
   fifteenMin,
   thirtyMin,
   oneHour,
+  twoHours,
   untilScheduleEnds;
 
   String get label {
@@ -47,6 +48,8 @@ enum RequestDuration {
         return '30 min';
       case RequestDuration.oneHour:
         return '1 hour';
+      case RequestDuration.twoHours:
+        return '2 hours';
       case RequestDuration.untilScheduleEnds:
         return 'Until schedule ends';
     }
@@ -60,6 +63,8 @@ enum RequestDuration {
         return 30;
       case RequestDuration.oneHour:
         return 60;
+      case RequestDuration.twoHours:
+        return 120;
       case RequestDuration.untilScheduleEnds:
         return null;
     }

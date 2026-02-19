@@ -27,13 +27,22 @@ class ChildRequestScreen extends StatefulWidget {
 class _ChildRequestScreenState extends State<ChildRequestScreen> {
   AuthService? _authService;
   FirestoreService? _firestoreService;
+  final TextEditingController _appController = TextEditingController();
   final TextEditingController _reasonController = TextEditingController();
 
   String _appOrSite = '';
-  RequestDuration _selectedDuration = RequestDuration.thirtyMin;
+  String? _selectedQuickApp;
+  RequestDuration _selectedDuration = RequestDuration.fifteenMin;
   bool _isLoading = false;
   bool _submitted = false;
   String? _error;
+
+  static const _quickApps = <_QuickApp>[
+    _QuickApp(name: 'Roblox', icon: Icons.sports_esports_rounded),
+    _QuickApp(name: 'YouTube', icon: Icons.play_circle_fill_rounded),
+    _QuickApp(name: 'TikTok', icon: Icons.music_note_rounded),
+    _QuickApp(name: 'Instagram', icon: Icons.camera_alt_rounded),
+  ];
 
   AuthService get _resolvedAuthService {
     _authService ??= widget.authService ?? AuthService();
@@ -49,6 +58,7 @@ class _ChildRequestScreenState extends State<ChildRequestScreen> {
 
   @override
   void dispose() {
+    _appController.dispose();
     _reasonController.dispose();
     super.dispose();
   }
@@ -58,119 +68,72 @@ class _ChildRequestScreenState extends State<ChildRequestScreen> {
     return Scaffold(
       appBar: AppBar(
         title: const Text('Ask for Access'),
-        centerTitle: true,
       ),
-      body: _submitted ? _buildSuccessState() : _buildForm(),
+      body: _submitted ? _buildSuccessState() : _buildRequestComposer(),
     );
   }
 
-  Widget _buildSuccessState() {
-    return Center(
-      child: Padding(
-        padding: const EdgeInsets.all(32),
-        child: Column(
-          mainAxisAlignment: MainAxisAlignment.center,
-          children: [
-            const Text('\u2709\uFE0F', style: TextStyle(fontSize: 72)),
-            const SizedBox(height: 24),
-            Text(
-              'Request sent!',
-              style: Theme.of(context).textTheme.headlineSmall?.copyWith(
-                    fontWeight: FontWeight.bold,
-                  ),
-            ),
-            const SizedBox(height: 12),
-            Text(
-              'Your parent will see this soon.\nThey usually respond within 15 minutes!',
-              textAlign: TextAlign.center,
-              style: Theme.of(context).textTheme.bodyMedium?.copyWith(
-                    color: Colors.grey[600],
-                  ),
-            ),
-            const SizedBox(height: 32),
-            OutlinedButton(
-              onPressed: () => Navigator.of(context).pop(),
-              child: const Text('Back to Home'),
-            ),
-            const SizedBox(height: 10),
-            TextButton(
-              key: const Key('child_request_view_updates_button'),
-              onPressed: () {
-                Navigator.of(context).pushReplacement(
-                  MaterialPageRoute(
-                    builder: (_) => ChildRequestsScreen(
-                      child: widget.child,
-                      authService: widget.authService,
-                      firestoreService: widget.firestoreService,
-                      parentIdOverride: widget.parentIdOverride,
-                    ),
-                  ),
-                );
-              },
-              child: const Text('View Request Updates'),
-            ),
-          ],
-        ),
-      ),
-    );
-  }
-
-  Widget _buildForm() {
-    return ListView(
-      padding: const EdgeInsets.all(24),
+  Widget _buildRequestComposer() {
+    return Column(
       children: [
-        _buildHeaderCard(),
-        const SizedBox(height: 24),
-        _buildWhatSection(),
-        const SizedBox(height: 24),
-        _buildDurationSection(),
-        const SizedBox(height: 24),
-        _buildReasonSection(),
-        const SizedBox(height: 24),
-        if (_appOrSite.trim().isNotEmpty) ...[
-          _buildPreviewCard(),
-          const SizedBox(height: 24),
-        ],
-        if (_error != null) ...[
-          _buildError(),
-          const SizedBox(height: 16),
-        ],
-        _buildSubmitButton(),
-        const SizedBox(height: 32),
+        Expanded(
+          child: ListView(
+            padding: const EdgeInsets.fromLTRB(16, 16, 16, 120),
+            children: [
+              _buildHeroBanner(),
+              const SizedBox(height: 20),
+              _buildAppSection(),
+              const SizedBox(height: 20),
+              _buildDurationSection(),
+              const SizedBox(height: 20),
+              _buildReasonSection(),
+              if (_error != null) ...[
+                const SizedBox(height: 16),
+                _buildError(),
+              ],
+            ],
+          ),
+        ),
+        _buildDraftBar(),
       ],
     );
   }
 
-  Widget _buildHeaderCard() {
+  Widget _buildHeroBanner() {
     return Container(
-      padding: const EdgeInsets.all(20),
+      padding: const EdgeInsets.all(18),
       decoration: BoxDecoration(
-        color: Theme.of(context).colorScheme.primary.withValues(alpha: 0.08),
-        borderRadius: BorderRadius.circular(16),
-        border: Border.all(
-          color: Theme.of(context).colorScheme.primary.withValues(alpha: 0.20),
+        borderRadius: BorderRadius.circular(18),
+        gradient: const LinearGradient(
+          colors: [Color(0xFF2D8CFF), Color(0xFF1D6FE0)],
+          begin: Alignment.topLeft,
+          end: Alignment.bottomRight,
         ),
       ),
-      child: Row(
+      child: const Row(
         children: [
-          const Text('\u{1F64B}', style: TextStyle(fontSize: 36)),
-          const SizedBox(width: 16),
+          CircleAvatar(
+            radius: 20,
+            backgroundColor: Colors.white24,
+            child: Icon(Icons.chat_bubble_outline_rounded, color: Colors.white),
+          ),
+          SizedBox(width: 12),
           Expanded(
             child: Column(
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
                 Text(
                   'Ask your parent',
-                  style: Theme.of(context).textTheme.titleMedium?.copyWith(
-                        fontWeight: FontWeight.bold,
-                      ),
+                  style: TextStyle(
+                    color: Colors.white,
+                    fontWeight: FontWeight.bold,
+                    fontSize: 18,
+                  ),
                 ),
-                const SizedBox(height: 4),
+                SizedBox(height: 2),
                 Text(
-                  'They\'ll usually respond within 15 minutes!',
-                  style: Theme.of(context).textTheme.bodySmall?.copyWith(
-                        color: Colors.grey[600],
-                      ),
+                  'Share what you need and why. They usually reply quickly.',
+                  style: TextStyle(color: Colors.white, fontSize: 12),
                 ),
               ],
             ),
@@ -180,45 +143,104 @@ class _ChildRequestScreenState extends State<ChildRequestScreen> {
     );
   }
 
-  Widget _buildWhatSection() {
+  Widget _buildAppSection() {
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
         Text(
-          'What do you need?',
+          'Which app?',
           style: Theme.of(context).textTheme.titleMedium?.copyWith(
                 fontWeight: FontWeight.bold,
               ),
         ),
+        const SizedBox(height: 10),
+        TextField(
+          onChanged: (value) {
+            setState(() {
+              _appOrSite = value;
+              _selectedQuickApp = null;
+            });
+          },
+          decoration: InputDecoration(
+            hintText: 'Search apps...',
+            prefixIcon: const Icon(Icons.search),
+            border: OutlineInputBorder(
+              borderRadius: BorderRadius.circular(12),
+            ),
+          ),
+        ),
+        const SizedBox(height: 12),
+        Row(
+          mainAxisAlignment: MainAxisAlignment.spaceBetween,
+          children: _quickApps
+              .map(
+                (app) => _buildQuickAppChip(app),
+              )
+              .toList(),
+        ),
         const SizedBox(height: 12),
         TextField(
           key: const Key('child_request_app_input'),
-          onChanged: (value) => setState(() => _appOrSite = value),
+          controller: _appController,
+          onChanged: (value) {
+            setState(() {
+              _appOrSite = value;
+              _selectedQuickApp = _quickApps.any(
+                (app) => app.name.toLowerCase() == value.toLowerCase().trim(),
+              )
+                  ? value.trim()
+                  : null;
+            });
+          },
           decoration: InputDecoration(
-            hintText: 'e.g., Instagram, YouTube, minecraft.net...',
-            prefixIcon: const Icon(Icons.search),
-            filled: true,
-            fillColor: Theme.of(context).colorScheme.surface,
+            hintText: 'Type app/site name if not listed',
             border: OutlineInputBorder(
-              borderRadius: BorderRadius.circular(14),
-              borderSide: BorderSide.none,
-            ),
-            enabledBorder: OutlineInputBorder(
-              borderRadius: BorderRadius.circular(14),
-              borderSide: BorderSide(
-                color: Colors.grey.withValues(alpha: 0.20),
-              ),
-            ),
-            focusedBorder: OutlineInputBorder(
-              borderRadius: BorderRadius.circular(14),
-              borderSide: BorderSide(
-                color: Theme.of(context).colorScheme.primary,
-                width: 2,
-              ),
+              borderRadius: BorderRadius.circular(12),
             ),
           ),
         ),
       ],
+    );
+  }
+
+  Widget _buildQuickAppChip(_QuickApp app) {
+    final selected = _selectedQuickApp == app.name;
+    return GestureDetector(
+      onTap: () {
+        setState(() {
+          _selectedQuickApp = app.name;
+          _appOrSite = app.name;
+          _appController.text = app.name;
+        });
+      },
+      child: AnimatedContainer(
+        duration: const Duration(milliseconds: 180),
+        curve: Curves.easeOutBack,
+        width: 72,
+        padding: const EdgeInsets.symmetric(vertical: 10),
+        decoration: BoxDecoration(
+          color: selected ? const Color(0x1A207CF8) : Colors.grey.withValues(alpha: 0.08),
+          borderRadius: BorderRadius.circular(14),
+          border: Border.all(
+            color: selected ? const Color(0xFF207CF8) : Colors.transparent,
+            width: 2,
+          ),
+        ),
+        child: Column(
+          children: [
+            Icon(app.icon, color: selected ? const Color(0xFF207CF8) : Colors.grey[700]),
+            const SizedBox(height: 6),
+            Text(
+              app.name,
+              style: TextStyle(
+                fontSize: 11,
+                color: selected ? const Color(0xFF207CF8) : Colors.grey[700],
+                fontWeight: FontWeight.w600,
+              ),
+            ),
+          ],
+        ),
+      ),
     );
   }
 
@@ -234,102 +256,81 @@ class _ChildRequestScreenState extends State<ChildRequestScreen> {
         ),
         const SizedBox(height: 12),
         Wrap(
-          spacing: 10,
-          runSpacing: 10,
-          children: RequestDuration.values.map((duration) {
-            final selected = _selectedDuration == duration;
-            return GestureDetector(
-              onTap: () => setState(() => _selectedDuration = duration),
-              child: AnimatedContainer(
-                duration: const Duration(milliseconds: 220),
-                curve: Curves.easeOutBack,
-                padding:
-                    const EdgeInsets.symmetric(horizontal: 20, vertical: 12),
-                decoration: BoxDecoration(
-                  color: selected
-                      ? Theme.of(context).colorScheme.primary
-                      : Colors.transparent,
-                  borderRadius: BorderRadius.circular(22),
-                  border: Border.all(
-                    color: selected
-                        ? Theme.of(context).colorScheme.primary
-                        : Colors.grey.withValues(alpha: 0.40),
-                    width: selected ? 2 : 1,
-                  ),
-                ),
-                child: Text(
-                  duration.label,
-                  style: Theme.of(context).textTheme.bodyMedium?.copyWith(
-                        color: selected ? Colors.white : null,
-                        fontWeight:
-                            selected ? FontWeight.bold : FontWeight.normal,
-                      ),
-                ),
-              ),
-            );
-          }).toList(),
+          spacing: 8,
+          runSpacing: 8,
+          children: RequestDuration.values
+              .map((duration) => _buildDurationChip(duration))
+              .toList(),
         ),
       ],
     );
+  }
+
+  Widget _buildDurationChip(RequestDuration duration) {
+    final selected = _selectedDuration == duration;
+    return GestureDetector(
+      onTap: () {
+        setState(() {
+          _selectedDuration = duration;
+        });
+      },
+      child: AnimatedContainer(
+        duration: const Duration(milliseconds: 220),
+        curve: Curves.easeOutBack,
+        padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 10),
+        decoration: BoxDecoration(
+          color: selected ? const Color(0xFF207CF8) : Colors.transparent,
+          borderRadius: BorderRadius.circular(22),
+          border: Border.all(
+            color: selected ? const Color(0xFF207CF8) : Colors.grey.withValues(alpha: 0.40),
+          ),
+        ),
+        child: Text(
+          _durationChipLabel(duration),
+          style: TextStyle(
+            color: selected ? Colors.white : Colors.grey[800],
+            fontWeight: selected ? FontWeight.bold : FontWeight.w500,
+          ),
+        ),
+      ),
+    );
+  }
+
+  String _durationChipLabel(RequestDuration duration) {
+    switch (duration) {
+      case RequestDuration.fifteenMin:
+        return '15m';
+      case RequestDuration.thirtyMin:
+        return '30m';
+      case RequestDuration.oneHour:
+        return '1h';
+      case RequestDuration.twoHours:
+        return '2h';
+      case RequestDuration.untilScheduleEnds:
+        return 'Until schedule ends';
+    }
   }
 
   Widget _buildReasonSection() {
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
-        Row(
-          children: [
-            Text(
-              'Why do you need it?',
-              style: Theme.of(context).textTheme.titleMedium?.copyWith(
-                    fontWeight: FontWeight.bold,
-                  ),
-            ),
-            const SizedBox(width: 8),
-            Text(
-              '(optional)',
-              style: Theme.of(context).textTheme.bodySmall?.copyWith(
-                    color: Colors.grey[500],
-                  ),
-            ),
-          ],
-        ),
-        const SizedBox(height: 6),
         Text(
-          'Being specific helps your parent decide faster!',
-          style: Theme.of(context).textTheme.bodySmall?.copyWith(
-                color: Colors.grey[600],
+          'Why do you need it?',
+          style: Theme.of(context).textTheme.titleMedium?.copyWith(
+                fontWeight: FontWeight.bold,
               ),
         ),
-        const SizedBox(height: 12),
+        const SizedBox(height: 10),
         TextField(
           key: const Key('child_request_reason_input'),
           controller: _reasonController,
-          onChanged: (_) => setState(() {}),
-          maxLines: 3,
+          maxLines: 4,
           maxLength: 200,
           decoration: InputDecoration(
-            hintText:
-                'e.g., I need YouTube for a school project about space...',
-            hintStyle: TextStyle(color: Colors.grey[400]),
-            filled: true,
-            fillColor: Theme.of(context).colorScheme.surface,
+            hintText: "I'm finishing a game with Leo...",
             border: OutlineInputBorder(
-              borderRadius: BorderRadius.circular(14),
-              borderSide: BorderSide.none,
-            ),
-            enabledBorder: OutlineInputBorder(
-              borderRadius: BorderRadius.circular(14),
-              borderSide: BorderSide(
-                color: Colors.grey.withValues(alpha: 0.20),
-              ),
-            ),
-            focusedBorder: OutlineInputBorder(
-              borderRadius: BorderRadius.circular(14),
-              borderSide: BorderSide(
-                color: Theme.of(context).colorScheme.primary,
-                width: 2,
-              ),
+              borderRadius: BorderRadius.circular(12),
             ),
           ),
         ),
@@ -337,70 +338,90 @@ class _ChildRequestScreenState extends State<ChildRequestScreen> {
     );
   }
 
-  Widget _buildPreviewCard() {
-    final trimmedReason = _reasonController.text.trim();
-    return Container(
-      padding: const EdgeInsets.all(16),
-      decoration: BoxDecoration(
-        color: Colors.blue.withValues(alpha: 0.06),
-        borderRadius: BorderRadius.circular(14),
-        border: Border.all(color: Colors.blue.withValues(alpha: 0.20)),
-      ),
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          Text(
-            'Your request:',
-            style: Theme.of(context).textTheme.bodySmall?.copyWith(
-                  color: Colors.grey[600],
-                ),
+  Widget _buildDraftBar() {
+    final hasDraft = _appOrSite.trim().isNotEmpty;
+    return SafeArea(
+      top: false,
+      child: Container(
+        padding: const EdgeInsets.fromLTRB(16, 12, 16, 16),
+        decoration: BoxDecoration(
+          color: Theme.of(context).scaffoldBackgroundColor,
+          border: Border(
+            top: BorderSide(color: Colors.grey.withValues(alpha: 0.20)),
           ),
-          const SizedBox(height: 10),
-          Row(
-            children: [
-              const Icon(Icons.apps, size: 20),
-              const SizedBox(width: 10),
-              Expanded(
-                child: Text(
-                  _appOrSite.trim(),
-                  style: Theme.of(context).textTheme.titleSmall?.copyWith(
-                        fontWeight: FontWeight.bold,
-                      ),
-                ),
-              ),
+        ),
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            if (hasDraft)
               Container(
-                padding:
-                    const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
+                key: const Key('child_request_draft_preview'),
+                padding: const EdgeInsets.all(12),
                 decoration: BoxDecoration(
-                  color: Theme.of(context)
-                      .colorScheme
-                      .primary
-                      .withValues(alpha: 0.12),
-                  borderRadius: BorderRadius.circular(10),
+                  color: Colors.blue.withValues(alpha: 0.08),
+                  borderRadius: BorderRadius.circular(12),
                 ),
-                child: Text(
-                  _selectedDuration.label,
-                  style: Theme.of(context).textTheme.bodySmall?.copyWith(
-                        color: Theme.of(context).colorScheme.primary,
-                        fontWeight: FontWeight.w600,
+                child: Row(
+                  children: [
+                    const CircleAvatar(
+                      radius: 14,
+                      backgroundColor: Color(0x1A207CF8),
+                      child: Icon(Icons.apps_rounded, color: Color(0xFF207CF8), size: 16),
+                    ),
+                    const SizedBox(width: 10),
+                    Expanded(
+                      child: Text(
+                        'Requesting access - ${_appOrSite.trim()} for ${_selectedDuration.label}',
+                        style: const TextStyle(fontSize: 12),
                       ),
+                    ),
+                    Container(
+                      padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
+                      decoration: BoxDecoration(
+                        color: Colors.white,
+                        borderRadius: BorderRadius.circular(10),
+                      ),
+                      child: const Text(
+                        'Draft',
+                        style: TextStyle(fontSize: 11, fontWeight: FontWeight.w700),
+                      ),
+                    ),
+                  ],
+                ),
+              )
+            else
+              Container(
+                padding: const EdgeInsets.symmetric(vertical: 10),
+                alignment: Alignment.centerLeft,
+                child: Text(
+                  'Pick an app to start your request.',
+                  style: TextStyle(color: Colors.grey[600], fontSize: 12),
                 ),
               ),
-            ],
-          ),
-          if (trimmedReason.isNotEmpty) ...[
-            const SizedBox(height: 8),
-            Text(
-              '"$trimmedReason"',
-              maxLines: 2,
-              overflow: TextOverflow.ellipsis,
-              style: Theme.of(context).textTheme.bodySmall?.copyWith(
-                    fontStyle: FontStyle.italic,
-                    color: Colors.grey[600],
-                  ),
+            const SizedBox(height: 10),
+            SizedBox(
+              width: double.infinity,
+              height: 50,
+              child: ElevatedButton(
+                key: const Key('child_request_submit_button'),
+                onPressed: _canSubmit ? _submitRequest : null,
+                child: _isLoading
+                    ? const SizedBox(
+                        height: 18,
+                        width: 18,
+                        child: CircularProgressIndicator(
+                          strokeWidth: 2,
+                          valueColor: AlwaysStoppedAnimation<Color>(Colors.white),
+                        ),
+                      )
+                    : const Text(
+                        'Send Request ->',
+                        style: TextStyle(fontWeight: FontWeight.bold),
+                      ),
+              ),
             ),
           ],
-        ],
+        ),
       ),
     );
   }
@@ -420,10 +441,7 @@ class _ChildRequestScreenState extends State<ChildRequestScreen> {
           Expanded(
             child: Text(
               _error!,
-              style: const TextStyle(
-                color: Colors.red,
-                fontSize: 13,
-              ),
+              style: const TextStyle(color: Colors.red, fontSize: 13),
             ),
           ),
         ],
@@ -431,30 +449,51 @@ class _ChildRequestScreenState extends State<ChildRequestScreen> {
     );
   }
 
-  Widget _buildSubmitButton() {
-    return SizedBox(
-      height: 50,
-      child: ElevatedButton.icon(
-        key: const Key('child_request_submit_button'),
-        onPressed: _canSubmit ? _submitRequest : null,
-        icon: _isLoading
-            ? const SizedBox(
-                width: 18,
-                height: 18,
-                child: CircularProgressIndicator(
-                  strokeWidth: 2,
-                  valueColor: AlwaysStoppedAnimation<Color>(Colors.white),
-                ),
-              )
-            : const Text('\u2709\uFE0F', style: TextStyle(fontSize: 18)),
-        label: const Text(
-          'Send Request',
-          style: TextStyle(fontSize: 16, fontWeight: FontWeight.bold),
-        ),
-        style: ElevatedButton.styleFrom(
-          shape: RoundedRectangleBorder(
-            borderRadius: BorderRadius.circular(12),
-          ),
+  Widget _buildSuccessState() {
+    return Center(
+      child: Padding(
+        padding: const EdgeInsets.all(32),
+        child: Column(
+          mainAxisAlignment: MainAxisAlignment.center,
+          children: [
+            const Icon(Icons.send_rounded, size: 72, color: Color(0xFF207CF8)),
+            const SizedBox(height: 24),
+            Text(
+              'Request sent!',
+              style: Theme.of(context).textTheme.headlineSmall?.copyWith(
+                    fontWeight: FontWeight.bold,
+                  ),
+            ),
+            const SizedBox(height: 12),
+            Text(
+              'Your parent will see this soon.\nThey usually respond within 15 minutes.',
+              textAlign: TextAlign.center,
+              style: Theme.of(context).textTheme.bodyMedium?.copyWith(
+                    color: Colors.grey[600],
+                  ),
+            ),
+            const SizedBox(height: 28),
+            OutlinedButton(
+              onPressed: () => Navigator.of(context).pop(),
+              child: const Text('Back to Home'),
+            ),
+            TextButton(
+              key: const Key('child_request_view_updates_button'),
+              onPressed: () {
+                Navigator.of(context).pushReplacement(
+                  MaterialPageRoute(
+                    builder: (_) => ChildRequestsScreen(
+                      child: widget.child,
+                      authService: widget.authService,
+                      firestoreService: widget.firestoreService,
+                      parentIdOverride: widget.parentIdOverride,
+                    ),
+                  ),
+                );
+              },
+              child: const Text('View Request Updates'),
+            ),
+          ],
         ),
       ),
     );
@@ -491,10 +530,9 @@ class _ChildRequestScreenState extends State<ChildRequestScreen> {
       await _resolvedFirestoreService.submitAccessRequest(request);
       await _resolvedFirestoreService.queueParentNotification(
         parentId: parentId,
-        title: '\u{1F4F1} ${widget.child.nickname} wants access',
+        title: '${widget.child.nickname} wants access',
         body:
-            '${widget.child.nickname} is requesting access to ${_appOrSite.trim()} '
-            'for ${_selectedDuration.label}',
+            '${widget.child.nickname} is requesting access to ${_appOrSite.trim()} for ${_selectedDuration.label}',
         route: '/parent-requests',
       );
 
@@ -515,4 +553,14 @@ class _ChildRequestScreenState extends State<ChildRequestScreen> {
       });
     }
   }
+}
+
+class _QuickApp {
+  const _QuickApp({
+    required this.name,
+    required this.icon,
+  });
+
+  final String name;
+  final IconData icon;
 }

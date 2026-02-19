@@ -26,8 +26,14 @@ void main() {
       await tester.pump();
 
       expect(find.text('Ask for Access'), findsWidgets);
-      expect(find.text('What do you need?'), findsOneWidget);
+      expect(find.text('Which app?'), findsOneWidget);
       expect(find.text('For how long?'), findsOneWidget);
+      await tester.dragUntilVisible(
+        find.text('Why do you need it?'),
+        find.byType(ListView),
+        const Offset(0, -200),
+      );
+      await tester.pump();
       expect(find.text('Why do you need it?'), findsOneWidget);
     });
 
@@ -42,9 +48,10 @@ void main() {
       );
       await tester.pump();
 
-      expect(find.text('15 min'), findsOneWidget);
-      expect(find.text('30 min'), findsOneWidget);
-      expect(find.text('1 hour'), findsOneWidget);
+      expect(find.text('15m'), findsOneWidget);
+      expect(find.text('30m'), findsOneWidget);
+      expect(find.text('1h'), findsOneWidget);
+      expect(find.text('2h'), findsOneWidget);
       expect(find.text('Until schedule ends'), findsOneWidget);
     });
 
@@ -89,15 +96,8 @@ void main() {
       );
       await tester.pump();
 
-      await tester.dragUntilVisible(
-        find.text('Your request:'),
-        find.byType(ListView),
-        const Offset(0, -220),
-      );
-      await tester.pump();
-
-      expect(find.text('Your request:'), findsOneWidget);
-      expect(find.text('Instagram'), findsOneWidget);
+      expect(find.byKey(const Key('child_request_draft_preview')), findsOneWidget);
+      expect(find.text('Instagram'), findsWidgets);
     });
 
     testWidgets('duration chip selection updates preview label',
@@ -118,18 +118,17 @@ void main() {
       );
       await tester.pump();
 
-      await tester.tap(find.text('1 hour'));
-      await tester.pump();
-
       await tester.dragUntilVisible(
-        find.text('Your request:'),
+        find.text('2h'),
         find.byType(ListView),
-        const Offset(0, -220),
+        const Offset(0, -200),
       );
       await tester.pump();
+      await tester.tap(find.text('2h'));
+      await tester.pump();
 
-      expect(find.text('1 hour'), findsWidgets);
-      expect(find.text('Your request:'), findsOneWidget);
+      expect(find.textContaining('2 hours'), findsOneWidget);
+      expect(find.byKey(const Key('child_request_draft_preview')), findsOneWidget);
     });
   });
 }

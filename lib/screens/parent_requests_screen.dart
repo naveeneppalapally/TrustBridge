@@ -495,6 +495,8 @@ class _RequestCardState extends State<_RequestCard> {
         return l10n.durationThirtyMin;
       case RequestDuration.oneHour:
         return l10n.durationOneHour;
+      case RequestDuration.twoHours:
+        return '2 hours';
       case RequestDuration.untilScheduleEnds:
         return l10n.durationUntilEnd;
     }
