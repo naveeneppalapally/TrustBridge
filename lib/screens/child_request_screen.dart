@@ -4,7 +4,7 @@ import '../models/access_request.dart';
 import '../models/child_profile.dart';
 import '../services/auth_service.dart';
 import '../services/firestore_service.dart';
-import 'child_requests_screen.dart';
+import 'request_sent_screen.dart';
 
 class ChildRequestScreen extends StatefulWidget {
   const ChildRequestScreen({
@@ -34,7 +34,6 @@ class _ChildRequestScreenState extends State<ChildRequestScreen> {
   String? _selectedQuickApp;
   RequestDuration _selectedDuration = RequestDuration.fifteenMin;
   bool _isLoading = false;
-  bool _submitted = false;
   String? _error;
 
   static const _quickApps = <_QuickApp>[
@@ -69,7 +68,7 @@ class _ChildRequestScreenState extends State<ChildRequestScreen> {
       appBar: AppBar(
         title: const Text('Ask for Access'),
       ),
-      body: _submitted ? _buildSuccessState() : _buildRequestComposer(),
+      body: _buildRequestComposer(),
     );
   }
 
@@ -449,56 +448,6 @@ class _ChildRequestScreenState extends State<ChildRequestScreen> {
     );
   }
 
-  Widget _buildSuccessState() {
-    return Center(
-      child: Padding(
-        padding: const EdgeInsets.all(32),
-        child: Column(
-          mainAxisAlignment: MainAxisAlignment.center,
-          children: [
-            const Icon(Icons.send_rounded, size: 72, color: Color(0xFF207CF8)),
-            const SizedBox(height: 24),
-            Text(
-              'Request sent!',
-              style: Theme.of(context).textTheme.headlineSmall?.copyWith(
-                    fontWeight: FontWeight.bold,
-                  ),
-            ),
-            const SizedBox(height: 12),
-            Text(
-              'Your parent will see this soon.\nThey usually respond within 15 minutes.',
-              textAlign: TextAlign.center,
-              style: Theme.of(context).textTheme.bodyMedium?.copyWith(
-                    color: Colors.grey[600],
-                  ),
-            ),
-            const SizedBox(height: 28),
-            OutlinedButton(
-              onPressed: () => Navigator.of(context).pop(),
-              child: const Text('Back to Home'),
-            ),
-            TextButton(
-              key: const Key('child_request_view_updates_button'),
-              onPressed: () {
-                Navigator.of(context).pushReplacement(
-                  MaterialPageRoute(
-                    builder: (_) => ChildRequestsScreen(
-                      child: widget.child,
-                      authService: widget.authService,
-                      firestoreService: widget.firestoreService,
-                      parentIdOverride: widget.parentIdOverride,
-                    ),
-                  ),
-                );
-              },
-              child: const Text('View Request Updates'),
-            ),
-          ],
-        ),
-      ),
-    );
-  }
-
   Future<void> _submitRequest() async {
     if (!_canSubmit) {
       return;
@@ -541,8 +490,17 @@ class _ChildRequestScreenState extends State<ChildRequestScreen> {
       }
       setState(() {
         _isLoading = false;
-        _submitted = true;
       });
+      Navigator.of(context).pushReplacement(
+        MaterialPageRoute(
+          builder: (_) => RequestSentScreen(
+            child: widget.child,
+            authService: widget.authService,
+            firestoreService: widget.firestoreService,
+            parentIdOverride: widget.parentIdOverride,
+          ),
+        ),
+      );
     } catch (_) {
       if (!mounted) {
         return;
