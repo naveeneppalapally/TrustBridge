@@ -147,7 +147,19 @@ service cloud.firestore {
       allow create: if isAuthed() &&
         hasOnlyKeys(
           request.resource.data,
-          ['nickname', 'ageBand', 'deviceIds', 'policy', 'createdAt', 'updatedAt', 'parentId', 'pausedUntil']
+          [
+            'nickname',
+            'ageBand',
+            'deviceIds',
+            'policy',
+            'createdAt',
+            'updatedAt',
+            'parentId',
+            'pausedUntil',
+            'nextDnsProfileId',
+            'deviceMetadata',
+            'nextDnsControls'
+          ]
         ) &&
         isRequiredString(request.resource.data, 'nickname', 30) &&
         isAllowedAgeBand(request.resource.data, 'ageBand') &&
@@ -157,13 +169,28 @@ service cloud.firestore {
         isRequiredTimestamp(request.resource.data, 'updatedAt') &&
         isRequiredString(request.resource.data, 'parentId', 128) &&
         request.resource.data.parentId == request.auth.uid &&
-        isOptionalTimestamp(request.resource.data, 'pausedUntil');
+        isOptionalTimestamp(request.resource.data, 'pausedUntil') &&
+        isOptionalString(request.resource.data, 'nextDnsProfileId', 32) &&
+        (!('deviceMetadata' in request.resource.data) ||
+          request.resource.data.deviceMetadata is map) &&
+        (!('nextDnsControls' in request.resource.data) ||
+          request.resource.data.nextDnsControls is map);
 
       allow update: if isAuthed() &&
         resource.data.parentId == request.auth.uid &&
         request.resource.data.parentId == resource.data.parentId &&
         request.resource.data.diff(resource.data).affectedKeys().hasOnly(
-          ['nickname', 'ageBand', 'deviceIds', 'policy', 'pausedUntil', 'updatedAt']
+          [
+            'nickname',
+            'ageBand',
+            'deviceIds',
+            'policy',
+            'pausedUntil',
+            'updatedAt',
+            'nextDnsProfileId',
+            'deviceMetadata',
+            'nextDnsControls'
+          ]
         ) &&
         isRequiredString(request.resource.data, 'nickname', 30) &&
         isAllowedAgeBand(request.resource.data, 'ageBand') &&
@@ -171,7 +198,12 @@ service cloud.firestore {
         request.resource.data.policy is map &&
         isRequiredTimestamp(request.resource.data, 'createdAt') &&
         isRequiredTimestamp(request.resource.data, 'updatedAt') &&
-        isOptionalTimestamp(request.resource.data, 'pausedUntil');
+        isOptionalTimestamp(request.resource.data, 'pausedUntil') &&
+        isOptionalString(request.resource.data, 'nextDnsProfileId', 32) &&
+        (!('deviceMetadata' in request.resource.data) ||
+          request.resource.data.deviceMetadata is map) &&
+        (!('nextDnsControls' in request.resource.data) ||
+          request.resource.data.nextDnsControls is map);
 
       allow delete: if isAuthed() && resource.data.parentId == request.auth.uid;
     }

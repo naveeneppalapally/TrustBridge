@@ -5,13 +5,18 @@ import 'package:trustbridge_app/models/access_request.dart';
 import 'package:trustbridge_app/models/child_profile.dart';
 import 'package:trustbridge_app/models/support_ticket.dart';
 import 'package:trustbridge_app/services/crashlytics_service.dart';
+import 'package:trustbridge_app/services/nextdns_api_service.dart';
 import 'package:trustbridge_app/services/performance_service.dart';
 
 class FirestoreService {
-  FirestoreService({FirebaseFirestore? firestore})
-      : _firestore = firestore ?? FirebaseFirestore.instance;
+  FirestoreService({
+    FirebaseFirestore? firestore,
+    NextDnsApiService? nextDnsApiService,
+  })  : _firestore = firestore ?? FirebaseFirestore.instance,
+        _nextDnsApiService = nextDnsApiService ?? NextDnsApiService();
 
   final FirebaseFirestore _firestore;
+  final NextDnsApiService _nextDnsApiService;
   final CrashlyticsService _crashlyticsService = CrashlyticsService();
   final PerformanceService _performanceService = PerformanceService();
 
@@ -45,6 +50,8 @@ class FirestoreService {
             'vpnProtectionEnabled': false,
             'nextDnsEnabled': false,
             'nextDnsProfileId': null,
+            'nextDnsApiConnected': false,
+            'nextDnsConnectedAt': null,
           },
           'onboardingComplete': false,
           'fcmToken': null,
@@ -240,6 +247,8 @@ class FirestoreService {
     bool? vpnProtectionEnabled,
     bool? nextDnsEnabled,
     String? nextDnsProfileId,
+    bool? nextDnsApiConnected,
+    DateTime? nextDnsConnectedAt,
   }) async {
     if (parentId.trim().isEmpty) {
       throw ArgumentError.value(parentId, 'parentId', 'Parent ID is required.');
@@ -285,6 +294,13 @@ class FirestoreService {
     if (nextDnsProfileId != null) {
       final trimmed = nextDnsProfileId.trim();
       preferenceUpdates['nextDnsProfileId'] = trimmed.isEmpty ? null : trimmed;
+    }
+    if (nextDnsApiConnected != null) {
+      preferenceUpdates['nextDnsApiConnected'] = nextDnsApiConnected;
+    }
+    if (nextDnsConnectedAt != null) {
+      preferenceUpdates['nextDnsConnectedAt'] =
+          Timestamp.fromDate(nextDnsConnectedAt);
     }
 
     if (preferenceUpdates.isEmpty) {
@@ -933,6 +949,297 @@ class FirestoreService {
     return ChildProfile.fromFirestore(snapshot);
   }
 
+  Future<void> setChildNextDnsProfileId({
+    required String parentId,
+    required String childId,
+    required String profileId,
+  }) async {
+    if (parentId.trim().isEmpty) {
+      throw ArgumentError.value(parentId, 'parentId', 'Parent ID is required.');
+    }
+    if (childId.trim().isEmpty) {
+      throw ArgumentError.value(childId, 'childId', 'Child ID is required.');
+    }
+    final normalizedProfileId = profileId.trim().toLowerCase();
+    if (normalizedProfileId.isEmpty) {
+      throw ArgumentError.value(
+        profileId,
+        'profileId',
+        'NextDNS profile ID is required.',
+      );
+    }
+
+    final childDoc = await _loadOwnedChildDoc(
+      parentId: parentId,
+      childId: childId,
+    );
+
+    await childDoc.reference.update(<String, dynamic>{
+      'nextDnsProfileId': normalizedProfileId,
+      'updatedAt': Timestamp.fromDate(DateTime.now()),
+    });
+  }
+
+  Future<int> migrateChildrenWithoutNextDnsProfiles(String parentId) async {
+    if (parentId.trim().isEmpty) {
+      throw ArgumentError.value(parentId, 'parentId', 'Parent ID is required.');
+    }
+
+    final children = await getChildren(parentId);
+    if (children.isEmpty) {
+      return 0;
+    }
+
+    final existingProfiles = await _nextDnsApiService.fetchProfiles();
+    final profilesByName = <String, NextDnsProfileSummary>{};
+    for (final profile in existingProfiles) {
+      final key = profile.name.trim().toLowerCase();
+      if (key.isNotEmpty) {
+        profilesByName[key] = profile;
+      }
+    }
+
+    var migratedCount = 0;
+    for (final child in children) {
+      final existingProfileId = child.nextDnsProfileId?.trim();
+      if (existingProfileId != null && existingProfileId.isNotEmpty) {
+        continue;
+      }
+
+      final nicknameKey = child.nickname.trim().toLowerCase();
+      NextDnsProfileSummary profile;
+      if (profilesByName.containsKey(nicknameKey)) {
+        profile = profilesByName[nicknameKey]!;
+      } else {
+        profile = await _nextDnsApiService.createProfile(name: child.nickname);
+        profilesByName[nicknameKey] = profile;
+      }
+
+      await setChildNextDnsProfileId(
+        parentId: parentId,
+        childId: child.id,
+        profileId: profile.id,
+      );
+      migratedCount += 1;
+    }
+
+    return migratedCount;
+  }
+
+  Future<void> saveChildNextDnsControls({
+    required String parentId,
+    required String childId,
+    required Map<String, dynamic> controls,
+  }) async {
+    if (parentId.trim().isEmpty) {
+      throw ArgumentError.value(parentId, 'parentId', 'Parent ID is required.');
+    }
+    if (childId.trim().isEmpty) {
+      throw ArgumentError.value(childId, 'childId', 'Child ID is required.');
+    }
+
+    final childDoc = await _loadOwnedChildDoc(
+      parentId: parentId,
+      childId: childId,
+    );
+    await childDoc.reference.update(<String, dynamic>{
+      'nextDnsControls': controls,
+      'updatedAt': Timestamp.fromDate(DateTime.now()),
+    });
+  }
+
+  Future<void> upsertChildDeviceMetadata({
+    required String parentId,
+    required String childId,
+    required String deviceId,
+    required String alias,
+    String? model,
+    String? manufacturer,
+    String? linkedNextDnsProfileId,
+  }) async {
+    if (parentId.trim().isEmpty) {
+      throw ArgumentError.value(parentId, 'parentId', 'Parent ID is required.');
+    }
+    if (childId.trim().isEmpty) {
+      throw ArgumentError.value(childId, 'childId', 'Child ID is required.');
+    }
+    final normalizedDeviceId = deviceId.trim();
+    if (normalizedDeviceId.isEmpty) {
+      throw ArgumentError.value(
+        deviceId,
+        'deviceId',
+        'Device ID cannot be empty.',
+      );
+    }
+    final normalizedAlias = alias.trim();
+    if (normalizedAlias.isEmpty) {
+      throw ArgumentError.value(alias, 'alias', 'Device alias is required.');
+    }
+
+    final childDoc = await _loadOwnedChildDoc(
+      parentId: parentId,
+      childId: childId,
+    );
+    final currentData = childDoc.data() ?? const <String, dynamic>{};
+    final rawMetadata = currentData['deviceMetadata'];
+    final metadataMap = rawMetadata is Map
+        ? rawMetadata.map(
+            (key, value) => MapEntry(key.toString(), value),
+          )
+        : <String, dynamic>{};
+
+    final existingDeviceRaw = metadataMap[normalizedDeviceId];
+    final existingDeviceMap = existingDeviceRaw is Map
+        ? existingDeviceRaw.map(
+            (key, value) => MapEntry(key.toString(), value),
+          )
+        : <String, dynamic>{};
+    final now = Timestamp.fromDate(DateTime.now());
+
+    metadataMap[normalizedDeviceId] = <String, dynamic>{
+      'alias': normalizedAlias,
+      'model': model?.trim().isEmpty == true ? null : model?.trim(),
+      'manufacturer':
+          manufacturer?.trim().isEmpty == true ? null : manufacturer?.trim(),
+      'linkedNextDnsProfileId': linkedNextDnsProfileId?.trim().isEmpty == true
+          ? null
+          : linkedNextDnsProfileId?.trim(),
+      'isVerified': existingDeviceMap['isVerified'] == true,
+      'createdAt': existingDeviceMap['createdAt'] ?? now,
+      'lastSeenAt': existingDeviceMap['lastSeenAt'],
+    };
+
+    final rawDeviceIds = currentData['deviceIds'];
+    final deviceIds = rawDeviceIds is List
+        ? rawDeviceIds
+            .map((item) => item.toString().trim())
+            .where((item) => item.isNotEmpty)
+            .toSet()
+        : <String>{};
+    deviceIds.add(normalizedDeviceId);
+
+    await childDoc.reference.update(<String, dynamic>{
+      'deviceIds': deviceIds.toList(growable: false),
+      'deviceMetadata': metadataMap,
+      'updatedAt': now,
+    });
+  }
+
+  Future<void> verifyChildDevice({
+    required String parentId,
+    required String childId,
+    required String deviceId,
+  }) async {
+    if (parentId.trim().isEmpty) {
+      throw ArgumentError.value(parentId, 'parentId', 'Parent ID is required.');
+    }
+    if (childId.trim().isEmpty) {
+      throw ArgumentError.value(childId, 'childId', 'Child ID is required.');
+    }
+    final normalizedDeviceId = deviceId.trim();
+    if (normalizedDeviceId.isEmpty) {
+      throw ArgumentError.value(
+        deviceId,
+        'deviceId',
+        'Device ID cannot be empty.',
+      );
+    }
+
+    final childDoc = await _loadOwnedChildDoc(
+      parentId: parentId,
+      childId: childId,
+    );
+    final currentData = childDoc.data() ?? const <String, dynamic>{};
+    final rawMetadata = currentData['deviceMetadata'];
+    final metadataMap = rawMetadata is Map
+        ? rawMetadata.map(
+            (key, value) => MapEntry(key.toString(), value),
+          )
+        : <String, dynamic>{};
+    final existingRaw = metadataMap[normalizedDeviceId];
+    if (existingRaw is! Map) {
+      throw StateError('Device metadata not found for $normalizedDeviceId');
+    }
+
+    final existingMap = existingRaw.map(
+      (key, value) => MapEntry(key.toString(), value),
+    );
+    final now = Timestamp.fromDate(DateTime.now());
+    metadataMap[normalizedDeviceId] = <String, dynamic>{
+      ...existingMap,
+      'isVerified': true,
+      'lastSeenAt': now,
+    };
+
+    await childDoc.reference.update(<String, dynamic>{
+      'deviceMetadata': metadataMap,
+      'updatedAt': now,
+    });
+  }
+
+  Future<void> removeChildDevice({
+    required String parentId,
+    required String childId,
+    required String deviceId,
+  }) async {
+    if (parentId.trim().isEmpty) {
+      throw ArgumentError.value(parentId, 'parentId', 'Parent ID is required.');
+    }
+    if (childId.trim().isEmpty) {
+      throw ArgumentError.value(childId, 'childId', 'Child ID is required.');
+    }
+    final normalizedDeviceId = deviceId.trim();
+    if (normalizedDeviceId.isEmpty) {
+      throw ArgumentError.value(
+        deviceId,
+        'deviceId',
+        'Device ID cannot be empty.',
+      );
+    }
+
+    final childDoc = await _loadOwnedChildDoc(
+      parentId: parentId,
+      childId: childId,
+    );
+    final currentData = childDoc.data() ?? const <String, dynamic>{};
+    final rawMetadata = currentData['deviceMetadata'];
+    final metadataMap = rawMetadata is Map
+        ? rawMetadata.map(
+            (key, value) => MapEntry(key.toString(), value),
+          )
+        : <String, dynamic>{};
+    metadataMap.remove(normalizedDeviceId);
+
+    final rawDeviceIds = currentData['deviceIds'];
+    final deviceIds = rawDeviceIds is List
+        ? rawDeviceIds
+            .map((item) => item.toString().trim())
+            .where((item) => item.isNotEmpty && item != normalizedDeviceId)
+            .toList(growable: false)
+        : const <String>[];
+
+    await childDoc.reference.update(<String, dynamic>{
+      'deviceIds': deviceIds,
+      'deviceMetadata': metadataMap,
+      'updatedAt': Timestamp.fromDate(DateTime.now()),
+    });
+  }
+
+  Future<DocumentSnapshot<Map<String, dynamic>>> _loadOwnedChildDoc({
+    required String parentId,
+    required String childId,
+  }) async {
+    final childDoc = await _firestore.collection('children').doc(childId).get();
+    if (!childDoc.exists) {
+      throw StateError('Child profile not found.');
+    }
+    final data = childDoc.data();
+    if (data == null || data['parentId'] != parentId) {
+      throw StateError('You do not have access to this child profile.');
+    }
+    return childDoc;
+  }
+
   Future<void> updateChild({
     required String parentId,
     required ChildProfile child,
@@ -958,6 +1265,11 @@ class FirestoreService {
       'nickname': normalizedNickname,
       'ageBand': child.ageBand.value,
       'deviceIds': child.deviceIds,
+      'nextDnsProfileId': child.nextDnsProfileId,
+      'deviceMetadata': child.deviceMetadata.map(
+        (deviceId, metadata) => MapEntry(deviceId, metadata.toMap()),
+      ),
+      'nextDnsControls': child.nextDnsControls,
       'policy': child.policy.toMap(),
       'pausedUntil': child.pausedUntil != null
           ? Timestamp.fromDate(child.pausedUntil!)
@@ -1176,6 +1488,7 @@ class FirestoreService {
       if (!requestSnapshot.exists) {
         throw StateError('Access request not found.');
       }
+      final existingRequest = AccessRequest.fromFirestore(requestSnapshot);
 
       DateTime? expiresAt;
       if (status == RequestStatus.approved) {
@@ -1204,6 +1517,11 @@ class FirestoreService {
         'respondedAt': Timestamp.fromDate(DateTime.now()),
         if (expiresAt != null) 'expiresAt': Timestamp.fromDate(expiresAt),
       });
+      await _syncNextDnsAccessLifecycle(
+        parentId: parentId,
+        request: existingRequest,
+        status: status,
+      );
       await _crashlyticsService.setCustomKeys({
         'last_request_id': requestId,
         'last_request_status': status.name,
@@ -1261,6 +1579,11 @@ class FirestoreService {
         'expiredAt': now,
         'updatedAt': now,
       });
+      await _syncNextDnsAccessLifecycle(
+        parentId: parentId,
+        request: request,
+        status: RequestStatus.expired,
+      );
       await _crashlyticsService.setCustomKeys({
         'last_request_id': requestId,
         'last_request_status': RequestStatus.expired.name,
@@ -1405,6 +1728,58 @@ class FirestoreService {
     }
 
     return requests;
+  }
+
+  Future<void> _syncNextDnsAccessLifecycle({
+    required String parentId,
+    required AccessRequest request,
+    required RequestStatus status,
+  }) async {
+    final domain = _normalizeExceptionDomain(request.appOrSite);
+    if (domain == null) {
+      return;
+    }
+
+    final profileId = await _getChildNextDnsProfileId(
+      parentId: parentId,
+      childId: request.childId,
+    );
+    if (profileId == null || profileId.isEmpty) {
+      return;
+    }
+
+    try {
+      if (status == RequestStatus.approved) {
+        await _nextDnsApiService.addToAllowlist(
+          profileId: profileId,
+          domain: domain,
+        );
+      } else if (status == RequestStatus.denied ||
+          status == RequestStatus.expired) {
+        await _nextDnsApiService.removeFromAllowlist(
+          profileId: profileId,
+          domain: domain,
+        );
+      }
+    } catch (error, stackTrace) {
+      await _crashlyticsService.logError(
+        error,
+        stackTrace,
+        reason: 'Failed syncing NextDNS access pass lifecycle',
+      );
+    }
+  }
+
+  Future<String?> _getChildNextDnsProfileId({
+    required String parentId,
+    required String childId,
+  }) async {
+    final child = await getChild(parentId: parentId, childId: childId);
+    final profileId = child?.nextDnsProfileId?.trim();
+    if (profileId == null || profileId.isEmpty) {
+      return null;
+    }
+    return profileId;
   }
 
   String? _normalizeExceptionDomain(String raw) {

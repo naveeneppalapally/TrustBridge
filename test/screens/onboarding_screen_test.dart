@@ -1,3 +1,5 @@
+import 'dart:async';
+
 import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:trustbridge_app/screens/onboarding_screen.dart';
@@ -116,6 +118,57 @@ void main() {
 
       expect(completeCalled, isTrue);
       expect(find.text('Dashboard Home'), findsOneWidget);
+    });
+
+    testWidgets('skip still routes to dashboard when cloud completion fails',
+        (WidgetTester tester) async {
+      await tester.pumpWidget(
+        MaterialApp(
+          routes: {
+            '/dashboard': (_) => const Scaffold(body: Text('Dashboard Home')),
+          },
+          home: OnboardingScreen(
+            parentId: 'parent-test',
+            onCompleteOnboarding: (_) async {
+              throw Exception('permission-denied');
+            },
+          ),
+        ),
+      );
+      await tester.pump();
+
+      await tester.tap(find.text('Skip'));
+      await tester.pumpAndSettle();
+
+      expect(find.text('Dashboard Home'), findsOneWidget);
+    });
+
+    testWidgets('skip routes immediately even when cloud completion is slow',
+        (WidgetTester tester) async {
+      final completer = Completer<void>();
+
+      await tester.pumpWidget(
+        MaterialApp(
+          routes: {
+            '/dashboard': (_) => const Scaffold(body: Text('Dashboard Home')),
+          },
+          home: OnboardingScreen(
+            parentId: 'parent-test',
+            onCompleteOnboarding: (_) => completer.future,
+          ),
+        ),
+      );
+      await tester.pump();
+
+      await tester.tap(find.text('Skip'));
+      await tester.pumpAndSettle();
+
+      expect(find.text('Dashboard Home'), findsOneWidget);
+
+      if (!completer.isCompleted) {
+        completer.complete();
+      }
+      await tester.pump();
     });
   });
 }

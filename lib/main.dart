@@ -25,6 +25,7 @@ import 'package:trustbridge_app/services/auth_service.dart';
 import 'package:trustbridge_app/services/crashlytics_service.dart';
 import 'package:trustbridge_app/services/firestore_service.dart';
 import 'package:trustbridge_app/services/notification_service.dart';
+import 'package:trustbridge_app/services/onboarding_state_service.dart';
 import 'package:trustbridge_app/services/policy_vpn_sync_service.dart';
 import 'package:trustbridge_app/theme/app_theme.dart';
 import 'package:trustbridge_app/widgets/child_shell.dart';
@@ -419,17 +420,93 @@ Future<_LaunchRoute> _loadLaunchRoute({
   required FirestoreService firestoreService,
   required User user,
 }) async {
-  await firestoreService.ensureParentProfile(
-    parentId: user.uid,
-    phoneNumber: user.phoneNumber,
-  );
-  final parentPrefs = await firestoreService.getParentPreferences(user.uid);
-  final onboardingComplete =
-      (parentPrefs?['onboardingComplete'] as bool?) ?? false;
-  return _LaunchRoute(
-    parentId: user.uid,
-    onboardingComplete: onboardingComplete,
-  );
+  final onboardingStateService = OnboardingStateService();
+  var localCompletion = false;
+  try {
+    localCompletion = await onboardingStateService
+        .isCompleteLocally(user.uid)
+        .timeout(const Duration(seconds: 2));
+  } catch (_) {
+    localCompletion = false;
+  }
+
+  if (localCompletion) {
+    unawaited(
+      _reconcileOnboardingStateWithCloud(
+        firestoreService: firestoreService,
+        onboardingStateService: onboardingStateService,
+        user: user,
+      ),
+    );
+    return _LaunchRoute(
+      parentId: user.uid,
+      onboardingComplete: true,
+    );
+  }
+
+  try {
+    await firestoreService
+        .ensureParentProfile(
+          parentId: user.uid,
+          phoneNumber: user.phoneNumber,
+        )
+        .timeout(const Duration(seconds: 12));
+
+    final parentPrefs = await firestoreService
+        .getParentPreferences(user.uid)
+        .timeout(const Duration(seconds: 12));
+    final remoteCompletion =
+        (parentPrefs?['onboardingComplete'] as bool?) ?? false;
+    final onboardingComplete = remoteCompletion || localCompletion;
+
+    if (remoteCompletion && !localCompletion) {
+      unawaited(onboardingStateService.markCompleteLocally(user.uid));
+    } else if (onboardingComplete && !remoteCompletion) {
+      unawaited(firestoreService.completeOnboarding(user.uid));
+    }
+
+    return _LaunchRoute(
+      parentId: user.uid,
+      onboardingComplete: onboardingComplete,
+    );
+  } catch (error) {
+    debugPrint('[AuthWrapper] Launch route fallback: $error');
+    return _LaunchRoute(
+      parentId: user.uid,
+      onboardingComplete: localCompletion,
+    );
+  }
+}
+
+Future<void> _reconcileOnboardingStateWithCloud({
+  required FirestoreService firestoreService,
+  required OnboardingStateService onboardingStateService,
+  required User user,
+}) async {
+  try {
+    await firestoreService
+        .ensureParentProfile(
+          parentId: user.uid,
+          phoneNumber: user.phoneNumber,
+        )
+        .timeout(const Duration(seconds: 12));
+    final parentPrefs = await firestoreService
+        .getParentPreferences(user.uid)
+        .timeout(const Duration(seconds: 12));
+    final remoteCompletion =
+        (parentPrefs?['onboardingComplete'] as bool?) ?? false;
+    if (!remoteCompletion) {
+      await firestoreService.completeOnboarding(user.uid).timeout(
+            const Duration(seconds: 12),
+          );
+    } else {
+      await onboardingStateService.markCompleteLocally(user.uid).timeout(
+            const Duration(seconds: 2),
+          );
+    }
+  } catch (error) {
+    debugPrint('[AuthWrapper] Cloud reconciliation skipped: $error');
+  }
 }
 
 class _DashboardEntryScreen extends StatefulWidget {

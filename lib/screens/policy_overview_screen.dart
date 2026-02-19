@@ -5,6 +5,7 @@ import 'package:trustbridge_app/models/schedule.dart';
 import 'package:trustbridge_app/screens/age_preset_policy_screen.dart';
 import 'package:trustbridge_app/screens/block_categories_screen.dart';
 import 'package:trustbridge_app/screens/custom_domains_screen.dart';
+import 'package:trustbridge_app/screens/nextdns_controls_screen.dart';
 import 'package:trustbridge_app/screens/quick_modes_screen.dart';
 import 'package:trustbridge_app/screens/schedule_creator_screen.dart';
 import 'package:trustbridge_app/services/auth_service.dart';
@@ -100,6 +101,8 @@ class _PolicyOverviewScreenState extends State<PolicyOverviewScreen> {
           _buildTimeRestrictionsCard(context, policy),
           const SizedBox(height: 12),
           _buildSafeSearchCard(context, policy),
+          const SizedBox(height: 12),
+          _buildNextDnsControlsCard(context),
           const SizedBox(height: 12),
           _buildCustomDomainsCard(context, policy),
         ],
@@ -745,6 +748,66 @@ class _PolicyOverviewScreenState extends State<PolicyOverviewScreen> {
     );
   }
 
+  Widget _buildNextDnsControlsCard(BuildContext context) {
+    final hasProfile = (_child.nextDnsProfileId ?? '').trim().isNotEmpty;
+    return Card(
+      elevation: 0,
+      shape: RoundedRectangleBorder(
+        borderRadius: BorderRadius.circular(16),
+      ),
+      child: InkWell(
+        borderRadius: BorderRadius.circular(16),
+        onTap: () async => _openNextDnsControls(context),
+        child: Padding(
+          padding: const EdgeInsets.all(16),
+          child: Row(
+            children: [
+              Container(
+                padding: const EdgeInsets.all(8),
+                decoration: BoxDecoration(
+                  color: hasProfile
+                      ? Colors.blue.shade100
+                      : Colors.orange.shade100,
+                  borderRadius: BorderRadius.circular(8),
+                ),
+                child: Icon(
+                  Icons.dns_outlined,
+                  color: hasProfile
+                      ? Colors.blue.shade700
+                      : Colors.orange.shade700,
+                ),
+              ),
+              const SizedBox(width: 12),
+              Expanded(
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Text(
+                      'NextDNS Blocking Controls',
+                      style: Theme.of(context).textTheme.titleMedium?.copyWith(
+                            fontWeight: FontWeight.w700,
+                          ),
+                    ),
+                    const SizedBox(height: 3),
+                    Text(
+                      hasProfile
+                          ? 'Services, categories, and bypass protection'
+                          : 'Link a NextDNS profile first from settings',
+                      style: Theme.of(context).textTheme.bodySmall?.copyWith(
+                            color: Colors.grey.shade600,
+                          ),
+                    ),
+                  ],
+                ),
+              ),
+              Icon(Icons.chevron_right, color: Colors.grey.shade600),
+            ],
+          ),
+        ),
+      ),
+    );
+  }
+
   Future<void> _openBlockCategories(BuildContext context) async {
     final updatedChild = await Navigator.of(context).push<ChildProfile>(
       MaterialPageRoute(
@@ -800,6 +863,47 @@ class _PolicyOverviewScreenState extends State<PolicyOverviewScreen> {
         _child = updatedChild;
       });
     }
+  }
+
+  Future<void> _openNextDnsControls(BuildContext context) async {
+    final hasProfile = (_child.nextDnsProfileId ?? '').trim().isNotEmpty;
+    if (!hasProfile) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(
+          content: Text('Connect and map NextDNS profile first.'),
+        ),
+      );
+      return;
+    }
+
+    await Navigator.of(context).push(
+      MaterialPageRoute(
+        builder: (_) => NextDnsControlsScreen(
+          child: _child,
+          authService: widget.authService,
+          firestoreService: widget.firestoreService,
+          parentIdOverride: widget.parentIdOverride,
+        ),
+      ),
+    );
+
+    if (!mounted) {
+      return;
+    }
+    final parentId = _parentId;
+    if (parentId == null) {
+      return;
+    }
+    final refreshed = await _resolvedFirestoreService.getChild(
+      parentId: parentId,
+      childId: _child.id,
+    );
+    if (refreshed == null || !mounted) {
+      return;
+    }
+    setState(() {
+      _child = refreshed;
+    });
   }
 
   Future<void> _openScheduleCreator(BuildContext context) async {

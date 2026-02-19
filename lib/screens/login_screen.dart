@@ -19,7 +19,16 @@ class _LoginScreenState extends State<LoginScreen> {
 
   bool _isOtpSent = false;
   bool _isLoading = false;
+  bool _hasNavigatedToDashboard = false;
   String? _errorMessage;
+
+  void _goToDashboardIfNeeded() {
+    if (!mounted || _hasNavigatedToDashboard) {
+      return;
+    }
+    _hasNavigatedToDashboard = true;
+    Navigator.of(context).pushReplacementNamed('/dashboard');
+  }
 
   String _friendlyError(String fallback) {
     final code = _authService.lastErrorMessage;
@@ -30,7 +39,7 @@ class _LoginScreenState extends State<LoginScreen> {
     switch (code) {
       case 'network-request-failed':
       case 'network-timeout':
-        return 'Network is slow right now. Check connection and try again.';
+        return 'Unable to reach Firebase on this network. Check Wi-Fi, disable VPN/Private DNS, or try mobile data.';
       case 'invalid-credential':
       case 'wrong-password':
       case 'user-not-found':
@@ -49,8 +58,7 @@ class _LoginScreenState extends State<LoginScreen> {
       if (!mounted || user == null) {
         return;
       }
-
-      Navigator.of(context).pushReplacementNamed('/dashboard');
+      _goToDashboardIfNeeded();
     });
   }
 
@@ -124,6 +132,8 @@ class _LoginScreenState extends State<LoginScreen> {
       });
       return;
     }
+
+    _goToDashboardIfNeeded();
   }
 
   Future<void> _showEmailAuthSheet() async {
@@ -191,6 +201,7 @@ class _LoginScreenState extends State<LoginScreen> {
               if (sheetNavigator.canPop()) {
                 sheetNavigator.pop();
               }
+              _goToDashboardIfNeeded();
             }
 
             final bottomInset = MediaQuery.of(context).viewInsets.bottom;

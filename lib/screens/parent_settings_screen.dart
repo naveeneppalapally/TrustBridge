@@ -6,6 +6,7 @@ import 'package:trustbridge_app/screens/beta_feedback_screen.dart';
 import 'package:trustbridge_app/screens/change_password_screen.dart';
 import 'package:trustbridge_app/screens/family_management_screen.dart';
 import 'package:trustbridge_app/screens/help_support_screen.dart';
+import 'package:trustbridge_app/screens/nextdns_setup_screen.dart';
 import 'package:trustbridge_app/screens/onboarding_screen.dart';
 import 'package:trustbridge_app/screens/privacy_center_screen.dart';
 import 'package:trustbridge_app/screens/premium_screen.dart';
@@ -297,6 +298,15 @@ class _ParentSettingsScreenState extends State<ParentSettingsScreen> {
             subtitle: const Text('Revisit onboarding walkthrough'),
             trailing: const Icon(Icons.chevron_right),
             onTap: () => _openSetupGuide(context),
+          ),
+          const Divider(height: 1),
+          ListTile(
+            key: const Key('settings_nextdns_setup_tile'),
+            leading: const Icon(Icons.dns_outlined),
+            title: const Text('NextDNS Setup'),
+            subtitle: const Text('Connect API key and map child profiles'),
+            trailing: const Icon(Icons.chevron_right),
+            onTap: () => _openNextDnsSetup(context),
           ),
         ],
       ),
@@ -656,6 +666,18 @@ class _ParentSettingsScreenState extends State<ParentSettingsScreen> {
           parentId: parentId,
           isRevisit: true,
           firestoreService: widget.firestoreService,
+        ),
+      ),
+    );
+  }
+
+  Future<void> _openNextDnsSetup(BuildContext context) async {
+    await Navigator.of(context).push(
+      MaterialPageRoute(
+        builder: (_) => NextDnsSetupScreen(
+          authService: widget.authService,
+          firestoreService: widget.firestoreService,
+          parentIdOverride: widget.parentIdOverride,
         ),
       ),
     );

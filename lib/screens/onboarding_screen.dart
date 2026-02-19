@@ -1,7 +1,10 @@
+import 'dart:async';
+
 import 'package:flutter/material.dart';
 import 'package:trustbridge_app/screens/add_child_screen.dart';
 import 'package:trustbridge_app/screens/vpn_protection_screen.dart';
 import 'package:trustbridge_app/services/firestore_service.dart';
+import 'package:trustbridge_app/services/onboarding_state_service.dart';
 
 class OnboardingScreen extends StatefulWidget {
   const OnboardingScreen({
@@ -9,12 +12,14 @@ class OnboardingScreen extends StatefulWidget {
     required this.parentId,
     this.isRevisit = false,
     this.firestoreService,
+    this.onboardingStateService,
     this.onCompleteOnboarding,
   });
 
   final String parentId;
   final bool isRevisit;
   final FirestoreService? firestoreService;
+  final OnboardingStateService? onboardingStateService;
   final Future<void> Function(String parentId)? onCompleteOnboarding;
 
   @override
@@ -30,6 +35,10 @@ class _OnboardingScreenState extends State<OnboardingScreen> {
 
   FirestoreService get _resolvedFirestoreService {
     return widget.firestoreService ?? FirestoreService();
+  }
+
+  OnboardingStateService get _resolvedOnboardingStateService {
+    return widget.onboardingStateService ?? OnboardingStateService();
   }
 
   Future<void> _completeOnboardingForParent() async {
@@ -67,7 +76,17 @@ class _OnboardingScreenState extends State<OnboardingScreen> {
     );
   }
 
-  Future<void> _complete() async {
+  void _navigateAfterFinish() {
+    if (widget.isRevisit) {
+      Navigator.of(context).pop();
+      return;
+    }
+    Navigator.of(context).pushReplacementNamed('/dashboard');
+  }
+
+  Future<void> _finishOnboarding({
+    required String fallbackErrorLabel,
+  }) async {
     if (_isCompleting) {
       return;
     }
@@ -76,15 +95,54 @@ class _OnboardingScreenState extends State<OnboardingScreen> {
     });
 
     try {
-      await _completeOnboardingForParent();
+      await _resolvedOnboardingStateService
+          .markCompleteLocally(widget.parentId)
+          .timeout(const Duration(seconds: 2));
+    } catch (_) {
+      // Local persistence failure should not block onboarding completion.
+    }
+
+    if (!mounted) {
+      return;
+    }
+
+    try {
+      _navigateAfterFinish();
+    } catch (error) {
       if (!mounted) {
         return;
       }
-      if (widget.isRevisit) {
-        Navigator.of(context).pop();
-      } else {
-        Navigator.of(context).pushReplacementNamed('/dashboard');
-      }
+      setState(() {
+        _isCompleting = false;
+      });
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text('Unable to continue: $error')),
+      );
+      return;
+    }
+
+    unawaited(_syncOnboardingToCloud(fallbackErrorLabel: fallbackErrorLabel));
+  }
+
+  Future<void> _syncOnboardingToCloud({
+    required String fallbackErrorLabel,
+  }) async {
+    try {
+      await _completeOnboardingForParent().timeout(
+        const Duration(seconds: 12),
+      );
+    } catch (error) {
+      debugPrint(
+        '[Onboarding] $fallbackErrorLabel local completion persisted; cloud sync pending: $error',
+      );
+    }
+  }
+
+  Future<void> _complete() async {
+    try {
+      await _finishOnboarding(
+        fallbackErrorLabel: 'Setup completed.',
+      );
     } catch (error) {
       if (!mounted) {
         return;
@@ -99,22 +157,10 @@ class _OnboardingScreenState extends State<OnboardingScreen> {
   }
 
   Future<void> _skip() async {
-    if (_isCompleting) {
-      return;
-    }
-    setState(() {
-      _isCompleting = true;
-    });
     try {
-      await _completeOnboardingForParent();
-      if (!mounted) {
-        return;
-      }
-      if (widget.isRevisit) {
-        Navigator.of(context).pop();
-      } else {
-        Navigator.of(context).pushReplacementNamed('/dashboard');
-      }
+      await _finishOnboarding(
+        fallbackErrorLabel: 'Setup skipped.',
+      );
     } catch (error) {
       if (!mounted) {
         return;

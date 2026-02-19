@@ -3081,6 +3081,166 @@ high-frequency user pain points.
 
 ---
 
+## Day 115 - NextDNS API Foundation (Week 24 Day 1)
+
+Program goal: build production-ready NextDNS API primitives with secure API key storage and normalized failure handling.
+
+### Commit entries
+
+1. **2026-02-19 23:05:00 +05:30**  
+   Message: `Implement Day 115 NextDNS API foundation and secure credential flow`  
+   Changes:
+   - Added `lib/services/nextdns_api_service.dart`:
+     - secure API key storage via `flutter_secure_storage`
+     - profile fetch/create
+     - service/category toggles
+     - parental toggles
+     - allowlist/denylist helpers
+     - analytics status/top-domains calls
+     - normalized `NextDnsApiException`
+   - Added tests:
+     - `test/services/nextdns_api_service_test.dart`
+   Validation:
+   - `flutter analyze` passed.
+   - `flutter test` passed.
+
+---
+
+## Day 116 - NextDNS Setup Flow (Week 24 Day 2)
+
+Program goal: enable parent setup for NextDNS API connection and per-child profile mapping.
+
+### Commit entries
+
+1. **2026-02-19 23:15:00 +05:30**  
+   Message: `Implement Day 116 NextDNS setup and child profile mapping flow`  
+   Changes:
+   - Added `lib/screens/nextdns_setup_screen.dart`:
+     - API key connect/validate
+     - profile fetch
+     - per-child mapping and profile creation
+   - Updated `lib/services/firestore_service.dart`:
+     - mapping/migration helpers for child `nextDnsProfileId`
+   - Updated `lib/screens/parent_settings_screen.dart`:
+     - navigation entry to NextDNS setup
+   - Added tests:
+     - `test/screens/nextdns_setup_screen_test.dart`
+   Validation:
+   - `flutter analyze` passed.
+   - `flutter test` passed.
+
+---
+
+## Day 117 - Blocking Controls Wiring (Week 24 Day 3)
+
+Program goal: wire blocking toggles to live NextDNS profile controls with retry-safe behavior.
+
+### Commit entries
+
+1. **2026-02-19 23:25:00 +05:30**  
+   Message: `Implement Day 117 NextDNS blocking controls with retry queue`  
+   Changes:
+   - Added `lib/screens/nextdns_controls_screen.dart`:
+     - service/category toggles
+     - SafeSearch / YouTube restricted / block bypass toggles
+     - optimistic UI with rollback and retry queue
+   - Updated `lib/screens/policy_overview_screen.dart`:
+     - route entry to NextDNS controls
+   - Updated `lib/services/firestore_service.dart`:
+     - `saveChildNextDnsControls(...)`
+   - Added tests:
+     - `test/screens/nextdns_controls_screen_test.dart`
+   Validation:
+   - `flutter analyze` passed.
+   - `flutter test` passed.
+
+---
+
+## Day 118 - Add Device v2 (Week 24 Day 4)
+
+Program goal: upgrade child-device onboarding from raw ID entry to guided setup with metadata and verification flow.
+
+### Commit entries
+
+1. **2026-02-19 23:35:00 +05:30**  
+   Message: `Implement Day 118 guided child device onboarding and metadata persistence`  
+   Changes:
+   - Added `lib/models/child_device_record.dart`.
+   - Updated `lib/models/child_profile.dart`:
+     - `nextDnsProfileId`
+     - `deviceMetadata`
+     - `nextDnsControls`
+   - Updated `lib/screens/child_devices_screen.dart`:
+     - hostname guidance (`{profileId}.dns.nextdns.io`)
+     - alias/model/manufacturer fields
+     - copy/share flow
+     - verification status rendering
+   - Updated `lib/services/firestore_service.dart`:
+     - `upsertChildDeviceMetadata(...)`
+     - `verifyChildDevice(...)`
+     - `removeChildDevice(...)`
+   Validation:
+   - `flutter analyze` passed.
+   - `flutter test` passed.
+
+---
+
+## Day 119 - Real Telemetry and Reports (Week 24 Day 5)
+
+Program goal: replace mock usage metrics with real Android usage telemetry and robust permission fallback UX.
+
+### Commit entries
+
+1. **2026-02-19 23:45:00 +05:30**  
+   Message: `Implement Day 119 real usage telemetry pipeline and report rendering`  
+   Changes:
+   - Added `lib/services/app_usage_service.dart`:
+     - method-channel integration
+     - usage access checks/settings deep-link
+     - report aggregation (totals, categories, trend, top apps)
+   - Updated Android integration:
+     - `android/app/src/main/AndroidManifest.xml` (`PACKAGE_USAGE_STATS`)
+     - `android/app/src/main/kotlin/com/navee/trustbridge/MainActivity.kt`
+       usage stats channel handlers
+   - Updated `lib/screens/usage_reports_screen.dart`:
+     - dynamic report rendering from service data
+     - denied-permission state and recovery CTA
+   - Added tests:
+     - `test/services/app_usage_service_test.dart`
+     - updated `test/screens/usage_reports_screen_test.dart`
+   Validation:
+   - `flutter analyze` passed.
+   - `flutter test` passed.
+
+---
+
+## Day 120 - E2E Hardening and Beta 2 Readiness (Week 24 Day 6)
+
+Program goal: harden access lifecycle paths and complete revised-plan critical integrations for Beta 2 readiness.
+
+### Commit entries
+
+1. **2026-02-19 23:55:00 +05:30**  
+   Message: `Implement Day 120 E2E hardening for NextDNS access lifecycle and setup completion`  
+   Changes:
+   - Updated `lib/services/firestore_service.dart`:
+     - synced temporary access lifecycle with NextDNS allowlist:
+       - approve -> allowlist add
+       - deny/expire/end-now -> allowlist remove
+   - Updated `firestore.rules`:
+     - children schema expanded for `nextDnsProfileId`, `deviceMetadata`,
+       `nextDnsControls`
+   - Stability/test updates:
+     - `test/widgets/parent_shell_test.dart`
+     - `test/screens/usage_reports_screen_test.dart`
+     - `test/screens/nextdns_controls_screen_test.dart`
+     - `test/services/app_usage_service_test.dart`
+   Validation:
+   - `flutter analyze` passed.
+   - `flutter test` passed (326 tests).
+
+---
+
 ## Day 84 - Expiration UX Polish and Sign-off (Week 17 Day 4)
 
 Program goal: make request expiration state clear at a glance for both parent

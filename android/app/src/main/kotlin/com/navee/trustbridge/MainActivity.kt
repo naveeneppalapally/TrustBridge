@@ -1,10 +1,15 @@
 package com.navee.trustbridge
 
+import android.app.AppOpsManager
 import android.content.Intent
+import android.app.usage.UsageStatsManager
 import android.os.Build
 import android.os.PowerManager
 import android.net.Uri
 import android.provider.Settings
+import java.text.SimpleDateFormat
+import java.util.Date
+import java.util.Locale
 import com.navee.trustbridge.vpn.BlocklistStore
 import com.navee.trustbridge.vpn.DnsFilterEngine
 import com.navee.trustbridge.vpn.DnsVpnService
@@ -20,6 +25,9 @@ class MainActivity : FlutterFragmentActivity() {
         private val CHANNEL_NAMES = listOf(
             "trustbridge/vpn",
             "com.navee.trustbridge/vpn"
+        )
+        private val USAGE_CHANNEL_NAMES = listOf(
+            "com.navee.trustbridge/usage_stats"
         )
     }
 
@@ -40,6 +48,15 @@ class MainActivity : FlutterFragmentActivity() {
                 channelName
             ).setMethodCallHandler { call, result ->
                 handleMethodCall(call, result)
+            }
+        }
+
+        USAGE_CHANNEL_NAMES.forEach { channelName ->
+            MethodChannel(
+                flutterEngine.dartExecutor.binaryMessenger,
+                channelName
+            ).setMethodCallHandler { call, result ->
+                handleUsageMethodCall(call, result)
             }
         }
     }
@@ -299,6 +316,131 @@ class MainActivity : FlutterFragmentActivity() {
 
             else -> result.notImplemented()
         }
+    }
+
+    private fun handleUsageMethodCall(call: MethodCall, result: MethodChannel.Result) {
+        when (call.method) {
+            "hasUsageStatsPermission" -> result.success(hasUsageStatsPermission())
+            "openUsageStatsSettings" -> result.success(openUsageStatsSettings())
+            "getUsageStats" -> {
+                val pastDays = call.argument<Int>("pastDays") ?: 7
+                result.success(getUsageStats(pastDays))
+            }
+            else -> result.notImplemented()
+        }
+    }
+
+    private fun hasUsageStatsPermission(): Boolean {
+        if (Build.VERSION.SDK_INT < Build.VERSION_CODES.LOLLIPOP) {
+            return false
+        }
+        val appOpsManager = getSystemService(AppOpsManager::class.java) ?: return false
+        val mode = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) {
+            appOpsManager.unsafeCheckOpNoThrow(
+                AppOpsManager.OPSTR_GET_USAGE_STATS,
+                android.os.Process.myUid(),
+                packageName
+            )
+        } else {
+            @Suppress("DEPRECATION")
+            appOpsManager.checkOpNoThrow(
+                AppOpsManager.OPSTR_GET_USAGE_STATS,
+                android.os.Process.myUid(),
+                packageName
+            )
+        }
+        return mode == AppOpsManager.MODE_ALLOWED
+    }
+
+    private fun openUsageStatsSettings(): Boolean {
+        return try {
+            val intent = Intent(Settings.ACTION_USAGE_ACCESS_SETTINGS).apply {
+                addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
+            }
+            startActivity(intent)
+            true
+        } catch (_: Exception) {
+            false
+        }
+    }
+
+    private fun getUsageStats(pastDays: Int): List<Map<String, Any>> {
+        if (!hasUsageStatsPermission()) {
+            return emptyList()
+        }
+
+        val usageStatsManager = getSystemService(UsageStatsManager::class.java)
+            ?: return emptyList()
+        val safePastDays = pastDays.coerceIn(1, 30)
+        val endTime = System.currentTimeMillis()
+        val startTime = endTime - safePastDays * 24L * 60L * 60L * 1000L
+        val stats = usageStatsManager.queryUsageStats(
+            UsageStatsManager.INTERVAL_DAILY,
+            startTime,
+            endTime
+        )
+
+        if (stats.isNullOrEmpty()) {
+            return emptyList()
+        }
+
+        val aggregates = mutableMapOf<String, MutableMap<String, Any>>()
+        stats.forEach { stat ->
+            val packageName = stat.packageName ?: return@forEach
+            if (stat.totalTimeInForeground <= 0L) {
+                return@forEach
+            }
+            val appName = try {
+                val appInfo = packageManager.getApplicationInfo(packageName, 0)
+                packageManager.getApplicationLabel(appInfo).toString()
+            } catch (_: Exception) {
+                packageName
+            }
+
+            val item = aggregates.getOrPut(packageName) {
+                mutableMapOf(
+                    "packageName" to packageName,
+                    "appName" to appName,
+                    "totalForegroundTimeMs" to 0L,
+                    "lastTimeUsedEpochMs" to 0L,
+                    "dailyUsageMs" to mutableMapOf<String, Long>()
+                )
+            }
+
+            val previousTotal = (item["totalForegroundTimeMs"] as? Long) ?: 0L
+            item["totalForegroundTimeMs"] = previousTotal + stat.totalTimeInForeground
+
+            val previousLastUsed = (item["lastTimeUsedEpochMs"] as? Long) ?: 0L
+            item["lastTimeUsedEpochMs"] = maxOf(previousLastUsed, stat.lastTimeUsed)
+
+            val dailyMap = item["dailyUsageMs"] as MutableMap<String, Long>
+            val dayKey = formatDateKey(stat.lastTimeUsed)
+            val previousDayTotal = dailyMap[dayKey] ?: 0L
+            dailyMap[dayKey] = previousDayTotal + stat.totalTimeInForeground
+        }
+
+        return aggregates.values
+            .sortedByDescending { (it["totalForegroundTimeMs"] as? Long) ?: 0L }
+            .take(30)
+            .map { item ->
+                val dailyMap = item["dailyUsageMs"] as MutableMap<String, Long>
+                mapOf(
+                    "packageName" to (item["packageName"] as String),
+                    "appName" to (item["appName"] as String),
+                    "totalForegroundTimeMs" to ((item["totalForegroundTimeMs"] as? Long)
+                        ?: 0L),
+                    "lastTimeUsedEpochMs" to ((item["lastTimeUsedEpochMs"] as? Long)
+                        ?: 0L),
+                    "dailyUsageMs" to dailyMap
+                )
+            }
+    }
+
+    private fun formatDateKey(epochMs: Long): String {
+        if (epochMs <= 0L) {
+            return "1970-01-01"
+        }
+        return SimpleDateFormat("yyyy-MM-dd", Locale.US).format(Date(epochMs))
     }
 
     private fun hasVpnPermission(): Boolean {

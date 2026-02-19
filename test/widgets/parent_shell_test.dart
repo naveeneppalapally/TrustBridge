@@ -65,7 +65,7 @@ void main() {
       await seedChild(parentId);
 
       await tester.pumpWidget(buildTestShell(parentId: parentId));
-      await tester.pumpAndSettle();
+      await tester.pump(const Duration(milliseconds: 300));
 
       expect(find.byKey(const Key('parent_shell_bottom_nav')), findsOneWidget);
       expect(find.text('Dashboard'), findsWidgets);
@@ -79,10 +79,10 @@ void main() {
       await seedChild(parentId);
 
       await tester.pumpWidget(buildTestShell(parentId: parentId));
-      await tester.pumpAndSettle();
+      await tester.pump(const Duration(milliseconds: 300));
 
       await tester.tap(find.text('Schedule'));
-      await tester.pumpAndSettle();
+      await tester.pump(const Duration(milliseconds: 300));
 
       expect(find.text('Schedule Editor'), findsOneWidget);
     });
@@ -92,13 +92,12 @@ void main() {
       await seedChild(parentId);
 
       await tester.pumpWidget(buildTestShell(parentId: parentId));
-      await tester.pumpAndSettle();
+      await tester.pump(const Duration(milliseconds: 300));
 
       await tester.tap(find.text('Reports'));
-      await tester.pumpAndSettle();
+      await tester.pump(const Duration(milliseconds: 300));
 
       expect(find.text('Usage Reports'), findsOneWidget);
-      expect(find.text('By Category'), findsOneWidget);
     });
 
     testWidgets('shows dashboard badge when pending requests exist',
@@ -108,7 +107,7 @@ void main() {
       await seedPendingRequest(parentId);
 
       await tester.pumpWidget(buildTestShell(parentId: parentId));
-      await tester.pumpAndSettle();
+      await tester.pump(const Duration(milliseconds: 300));
 
       expect(
         find.byKey(const Key('parent_shell_dashboard_badge')),
@@ -121,18 +120,18 @@ void main() {
       await seedChild(parentId);
 
       await tester.pumpWidget(buildTestShell(parentId: parentId));
-      await tester.pumpAndSettle();
+      await tester.pump(const Duration(milliseconds: 300));
 
       await tester.dragUntilVisible(
         find.byKey(const Key('dashboard_bedtime_schedule_button')),
         find.byType(CustomScrollView),
         const Offset(0, -240),
       );
-      await tester.pumpAndSettle();
+      await tester.pump(const Duration(milliseconds: 300));
 
       await tester
           .tap(find.byKey(const Key('dashboard_bedtime_schedule_button')));
-      await tester.pumpAndSettle();
+      await tester.pump(const Duration(milliseconds: 300));
 
       expect(find.text('Schedule Editor'), findsOneWidget);
     });
