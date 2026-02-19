@@ -1,7 +1,9 @@
 import 'dart:async';
+import 'dart:ui';
 
 import 'package:firebase_auth/firebase_auth.dart';
 import 'package:firebase_core/firebase_core.dart';
+import 'package:firebase_crashlytics/firebase_crashlytics.dart';
 import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
@@ -18,6 +20,7 @@ import 'package:trustbridge_app/screens/login_screen.dart';
 import 'package:trustbridge_app/screens/onboarding_screen.dart';
 import 'package:trustbridge_app/screens/parent_requests_screen.dart';
 import 'package:trustbridge_app/services/auth_service.dart';
+import 'package:trustbridge_app/services/crashlytics_service.dart';
 import 'package:trustbridge_app/services/firestore_service.dart';
 import 'package:trustbridge_app/services/notification_service.dart';
 import 'package:trustbridge_app/services/policy_vpn_sync_service.dart';
@@ -27,11 +30,41 @@ Future<void> main() async {
   await Firebase.initializeApp(
     options: DefaultFirebaseOptions.currentPlatform,
   );
+  if (!kDebugMode) {
+    await _initCrashlytics();
+  }
   NotificationService.navigatorKey = GlobalKey<NavigatorState>();
   runApp(const MyApp());
   WidgetsBinding.instance.addPostFrameCallback((_) {
     unawaited(NotificationService().initialize());
   });
+}
+
+Future<void> _initCrashlytics() async {
+  await FirebaseCrashlytics.instance.setCrashlyticsCollectionEnabled(true);
+  await CrashlyticsService().setCustomKeys({
+    'build_mode': kReleaseMode ? 'release' : 'profile',
+    'build_name': const String.fromEnvironment(
+      'FLUTTER_BUILD_NAME',
+      defaultValue: 'unknown',
+    ),
+    'build_number': const String.fromEnvironment(
+      'FLUTTER_BUILD_NUMBER',
+      defaultValue: 'unknown',
+    ),
+  });
+
+  FlutterError.onError = FirebaseCrashlytics.instance.recordFlutterFatalError;
+  PlatformDispatcher.instance.onError = (Object error, StackTrace stackTrace) {
+    unawaited(
+      FirebaseCrashlytics.instance.recordError(
+        error,
+        stackTrace,
+        fatal: true,
+      ),
+    );
+    return true;
+  };
 }
 
 class MyApp extends StatelessWidget {
@@ -116,8 +149,10 @@ class _AuthWrapperState extends State<AuthWrapper> {
   final AuthService _authService = AuthService();
   final FirestoreService _firestoreService = FirestoreService();
   final NotificationService _notificationService = NotificationService();
+  final CrashlyticsService _crashlyticsService = CrashlyticsService();
   String? _lastSyncUserId;
   String? _lastNotificationUserId;
+  String? _lastCrashlyticsUserId;
   StreamSubscription<String>? _tokenRefreshSubscription;
 
   void _schedulePolicySyncUpdate(User? user) {
@@ -194,6 +229,33 @@ class _AuthWrapperState extends State<AuthWrapper> {
     });
   }
 
+  void _scheduleCrashlyticsUserContext(User? user) {
+    final nextUserId = user?.uid;
+    if (_lastCrashlyticsUserId == nextUserId) {
+      return;
+    }
+    _lastCrashlyticsUserId = nextUserId;
+
+    WidgetsBinding.instance.addPostFrameCallback((_) async {
+      if (!mounted) {
+        return;
+      }
+      if (nextUserId == null) {
+        await _crashlyticsService.clearUserId();
+        await _crashlyticsService.setCustomKeys({
+          'auth_state': 'signed_out',
+          'user_id': 'none',
+        });
+        return;
+      }
+      await _crashlyticsService.setUserId(nextUserId);
+      await _crashlyticsService.setCustomKeys({
+        'auth_state': 'signed_in',
+        'user_id': nextUserId,
+      });
+    });
+  }
+
   @override
   void dispose() {
     _tokenRefreshSubscription?.cancel();
@@ -207,6 +269,7 @@ class _AuthWrapperState extends State<AuthWrapper> {
       builder: (context, snapshot) {
         _schedulePolicySyncUpdate(snapshot.data);
         _scheduleNotificationSyncUpdate(snapshot.data);
+        _scheduleCrashlyticsUserContext(snapshot.data);
 
         if (snapshot.connectionState == ConnectionState.waiting) {
           return const Scaffold(

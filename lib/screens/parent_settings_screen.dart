@@ -10,6 +10,7 @@ import 'package:trustbridge_app/screens/privacy_center_screen.dart';
 import 'package:trustbridge_app/screens/security_controls_screen.dart';
 import 'package:trustbridge_app/services/app_lock_service.dart';
 import 'package:trustbridge_app/services/auth_service.dart';
+import 'package:trustbridge_app/services/crashlytics_service.dart';
 import 'package:trustbridge_app/services/firestore_service.dart';
 import 'package:trustbridge_app/services/notification_service.dart';
 import 'package:trustbridge_app/widgets/pin_entry_dialog.dart';
@@ -47,6 +48,7 @@ class _ParentSettingsScreenState extends State<ParentSettingsScreen> {
   FirestoreService? _firestoreService;
   NotificationService? _notificationService;
   AppLockService? _appLockService;
+  CrashlyticsService? _crashlyticsService;
 
   String _language = 'en';
   String _timezone = 'Asia/Kolkata';
@@ -75,6 +77,11 @@ class _ParentSettingsScreenState extends State<ParentSettingsScreen> {
   AppLockService get _resolvedAppLockService {
     _appLockService ??= AppLockService();
     return _appLockService!;
+  }
+
+  CrashlyticsService get _resolvedCrashlyticsService {
+    _crashlyticsService ??= CrashlyticsService();
+    return _crashlyticsService!;
   }
 
   String? get _parentId {
@@ -692,6 +699,17 @@ class _ParentSettingsScreenState extends State<ParentSettingsScreen> {
             trailing: const Icon(Icons.chevron_right),
             onTap: () async => _openHelpSupport(context),
           ),
+          if (kDebugMode) ...<Widget>[
+            const Divider(height: 1),
+            ListTile(
+              key: const Key('settings_test_crashlytics_tile'),
+              leading: const Icon(Icons.bug_report, color: Colors.red),
+              title: const Text('Test Crashlytics'),
+              subtitle: const Text('Trigger a test crash (debug only)'),
+              trailing: const Icon(Icons.chevron_right),
+              onTap: _testCrashlytics,
+            ),
+          ],
         ],
       ),
     );
@@ -876,6 +894,38 @@ class _ParentSettingsScreenState extends State<ParentSettingsScreen> {
         ),
       ),
     );
+  }
+
+  Future<void> _testCrashlytics() async {
+    final shouldCrash = await showDialog<bool>(
+      context: context,
+      builder: (BuildContext dialogContext) {
+        return AlertDialog(
+          title: const Text('Test Crash'),
+          content: const Text(
+            'This triggers a test crash for Crashlytics verification.\n\n'
+            'The app will close immediately.',
+          ),
+          actions: <Widget>[
+            TextButton(
+              onPressed: () => Navigator.of(dialogContext).pop(false),
+              child: const Text('Cancel'),
+            ),
+            FilledButton(
+              style: FilledButton.styleFrom(
+                backgroundColor: Colors.red,
+              ),
+              onPressed: () => Navigator.of(dialogContext).pop(true),
+              child: const Text('Crash Now'),
+            ),
+          ],
+        );
+      },
+    );
+
+    if (shouldCrash == true) {
+      _resolvedCrashlyticsService.testCrash();
+    }
   }
 
   Future<void> _enablePinLock() async {

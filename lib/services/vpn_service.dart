@@ -1,6 +1,7 @@
 import 'dart:io';
 
 import 'package:flutter/services.dart';
+import 'package:trustbridge_app/services/crashlytics_service.dart';
 
 class VpnStatus {
   const VpnStatus({
@@ -345,6 +346,7 @@ class VpnService implements VpnServiceBase {
   static const String _channelName = 'com.navee.trustbridge/vpn';
   final MethodChannel _channel;
   final bool? _forceSupported;
+  final CrashlyticsService _crashlyticsService = CrashlyticsService();
 
   bool get _supported => _forceSupported ?? Platform.isAndroid;
 
@@ -461,7 +463,7 @@ class VpnService implements VpnServiceBase {
     }
 
     try {
-      return await _channel.invokeMethod<bool>(
+      final started = await _channel.invokeMethod<bool>(
             'startVpn',
             {
               'blockedCategories': blockedCategories,
@@ -471,9 +473,31 @@ class VpnService implements VpnServiceBase {
             },
           ) ??
           false;
-    } on PlatformException {
+      await _crashlyticsService.setCustomKeys({
+        'vpn_status': started ? 'running' : 'stopped',
+        'vpn_upstream_dns': (upstreamDns ?? '').trim().isEmpty
+            ? 'default'
+            : upstreamDns!.trim(),
+      });
+      await _crashlyticsService.log(
+        started ? 'VPN started successfully' : 'VPN start returned false',
+      );
+      return started;
+    } on PlatformException catch (error, stackTrace) {
+      await _crashlyticsService.logError(
+        error,
+        stackTrace,
+        reason: 'Failed to start VPN',
+      );
+      await _crashlyticsService.setCustomKey('vpn_status', 'start_failed');
       return false;
-    } on MissingPluginException {
+    } on MissingPluginException catch (error, stackTrace) {
+      await _crashlyticsService.logError(
+        error,
+        stackTrace,
+        reason: 'VPN plugin missing while starting',
+      );
+      await _crashlyticsService.setCustomKey('vpn_status', 'plugin_missing');
       return false;
     }
   }
@@ -485,10 +509,30 @@ class VpnService implements VpnServiceBase {
     }
 
     try {
-      return await _channel.invokeMethod<bool>('stopVpn') ?? false;
-    } on PlatformException {
+      final stopped = await _channel.invokeMethod<bool>('stopVpn') ?? false;
+      await _crashlyticsService.setCustomKey(
+        'vpn_status',
+        stopped ? 'stopped' : 'running',
+      );
+      await _crashlyticsService.log(
+        stopped ? 'VPN stopped successfully' : 'VPN stop returned false',
+      );
+      return stopped;
+    } on PlatformException catch (error, stackTrace) {
+      await _crashlyticsService.logError(
+        error,
+        stackTrace,
+        reason: 'Failed to stop VPN',
+      );
+      await _crashlyticsService.setCustomKey('vpn_status', 'stop_failed');
       return false;
-    } on MissingPluginException {
+    } on MissingPluginException catch (error, stackTrace) {
+      await _crashlyticsService.logError(
+        error,
+        stackTrace,
+        reason: 'VPN plugin missing while stopping',
+      );
+      await _crashlyticsService.setCustomKey('vpn_status', 'plugin_missing');
       return false;
     }
   }

@@ -4,48 +4,59 @@ import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:trustbridge_app/models/access_request.dart';
 import 'package:trustbridge_app/models/child_profile.dart';
 import 'package:trustbridge_app/models/support_ticket.dart';
+import 'package:trustbridge_app/services/crashlytics_service.dart';
 
 class FirestoreService {
   FirestoreService({FirebaseFirestore? firestore})
       : _firestore = firestore ?? FirebaseFirestore.instance;
 
   final FirebaseFirestore _firestore;
+  final CrashlyticsService _crashlyticsService = CrashlyticsService();
 
   Future<void> ensureParentProfile({
     required String parentId,
     required String? phoneNumber,
   }) async {
-    final parentRef = _firestore.collection('parents').doc(parentId);
-    await parentRef.set(
-      {
-        'parentId': parentId,
-        'phone': phoneNumber,
-        'createdAt': FieldValue.serverTimestamp(),
-        'subscription': {
-          'tier': 'free',
-          'validUntil': null,
-          'autoRenew': false,
+    try {
+      final parentRef = _firestore.collection('parents').doc(parentId);
+      await parentRef.set(
+        {
+          'parentId': parentId,
+          'phone': phoneNumber,
+          'createdAt': FieldValue.serverTimestamp(),
+          'subscription': {
+            'tier': 'free',
+            'validUntil': null,
+            'autoRenew': false,
+          },
+          'preferences': {
+            'language': 'en',
+            'timezone': 'Asia/Kolkata',
+            'pushNotificationsEnabled': true,
+            'weeklySummaryEnabled': true,
+            'securityAlertsEnabled': true,
+            'activityHistoryEnabled': true,
+            'crashReportsEnabled': true,
+            'personalizedTipsEnabled': true,
+            'biometricLoginEnabled': false,
+            'incognitoModeEnabled': false,
+            'vpnProtectionEnabled': false,
+            'nextDnsEnabled': false,
+            'nextDnsProfileId': null,
+          },
+          'onboardingComplete': false,
+          'fcmToken': null,
         },
-        'preferences': {
-          'language': 'en',
-          'timezone': 'Asia/Kolkata',
-          'pushNotificationsEnabled': true,
-          'weeklySummaryEnabled': true,
-          'securityAlertsEnabled': true,
-          'activityHistoryEnabled': true,
-          'crashReportsEnabled': true,
-          'personalizedTipsEnabled': true,
-          'biometricLoginEnabled': false,
-          'incognitoModeEnabled': false,
-          'vpnProtectionEnabled': false,
-          'nextDnsEnabled': false,
-          'nextDnsProfileId': null,
-        },
-        'onboardingComplete': false,
-        'fcmToken': null,
-      },
-      SetOptions(merge: true),
-    );
+        SetOptions(merge: true),
+      );
+    } catch (error, stackTrace) {
+      await _crashlyticsService.logError(
+        error,
+        stackTrace,
+        reason: 'Failed to ensure parent profile',
+      );
+      rethrow;
+    }
   }
 
   Future<Map<String, dynamic>?> getParentProfile(String parentId) async {
@@ -764,10 +775,23 @@ class FirestoreService {
       ageBand: ageBand,
     );
 
-    await _firestore.collection('children').doc(child.id).set({
-      ...child.toFirestore(),
-      'parentId': parentId,
-    });
+    try {
+      await _firestore.collection('children').doc(child.id).set({
+        ...child.toFirestore(),
+        'parentId': parentId,
+      });
+      await _crashlyticsService.setCustomKeys({
+        'last_child_id': child.id,
+        'last_child_age_band': ageBand.value,
+      });
+    } catch (error, stackTrace) {
+      await _crashlyticsService.logError(
+        error,
+        stackTrace,
+        reason: 'Failed to add child profile',
+      );
+      rethrow;
+    }
 
     return child;
   }
@@ -928,12 +952,26 @@ class FirestoreService {
       );
     }
 
-    final docRef = await _firestore
-        .collection('parents')
-        .doc(request.parentId)
-        .collection('access_requests')
-        .add(request.toFirestore());
-    return docRef.id;
+    try {
+      final docRef = await _firestore
+          .collection('parents')
+          .doc(request.parentId)
+          .collection('access_requests')
+          .add(request.toFirestore());
+      await _crashlyticsService.setCustomKeys({
+        'last_request_parent_id': request.parentId,
+        'last_request_child_id': request.childId,
+        'last_request_status': request.status.name,
+      });
+      return docRef.id;
+    } catch (error, stackTrace) {
+      await _crashlyticsService.logError(
+        error,
+        stackTrace,
+        reason: 'Failed to submit access request',
+      );
+      rethrow;
+    }
   }
 
   /// Stream pending access requests for parent dashboard actions.
@@ -1008,41 +1046,55 @@ class FirestoreService {
       );
     }
 
-    final requestRef = _firestore
-        .collection('parents')
-        .doc(parentId)
-        .collection('access_requests')
-        .doc(requestId);
+    try {
+      final requestRef = _firestore
+          .collection('parents')
+          .doc(parentId)
+          .collection('access_requests')
+          .doc(requestId);
 
-    final requestSnapshot = await requestRef.get();
-    if (!requestSnapshot.exists) {
-      throw StateError('Access request not found.');
-    }
-
-    DateTime? expiresAt;
-    if (status == RequestStatus.approved) {
-      final data = requestSnapshot.data();
-      final minutesValue = data?['durationMinutes'];
-      int? minutes;
-      if (minutesValue is int) {
-        minutes = minutesValue;
-      } else if (minutesValue is num) {
-        minutes = minutesValue.toInt();
+      final requestSnapshot = await requestRef.get();
+      if (!requestSnapshot.exists) {
+        throw StateError('Access request not found.');
       }
 
-      if (minutes != null && minutes > 0) {
-        expiresAt = DateTime.now().add(Duration(minutes: minutes));
-      }
-    }
+      DateTime? expiresAt;
+      if (status == RequestStatus.approved) {
+        final data = requestSnapshot.data();
+        final minutesValue = data?['durationMinutes'];
+        int? minutes;
+        if (minutesValue is int) {
+          minutes = minutesValue;
+        } else if (minutesValue is num) {
+          minutes = minutesValue.toInt();
+        }
 
-    final trimmedReply = reply?.trim();
-    await requestRef.update({
-      'status': status.name,
-      'parentReply':
-          (trimmedReply == null || trimmedReply.isEmpty) ? null : trimmedReply,
-      'respondedAt': Timestamp.fromDate(DateTime.now()),
-      if (expiresAt != null) 'expiresAt': Timestamp.fromDate(expiresAt),
-    });
+        if (minutes != null && minutes > 0) {
+          expiresAt = DateTime.now().add(Duration(minutes: minutes));
+        }
+      }
+
+      final trimmedReply = reply?.trim();
+      await requestRef.update({
+        'status': status.name,
+        'parentReply': (trimmedReply == null || trimmedReply.isEmpty)
+            ? null
+            : trimmedReply,
+        'respondedAt': Timestamp.fromDate(DateTime.now()),
+        if (expiresAt != null) 'expiresAt': Timestamp.fromDate(expiresAt),
+      });
+      await _crashlyticsService.setCustomKeys({
+        'last_request_id': requestId,
+        'last_request_status': status.name,
+      });
+    } catch (error, stackTrace) {
+      await _crashlyticsService.logError(
+        error,
+        stackTrace,
+        reason: 'Failed to respond to access request',
+      );
+      rethrow;
+    }
   }
 
   /// Stream all requests (pending + history) for parent.
