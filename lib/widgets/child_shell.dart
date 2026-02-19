@@ -1,10 +1,13 @@
 import 'package:flutter/material.dart';
+import 'package:flutter/scheduler.dart';
 
 import '../models/child_profile.dart';
+import '../screens/blocked_overlay_screen.dart';
 import '../screens/child_requests_screen.dart';
 import '../screens/child_status_screen.dart';
 import '../services/auth_service.dart';
 import '../services/firestore_service.dart';
+import '../services/vpn_service.dart';
 import '../theme/app_theme.dart';
 
 class ChildShell extends StatefulWidget {
@@ -29,6 +32,8 @@ class ChildShell extends StatefulWidget {
 
 class _ChildShellState extends State<ChildShell> {
   late int _currentIndex;
+  VpnService? _vpnService;
+  bool _overlayVisible = false;
 
   @override
   void initState() {
@@ -39,6 +44,45 @@ class _ChildShellState extends State<ChildShell> {
         : rawIndex > 2
             ? 2
             : rawIndex;
+    _registerBlockedDomainListener();
+  }
+
+  @override
+  void dispose() {
+    _vpnService?.setBlockedDomainListener(null);
+    super.dispose();
+  }
+
+  void _registerBlockedDomainListener() {
+    final service = VpnService();
+    _vpnService = service;
+    service.setBlockedDomainListener((event) {
+      if (!mounted || _overlayVisible) {
+        return;
+      }
+      _overlayVisible = true;
+      SchedulerBinding.instance.addPostFrameCallback((_) async {
+        if (!mounted) {
+          _overlayVisible = false;
+          return;
+        }
+        await Navigator.of(context).push(
+          MaterialPageRoute(
+            fullscreenDialog: true,
+            builder: (_) => BlockedOverlayScreen(
+              modeName: event.modeName,
+              remainingLabel: event.remainingLabel ?? '1h 34m',
+              blockedDomain: event.domain,
+              child: widget.child,
+              authService: widget.authService,
+              firestoreService: widget.firestoreService,
+              parentIdOverride: widget.parentIdOverride,
+            ),
+          ),
+        );
+        _overlayVisible = false;
+      });
+    });
   }
 
   @override

@@ -288,6 +288,31 @@ class DomainPolicyEvaluation {
   }
 }
 
+class BlockedDomainEvent {
+  const BlockedDomainEvent({
+    required this.domain,
+    required this.modeName,
+    this.remainingLabel,
+  });
+
+  final String domain;
+  final String modeName;
+  final String? remainingLabel;
+
+  factory BlockedDomainEvent.fromMap(Map<dynamic, dynamic> map) {
+    final domain = (map['domain'] as String?)?.trim();
+    final modeName = (map['modeName'] as String?)?.trim();
+    final remaining = (map['remainingLabel'] as String?)?.trim();
+    return BlockedDomainEvent(
+      domain: (domain == null || domain.isEmpty) ? 'blocked domain' : domain,
+      modeName:
+          (modeName == null || modeName.isEmpty) ? 'Focus Mode' : modeName,
+      remainingLabel:
+          (remaining == null || remaining.isEmpty) ? null : remaining,
+    );
+  }
+}
+
 abstract class VpnServiceBase {
   Future<VpnStatus> getStatus();
 
@@ -350,8 +375,36 @@ class VpnService implements VpnServiceBase {
   final bool? _forceSupported;
   final CrashlyticsService _crashlyticsService = CrashlyticsService();
   final PerformanceService _performanceService = PerformanceService();
+  Future<dynamic> Function(MethodCall call)? _blockedHandler;
 
   bool get _supported => _forceSupported ?? Platform.isAndroid;
+
+  void setBlockedDomainListener(
+    void Function(BlockedDomainEvent event)? listener,
+  ) {
+    if (!_supported) {
+      return;
+    }
+
+    if (listener == null) {
+      _blockedHandler = null;
+      _channel.setMethodCallHandler(null);
+      return;
+    }
+
+    _blockedHandler = (MethodCall call) async {
+      if (call.method != 'onDomainBlocked' &&
+          call.method != 'onBlockedDomain') {
+        return null;
+      }
+      final args = call.arguments;
+      if (args is Map) {
+        listener(BlockedDomainEvent.fromMap(args));
+      }
+      return null;
+    };
+    _channel.setMethodCallHandler(_blockedHandler);
+  }
 
   Future<VpnTelemetry> getVpnTelemetry() async {
     if (!_supported) {
