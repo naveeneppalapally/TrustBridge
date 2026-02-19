@@ -6,6 +6,7 @@ import '../models/access_request.dart';
 import '../services/auth_service.dart';
 import '../services/firestore_service.dart';
 import '../utils/expiry_label_utils.dart';
+import 'approval_success_screen.dart';
 
 class ParentRequestsScreen extends StatefulWidget {
   const ParentRequestsScreen({
@@ -292,6 +293,21 @@ class _RequestCardState extends State<_RequestCard> {
         reply: reply,
         approvedDurationOverride: approvedDurationOverride,
       );
+      if (!mounted) {
+        return;
+      }
+      if (status == RequestStatus.approved) {
+        final resolvedDuration = approvedDurationOverride ?? widget.request.duration;
+        await Navigator.of(context).push(
+          MaterialPageRoute(
+            builder: (_) => ApprovalSuccessScreen(
+              appName: widget.request.appOrSite,
+              durationLabel: _durationLabel(_l10n(context), resolvedDuration),
+              childName: widget.request.childNickname,
+            ),
+          ),
+        );
+      }
       if (!mounted) {
         return;
       }

@@ -298,6 +298,9 @@ void main() {
       await tester.tap(
           find.byKey(const Key('request_confirm_approve_button_request-3')));
       await tester.pumpAndSettle();
+      expect(find.text('Success!'), findsOneWidget);
+      await tester.tap(find.byKey(const Key('approval_success_done_button')));
+      await tester.pumpAndSettle();
 
       final snapshot = await fakeFirestore
           .collection('parents')
@@ -359,6 +362,9 @@ void main() {
       await tester.tap(
           find.byKey(const Key('request_confirm_approve_button_request-4')));
       await tester.pumpAndSettle();
+      expect(find.text('Success!'), findsOneWidget);
+      await tester.tap(find.byKey(const Key('approval_success_done_button')));
+      await tester.pumpAndSettle();
 
       final snapshot = await fakeFirestore
           .collection('parents')
@@ -417,6 +423,9 @@ void main() {
       );
       await tester.tap(
           find.byKey(const Key('request_confirm_approve_button_request-5')));
+      await tester.pumpAndSettle();
+      expect(find.text('Success!'), findsOneWidget);
+      await tester.tap(find.byKey(const Key('approval_success_done_button')));
       await tester.pumpAndSettle();
 
       final snapshot = await fakeFirestore
