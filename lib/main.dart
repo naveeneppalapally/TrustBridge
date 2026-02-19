@@ -4,6 +4,7 @@ import 'dart:ui';
 import 'package:firebase_auth/firebase_auth.dart';
 import 'package:firebase_core/firebase_core.dart';
 import 'package:firebase_crashlytics/firebase_crashlytics.dart';
+import 'package:firebase_performance/firebase_performance.dart';
 import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
@@ -33,6 +34,7 @@ Future<void> main() async {
   if (!kDebugMode) {
     await _initCrashlytics();
   }
+  await _initPerformance();
   NotificationService.navigatorKey = GlobalKey<NavigatorState>();
   runApp(const MyApp());
   WidgetsBinding.instance.addPostFrameCallback((_) {
@@ -65,6 +67,15 @@ Future<void> _initCrashlytics() async {
     );
     return true;
   };
+}
+
+Future<void> _initPerformance() async {
+  try {
+    await FirebasePerformance.instance
+        .setPerformanceCollectionEnabled(!kDebugMode);
+  } catch (error) {
+    debugPrint('[Performance] Initialization skipped: $error');
+  }
 }
 
 class MyApp extends StatelessWidget {

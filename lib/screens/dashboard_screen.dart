@@ -1,3 +1,5 @@
+import 'dart:async';
+
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 import 'package:trustbridge_app/models/access_request.dart';
@@ -7,6 +9,7 @@ import 'package:trustbridge_app/screens/child_detail_screen.dart';
 import 'package:trustbridge_app/screens/parent_settings_screen.dart';
 import 'package:trustbridge_app/services/auth_service.dart';
 import 'package:trustbridge_app/services/firestore_service.dart';
+import 'package:trustbridge_app/services/performance_service.dart';
 import 'package:trustbridge_app/services/policy_vpn_sync_service.dart';
 import 'package:trustbridge_app/utils/app_lock_guard.dart';
 
@@ -33,17 +36,60 @@ class _DashboardScreenState extends State<DashboardScreen>
   Stream<List<ChildProfile>>? _childrenStream;
   Stream<List<AccessRequest>>? _pendingRequestsStream;
   String? _streamsParentId;
+  final PerformanceService _performanceService = PerformanceService();
+  PerformanceTrace? _dashboardLoadTrace;
+  Stopwatch? _dashboardLoadStopwatch;
 
   @override
   void initState() {
     super.initState();
     WidgetsBinding.instance.addObserver(this);
+    unawaited(_startDashboardLoadTrace());
   }
 
   @override
   void dispose() {
     WidgetsBinding.instance.removeObserver(this);
+    unawaited(_stopDashboardLoadTrace());
     super.dispose();
+  }
+
+  Future<void> _startDashboardLoadTrace() async {
+    final trace = await _performanceService.startTrace('dashboard_load');
+    if (!mounted) {
+      await _performanceService.stopTrace(trace);
+      return;
+    }
+    _dashboardLoadTrace = trace;
+    _dashboardLoadStopwatch = Stopwatch()..start();
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      unawaited(_stopDashboardLoadTrace());
+    });
+  }
+
+  Future<void> _stopDashboardLoadTrace() async {
+    final trace = _dashboardLoadTrace;
+    if (trace == null) {
+      return;
+    }
+    _dashboardLoadTrace = null;
+    final stopwatch = _dashboardLoadStopwatch;
+    _dashboardLoadStopwatch = null;
+    if (stopwatch != null) {
+      stopwatch.stop();
+      await _performanceService.setMetric(
+        trace,
+        'duration_ms',
+        stopwatch.elapsedMilliseconds,
+      );
+      await _performanceService.annotateThreshold(
+        trace: trace,
+        name: 'dashboard_load_ms',
+        actualValue: stopwatch.elapsedMilliseconds,
+        warningValue: PerformanceThresholds.dashboardLoadWarningMs,
+      );
+    }
+    await _performanceService.stopTrace(trace);
   }
 
   @override

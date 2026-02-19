@@ -5,6 +5,7 @@ import 'package:trustbridge_app/models/access_request.dart';
 import 'package:trustbridge_app/models/child_profile.dart';
 import 'package:trustbridge_app/models/support_ticket.dart';
 import 'package:trustbridge_app/services/crashlytics_service.dart';
+import 'package:trustbridge_app/services/performance_service.dart';
 
 class FirestoreService {
   FirestoreService({FirebaseFirestore? firestore})
@@ -12,6 +13,7 @@ class FirestoreService {
 
   final FirebaseFirestore _firestore;
   final CrashlyticsService _crashlyticsService = CrashlyticsService();
+  final PerformanceService _performanceService = PerformanceService();
 
   Future<void> ensureParentProfile({
     required String parentId,
@@ -854,7 +856,27 @@ class FirestoreService {
 
   /// One-shot fetch of all children without subscribing to stream updates.
   Future<List<ChildProfile>> getChildrenOnce(String parentId) {
-    return getChildren(parentId);
+    return _performanceService.traceOperation<List<ChildProfile>>(
+      'firestore_get_children',
+      () => getChildren(parentId),
+      warningThresholdMs: PerformanceThresholds.firestoreGetChildrenWarningMs,
+      thresholdMetricName: 'firestore_get_children_ms',
+      onSuccess: (PerformanceTrace trace, List<ChildProfile> children) async {
+        await _performanceService.setMetric(
+          trace,
+          'children_count',
+          children.length,
+        );
+        await _performanceService.setMetric(trace, 'query_success', 1);
+      },
+      onError: (
+        PerformanceTrace trace,
+        Object error,
+        StackTrace stackTrace,
+      ) async {
+        await _performanceService.setMetric(trace, 'query_success', 0);
+      },
+    );
   }
 
   Future<ChildProfile?> getChild({

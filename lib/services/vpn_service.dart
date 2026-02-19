@@ -2,6 +2,7 @@ import 'dart:io';
 
 import 'package:flutter/services.dart';
 import 'package:trustbridge_app/services/crashlytics_service.dart';
+import 'package:trustbridge_app/services/performance_service.dart';
 
 class VpnStatus {
   const VpnStatus({
@@ -347,6 +348,7 @@ class VpnService implements VpnServiceBase {
   final MethodChannel _channel;
   final bool? _forceSupported;
   final CrashlyticsService _crashlyticsService = CrashlyticsService();
+  final PerformanceService _performanceService = PerformanceService();
 
   bool get _supported => _forceSupported ?? Platform.isAndroid;
 
@@ -462,6 +464,8 @@ class VpnService implements VpnServiceBase {
       return false;
     }
 
+    final trace = await _performanceService.startTrace('vpn_start');
+    final stopwatch = Stopwatch()..start();
     try {
       final started = await _channel.invokeMethod<bool>(
             'startVpn',
@@ -473,6 +477,34 @@ class VpnService implements VpnServiceBase {
             },
           ) ??
           false;
+      stopwatch.stop();
+      await _performanceService.setMetric(
+        trace,
+        'duration_ms',
+        stopwatch.elapsedMilliseconds,
+      );
+      await _performanceService.setMetric(
+        trace,
+        'blocked_categories',
+        blockedCategories.length,
+      );
+      await _performanceService.setMetric(
+        trace,
+        'blocked_domains',
+        blockedDomains.length,
+      );
+      await _performanceService.setMetric(trace, 'started', started ? 1 : 0);
+      await _performanceService.annotateThreshold(
+        trace: trace,
+        name: 'vpn_start_ms',
+        actualValue: stopwatch.elapsedMilliseconds,
+        warningValue: PerformanceThresholds.vpnStartWarningMs,
+      );
+      await _performanceService.setAttribute(
+        trace,
+        'upstream_dns',
+        (upstreamDns ?? '').trim().isEmpty ? 'default' : 'custom',
+      );
       await _crashlyticsService.setCustomKeys({
         'vpn_status': started ? 'running' : 'stopped',
         'vpn_upstream_dns': (upstreamDns ?? '').trim().isEmpty
@@ -484,6 +516,13 @@ class VpnService implements VpnServiceBase {
       );
       return started;
     } on PlatformException catch (error, stackTrace) {
+      stopwatch.stop();
+      await _performanceService.setMetric(
+        trace,
+        'duration_ms',
+        stopwatch.elapsedMilliseconds,
+      );
+      await _performanceService.setMetric(trace, 'platform_exception', 1);
       await _crashlyticsService.logError(
         error,
         stackTrace,
@@ -492,6 +531,13 @@ class VpnService implements VpnServiceBase {
       await _crashlyticsService.setCustomKey('vpn_status', 'start_failed');
       return false;
     } on MissingPluginException catch (error, stackTrace) {
+      stopwatch.stop();
+      await _performanceService.setMetric(
+        trace,
+        'duration_ms',
+        stopwatch.elapsedMilliseconds,
+      );
+      await _performanceService.setMetric(trace, 'plugin_missing', 1);
       await _crashlyticsService.logError(
         error,
         stackTrace,
@@ -499,6 +545,8 @@ class VpnService implements VpnServiceBase {
       );
       await _crashlyticsService.setCustomKey('vpn_status', 'plugin_missing');
       return false;
+    } finally {
+      await _performanceService.stopTrace(trace);
     }
   }
 
@@ -508,8 +556,23 @@ class VpnService implements VpnServiceBase {
       return false;
     }
 
+    final trace = await _performanceService.startTrace('vpn_stop');
+    final stopwatch = Stopwatch()..start();
     try {
       final stopped = await _channel.invokeMethod<bool>('stopVpn') ?? false;
+      stopwatch.stop();
+      await _performanceService.setMetric(
+        trace,
+        'duration_ms',
+        stopwatch.elapsedMilliseconds,
+      );
+      await _performanceService.setMetric(trace, 'stopped', stopped ? 1 : 0);
+      await _performanceService.annotateThreshold(
+        trace: trace,
+        name: 'vpn_stop_ms',
+        actualValue: stopwatch.elapsedMilliseconds,
+        warningValue: PerformanceThresholds.vpnStopWarningMs,
+      );
       await _crashlyticsService.setCustomKey(
         'vpn_status',
         stopped ? 'stopped' : 'running',
@@ -519,6 +582,13 @@ class VpnService implements VpnServiceBase {
       );
       return stopped;
     } on PlatformException catch (error, stackTrace) {
+      stopwatch.stop();
+      await _performanceService.setMetric(
+        trace,
+        'duration_ms',
+        stopwatch.elapsedMilliseconds,
+      );
+      await _performanceService.setMetric(trace, 'platform_exception', 1);
       await _crashlyticsService.logError(
         error,
         stackTrace,
@@ -527,6 +597,13 @@ class VpnService implements VpnServiceBase {
       await _crashlyticsService.setCustomKey('vpn_status', 'stop_failed');
       return false;
     } on MissingPluginException catch (error, stackTrace) {
+      stopwatch.stop();
+      await _performanceService.setMetric(
+        trace,
+        'duration_ms',
+        stopwatch.elapsedMilliseconds,
+      );
+      await _performanceService.setMetric(trace, 'plugin_missing', 1);
       await _crashlyticsService.logError(
         error,
         stackTrace,
@@ -534,6 +611,8 @@ class VpnService implements VpnServiceBase {
       );
       await _crashlyticsService.setCustomKey('vpn_status', 'plugin_missing');
       return false;
+    } finally {
+      await _performanceService.stopTrace(trace);
     }
   }
 

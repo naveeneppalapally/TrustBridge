@@ -7,6 +7,7 @@ import 'package:trustbridge_app/services/dns_filter_engine.dart';
 import 'package:trustbridge_app/services/dns_packet_parser.dart';
 import 'package:trustbridge_app/services/firestore_service.dart';
 import 'package:trustbridge_app/services/nextdns_service.dart';
+import 'package:trustbridge_app/services/performance_service.dart';
 import 'package:trustbridge_app/services/policy_vpn_sync_service.dart';
 import 'package:trustbridge_app/services/vpn_service.dart';
 import 'package:trustbridge_app/screens/dns_query_log_screen.dart';
@@ -37,6 +38,7 @@ class _VpnProtectionScreenState extends State<VpnProtectionScreen> {
   VpnServiceBase? _vpnService;
   late final DnsFilterEngine _dnsFilterEngine;
   final NextDnsService _nextDnsService = const NextDnsService();
+  final PerformanceService _performanceService = PerformanceService();
 
   VpnStatus _status = const VpnStatus.unsupported();
   bool _isBusy = false;
@@ -1205,20 +1207,86 @@ class _VpnProtectionScreenState extends State<VpnProtectionScreen> {
       return;
     }
 
+    final trace = await _performanceService.startTrace('vpn_telemetry_fetch');
+    final stopwatch = Stopwatch()..start();
     _isRefreshingStatus = true;
     VpnStatus status = _status;
     var ignoringBatteryOptimizations = _ignoringBatteryOptimizations;
     var ruleCache = _ruleCacheSnapshot;
+    Object? refreshError;
     try {
       status = await _resolvedVpnService.getStatus();
       ignoringBatteryOptimizations =
           await _resolvedVpnService.isIgnoringBatteryOptimizations();
       ruleCache =
           await _resolvedVpnService.getRuleCacheSnapshot(sampleLimit: 4);
+    } catch (error) {
+      refreshError = error;
     } finally {
       _isRefreshingStatus = false;
+      final elapsedSeconds = status.startedAt == null
+          ? 0
+          : DateTime.now().difference(status.startedAt!).inSeconds;
+      final queriesPerSecX100 =
+          (elapsedSeconds > 0 && status.queriesProcessed > 0)
+              ? ((status.queriesProcessed / elapsedSeconds) * 100).round()
+              : 0;
+      final blockRatePct = (status.blockedRate * 100).round();
+      stopwatch.stop();
+      await _performanceService.setMetric(
+        trace,
+        'duration_ms',
+        stopwatch.elapsedMilliseconds,
+      );
+      await _performanceService.setMetric(
+        trace,
+        'queries_processed',
+        status.queriesProcessed,
+      );
+      await _performanceService.setMetric(
+        trace,
+        'queries_blocked',
+        status.queriesBlocked,
+      );
+      await _performanceService.setMetric(
+        trace,
+        'queries_allowed',
+        status.queriesAllowed,
+      );
+      await _performanceService.setMetric(
+        trace,
+        'dns_queries_per_sec_x100',
+        queriesPerSecX100,
+      );
+      await _performanceService.setMetric(
+        trace,
+        'dns_block_rate_pct',
+        blockRatePct,
+      );
+      await _performanceService.setAttribute(
+        trace,
+        'vpn_running',
+        status.isRunning ? 'true' : 'false',
+      );
+      await _performanceService.annotateThreshold(
+        trace: trace,
+        name: 'vpn_telemetry_ms',
+        actualValue: stopwatch.elapsedMilliseconds,
+        warningValue: PerformanceThresholds.vpnTelemetryFetchWarningMs,
+      );
+      await _performanceService.annotateThreshold(
+        trace: trace,
+        name: 'dns_block_rate_pct',
+        actualValue: blockRatePct,
+        warningValue: PerformanceThresholds.dnsBlockRateHighPct,
+      );
+      await _performanceService.stopTrace(trace);
     }
+
     if (!mounted) {
+      return;
+    }
+    if (refreshError != null) {
       return;
     }
     setState(() {

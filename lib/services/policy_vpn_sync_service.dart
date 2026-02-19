@@ -5,6 +5,7 @@ import 'package:flutter/foundation.dart';
 import '../models/child_profile.dart';
 import 'auth_service.dart';
 import 'firestore_service.dart';
+import 'performance_service.dart';
 import 'vpn_service.dart';
 
 /// Sync result for tracking outcomes and diagnostics.
@@ -56,6 +57,7 @@ class PolicyVpnSyncService extends ChangeNotifier {
 
   final FirestoreService _firestoreService;
   final VpnServiceBase _vpnService;
+  final PerformanceService _performanceService = PerformanceService();
   AuthService? _authService;
   final String? Function()? _parentIdResolver;
 
@@ -119,22 +121,84 @@ class PolicyVpnSyncService extends ChangeNotifier {
 
   /// Manually trigger a policy sync (used for Sync Now + foreground resume).
   Future<SyncResult> syncNow() async {
+    final trace = await _performanceService.startTrace('policy_sync');
+    final stopwatch = Stopwatch()..start();
     final parentId = _resolveParentId();
     if (parentId == null || parentId.isEmpty) {
       final result = SyncResult.error('Not logged in');
       _lastSyncResult = result;
       notifyListeners();
+      await _recordSyncTraceMetrics(trace, result);
+      stopwatch.stop();
+      await _performanceService.setMetric(
+        trace,
+        'duration_ms',
+        stopwatch.elapsedMilliseconds,
+      );
+      await _performanceService.annotateThreshold(
+        trace: trace,
+        name: 'policy_sync_ms',
+        actualValue: stopwatch.elapsedMilliseconds,
+        warningValue: PerformanceThresholds.policySyncWarningMs,
+      );
+      await _performanceService.stopTrace(trace);
       return result;
     }
 
     try {
       final children = await _firestoreService.getChildrenOnce(parentId);
-      return await _syncToVpn(children);
+      final result = await _syncToVpn(children);
+      await _recordSyncTraceMetrics(trace, result);
+      return result;
     } catch (error) {
       final result = SyncResult.error(error.toString());
       _lastSyncResult = result;
       notifyListeners();
+      await _recordSyncTraceMetrics(trace, result);
       return result;
+    } finally {
+      stopwatch.stop();
+      await _performanceService.setMetric(
+        trace,
+        'duration_ms',
+        stopwatch.elapsedMilliseconds,
+      );
+      await _performanceService.annotateThreshold(
+        trace: trace,
+        name: 'policy_sync_ms',
+        actualValue: stopwatch.elapsedMilliseconds,
+        warningValue: PerformanceThresholds.policySyncWarningMs,
+      );
+      await _performanceService.stopTrace(trace);
+    }
+  }
+
+  Future<void> _recordSyncTraceMetrics(
+    PerformanceTrace trace,
+    SyncResult result,
+  ) async {
+    await _performanceService.setMetric(
+      trace,
+      'children_synced',
+      result.childrenSynced,
+    );
+    await _performanceService.setMetric(
+      trace,
+      'categories_synced',
+      result.totalCategories,
+    );
+    await _performanceService.setMetric(
+      trace,
+      'domains_synced',
+      result.totalDomains,
+    );
+    await _performanceService.setMetric(
+      trace,
+      'sync_success',
+      result.success ? 1 : 0,
+    );
+    if (result.error != null && result.error!.isNotEmpty) {
+      await _performanceService.setAttribute(trace, 'sync_error', 'yes');
     }
   }
 
