@@ -304,6 +304,52 @@ void main() {
       expect(data['status'], 'approved');
       expect(data['expiresAt'], isNull);
     });
+
+    testWidgets('deny modal quick reply chip populates parent reply',
+        (tester) async {
+      await _seedRequest(
+        firestore: fakeFirestore,
+        parentId: 'parent-a',
+        requestId: 'request-6',
+        childNickname: 'Sam',
+        appOrSite: 'game.example',
+        durationLabel: '30 min',
+        durationMinutes: 30,
+        status: 'pending',
+      );
+
+      await tester.pumpWidget(
+        MaterialApp(
+          home: ParentRequestsScreen(
+            parentIdOverride: 'parent-a',
+            firestoreService: firestoreService,
+          ),
+        ),
+      );
+      await tester.pumpAndSettle();
+
+      await tester.tap(find.byKey(const Key('request_deny_button_request-6')));
+      await tester.pumpAndSettle();
+
+      await tester
+          .tap(find.byKey(const Key('request_quick_reply_request-6_0')));
+      await tester.pumpAndSettle();
+
+      await tester
+          .tap(find.byKey(const Key('request_confirm_deny_button_request-6')));
+      await tester.pumpAndSettle();
+
+      final snapshot = await fakeFirestore
+          .collection('parents')
+          .doc('parent-a')
+          .collection('access_requests')
+          .doc('request-6')
+          .get();
+      final data = snapshot.data()!;
+
+      expect(data['status'], 'denied');
+      expect(data['parentReply'], 'Not right now.');
+    });
   });
 }
 

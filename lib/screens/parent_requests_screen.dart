@@ -389,6 +389,40 @@ class _RequestCardState extends State<_RequestCard> {
                       ),
                     ],
                     const SizedBox(height: 12),
+                    Text(
+                      l10n.quickRepliesLabel,
+                      style:
+                          Theme.of(dialogContext).textTheme.bodySmall?.copyWith(
+                                fontWeight: FontWeight.w600,
+                              ),
+                    ),
+                    const SizedBox(height: 8),
+                    Wrap(
+                      spacing: 8,
+                      runSpacing: 8,
+                      children: _quickReplyOptions(l10n, status)
+                          .asMap()
+                          .entries
+                          .map(
+                            (entry) => ActionChip(
+                              key: Key(
+                                'request_quick_reply_${request.id}_${entry.key}',
+                              ),
+                              label: Text(entry.value),
+                              onPressed: () {
+                                setDialogState(() {
+                                  _replyController.text = entry.value;
+                                  _replyController.selection =
+                                      TextSelection.collapsed(
+                                    offset: _replyController.text.length,
+                                  );
+                                });
+                              },
+                            ),
+                          )
+                          .toList(growable: false),
+                    ),
+                    const SizedBox(height: 12),
                     TextField(
                       key: Key('request_modal_reply_input_${request.id}'),
                       controller: _replyController,
@@ -473,6 +507,21 @@ class _RequestCardState extends State<_RequestCard> {
     final formattedTime = materialLocalizations
         .formatTimeOfDay(TimeOfDay.fromDateTime(expiresAt));
     return l10n.approvalExpiresPreview(formattedTime);
+  }
+
+  List<String> _quickReplyOptions(AppLocalizations l10n, RequestStatus status) {
+    if (status == RequestStatus.approved) {
+      return <String>[
+        l10n.quickReplyApproveStudy,
+        l10n.quickReplyApproveTakeBreak,
+        l10n.quickReplyApproveCareful,
+      ];
+    }
+    return <String>[
+      l10n.quickReplyDenyNotNow,
+      l10n.quickReplyDenyHomework,
+      l10n.quickReplyDenyLaterToday,
+    ];
   }
 
   String _decisionTitle(AppLocalizations l10n, RequestStatus status) {

@@ -86,6 +86,13 @@
     }
   },
   "approvalUntilSchedulePreview": "Access stays allowed until schedule ends.",
+  "quickRepliesLabel": "Quick replies",
+  "quickReplyApproveStudy": "Approved for study. Stay focused.",
+  "quickReplyApproveTakeBreak": "Okay for a short break.",
+  "quickReplyApproveCareful": "Approved. Please use it responsibly.",
+  "quickReplyDenyNotNow": "Not right now.",
+  "quickReplyDenyHomework": "Homework first, then we can revisit.",
+  "quickReplyDenyLaterToday": "Let's discuss this later today.",
   "parentReplyOptionalLabel": "Reply to child (optional)",
   "keepPendingButton": "Keep Pending",
   "confirmApproveButton": "Approve Now",

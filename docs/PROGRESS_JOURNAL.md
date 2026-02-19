@@ -3155,6 +3155,38 @@ them choose approved duration directly in the decision modal.
 
 ---
 
+## Day 79 - Approval Modal Quick Replies (Week 16 Day 4)
+
+Program goal: speed up parent decisions while keeping responses respectful by
+adding one-tap reply templates inside the approval/denial modal.
+
+### Commit entries
+
+1. **2026-02-19**  
+   Commit: `[pending]`  
+   Message: `Implement Day 79 approval modal quick replies`  
+   Changes:
+   - Updated `lib/screens/parent_requests_screen.dart`:
+     - added quick-reply chips to decision modal for both approve and deny flows
+     - selecting a chip auto-populates the parent reply text box
+     - kept existing duration override and expiry preview for approval path
+   - Updated localization sources:
+     - `lib/l10n/app_en.arb`
+     - `lib/l10n/app_hi.arb`
+     - regenerated:
+       - `lib/l10n/app_localizations.dart`
+       - `lib/l10n/app_localizations_en.dart`
+       - `lib/l10n/app_localizations_hi.dart`
+   - Updated tests:
+     - `test/screens/parent_requests_screen_test.dart`
+       - verifies deny-flow quick reply chip persists expected parent reply
+   Validation:
+   - `flutter gen-l10n` passed.
+   - `flutter analyze` passed.
+   - `flutter test` passed (242/242).
+
+---
+
 ## Day 76 - Hindi Language Support (Week 16 Day 1)
 
 Program goal: localize TrustBridge for Indian families with Hindi support,

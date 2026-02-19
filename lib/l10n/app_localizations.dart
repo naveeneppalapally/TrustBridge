@@ -543,6 +543,48 @@ abstract class AppLocalizations {
   /// **'Access stays allowed until schedule ends.'**
   String get approvalUntilSchedulePreview;
 
+  /// No description provided for @quickRepliesLabel.
+  ///
+  /// In en, this message translates to:
+  /// **'Quick replies'**
+  String get quickRepliesLabel;
+
+  /// No description provided for @quickReplyApproveStudy.
+  ///
+  /// In en, this message translates to:
+  /// **'Approved for study. Stay focused.'**
+  String get quickReplyApproveStudy;
+
+  /// No description provided for @quickReplyApproveTakeBreak.
+  ///
+  /// In en, this message translates to:
+  /// **'Okay for a short break.'**
+  String get quickReplyApproveTakeBreak;
+
+  /// No description provided for @quickReplyApproveCareful.
+  ///
+  /// In en, this message translates to:
+  /// **'Approved. Please use it responsibly.'**
+  String get quickReplyApproveCareful;
+
+  /// No description provided for @quickReplyDenyNotNow.
+  ///
+  /// In en, this message translates to:
+  /// **'Not right now.'**
+  String get quickReplyDenyNotNow;
+
+  /// No description provided for @quickReplyDenyHomework.
+  ///
+  /// In en, this message translates to:
+  /// **'Homework first, then we can revisit.'**
+  String get quickReplyDenyHomework;
+
+  /// No description provided for @quickReplyDenyLaterToday.
+  ///
+  /// In en, this message translates to:
+  /// **'Let\'s discuss this later today.'**
+  String get quickReplyDenyLaterToday;
+
   /// No description provided for @parentReplyOptionalLabel.
   ///
   /// In en, this message translates to:

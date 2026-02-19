@@ -239,6 +239,28 @@ class AppLocalizationsHi extends AppLocalizations {
       'शेड्यूल समाप्त होने तक एक्सेस अनुमति रहेगी।';
 
   @override
+  String get quickRepliesLabel => 'झटपट जवाब';
+
+  @override
+  String get quickReplyApproveStudy => 'पढ़ाई के लिए स्वीकृत। ध्यान बनाए रखें।';
+
+  @override
+  String get quickReplyApproveTakeBreak => 'ठीक है, थोड़े ब्रेक के लिए।';
+
+  @override
+  String get quickReplyApproveCareful =>
+      'स्वीकृत। जिम्मेदारी से इस्तेमाल करें।';
+
+  @override
+  String get quickReplyDenyNotNow => 'अभी नहीं।';
+
+  @override
+  String get quickReplyDenyHomework => 'पहले होमवर्क, फिर बात करेंगे।';
+
+  @override
+  String get quickReplyDenyLaterToday => 'इस पर आज बाद में बात करते हैं।';
+
+  @override
   String get parentReplyOptionalLabel => 'बच्चे के लिए जवाब (वैकल्पिक)';
 
   @override

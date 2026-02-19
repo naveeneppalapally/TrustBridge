@@ -240,6 +240,27 @@ class AppLocalizationsEn extends AppLocalizations {
       'Access stays allowed until schedule ends.';
 
   @override
+  String get quickRepliesLabel => 'Quick replies';
+
+  @override
+  String get quickReplyApproveStudy => 'Approved for study. Stay focused.';
+
+  @override
+  String get quickReplyApproveTakeBreak => 'Okay for a short break.';
+
+  @override
+  String get quickReplyApproveCareful => 'Approved. Please use it responsibly.';
+
+  @override
+  String get quickReplyDenyNotNow => 'Not right now.';
+
+  @override
+  String get quickReplyDenyHomework => 'Homework first, then we can revisit.';
+
+  @override
+  String get quickReplyDenyLaterToday => 'Let\'s discuss this later today.';
+
+  @override
   String get parentReplyOptionalLabel => 'Reply to child (optional)';
 
   @override
