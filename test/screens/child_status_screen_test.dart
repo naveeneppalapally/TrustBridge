@@ -33,7 +33,8 @@ void main() {
       expect(find.textContaining('Aarav'), findsOneWidget);
     });
 
-    testWidgets('renders circular timer hero and blocked section', (tester) async {
+    testWidgets('renders circular timer hero and blocked section',
+        (tester) async {
       await tester.pumpWidget(
         MaterialApp(
           home: ChildStatusScreen(child: testChild),
@@ -42,7 +43,8 @@ void main() {
       await tester.pump();
 
       expect(find.byKey(const Key('child_status_timer_ring')), findsOneWidget);
-      expect(find.byKey(const Key('child_status_blocked_section')), findsOneWidget);
+      expect(find.byKey(const Key('child_status_blocked_section')),
+          findsOneWidget);
       expect(find.text("What's blocked?"), findsOneWidget);
     });
 
@@ -103,7 +105,7 @@ void main() {
       await tester.pump();
       await tester.pump(const Duration(milliseconds: 500));
 
-      expect(find.text('What do you need?'), findsOneWidget);
+      expect(find.text('Which app?'), findsOneWidget);
     });
 
     testWidgets('shows active approved access card when request is approved',

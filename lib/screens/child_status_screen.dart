@@ -9,6 +9,7 @@ import '../models/schedule.dart';
 import '../services/auth_service.dart';
 import '../services/firestore_service.dart';
 import '../utils/expiry_label_utils.dart';
+import '../widgets/skeleton_loaders.dart';
 import 'child_request_screen.dart';
 import 'child_requests_screen.dart';
 
@@ -157,9 +158,8 @@ class _ChildStatusScreenState extends State<ChildStatusScreen> {
       return null;
     }
 
-    final remaining = window.end.isAfter(now)
-        ? window.end.difference(now)
-        : Duration.zero;
+    final remaining =
+        window.end.isAfter(now) ? window.end.difference(now) : Duration.zero;
     return _ModeTimerData(
       remaining: remaining,
       total: total,
@@ -188,9 +188,8 @@ class _ChildStatusScreenState extends State<ChildStatusScreen> {
       endTime.minute,
     );
 
-    final crossesMidnight =
-        (startTime.hour * 60 + startTime.minute) >
-            (endTime.hour * 60 + endTime.minute);
+    final crossesMidnight = (startTime.hour * 60 + startTime.minute) >
+        (endTime.hour * 60 + endTime.minute);
 
     if (!crossesMidnight) {
       return (start: start, end: end);
@@ -326,7 +325,8 @@ class _ChildStatusScreenState extends State<ChildStatusScreen> {
             Align(
               alignment: Alignment.centerLeft,
               child: Container(
-                padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
+                padding:
+                    const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
                 decoration: BoxDecoration(
                   color: modeColor.withValues(alpha: 0.12),
                   borderRadius: BorderRadius.circular(14),
@@ -404,7 +404,10 @@ class _ChildStatusScreenState extends State<ChildStatusScreen> {
                     text: 'Free Time',
                     style: TextStyle(fontWeight: FontWeight.w700),
                   ),
-                  TextSpan(text: timer == null ? ' is active now. Keep it up!' : ' begins. Keep it up!'),
+                  TextSpan(
+                      text: timer == null
+                          ? ' is active now. Keep it up!'
+                          : ' begins. Keep it up!'),
                 ],
               ),
             ),
@@ -447,8 +450,9 @@ class _ChildStatusScreenState extends State<ChildStatusScreen> {
               Wrap(
                 spacing: 8,
                 runSpacing: 8,
-                children:
-                    categories.map((category) => _buildCategoryChip(category)).toList(),
+                children: categories
+                    .map((category) => _buildCategoryChip(category))
+                    .toList(),
               ),
           ],
         ),
@@ -497,6 +501,14 @@ class _ChildStatusScreenState extends State<ChildStatusScreen> {
       ),
       stream: childRequestsStream,
       builder: (context, snapshot) {
+        if (snapshot.connectionState == ConnectionState.waiting &&
+            !snapshot.hasData) {
+          return const SkeletonCard(
+            key: Key('child_status_active_access_loading'),
+            height: 132,
+          );
+        }
+
         if (!snapshot.hasData) {
           return const SizedBox.shrink();
         }

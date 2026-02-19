@@ -4,6 +4,7 @@ import 'package:trustbridge_app/screens/beta_feedback_screen.dart';
 import 'package:trustbridge_app/screens/duplicate_analytics_screen.dart';
 import 'package:trustbridge_app/services/auth_service.dart';
 import 'package:trustbridge_app/services/firestore_service.dart';
+import 'package:trustbridge_app/widgets/skeleton_loaders.dart';
 
 enum _TicketSourceFilter {
   beta,
@@ -210,7 +211,7 @@ class _BetaFeedbackHistoryScreenState extends State<BetaFeedbackHistoryScreen> {
             AsyncSnapshot<List<SupportTicket>> snapshot) {
           if (snapshot.connectionState == ConnectionState.waiting &&
               !snapshot.hasData) {
-            return const Center(child: CircularProgressIndicator());
+            return _buildLoadingState();
           }
 
           if (snapshot.hasError) {
@@ -993,6 +994,21 @@ class _BetaFeedbackHistoryScreenState extends State<BetaFeedbackHistoryScreen> {
           ],
         ),
       ),
+    );
+  }
+
+  Widget _buildLoadingState() {
+    return ListView(
+      padding: const EdgeInsets.fromLTRB(16, 12, 16, 24),
+      children: const <Widget>[
+        SkeletonCard(height: 140),
+        SizedBox(height: 12),
+        SkeletonListTile(),
+        SizedBox(height: 12),
+        SkeletonListTile(),
+        SizedBox(height: 12),
+        SkeletonListTile(),
+      ],
     );
   }
 

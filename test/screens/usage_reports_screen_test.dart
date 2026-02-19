@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:trustbridge_app/screens/usage_reports_screen.dart';
+import 'package:trustbridge_app/widgets/skeleton_loaders.dart';
 
 void main() {
   group('UsageReportsScreen', () {
@@ -55,6 +56,23 @@ void main() {
       expect(find.text('Chrome'), findsOneWidget);
       expect(find.text('Roblox'), findsOneWidget);
       expect(find.text('View All App Usage'), findsOneWidget);
+    });
+
+    testWidgets('shows skeleton loaders when loading state is enabled',
+        (tester) async {
+      await tester.binding.setSurfaceSize(const Size(430, 1300));
+      addTearDown(() => tester.binding.setSurfaceSize(null));
+
+      await tester.pumpWidget(
+        const MaterialApp(
+          home: UsageReportsScreen(showLoadingState: true),
+        ),
+      );
+      await tester.pump();
+
+      expect(find.byType(SkeletonCard), findsWidgets);
+      expect(find.byType(SkeletonChart), findsWidgets);
+      expect(find.byType(SkeletonListTile), findsWidgets);
     });
   });
 }

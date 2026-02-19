@@ -6,6 +6,7 @@ import '../models/access_request.dart';
 import '../services/auth_service.dart';
 import '../services/firestore_service.dart';
 import '../utils/expiry_label_utils.dart';
+import '../widgets/skeleton_loaders.dart';
 import 'approval_success_screen.dart';
 
 class ParentRequestsScreen extends StatefulWidget {
@@ -107,7 +108,7 @@ class _ParentRequestsScreenState extends State<ParentRequestsScreen>
   Widget _buildPendingTab(String parentId) {
     final pendingRequestsStream = _pendingRequestsStream;
     if (pendingRequestsStream == null) {
-      return const Center(child: CircularProgressIndicator());
+      return _buildRequestsLoadingState();
     }
 
     return StreamBuilder<List<AccessRequest>>(
@@ -117,7 +118,7 @@ class _ParentRequestsScreenState extends State<ParentRequestsScreen>
       builder:
           (BuildContext context, AsyncSnapshot<List<AccessRequest>> snapshot) {
         if (snapshot.connectionState == ConnectionState.waiting) {
-          return const Center(child: CircularProgressIndicator());
+          return _buildRequestsLoadingState();
         }
 
         if (snapshot.hasError) {
@@ -156,7 +157,7 @@ class _ParentRequestsScreenState extends State<ParentRequestsScreen>
   Widget _buildHistoryTab(String parentId) {
     final allRequestsStream = _allRequestsStream;
     if (allRequestsStream == null) {
-      return const Center(child: CircularProgressIndicator());
+      return _buildRequestsLoadingState();
     }
 
     return StreamBuilder<List<AccessRequest>>(
@@ -166,7 +167,7 @@ class _ParentRequestsScreenState extends State<ParentRequestsScreen>
       builder:
           (BuildContext context, AsyncSnapshot<List<AccessRequest>> snapshot) {
         if (snapshot.connectionState == ConnectionState.waiting) {
-          return const Center(child: CircularProgressIndicator());
+          return _buildRequestsLoadingState();
         }
 
         if (snapshot.hasError) {
@@ -204,6 +205,15 @@ class _ParentRequestsScreenState extends State<ParentRequestsScreen>
           },
         );
       },
+    );
+  }
+
+  Widget _buildRequestsLoadingState() {
+    return ListView.separated(
+      padding: const EdgeInsets.all(16),
+      itemCount: 5,
+      separatorBuilder: (_, __) => const SizedBox(height: 12),
+      itemBuilder: (_, __) => const SkeletonListTile(),
     );
   }
 
@@ -297,7 +307,8 @@ class _RequestCardState extends State<_RequestCard> {
         return;
       }
       if (status == RequestStatus.approved) {
-        final resolvedDuration = approvedDurationOverride ?? widget.request.duration;
+        final resolvedDuration =
+            approvedDurationOverride ?? widget.request.duration;
         await Navigator.of(context).push(
           MaterialPageRoute(
             builder: (_) => ApprovalSuccessScreen(
@@ -441,13 +452,15 @@ class _RequestCardState extends State<_RequestCard> {
                       child: RichText(
                         textAlign: TextAlign.center,
                         text: TextSpan(
-                          style: Theme.of(context).textTheme.bodyLarge?.copyWith(
-                                color: Colors.black87,
-                                height: 1.4,
-                              ),
+                          style:
+                              Theme.of(context).textTheme.bodyLarge?.copyWith(
+                                    color: Colors.black87,
+                                    height: 1.4,
+                                  ),
                           children: [
                             TextSpan(
-                              text: '${request.childNickname} is asking to use ',
+                              text:
+                                  '${request.childNickname} is asking to use ',
                             ),
                             TextSpan(
                               text: request.appOrSite,
@@ -481,10 +494,11 @@ class _RequestCardState extends State<_RequestCard> {
                         ),
                         child: Text(
                           '"${request.reason}"',
-                          style: Theme.of(context).textTheme.bodyMedium?.copyWith(
-                                fontStyle: FontStyle.italic,
-                                color: Colors.grey[700],
-                              ),
+                          style:
+                              Theme.of(context).textTheme.bodyMedium?.copyWith(
+                                    fontStyle: FontStyle.italic,
+                                    color: Colors.grey[700],
+                                  ),
                         ),
                       ),
                     ],
@@ -575,7 +589,8 @@ class _RequestCardState extends State<_RequestCard> {
                     SizedBox(
                       width: double.infinity,
                       child: ElevatedButton(
-                        key: Key('request_confirm_approve_button_${request.id}'),
+                        key:
+                            Key('request_confirm_approve_button_${request.id}'),
                         style: ElevatedButton.styleFrom(
                           backgroundColor: const Color(0xFF68B901),
                           foregroundColor: Colors.white,
@@ -725,188 +740,191 @@ class _RequestCardState extends State<_RequestCard> {
           child: Column(
             crossAxisAlignment: CrossAxisAlignment.start,
             children: <Widget>[
-            Row(
-              children: <Widget>[
-                CircleAvatar(
-                  radius: 20,
-                  backgroundColor: Colors.blue.withValues(alpha: 0.15),
-                  child: Text(
-                    childInitial,
-                    style: const TextStyle(
-                      fontWeight: FontWeight.bold,
-                      color: Colors.blue,
+              Row(
+                children: <Widget>[
+                  CircleAvatar(
+                    radius: 20,
+                    backgroundColor: Colors.blue.withValues(alpha: 0.15),
+                    child: Text(
+                      childInitial,
+                      style: const TextStyle(
+                        fontWeight: FontWeight.bold,
+                        color: Colors.blue,
+                      ),
                     ),
                   ),
-                ),
-                const SizedBox(width: 12),
-                Column(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: <Widget>[
-                    Text(
-                      request.childNickname,
-                      style: Theme.of(context).textTheme.titleSmall?.copyWith(
-                            fontWeight: FontWeight.bold,
-                          ),
-                    ),
-                    Text(
-                      _timeAgo(context, request.requestedAt),
-                      style: Theme.of(context).textTheme.bodySmall?.copyWith(
-                            color: Colors.grey[500],
-                          ),
-                    ),
-                  ],
-                ),
-                const Spacer(),
-                Container(
-                  padding:
-                      const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
-                  decoration: BoxDecoration(
-                    color: Colors.orange.withValues(alpha: 0.12),
-                    borderRadius: BorderRadius.circular(10),
-                  ),
-                  child: Text(
-                    '⏳ ${l10n.statusPending}',
-                    style: Theme.of(context).textTheme.bodySmall?.copyWith(
-                          color: Colors.orange[800],
-                          fontWeight: FontWeight.w600,
-                        ),
-                  ),
-                ),
-              ],
-            ),
-            const SizedBox(height: 16),
-            const Divider(height: 1),
-            const SizedBox(height: 16),
-            Row(
-              children: <Widget>[
-                Expanded(
-                  child: Column(
+                  const SizedBox(width: 12),
+                  Column(
                     crossAxisAlignment: CrossAxisAlignment.start,
                     children: <Widget>[
                       Text(
-                        l10n.wantsAccessToLabel,
+                        request.childNickname,
+                        style: Theme.of(context).textTheme.titleSmall?.copyWith(
+                              fontWeight: FontWeight.bold,
+                            ),
+                      ),
+                      Text(
+                        _timeAgo(context, request.requestedAt),
                         style: Theme.of(context).textTheme.bodySmall?.copyWith(
                               color: Colors.grey[500],
                             ),
                       ),
-                      const SizedBox(height: 4),
-                      Text(
-                        request.appOrSite,
-                        style:
-                            Theme.of(context).textTheme.titleMedium?.copyWith(
-                                  fontWeight: FontWeight.bold,
-                                ),
+                    ],
+                  ),
+                  const Spacer(),
+                  Container(
+                    padding:
+                        const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
+                    decoration: BoxDecoration(
+                      color: Colors.orange.withValues(alpha: 0.12),
+                      borderRadius: BorderRadius.circular(10),
+                    ),
+                    child: Text(
+                      '⏳ ${l10n.statusPending}',
+                      style: Theme.of(context).textTheme.bodySmall?.copyWith(
+                            color: Colors.orange[800],
+                            fontWeight: FontWeight.w600,
+                          ),
+                    ),
+                  ),
+                ],
+              ),
+              const SizedBox(height: 16),
+              const Divider(height: 1),
+              const SizedBox(height: 16),
+              Row(
+                children: <Widget>[
+                  Expanded(
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: <Widget>[
+                        Text(
+                          l10n.wantsAccessToLabel,
+                          style:
+                              Theme.of(context).textTheme.bodySmall?.copyWith(
+                                    color: Colors.grey[500],
+                                  ),
+                        ),
+                        const SizedBox(height: 4),
+                        Text(
+                          request.appOrSite,
+                          style:
+                              Theme.of(context).textTheme.titleMedium?.copyWith(
+                                    fontWeight: FontWeight.bold,
+                                  ),
+                        ),
+                      ],
+                    ),
+                  ),
+                  Container(
+                    padding:
+                        const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
+                    decoration: BoxDecoration(
+                      color: Theme.of(context)
+                          .colorScheme
+                          .primary
+                          .withValues(alpha: 0.10),
+                      borderRadius: BorderRadius.circular(10),
+                    ),
+                    child: Text(
+                      request.duration.label,
+                      style: Theme.of(context).textTheme.bodySmall?.copyWith(
+                            color: Theme.of(context).colorScheme.primary,
+                            fontWeight: FontWeight.w600,
+                          ),
+                    ),
+                  ),
+                ],
+              ),
+              if (request.reason != null &&
+                  request.reason!.isNotEmpty) ...<Widget>[
+                const SizedBox(height: 12),
+                Container(
+                  padding: const EdgeInsets.all(12),
+                  decoration: BoxDecoration(
+                    color: Colors.grey.withValues(alpha: 0.08),
+                    borderRadius: BorderRadius.circular(10),
+                  ),
+                  child: Row(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: <Widget>[
+                      const Text('\u{1F4AC}', style: TextStyle(fontSize: 16)),
+                      const SizedBox(width: 8),
+                      Expanded(
+                        child: Text(
+                          '"${request.reason}"',
+                          style:
+                              Theme.of(context).textTheme.bodySmall?.copyWith(
+                                    fontStyle: FontStyle.italic,
+                                  ),
+                        ),
                       ),
                     ],
                   ),
                 ),
-                Container(
-                  padding:
-                      const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
-                  decoration: BoxDecoration(
-                    color: Theme.of(context)
-                        .colorScheme
-                        .primary
-                        .withValues(alpha: 0.10),
-                    borderRadius: BorderRadius.circular(10),
-                  ),
-                  child: Text(
-                    request.duration.label,
-                    style: Theme.of(context).textTheme.bodySmall?.copyWith(
-                          color: Theme.of(context).colorScheme.primary,
-                          fontWeight: FontWeight.w600,
-                        ),
-                  ),
-                ),
               ],
-            ),
-            if (request.reason != null &&
-                request.reason!.isNotEmpty) ...<Widget>[
-              const SizedBox(height: 12),
-              Container(
-                padding: const EdgeInsets.all(12),
-                decoration: BoxDecoration(
-                  color: Colors.grey.withValues(alpha: 0.08),
-                  borderRadius: BorderRadius.circular(10),
-                ),
-                child: Row(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: <Widget>[
-                    const Text('\u{1F4AC}', style: TextStyle(fontSize: 16)),
-                    const SizedBox(width: 8),
-                    Expanded(
-                      child: Text(
-                        '"${request.reason}"',
-                        style: Theme.of(context).textTheme.bodySmall?.copyWith(
-                              fontStyle: FontStyle.italic,
-                            ),
+              const SizedBox(height: 16),
+              Row(
+                children: <Widget>[
+                  const Spacer(),
+                  OutlinedButton(
+                    key: Key('request_deny_button_${request.id}'),
+                    onPressed: _isResponding
+                        ? null
+                        : () => _openDecisionModal(RequestStatus.denied),
+                    style: OutlinedButton.styleFrom(
+                      foregroundColor: Colors.orange[800],
+                      side: BorderSide(
+                          color: Colors.orange.withValues(alpha: 0.50)),
+                      shape: RoundedRectangleBorder(
+                        borderRadius: BorderRadius.circular(10),
+                      ),
+                      padding: const EdgeInsets.symmetric(
+                        horizontal: 18,
+                        vertical: 10,
                       ),
                     ),
-                  ],
-                ),
+                    child: _isResponding &&
+                            _pendingAction == RequestStatus.denied
+                        ? const SizedBox(
+                            width: 14,
+                            height: 14,
+                            child: CircularProgressIndicator(strokeWidth: 2),
+                          )
+                        : Text(l10n.denyButton),
+                  ),
+                  const SizedBox(width: 10),
+                  ElevatedButton(
+                    key: Key('request_approve_button_${request.id}'),
+                    onPressed: _isResponding
+                        ? null
+                        : () => _openDecisionModal(RequestStatus.approved),
+                    style: ElevatedButton.styleFrom(
+                      backgroundColor: Colors.green,
+                      foregroundColor: Colors.white,
+                      shape: RoundedRectangleBorder(
+                        borderRadius: BorderRadius.circular(10),
+                      ),
+                      padding: const EdgeInsets.symmetric(
+                        horizontal: 18,
+                        vertical: 10,
+                      ),
+                    ),
+                    child: _isResponding &&
+                            _pendingAction == RequestStatus.approved
+                        ? const SizedBox(
+                            width: 14,
+                            height: 14,
+                            child: CircularProgressIndicator(
+                              strokeWidth: 2,
+                              valueColor:
+                                  AlwaysStoppedAnimation<Color>(Colors.white),
+                            ),
+                          )
+                        : Text(l10n.approveButton),
+                  ),
+                ],
               ),
-            ],
-            const SizedBox(height: 16),
-            Row(
-              children: <Widget>[
-                const Spacer(),
-                OutlinedButton(
-                  key: Key('request_deny_button_${request.id}'),
-                  onPressed: _isResponding
-                      ? null
-                      : () => _openDecisionModal(RequestStatus.denied),
-                  style: OutlinedButton.styleFrom(
-                    foregroundColor: Colors.orange[800],
-                    side: BorderSide(
-                        color: Colors.orange.withValues(alpha: 0.50)),
-                    shape: RoundedRectangleBorder(
-                      borderRadius: BorderRadius.circular(10),
-                    ),
-                    padding: const EdgeInsets.symmetric(
-                      horizontal: 18,
-                      vertical: 10,
-                    ),
-                  ),
-                  child: _isResponding && _pendingAction == RequestStatus.denied
-                      ? const SizedBox(
-                          width: 14,
-                          height: 14,
-                          child: CircularProgressIndicator(strokeWidth: 2),
-                        )
-                      : Text(l10n.denyButton),
-                ),
-                const SizedBox(width: 10),
-                ElevatedButton(
-                  key: Key('request_approve_button_${request.id}'),
-                  onPressed: _isResponding
-                      ? null
-                      : () => _openDecisionModal(RequestStatus.approved),
-                  style: ElevatedButton.styleFrom(
-                    backgroundColor: Colors.green,
-                    foregroundColor: Colors.white,
-                    shape: RoundedRectangleBorder(
-                      borderRadius: BorderRadius.circular(10),
-                    ),
-                    padding: const EdgeInsets.symmetric(
-                      horizontal: 18,
-                      vertical: 10,
-                    ),
-                  ),
-                  child:
-                      _isResponding && _pendingAction == RequestStatus.approved
-                          ? const SizedBox(
-                              width: 14,
-                              height: 14,
-                              child: CircularProgressIndicator(
-                                strokeWidth: 2,
-                                valueColor:
-                                    AlwaysStoppedAnimation<Color>(Colors.white),
-                              ),
-                            )
-                          : Text(l10n.approveButton),
-                ),
-              ],
-            ),
             ],
           ),
         ),

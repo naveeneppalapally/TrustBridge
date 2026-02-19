@@ -15,6 +15,7 @@ import 'package:trustbridge_app/services/performance_service.dart';
 import 'package:trustbridge_app/services/policy_vpn_sync_service.dart';
 import 'package:trustbridge_app/utils/app_lock_guard.dart';
 import 'package:trustbridge_app/widgets/child_card.dart';
+import 'package:trustbridge_app/widgets/skeleton_loaders.dart';
 
 class DashboardScreen extends StatefulWidget {
   const DashboardScreen({
@@ -491,6 +492,17 @@ class _DashboardScreenState extends State<DashboardScreen>
             ),
             stream: _childrenStream,
             builder: (context, snapshot) {
+              final width = MediaQuery.sizeOf(context).width;
+              final isTablet = width >= 600;
+
+              if (snapshot.connectionState == ConnectionState.waiting &&
+                  !snapshot.hasData) {
+                return _buildLoadingState(
+                  backgroundColor: backgroundColor,
+                  isTablet: isTablet,
+                );
+              }
+
               if (snapshot.hasError) {
                 return Center(
                   child: Padding(
@@ -531,8 +543,6 @@ class _DashboardScreenState extends State<DashboardScreen>
               }
 
               final children = snapshot.data ?? const <ChildProfile>[];
-              final width = MediaQuery.sizeOf(context).width;
-              final isTablet = width >= 600;
               final screenTimeLabel = children.isEmpty
                   ? '--'
                   : _formatDurationLabel(
@@ -878,6 +888,64 @@ class _DashboardScreenState extends State<DashboardScreen>
         },
         child: const Icon(Icons.add),
       ),
+    );
+  }
+
+  Widget _buildLoadingState({
+    required Color backgroundColor,
+    required bool isTablet,
+  }) {
+    final l10n = _l10n(context);
+    final horizontalPadding = isTablet ? 24.0 : 16.0;
+
+    return CustomScrollView(
+      slivers: [
+        SliverAppBar(
+          pinned: true,
+          floating: false,
+          expandedHeight: 64,
+          backgroundColor: backgroundColor,
+          surfaceTintColor: Colors.transparent,
+          elevation: 0,
+          title: Text(l10n.dashboardTitle),
+        ),
+        SliverToBoxAdapter(
+          child: Padding(
+            padding: EdgeInsets.fromLTRB(
+              horizontalPadding,
+              16,
+              horizontalPadding,
+              0,
+            ),
+            child: const Column(
+              children: <Widget>[
+                SkeletonCard(height: 90),
+                SizedBox(height: 16),
+                SkeletonCard(height: 170),
+                SizedBox(height: 16),
+                SkeletonCard(height: 90),
+              ],
+            ),
+          ),
+        ),
+        SliverToBoxAdapter(
+          child: Padding(
+            padding: EdgeInsets.fromLTRB(
+              horizontalPadding,
+              12,
+              horizontalPadding,
+              100,
+            ),
+            child: const Column(
+              children: <Widget>[
+                SkeletonChildCard(),
+                SizedBox(height: 12),
+                SkeletonChildCard(),
+              ],
+            ),
+          ),
+        ),
+      ],
     );
   }
 }

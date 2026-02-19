@@ -1,8 +1,15 @@
 import 'package:fl_chart/fl_chart.dart';
 import 'package:flutter/material.dart';
 
+import '../widgets/skeleton_loaders.dart';
+
 class UsageReportsScreen extends StatelessWidget {
-  const UsageReportsScreen({super.key});
+  const UsageReportsScreen({
+    super.key,
+    this.showLoadingState = false,
+  });
+
+  final bool showLoadingState;
 
   @override
   Widget build(BuildContext context) {
@@ -20,18 +27,41 @@ class UsageReportsScreen extends StatelessWidget {
           ),
         ],
       ),
-      body: ListView(
-        padding: const EdgeInsets.fromLTRB(16, 12, 16, 24),
-        children: const [
-          _HeroStatsCard(),
-          SizedBox(height: 14),
-          _CategoryCard(),
-          SizedBox(height: 14),
-          _TrendCard(),
-          SizedBox(height: 14),
-          _MostUsedAppsCard(),
-        ],
-      ),
+      body: showLoadingState ? _buildLoadingState() : _buildContent(),
+    );
+  }
+
+  Widget _buildContent() {
+    return ListView(
+      padding: const EdgeInsets.fromLTRB(16, 12, 16, 24),
+      children: const [
+        _HeroStatsCard(),
+        SizedBox(height: 14),
+        _CategoryCard(),
+        SizedBox(height: 14),
+        _TrendCard(),
+        SizedBox(height: 14),
+        _MostUsedAppsCard(),
+      ],
+    );
+  }
+
+  Widget _buildLoadingState() {
+    return ListView(
+      padding: const EdgeInsets.fromLTRB(16, 12, 16, 24),
+      children: const [
+        SkeletonCard(height: 150),
+        SizedBox(height: 14),
+        SkeletonChart(height: 260),
+        SizedBox(height: 14),
+        SkeletonChart(height: 220),
+        SizedBox(height: 14),
+        SkeletonListTile(),
+        SizedBox(height: 10),
+        SkeletonListTile(),
+        SizedBox(height: 10),
+        SkeletonListTile(),
+      ],
     );
   }
 }
