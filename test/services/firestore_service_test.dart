@@ -812,6 +812,106 @@ void main() {
       expect(childADomains, equals(<String>['youtube.com']));
     });
 
+    test('getNextApprovedExceptionExpiry returns nearest active expiry',
+        () async {
+      final now = DateTime.now();
+      final requestsRef = fakeFirestore
+          .collection('parents')
+          .doc('parent-a')
+          .collection('access_requests');
+
+      await requestsRef.doc('n1').set({
+        'childId': 'child-a',
+        'parentId': 'parent-a',
+        'childNickname': 'Aarav',
+        'appOrSite': 'youtube.com',
+        'durationLabel': '30 min',
+        'durationMinutes': 30,
+        'status': 'approved',
+        'requestedAt': Timestamp.fromDate(now),
+        'respondedAt': Timestamp.fromDate(now),
+        'expiresAt': Timestamp.fromDate(now.add(const Duration(minutes: 20))),
+      });
+      await requestsRef.doc('n2').set({
+        'childId': 'child-a',
+        'parentId': 'parent-a',
+        'childNickname': 'Aarav',
+        'appOrSite': 'reddit.com',
+        'durationLabel': '15 min',
+        'durationMinutes': 15,
+        'status': 'approved',
+        'requestedAt': Timestamp.fromDate(now),
+        'respondedAt': Timestamp.fromDate(now),
+        'expiresAt': Timestamp.fromDate(now.add(const Duration(minutes: 5))),
+      });
+      await requestsRef.doc('n3').set({
+        'childId': 'child-a',
+        'parentId': 'parent-a',
+        'childNickname': 'Aarav',
+        'appOrSite': 'instagram.com',
+        'durationLabel': '15 min',
+        'durationMinutes': 15,
+        'status': 'approved',
+        'requestedAt': Timestamp.fromDate(now),
+        'respondedAt': Timestamp.fromDate(now),
+        'expiresAt':
+            Timestamp.fromDate(now.subtract(const Duration(minutes: 2))),
+      });
+
+      final nearest = await firestoreService.getNextApprovedExceptionExpiry(
+        parentId: 'parent-a',
+      );
+
+      expect(nearest, isNotNull);
+      expect(
+        nearest!
+            .difference(now.add(const Duration(minutes: 5)))
+            .inSeconds
+            .abs(),
+        lessThanOrEqualTo(1),
+      );
+    });
+
+    test('getNextApprovedExceptionExpiry returns null without future expiry',
+        () async {
+      final now = DateTime.now();
+      final requestsRef = fakeFirestore
+          .collection('parents')
+          .doc('parent-a')
+          .collection('access_requests');
+
+      await requestsRef.doc('x1').set({
+        'childId': 'child-a',
+        'parentId': 'parent-a',
+        'childNickname': 'Aarav',
+        'appOrSite': 'youtube.com',
+        'durationLabel': '30 min',
+        'durationMinutes': 30,
+        'status': 'approved',
+        'requestedAt': Timestamp.fromDate(now),
+        'respondedAt': Timestamp.fromDate(now),
+        'expiresAt':
+            Timestamp.fromDate(now.subtract(const Duration(minutes: 1))),
+      });
+      await requestsRef.doc('x2').set({
+        'childId': 'child-a',
+        'parentId': 'parent-a',
+        'childNickname': 'Aarav',
+        'appOrSite': 'reddit.com',
+        'durationLabel': '30 min',
+        'durationMinutes': 30,
+        'status': 'approved',
+        'requestedAt': Timestamp.fromDate(now),
+        'respondedAt': Timestamp.fromDate(now),
+        'expiresAt': null,
+      });
+
+      final nearest = await firestoreService.getNextApprovedExceptionExpiry(
+        parentId: 'parent-a',
+      );
+      expect(nearest, isNull);
+    });
+
     test('getAllRequestsStream returns pending and history requests', () async {
       final pending = AccessRequest.create(
         childId: 'child-a',

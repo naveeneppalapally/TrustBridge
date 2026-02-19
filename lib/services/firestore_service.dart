@@ -1160,6 +1160,65 @@ class FirestoreService {
     String? childId,
     int limit = 200,
   }) async {
+    final requests = await _getApprovedRequestsForExceptionEvaluation(
+      parentId: parentId,
+      childId: childId,
+      limit: limit,
+    );
+
+    final now = DateTime.now();
+    final exceptionDomains = <String>{};
+
+    for (final request in requests) {
+      final expiresAt = request.expiresAt;
+      if (expiresAt != null && !expiresAt.isAfter(now)) {
+        continue;
+      }
+
+      final domain = _normalizeExceptionDomain(request.appOrSite);
+      if (domain != null) {
+        exceptionDomains.add(domain);
+      }
+    }
+
+    final ordered = exceptionDomains.toList()..sort();
+    return ordered;
+  }
+
+  /// Returns the nearest future expiry timestamp among approved requests.
+  ///
+  /// Used by policy sync to schedule a one-shot refresh when a temporary
+  /// exception window ends.
+  Future<DateTime?> getNextApprovedExceptionExpiry({
+    required String parentId,
+    String? childId,
+    int limit = 200,
+  }) async {
+    final requests = await _getApprovedRequestsForExceptionEvaluation(
+      parentId: parentId,
+      childId: childId,
+      limit: limit,
+    );
+
+    final now = DateTime.now();
+    DateTime? nearest;
+    for (final request in requests) {
+      final expiresAt = request.expiresAt;
+      if (expiresAt == null || !expiresAt.isAfter(now)) {
+        continue;
+      }
+      if (nearest == null || expiresAt.isBefore(nearest)) {
+        nearest = expiresAt;
+      }
+    }
+    return nearest;
+  }
+
+  Future<List<AccessRequest>> _getApprovedRequestsForExceptionEvaluation({
+    required String parentId,
+    String? childId,
+    required int limit,
+  }) async {
     if (parentId.trim().isEmpty) {
       throw ArgumentError.value(parentId, 'parentId', 'Parent ID is required.');
     }
@@ -1180,9 +1239,8 @@ class FirestoreService {
         .limit(limit)
         .get();
 
-    final now = DateTime.now();
     final normalizedChildId = childId?.trim();
-    final exceptionDomains = <String>{};
+    final requests = <AccessRequest>[];
 
     for (final doc in snapshot.docs) {
       AccessRequest request;
@@ -1197,20 +1255,10 @@ class FirestoreService {
           request.childId != normalizedChildId) {
         continue;
       }
-
-      final expiresAt = request.expiresAt;
-      if (expiresAt != null && !expiresAt.isAfter(now)) {
-        continue;
-      }
-
-      final domain = _normalizeExceptionDomain(request.appOrSite);
-      if (domain != null) {
-        exceptionDomains.add(domain);
-      }
+      requests.add(request);
     }
 
-    final ordered = exceptionDomains.toList()..sort();
-    return ordered;
+    return requests;
   }
 
   String? _normalizeExceptionDomain(String raw) {

@@ -3081,6 +3081,41 @@ high-frequency user pain points.
 
 ---
 
+## Day 81 - Exception Expiry Auto-Refresh (Week 17 Day 1)
+
+Program goal: ensure temporary approved exceptions are removed on time by
+triggering an automatic policy re-sync at the nearest exception expiry.
+
+### Commit entries
+
+1. **2026-02-19 13:45:35 +05:30**  
+   Commit: `[pending]`  
+   Message: `Implement Day 81 automatic temporary exception expiry refresh`  
+   Changes:
+   - Updated `lib/services/firestore_service.dart`:
+     - added `getNextApprovedExceptionExpiry()` to compute nearest active
+       approved-request expiry timestamp
+     - refactored approved-request exception query parsing into shared helper
+       used by both domain extraction and expiry lookup
+   - Updated `lib/services/policy_vpn_sync_service.dart`:
+     - added one-shot expiry refresh scheduler (`Timer`) for temporary
+       exceptions
+     - after each VPN sync, schedules a follow-up `syncNow()` at the nearest
+       approved exception expiry (+small grace)
+     - clears scheduled refresh when VPN is off or listener stops
+     - exposed `nextExceptionRefreshAt` diagnostic getter
+   - Updated tests:
+     - `test/services/firestore_service_test.dart`
+       - validates nearest-expiry lookup behavior
+     - `test/services/policy_vpn_sync_service_test.dart`
+       - validates schedule creation and timer-triggered follow-up sync
+   Validation:
+   - `flutter analyze` passed.
+   - `flutter test` passed (249/249).
+   - `flutter build apk --debug` passed.
+
+---
+
 ## Day 80 - Temporary Exception Handling (Week 16 Day 5)
 
 Program goal: allow time-bound approved requests to temporarily bypass DNS

@@ -99,6 +99,7 @@ class _FakeFirestoreService extends FirestoreService {
 
   List<ChildProfile> children = <ChildProfile>[];
   List<String> exceptionDomains = <String>[];
+  DateTime? nextExceptionExpiry;
   final StreamController<List<ChildProfile>> _streamController =
       StreamController<List<ChildProfile>>.broadcast();
   bool streamRequested = false;
@@ -119,6 +120,14 @@ class _FakeFirestoreService extends FirestoreService {
     int limit = 200,
   }) async =>
       List<String>.from(exceptionDomains);
+
+  @override
+  Future<DateTime?> getNextApprovedExceptionExpiry({
+    required String parentId,
+    String? childId,
+    int limit = 200,
+  }) async =>
+      nextExceptionExpiry;
 
   void emit(List<ChildProfile> nextChildren) {
     _streamController.add(nextChildren);
@@ -217,6 +226,22 @@ void main() {
       );
     });
 
+    test('syncNow schedules a refresh when an exception has expiry', () async {
+      fakeVpn.vpnRunning = true;
+      fakeFirestore.children = <ChildProfile>[];
+      fakeFirestore.nextExceptionExpiry =
+          DateTime.now().add(const Duration(minutes: 5));
+
+      await syncService.syncNow();
+
+      expect(syncService.nextExceptionRefreshAt, isNotNull);
+      expect(
+        syncService.nextExceptionRefreshAt!
+            .isAfter(DateTime.now().add(const Duration(minutes: 4))),
+        isTrue,
+      );
+    });
+
     test('syncNow clears rules when children list is empty', () async {
       fakeVpn.vpnRunning = true;
       fakeFirestore.children = <ChildProfile>[];
@@ -239,6 +264,26 @@ void main() {
 
       expect(syncService.lastSyncResult, isNotNull);
       expect(syncService.lastSyncResult!.success, isTrue);
+    });
+
+    test('expiry timer triggers follow-up sync', () async {
+      fakeVpn.vpnRunning = true;
+      fakeFirestore.children = <ChildProfile>[];
+      final triggerAt = DateTime.now().add(const Duration(milliseconds: 30));
+      fakeFirestore.nextExceptionExpiry = triggerAt;
+      syncService = PolicyVpnSyncService(
+        vpnService: fakeVpn,
+        firestoreService: fakeFirestore,
+        parentIdResolver: () => 'parent-test',
+        exceptionRefreshGrace: Duration.zero,
+      );
+      syncService.startListening();
+
+      await syncService.syncNow();
+      expect(fakeVpn.updateCalls, 1);
+
+      await Future<void>.delayed(const Duration(milliseconds: 250));
+      expect(fakeVpn.updateCalls, greaterThanOrEqualTo(2));
     });
 
     test('startListening auto-syncs when Firestore stream emits update',

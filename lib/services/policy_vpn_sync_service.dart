@@ -50,24 +50,30 @@ class PolicyVpnSyncService extends ChangeNotifier {
     VpnServiceBase? vpnService,
     AuthService? authService,
     String? Function()? parentIdResolver,
+    Duration exceptionRefreshGrace = const Duration(seconds: 1),
   })  : _firestoreService = firestoreService ?? FirestoreService(),
         _vpnService = vpnService ?? VpnService(),
         _authService = authService,
-        _parentIdResolver = parentIdResolver;
+        _parentIdResolver = parentIdResolver,
+        _exceptionRefreshGrace = exceptionRefreshGrace;
 
   final FirestoreService _firestoreService;
   final VpnServiceBase _vpnService;
   final PerformanceService _performanceService = PerformanceService();
   AuthService? _authService;
   final String? Function()? _parentIdResolver;
+  final Duration _exceptionRefreshGrace;
 
   StreamSubscription<List<ChildProfile>>? _childrenSubscription;
+  Timer? _exceptionRefreshTimer;
   SyncResult? _lastSyncResult;
   bool _isSyncing = false;
   String? _listeningParentId;
+  DateTime? _nextExceptionRefreshAt;
 
   SyncResult? get lastSyncResult => _lastSyncResult;
   bool get isSyncing => _isSyncing;
+  DateTime? get nextExceptionRefreshAt => _nextExceptionRefreshAt;
 
   String? _resolveParentId() {
     final overridden = _parentIdResolver?.call()?.trim();
@@ -111,6 +117,7 @@ class PolicyVpnSyncService extends ChangeNotifier {
     _childrenSubscription?.cancel();
     _childrenSubscription = null;
     _listeningParentId = null;
+    _clearExceptionRefreshSchedule();
   }
 
   Future<void> _onChildrenUpdated(List<ChildProfile> children) async {
@@ -214,6 +221,7 @@ class PolicyVpnSyncService extends ChangeNotifier {
     try {
       final vpnRunning = await _vpnService.isVpnRunning();
       if (!vpnRunning) {
+        _clearExceptionRefreshSchedule();
         final result = SyncResult.empty();
         _lastSyncResult = result;
         _isSyncing = false;
@@ -227,6 +235,12 @@ class PolicyVpnSyncService extends ChangeNotifier {
           : await _firestoreService.getActiveApprovedExceptionDomains(
               parentId: parentId,
             );
+      final nextExceptionExpiry = parentId == null || parentId.isEmpty
+          ? null
+          : await _firestoreService.getNextApprovedExceptionExpiry(
+              parentId: parentId,
+            );
+      _scheduleExceptionRefresh(nextExceptionExpiry);
 
       if (children.isEmpty) {
         final cleared = await _vpnService.updateFilterRules(
@@ -290,5 +304,34 @@ class PolicyVpnSyncService extends ChangeNotifier {
   void dispose() {
     stopListening();
     super.dispose();
+  }
+
+  void _clearExceptionRefreshSchedule() {
+    _exceptionRefreshTimer?.cancel();
+    _exceptionRefreshTimer = null;
+    _nextExceptionRefreshAt = null;
+  }
+
+  void _scheduleExceptionRefresh(DateTime? nextExpiry) {
+    _clearExceptionRefreshSchedule();
+
+    if (nextExpiry == null) {
+      return;
+    }
+
+    final now = DateTime.now();
+    if (!nextExpiry.isAfter(now)) {
+      return;
+    }
+
+    final delay = nextExpiry.difference(now) + _exceptionRefreshGrace;
+    _nextExceptionRefreshAt = now.add(delay);
+    _exceptionRefreshTimer = Timer(delay, () {
+      _clearExceptionRefreshSchedule();
+      if (_listeningParentId == null) {
+        return;
+      }
+      unawaited(syncNow());
+    });
   }
 }
