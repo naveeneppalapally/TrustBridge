@@ -3124,7 +3124,7 @@ them choose approved duration directly in the decision modal.
 ### Commit entries
 
 1. **2026-02-19**  
-   Commit: `[pending]`  
+   Commit: `bbdcf5e`  
    Message: `Implement Day 78 approval duration override flow`  
    Changes:
    - Updated `lib/screens/parent_requests_screen.dart`:
