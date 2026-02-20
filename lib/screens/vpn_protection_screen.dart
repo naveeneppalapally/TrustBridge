@@ -684,7 +684,7 @@ class _VpnProtectionScreenState extends State<VpnProtectionScreen> {
             _buildMetricRow(
               context,
               label: 'Upstream DNS',
-              value: _status.upstreamDns ?? 'Default (8.8.8.8)',
+              value: _status.upstreamDns ?? 'Default (45.90.28.0)',
             ),
             _buildMetricRow(
               context,

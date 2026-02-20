@@ -1,7 +1,14 @@
+import 'dart:convert';
+
+import 'package:fake_cloud_firestore/fake_cloud_firestore.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
+import 'package:http/http.dart' as http;
+import 'package:http/testing.dart';
 import 'package:trustbridge_app/screens/usage_reports_screen.dart';
 import 'package:trustbridge_app/services/app_usage_service.dart';
+import 'package:trustbridge_app/services/firestore_service.dart';
+import 'package:trustbridge_app/services/nextdns_api_service.dart';
 import 'package:trustbridge_app/widgets/skeleton_loaders.dart';
 
 class _FakeAppUsageService extends AppUsageService {
@@ -33,6 +40,9 @@ void main() {
     Future<void> pumpScreen(
       WidgetTester tester, {
       AppUsageService? appUsageService,
+      FirestoreService? firestoreService,
+      NextDnsApiService? nextDnsApiService,
+      String? parentIdOverride,
     }) async {
       await tester.binding.setSurfaceSize(const Size(430, 1300));
       addTearDown(() => tester.binding.setSurfaceSize(null));
@@ -41,6 +51,9 @@ void main() {
         MaterialApp(
           home: UsageReportsScreen(
             appUsageService: appUsageService,
+            firestoreService: firestoreService,
+            nextDnsApiService: nextDnsApiService,
+            parentIdOverride: parentIdOverride,
           ),
         ),
       );
@@ -170,7 +183,68 @@ void main() {
       );
 
       expect(find.text('Usage access required'), findsOneWidget);
-      expect(find.text('Open Usage Access Settings'), findsOneWidget);
+      expect(find.text('Grant Access'), findsOneWidget);
+      expect(find.byKey(const Key('usage_reports_nextdns_card')), findsOneWidget);
+    });
+
+    testWidgets('shows NextDNS analytics when profile is configured',
+        (tester) async {
+      final fakeFirestore = FakeFirebaseFirestore();
+      const parentId = 'parent-nextdns-usage';
+
+      await fakeFirestore.collection('parents').doc(parentId).set({
+        'uid': parentId,
+        'phoneNumber': '+911234567890',
+        'preferences': {
+          'nextDnsEnabled': true,
+          'nextDnsProfileId': 'abc123',
+        },
+      });
+
+      final firestoreService = FirestoreService(firestore: fakeFirestore);
+      final nextDnsApiService = NextDnsApiService(
+        secretStore: InMemoryNextDnsSecretStore(),
+        httpClient: MockClient((request) async {
+          final path = request.url.path;
+          if (path.endsWith('/analytics/domains')) {
+            return http.Response(
+              jsonEncode({
+                'data': [
+                  {'domain': 'youtube.com', 'queries': 12},
+                  {'domain': 'tiktok.com', 'queries': 7},
+                ],
+              }),
+              200,
+            );
+          }
+          if (path.endsWith('/analytics/status')) {
+            return http.Response(
+              jsonEncode({
+                'data': [
+                  {'status': 'blocked', 'queries': 19},
+                  {'status': 'allowed', 'queries': 40},
+                ],
+              }),
+              200,
+            );
+          }
+          return http.Response(jsonEncode({'data': []}), 200);
+        }),
+      );
+      await nextDnsApiService.setNextDnsApiKey('test-api-key');
+
+      await pumpScreen(
+        tester,
+        appUsageService: buildDataService(),
+        firestoreService: firestoreService,
+        nextDnsApiService: nextDnsApiService,
+        parentIdOverride: parentId,
+      );
+
+      expect(find.byKey(const Key('usage_reports_nextdns_card')), findsOneWidget);
+      expect(find.text('Sites Blocked Today: 19'), findsOneWidget);
+      expect(find.text('youtube.com'), findsOneWidget);
+      expect(find.text('tiktok.com'), findsOneWidget);
     });
   });
 }

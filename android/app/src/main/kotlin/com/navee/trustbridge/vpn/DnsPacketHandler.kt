@@ -10,13 +10,13 @@ import kotlin.math.min
 
 class DnsPacketHandler(
     private val filterEngine: DnsFilterEngine,
-    private val upstreamDns: String = "8.8.8.8",
+    private val upstreamDns: String = "45.90.28.0",
     private val protectSocket: ((DatagramSocket) -> Unit)? = null
 ) {
     companion object {
         private const val TAG = "DnsPacketHandler"
         private const val DNS_PORT = 53
-        private const val FALLBACK_DNS = "8.8.8.8"
+        private const val FALLBACK_DNS = "45.90.30.0"
         private const val TIMEOUT_MS = 5_000
         private const val MAX_QUERY_LOG_ENTRIES = 250
     }

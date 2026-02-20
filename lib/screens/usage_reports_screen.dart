@@ -1,7 +1,10 @@
 import 'package:fl_chart/fl_chart.dart';
 import 'package:flutter/material.dart';
 
+import '../services/auth_service.dart';
 import '../services/app_usage_service.dart';
+import '../services/firestore_service.dart';
+import '../services/nextdns_api_service.dart';
 import '../widgets/skeleton_loaders.dart';
 
 class UsageReportsScreen extends StatefulWidget {
@@ -9,10 +12,18 @@ class UsageReportsScreen extends StatefulWidget {
     super.key,
     this.showLoadingState = false,
     this.appUsageService,
+    this.authService,
+    this.firestoreService,
+    this.nextDnsApiService,
+    this.parentIdOverride,
   });
 
   final bool showLoadingState;
   final AppUsageService? appUsageService;
+  final AuthService? authService;
+  final FirestoreService? firestoreService;
+  final NextDnsApiService? nextDnsApiService;
+  final String? parentIdOverride;
 
   @override
   State<UsageReportsScreen> createState() => _UsageReportsScreenState();
@@ -20,13 +31,46 @@ class UsageReportsScreen extends StatefulWidget {
 
 class _UsageReportsScreenState extends State<UsageReportsScreen> {
   AppUsageService? _appUsageService;
+  AuthService? _authService;
+  FirestoreService? _firestoreService;
+  NextDnsApiService? _nextDnsApiService;
   UsageReportData? _report;
+  int? _nextDnsBlockedToday;
+  List<NextDnsDomainStat> _nextDnsTopBlockedDomains = const [];
+  bool _nextDnsConfigured = false;
   bool _loading = true;
   String? _error;
 
   AppUsageService get _resolvedAppUsageService {
     _appUsageService ??= widget.appUsageService ?? AppUsageService();
     return _appUsageService!;
+  }
+
+  AuthService get _resolvedAuthService {
+    _authService ??= widget.authService ?? AuthService();
+    return _authService!;
+  }
+
+  FirestoreService get _resolvedFirestoreService {
+    _firestoreService ??= widget.firestoreService ?? FirestoreService();
+    return _firestoreService!;
+  }
+
+  NextDnsApiService get _resolvedNextDnsApiService {
+    _nextDnsApiService ??= widget.nextDnsApiService ?? NextDnsApiService();
+    return _nextDnsApiService!;
+  }
+
+  String? get _parentId {
+    final override = widget.parentIdOverride?.trim();
+    if (override != null && override.isNotEmpty) {
+      return override;
+    }
+    try {
+      return _resolvedAuthService.currentUser?.uid;
+    } catch (_) {
+      return null;
+    }
   }
 
   @override
@@ -46,11 +90,15 @@ class _UsageReportsScreenState extends State<UsageReportsScreen> {
     });
     try {
       final report = await _resolvedAppUsageService.getUsageReport(pastDays: 7);
+      final analytics = await _loadNextDnsAnalytics();
       if (!mounted) {
         return;
       }
       setState(() {
         _report = report;
+        _nextDnsConfigured = analytics.configured;
+        _nextDnsBlockedToday = analytics.blockedToday;
+        _nextDnsTopBlockedDomains = analytics.topBlockedDomains;
         _loading = false;
       });
     } catch (error) {
@@ -105,7 +153,14 @@ class _UsageReportsScreenState extends State<UsageReportsScreen> {
       return const Center(child: Text('No report data available.'));
     }
     if (!report.permissionGranted) {
-      return _buildPermissionMissingState();
+      return ListView(
+        padding: const EdgeInsets.fromLTRB(16, 12, 16, 24),
+        children: [
+          _buildPermissionMissingStateCard(),
+          const SizedBox(height: 14),
+          _buildNextDnsAnalyticsCard(),
+        ],
+      );
     }
 
     return ListView(
@@ -118,46 +173,43 @@ class _UsageReportsScreenState extends State<UsageReportsScreen> {
         _TrendCard(report: report),
         const SizedBox(height: 14),
         _MostUsedAppsCard(report: report),
+        const SizedBox(height: 14),
+        _buildNextDnsAnalyticsCard(),
       ],
     );
   }
 
-  Widget _buildPermissionMissingState() {
-    return Center(
+  Widget _buildPermissionMissingStateCard() {
+    return Card(
       child: Padding(
-        padding: const EdgeInsets.all(24),
-        child: Card(
-          child: Padding(
-            padding: const EdgeInsets.all(20),
-            child: Column(
-              mainAxisSize: MainAxisSize.min,
-              children: [
-                const Icon(Icons.bar_chart_outlined, size: 48),
-                const SizedBox(height: 12),
-                const Text(
-                  'Usage access required',
-                  style: TextStyle(fontSize: 18, fontWeight: FontWeight.w700),
-                ),
-                const SizedBox(height: 8),
-                const Text(
-                  'Enable Android Usage Access so TrustBridge can show real app-time reports.',
-                  textAlign: TextAlign.center,
-                ),
-                const SizedBox(height: 16),
-                FilledButton(
-                  onPressed: () async {
-                    await _resolvedAppUsageService.openUsageAccessSettings();
-                  },
-                  child: const Text('Open Usage Access Settings'),
-                ),
-                const SizedBox(height: 8),
-                TextButton(
-                  onPressed: _load,
-                  child: const Text('I enabled it, refresh'),
-                ),
-              ],
+        padding: const EdgeInsets.all(20),
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            const Icon(Icons.bar_chart_outlined, size: 48),
+            const SizedBox(height: 12),
+            const Text(
+              'Usage access required',
+              style: TextStyle(fontSize: 18, fontWeight: FontWeight.w700),
             ),
-          ),
+            const SizedBox(height: 8),
+            const Text(
+              'TrustBridge needs Usage Access to show real screen time.',
+              textAlign: TextAlign.center,
+            ),
+            const SizedBox(height: 16),
+            FilledButton(
+              onPressed: () async {
+                await _resolvedAppUsageService.openUsageAccessSettings();
+              },
+              child: const Text('Grant Access'),
+            ),
+            const SizedBox(height: 8),
+            TextButton(
+              onPressed: _load,
+              child: const Text('I enabled it, refresh'),
+            ),
+          ],
         ),
       ),
     );
@@ -181,6 +233,146 @@ class _UsageReportsScreenState extends State<UsageReportsScreen> {
       ],
     );
   }
+
+  Widget _buildNextDnsAnalyticsCard() {
+    if (!_nextDnsConfigured) {
+      return const Card(
+        key: Key('usage_reports_nextdns_card'),
+        child: Padding(
+          padding: EdgeInsets.all(16),
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Text(
+                'NextDNS Analytics',
+                style: TextStyle(fontSize: 16, fontWeight: FontWeight.w800),
+              ),
+              SizedBox(height: 8),
+              Text('Connect NextDNS profile to view blocked domain insights.'),
+            ],
+          ),
+        ),
+      );
+    }
+
+    final blockedToday = _nextDnsBlockedToday ?? 0;
+    return Card(
+      key: const Key('usage_reports_nextdns_card'),
+      elevation: 0,
+      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
+      child: Padding(
+        padding: const EdgeInsets.all(16),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            const Text(
+              'NextDNS Analytics',
+              style: TextStyle(fontSize: 16, fontWeight: FontWeight.w800),
+            ),
+            const SizedBox(height: 8),
+            Text(
+              'Sites Blocked Today: $blockedToday',
+              key: const Key('usage_reports_nextdns_blocked_today'),
+              style: const TextStyle(
+                fontSize: 18,
+                fontWeight: FontWeight.w700,
+                color: Color(0xFF2563EB),
+              ),
+            ),
+            const SizedBox(height: 10),
+            if (_nextDnsTopBlockedDomains.isEmpty)
+              const Text('No blocked-domain samples available yet.')
+            else
+              ..._nextDnsTopBlockedDomains.map(
+                (domain) => Padding(
+                  padding: const EdgeInsets.only(bottom: 8),
+                  child: Row(
+                    children: [
+                      const Icon(Icons.block, size: 16, color: Colors.red),
+                      const SizedBox(width: 8),
+                      Expanded(
+                        child: Text(
+                          domain.domain,
+                          style: const TextStyle(fontWeight: FontWeight.w600),
+                        ),
+                      ),
+                      Text(
+                        '${domain.queries}',
+                        style: const TextStyle(
+                          color: Colors.black54,
+                          fontWeight: FontWeight.w700,
+                        ),
+                      ),
+                    ],
+                  ),
+                ),
+              ),
+          ],
+        ),
+      ),
+    );
+  }
+
+  Future<_NextDnsUsageAnalytics> _loadNextDnsAnalytics() async {
+    final parentId = _parentId;
+    if (parentId == null) {
+      return const _NextDnsUsageAnalytics(configured: false);
+    }
+
+    try {
+      final preferences = await _resolvedFirestoreService.getParentPreferences(
+        parentId,
+      );
+      final enabled = preferences?['nextDnsEnabled'] == true;
+      final profileId =
+          (preferences?['nextDnsProfileId'] as String? ?? '').trim();
+      if (!enabled || profileId.isEmpty) {
+        return const _NextDnsUsageAnalytics(configured: false);
+      }
+
+      final topDomains = await _resolvedNextDnsApiService.getTopDomains(
+        profileId: profileId,
+        status: 'blocked',
+        limit: 5,
+      );
+      final status = await _resolvedNextDnsApiService.getAnalyticsStatus(
+        profileId: profileId,
+        limit: 20,
+      );
+
+      var blockedFromStatus = 0;
+      for (final entry in status) {
+        if (entry.status.toLowerCase().contains('block')) {
+          blockedFromStatus += entry.queries;
+        }
+      }
+      final blockedFromTopDomains = topDomains.fold<int>(
+        0,
+        (sum, domain) => sum + domain.queries,
+      );
+
+      return _NextDnsUsageAnalytics(
+        configured: true,
+        blockedToday:
+            blockedFromStatus > 0 ? blockedFromStatus : blockedFromTopDomains,
+        topBlockedDomains: topDomains,
+      );
+    } catch (_) {
+      return const _NextDnsUsageAnalytics(configured: true);
+    }
+  }
+}
+
+class _NextDnsUsageAnalytics {
+  const _NextDnsUsageAnalytics({
+    required this.configured,
+    this.blockedToday,
+    this.topBlockedDomains = const [],
+  });
+
+  final bool configured;
+  final int? blockedToday;
+  final List<NextDnsDomainStat> topBlockedDomains;
 }
 
 class _HeroStatsCard extends StatelessWidget {

@@ -4,6 +4,7 @@ import 'package:trustbridge_app/models/content_categories.dart';
 import 'package:trustbridge_app/models/policy.dart';
 import 'package:trustbridge_app/services/auth_service.dart';
 import 'package:trustbridge_app/services/firestore_service.dart';
+import 'package:trustbridge_app/services/nextdns_api_service.dart';
 import 'package:trustbridge_app/services/vpn_service.dart';
 import 'package:trustbridge_app/widgets/empty_state.dart';
 
@@ -14,6 +15,7 @@ class BlockCategoriesScreen extends StatefulWidget {
     this.authService,
     this.firestoreService,
     this.vpnService,
+    this.nextDnsApiService,
     this.parentIdOverride,
   });
 
@@ -21,6 +23,7 @@ class BlockCategoriesScreen extends StatefulWidget {
   final AuthService? authService;
   final FirestoreService? firestoreService;
   final VpnServiceBase? vpnService;
+  final NextDnsApiService? nextDnsApiService;
   final String? parentIdOverride;
 
   @override
@@ -28,16 +31,39 @@ class BlockCategoriesScreen extends StatefulWidget {
 }
 
 class _BlockCategoriesScreenState extends State<BlockCategoriesScreen> {
+  static const List<String> _nextDnsServiceIds = <String>[
+    'youtube',
+    'instagram',
+    'tiktok',
+    'facebook',
+    'netflix',
+    'roblox',
+  ];
+
+  static const Map<String, String> _localToNextDnsCategoryMap =
+      <String, String>{
+    'social-networks': 'social-networks',
+    'games': 'games',
+    'streaming': 'streaming',
+    'adult-content': 'porn',
+  };
+
   AuthService? _authService;
   FirestoreService? _firestoreService;
   VpnServiceBase? _vpnService;
+  NextDnsApiService? _nextDnsApiService;
 
   late final Set<String> _initialBlockedCategories;
   late final Set<String> _initialBlockedDomains;
   late Set<String> _blockedCategories;
   late Set<String> _blockedDomains;
+  late Map<String, bool> _nextDnsServiceToggles;
+  late bool _nextDnsSafeSearchEnabled;
+  late bool _nextDnsYoutubeRestrictedModeEnabled;
+  late bool _nextDnsBlockBypassEnabled;
 
   bool _isLoading = false;
+  bool _isSyncingNextDns = false;
   String _query = '';
 
   AuthService get _resolvedAuthService {
@@ -54,6 +80,21 @@ class _BlockCategoriesScreenState extends State<BlockCategoriesScreen> {
     _vpnService ??= widget.vpnService ?? VpnService();
     return _vpnService!;
   }
+
+  NextDnsApiService get _resolvedNextDnsApiService {
+    _nextDnsApiService ??= widget.nextDnsApiService ?? NextDnsApiService();
+    return _nextDnsApiService!;
+  }
+
+  String? get _nextDnsProfileId {
+    final value = widget.child.nextDnsProfileId?.trim();
+    if (value == null || value.isEmpty) {
+      return null;
+    }
+    return value;
+  }
+
+  bool get _hasNextDnsProfile => _nextDnsProfileId != null;
 
   bool get _hasChanges {
     return !_setEquals(_initialBlockedCategories, _blockedCategories) ||
@@ -83,6 +124,13 @@ class _BlockCategoriesScreenState extends State<BlockCategoriesScreen> {
     _initialBlockedDomains = widget.child.policy.blockedDomains.toSet();
     _blockedCategories = widget.child.policy.blockedCategories.toSet();
     _blockedDomains = widget.child.policy.blockedDomains.toSet();
+    _nextDnsServiceToggles = <String, bool>{
+      for (final id in _nextDnsServiceIds) id: false,
+    };
+    _nextDnsSafeSearchEnabled = widget.child.policy.safeSearchEnabled;
+    _nextDnsYoutubeRestrictedModeEnabled = false;
+    _nextDnsBlockBypassEnabled = true;
+    _hydrateNextDnsControls();
   }
 
   @override
@@ -160,6 +208,10 @@ class _BlockCategoriesScreenState extends State<BlockCategoriesScreen> {
           ..._buildCustomDomains(),
           const SizedBox(height: 10),
           _buildAddDomainButton(),
+          if (_hasNextDnsProfile) ...[
+            const SizedBox(height: 18),
+            _buildNextDnsCard(context),
+          ],
         ],
       ),
     );
@@ -207,7 +259,7 @@ class _BlockCategoriesScreenState extends State<BlockCategoriesScreen> {
             ),
             Switch(
               value: isBlocked,
-              onChanged: _isLoading
+              onChanged: _isLoading || _isSyncingNextDns
                   ? null
                   : (enabled) {
                       setState(() {
@@ -217,6 +269,10 @@ class _BlockCategoriesScreenState extends State<BlockCategoriesScreen> {
                           _blockedCategories.remove(category.id);
                         }
                       });
+                      _syncNextDnsCategoryForLocalToggle(
+                        localCategoryId: category.id,
+                        blocked: enabled,
+                      );
                     },
             ),
           ],
@@ -254,11 +310,9 @@ class _BlockCategoriesScreenState extends State<BlockCategoriesScreen> {
                 ),
                 InkWell(
                   key: Key('custom_domain_remove_$domain'),
-                  onTap: _isLoading
+                  onTap: _isLoading || _isSyncingNextDns
                       ? null
-                      : () => setState(() {
-                            _blockedDomains.remove(domain);
-                          }),
+                      : () => _removeDomain(domain),
                   child: const Icon(Icons.remove_circle_outline, size: 20),
                 ),
               ],
@@ -271,7 +325,7 @@ class _BlockCategoriesScreenState extends State<BlockCategoriesScreen> {
   Widget _buildAddDomainButton() {
     return InkWell(
       key: const Key('block_categories_add_domain'),
-      onTap: _isLoading ? null : _showAddDomainDialog,
+      onTap: _isLoading || _isSyncingNextDns ? null : _showAddDomainDialog,
       borderRadius: BorderRadius.circular(12),
       child: Container(
         height: 52,
@@ -317,7 +371,7 @@ class _BlockCategoriesScreenState extends State<BlockCategoriesScreen> {
             const SizedBox(width: 12),
             ElevatedButton(
               key: const Key('block_categories_save_button'),
-              onPressed: _isLoading ? null : _saveChanges,
+              onPressed: (_isLoading || _isSyncingNextDns) ? null : _saveChanges,
               child: _isLoading
                   ? const SizedBox(
                       width: 16,
@@ -380,6 +434,7 @@ class _BlockCategoriesScreenState extends State<BlockCategoriesScreen> {
     setState(() {
       _blockedDomains.add(normalized);
     });
+    await _syncNextDnsDomain(normalized, blocked: true);
   }
 
   Future<void> _saveChanges() async {
@@ -402,7 +457,12 @@ class _BlockCategoriesScreenState extends State<BlockCategoriesScreen> {
         blockedCategories: _orderedBlockedCategories(_blockedCategories),
         blockedDomains: _orderedBlockedDomains(_blockedDomains),
       );
-      final updatedChild = widget.child.copyWith(policy: updatedPolicy);
+      final updatedChild = widget.child.copyWith(
+        policy: updatedPolicy,
+        nextDnsControls: _hasNextDnsProfile
+            ? _buildNextDnsControlsPayload()
+            : widget.child.nextDnsControls,
+      );
 
       await _resolvedFirestoreService.updateChild(
         parentId: parentId,
@@ -545,5 +605,335 @@ class _BlockCategoriesScreenState extends State<BlockCategoriesScreen> {
       }
     }
     return true;
+  }
+
+  void _hydrateNextDnsControls() {
+    final controls = widget.child.nextDnsControls;
+    final services = controls['services'];
+    if (services is Map) {
+      for (final entry in services.entries) {
+        final key = entry.key.toString();
+        if (_nextDnsServiceToggles.containsKey(key)) {
+          _nextDnsServiceToggles[key] = entry.value == true;
+        }
+      }
+    }
+    _nextDnsSafeSearchEnabled =
+        controls['safeSearchEnabled'] == true || _nextDnsSafeSearchEnabled;
+    _nextDnsYoutubeRestrictedModeEnabled =
+        controls['youtubeRestrictedModeEnabled'] == true;
+    _nextDnsBlockBypassEnabled = controls['blockBypassEnabled'] != false;
+  }
+
+  Map<String, dynamic> _buildNextDnsControlsPayload() {
+    final categories = <String, bool>{};
+    for (final entry in _localToNextDnsCategoryMap.entries) {
+      categories[entry.value] = _blockedCategories.contains(entry.key);
+    }
+
+    return <String, dynamic>{
+      'services': _nextDnsServiceToggles,
+      'categories': categories,
+      'safeSearchEnabled': _nextDnsSafeSearchEnabled,
+      'youtubeRestrictedModeEnabled': _nextDnsYoutubeRestrictedModeEnabled,
+      'blockBypassEnabled': _nextDnsBlockBypassEnabled,
+      'updatedAtEpochMs': DateTime.now().millisecondsSinceEpoch,
+    };
+  }
+
+  Future<void> _persistNextDnsControlsOnly() async {
+    final profileId = _nextDnsProfileId;
+    final parentId = widget.parentIdOverride ?? _resolvedAuthService.currentUser?.uid;
+    if (profileId == null || parentId == null) {
+      return;
+    }
+    await _resolvedFirestoreService.saveChildNextDnsControls(
+      parentId: parentId,
+      childId: widget.child.id,
+      controls: _buildNextDnsControlsPayload(),
+    );
+  }
+
+  Future<void> _syncNextDnsCategoryForLocalToggle({
+    required String localCategoryId,
+    required bool blocked,
+  }) async {
+    final profileId = _nextDnsProfileId;
+    final nextDnsCategoryId = _localToNextDnsCategoryMap[localCategoryId];
+    if (profileId == null || nextDnsCategoryId == null) {
+      return;
+    }
+
+    try {
+      setState(() => _isSyncingNextDns = true);
+      await _resolvedNextDnsApiService.setCategoryBlocked(
+        profileId: profileId,
+        categoryId: nextDnsCategoryId,
+        blocked: blocked,
+      );
+      await _persistNextDnsControlsOnly();
+    } catch (error) {
+      if (!mounted) {
+        return;
+      }
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text(
+            'NextDNS category sync failed for $_prettyLabel(localCategoryId): $error',
+          ),
+        ),
+      );
+    } finally {
+      if (mounted) {
+        setState(() => _isSyncingNextDns = false);
+      }
+    }
+  }
+
+  Future<void> _syncNextDnsDomain(String domain, {required bool blocked}) async {
+    final profileId = _nextDnsProfileId;
+    if (profileId == null) {
+      return;
+    }
+
+    try {
+      setState(() => _isSyncingNextDns = true);
+      if (blocked) {
+        await _resolvedNextDnsApiService.addToDenylist(
+          profileId: profileId,
+          domain: domain,
+        );
+      } else {
+        await _resolvedNextDnsApiService.removeFromDenylist(
+          profileId: profileId,
+          domain: domain,
+        );
+      }
+      await _persistNextDnsControlsOnly();
+    } catch (error) {
+      if (!mounted) {
+        return;
+      }
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text(
+            blocked
+                ? 'NextDNS denylist add failed for $domain: $error'
+                : 'NextDNS denylist remove failed for $domain: $error',
+          ),
+        ),
+      );
+    } finally {
+      if (mounted) {
+        setState(() => _isSyncingNextDns = false);
+      }
+    }
+  }
+
+  Future<void> _toggleNextDnsService(String serviceId, bool blocked) async {
+    final profileId = _nextDnsProfileId;
+    if (profileId == null) {
+      return;
+    }
+    final previous = _nextDnsServiceToggles[serviceId] ?? false;
+    setState(() {
+      _nextDnsServiceToggles[serviceId] = blocked;
+      _isSyncingNextDns = true;
+    });
+
+    try {
+      await _resolvedNextDnsApiService.setServiceBlocked(
+        profileId: profileId,
+        serviceId: serviceId,
+        blocked: blocked,
+      );
+      await _persistNextDnsControlsOnly();
+    } catch (error) {
+      if (!mounted) {
+        return;
+      }
+      setState(() {
+        _nextDnsServiceToggles[serviceId] = previous;
+      });
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text('NextDNS service sync failed: $error')),
+      );
+    } finally {
+      if (mounted) {
+        setState(() => _isSyncingNextDns = false);
+      }
+    }
+  }
+
+  Future<void> _toggleNextDnsParental({
+    required bool? safeSearch,
+    required bool? youtubeRestricted,
+    required bool? blockBypass,
+    required VoidCallback optimisticUpdate,
+    required VoidCallback rollback,
+  }) async {
+    final profileId = _nextDnsProfileId;
+    if (profileId == null) {
+      return;
+    }
+    optimisticUpdate();
+    setState(() => _isSyncingNextDns = true);
+
+    try {
+      await _resolvedNextDnsApiService.setParentalControlToggles(
+        profileId: profileId,
+        safeSearchEnabled: safeSearch,
+        youtubeRestrictedModeEnabled: youtubeRestricted,
+        blockBypassEnabled: blockBypass,
+      );
+      await _persistNextDnsControlsOnly();
+    } catch (error) {
+      if (!mounted) {
+        return;
+      }
+      rollback();
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text('NextDNS parental controls sync failed: $error')),
+      );
+    } finally {
+      if (mounted) {
+        setState(() => _isSyncingNextDns = false);
+      }
+    }
+  }
+
+  Future<void> _removeDomain(String domain) async {
+    setState(() {
+      _blockedDomains.remove(domain);
+    });
+    await _syncNextDnsDomain(domain, blocked: false);
+  }
+
+  Widget _buildNextDnsCard(BuildContext context) {
+    final profileId = _nextDnsProfileId!;
+    final serviceEntries = _nextDnsServiceToggles.entries.toList()
+      ..sort((a, b) => a.key.compareTo(b.key));
+
+    return Card(
+      key: const Key('block_categories_nextdns_card'),
+      elevation: 0,
+      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
+      child: Padding(
+        padding: const EdgeInsets.all(16),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Text(
+              'NEXTDNS LIVE CONTROLS',
+              style: Theme.of(context).textTheme.titleSmall?.copyWith(
+                    fontWeight: FontWeight.w800,
+                    letterSpacing: 0.5,
+                  ),
+            ),
+            const SizedBox(height: 6),
+            Text(
+              'Profile: $profileId',
+              style: Theme.of(context).textTheme.bodySmall?.copyWith(
+                    color: Colors.grey[600],
+                  ),
+            ),
+            const SizedBox(height: 10),
+            ...serviceEntries.map(
+              (entry) => SwitchListTile(
+                key: Key('nextdns_service_switch_${entry.key}'),
+                contentPadding: EdgeInsets.zero,
+                dense: true,
+                title: Text(_prettyLabel(entry.key)),
+                value: entry.value,
+                onChanged: _isLoading || _isSyncingNextDns
+                    ? null
+                    : (value) => _toggleNextDnsService(entry.key, value),
+              ),
+            ),
+            const Divider(),
+            SwitchListTile(
+              key: const Key('nextdns_safe_search_switch'),
+              contentPadding: EdgeInsets.zero,
+              dense: true,
+              title: const Text('SafeSearch'),
+              subtitle: const Text('Filter explicit search results'),
+              value: _nextDnsSafeSearchEnabled,
+              onChanged: _isLoading || _isSyncingNextDns
+                  ? null
+                  : (value) {
+                      final previous = _nextDnsSafeSearchEnabled;
+                      _toggleNextDnsParental(
+                        safeSearch: value,
+                        youtubeRestricted: null,
+                        blockBypass: null,
+                        optimisticUpdate: () => setState(() {
+                          _nextDnsSafeSearchEnabled = value;
+                        }),
+                        rollback: () => setState(() {
+                          _nextDnsSafeSearchEnabled = previous;
+                        }),
+                      );
+                    },
+            ),
+            SwitchListTile(
+              key: const Key('nextdns_youtube_restricted_switch'),
+              contentPadding: EdgeInsets.zero,
+              dense: true,
+              title: const Text('YouTube Restricted Mode'),
+              subtitle: const Text('Limit mature content on YouTube'),
+              value: _nextDnsYoutubeRestrictedModeEnabled,
+              onChanged: _isLoading || _isSyncingNextDns
+                  ? null
+                  : (value) {
+                      final previous = _nextDnsYoutubeRestrictedModeEnabled;
+                      _toggleNextDnsParental(
+                        safeSearch: null,
+                        youtubeRestricted: value,
+                        blockBypass: null,
+                        optimisticUpdate: () => setState(() {
+                          _nextDnsYoutubeRestrictedModeEnabled = value;
+                        }),
+                        rollback: () => setState(() {
+                          _nextDnsYoutubeRestrictedModeEnabled = previous;
+                        }),
+                      );
+                    },
+            ),
+            SwitchListTile(
+              key: const Key('nextdns_block_bypass_switch'),
+              contentPadding: EdgeInsets.zero,
+              dense: true,
+              title: const Text('Block Bypass'),
+              subtitle: const Text('Prevent simple DNS bypass tricks'),
+              value: _nextDnsBlockBypassEnabled,
+              onChanged: _isLoading || _isSyncingNextDns
+                  ? null
+                  : (value) {
+                      final previous = _nextDnsBlockBypassEnabled;
+                      _toggleNextDnsParental(
+                        safeSearch: null,
+                        youtubeRestricted: null,
+                        blockBypass: value,
+                        optimisticUpdate: () => setState(() {
+                          _nextDnsBlockBypassEnabled = value;
+                        }),
+                        rollback: () => setState(() {
+                          _nextDnsBlockBypassEnabled = previous;
+                        }),
+                      );
+                    },
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+
+  String _prettyLabel(String raw) {
+    return raw
+        .split(RegExp(r'[-_]'))
+        .where((word) => word.trim().isNotEmpty)
+        .map((word) => '${word[0].toUpperCase()}${word.substring(1)}')
+        .join(' ');
   }
 }

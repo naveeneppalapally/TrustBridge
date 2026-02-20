@@ -1,10 +1,15 @@
+import 'dart:convert';
+
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
+import 'package:http/http.dart' as http;
+import 'package:qr_flutter/qr_flutter.dart';
 import 'package:share_plus/share_plus.dart';
 import 'package:trustbridge_app/models/child_device_record.dart';
 import 'package:trustbridge_app/models/child_profile.dart';
 import 'package:trustbridge_app/services/auth_service.dart';
 import 'package:trustbridge_app/services/firestore_service.dart';
+import 'package:trustbridge_app/services/vpn_service.dart';
 
 class ChildDevicesScreen extends StatefulWidget {
   const ChildDevicesScreen({
@@ -12,12 +17,16 @@ class ChildDevicesScreen extends StatefulWidget {
     required this.child,
     this.authService,
     this.firestoreService,
+    this.vpnService,
+    this.httpClient,
     this.parentIdOverride,
   });
 
   final ChildProfile child;
   final AuthService? authService;
   final FirestoreService? firestoreService;
+  final VpnServiceBase? vpnService;
+  final http.Client? httpClient;
   final String? parentIdOverride;
 
   @override
@@ -31,12 +40,17 @@ class _ChildDevicesScreenState extends State<ChildDevicesScreen> {
 
   AuthService? _authService;
   FirestoreService? _firestoreService;
+  VpnServiceBase? _vpnService;
+  http.Client? _httpClient;
+  bool _ownsHttpClient = false;
 
   late List<String> _deviceIds;
   late Map<String, ChildDeviceRecord> _deviceMetadata;
   bool _hasChanges = false;
   bool _isSaving = false;
+  bool _isVerifyingDns = false;
   String? _inlineError;
+  String? _verificationMessage;
 
   AuthService get _resolvedAuthService {
     _authService ??= widget.authService ?? AuthService();
@@ -46,6 +60,25 @@ class _ChildDevicesScreenState extends State<ChildDevicesScreen> {
   FirestoreService get _resolvedFirestoreService {
     _firestoreService ??= widget.firestoreService ?? FirestoreService();
     return _firestoreService!;
+  }
+
+  VpnServiceBase get _resolvedVpnService {
+    _vpnService ??= widget.vpnService ?? VpnService();
+    return _vpnService!;
+  }
+
+  http.Client get _resolvedHttpClient {
+    if (_httpClient != null) {
+      return _httpClient!;
+    }
+    if (widget.httpClient != null) {
+      _httpClient = widget.httpClient;
+      _ownsHttpClient = false;
+      return _httpClient!;
+    }
+    _httpClient = http.Client();
+    _ownsHttpClient = true;
+    return _httpClient!;
   }
 
   String? get _parentId {
@@ -74,6 +107,9 @@ class _ChildDevicesScreenState extends State<ChildDevicesScreen> {
     _deviceIdController.dispose();
     _aliasController.dispose();
     _modelController.dispose();
+    if (_ownsHttpClient) {
+      _httpClient?.close();
+    }
     super.dispose();
   }
 
@@ -182,6 +218,23 @@ class _ChildDevicesScreenState extends State<ChildDevicesScreen> {
                   ),
                 ),
               ),
+              const SizedBox(height: 12),
+              Center(
+                child: Container(
+                  padding: const EdgeInsets.all(10),
+                  decoration: BoxDecoration(
+                    color: Colors.white,
+                    borderRadius: BorderRadius.circular(12),
+                    border: Border.all(color: Colors.grey.shade300),
+                  ),
+                  child: QrImageView(
+                    key: const Key('child_device_setup_qr'),
+                    data: hostname,
+                    size: 180,
+                    backgroundColor: Colors.white,
+                  ),
+                ),
+              ),
               const SizedBox(height: 8),
               Wrap(
                 spacing: 8,
@@ -198,8 +251,70 @@ class _ChildDevicesScreenState extends State<ChildDevicesScreen> {
                     icon: const Icon(Icons.share, size: 16),
                     label: const Text('Share Setup'),
                   ),
+                  OutlinedButton.icon(
+                    key: const Key('open_private_dns_settings_button'),
+                    onPressed: _openPrivateDnsSettings,
+                    icon: const Icon(Icons.settings_ethernet, size: 16),
+                    label: const Text('Open Private DNS Settings'),
+                  ),
                 ],
               ),
+              const SizedBox(height: 12),
+              _buildSetupStep(
+                number: 1,
+                title: 'Name the Device',
+                body:
+                    'Give it a nickname, choose child, then add phone/tablet model.',
+              ),
+              const SizedBox(height: 8),
+              _buildSetupStep(
+                number: 2,
+                title: 'Scan QR Code',
+                body:
+                    'Open Settings > Network & Internet > Private DNS on child device and scan/copy hostname.',
+              ),
+              const SizedBox(height: 8),
+              _buildSetupStep(
+                number: 3,
+                title: 'Paste Hostname',
+                body:
+                    'Set Private DNS to Custom hostname and paste $hostname, then tap Save.',
+              ),
+              const SizedBox(height: 8),
+              _buildSetupStep(
+                number: 4,
+                title: 'Verify & Done',
+                body:
+                    'Run live verification to confirm this device is routed through NextDNS.',
+              ),
+              const SizedBox(height: 10),
+              FilledButton.icon(
+                key: const Key('verify_nextdns_button'),
+                onPressed: _isVerifyingDns ? null : _verifyNextDnsRouting,
+                icon: _isVerifyingDns
+                    ? const SizedBox(
+                        width: 16,
+                        height: 16,
+                        child: CircularProgressIndicator(strokeWidth: 2),
+                      )
+                    : const Icon(Icons.verified_outlined),
+                label: Text(
+                  _isVerifyingDns ? 'Checking...' : 'Check if it\'s working',
+                ),
+              ),
+              if (_verificationMessage != null) ...[
+                const SizedBox(height: 8),
+                Text(
+                  _verificationMessage!,
+                  key: const Key('child_device_verify_message'),
+                  style: TextStyle(
+                    color: _verificationMessage!.startsWith('✅')
+                        ? Colors.green.shade700
+                        : Colors.orange.shade700,
+                    fontWeight: FontWeight.w600,
+                  ),
+                ),
+              ],
             ],
           ],
         ),
@@ -507,9 +622,146 @@ class _ChildDevicesScreenState extends State<ChildDevicesScreen> {
     await Share.share(
       'TrustBridge device setup\n'
       'DNS Hostname: $hostname\n'
-      'Child: ${widget.child.nickname}',
+      'Child: ${widget.child.nickname}\n'
+      'Steps:\n'
+      '1) Open Settings > Network & Internet\n'
+      '2) Private DNS > Custom hostname\n'
+      '3) Paste hostname and Save',
       subject: 'TrustBridge Device Setup',
     );
+  }
+
+  Widget _buildSetupStep({
+    required int number,
+    required String title,
+    required String body,
+  }) {
+    return Row(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        Container(
+          width: 24,
+          height: 24,
+          alignment: Alignment.center,
+          decoration: const BoxDecoration(
+            color: Color(0xFF2563EB),
+            shape: BoxShape.circle,
+          ),
+          child: Text(
+            '$number',
+            style: const TextStyle(
+              color: Colors.white,
+              fontSize: 12,
+              fontWeight: FontWeight.w700,
+            ),
+          ),
+        ),
+        const SizedBox(width: 10),
+        Expanded(
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Text(
+                title,
+                style: const TextStyle(fontWeight: FontWeight.w700),
+              ),
+              const SizedBox(height: 2),
+              Text(
+                body,
+                style: TextStyle(
+                  color: Colors.grey.shade700,
+                  fontSize: 12,
+                ),
+              ),
+            ],
+          ),
+        ),
+      ],
+    );
+  }
+
+  Future<void> _openPrivateDnsSettings() async {
+    final opened = await _resolvedVpnService.openPrivateDnsSettings();
+    if (!mounted) {
+      return;
+    }
+    if (!opened) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('Unable to open Private DNS settings.')),
+      );
+    }
+  }
+
+  Future<void> _verifyNextDnsRouting() async {
+    final profileId = widget.child.nextDnsProfileId?.trim();
+    if (profileId == null || profileId.isEmpty) {
+      setState(() {
+        _verificationMessage = '❌ NextDNS profile is not linked yet.';
+      });
+      return;
+    }
+
+    setState(() {
+      _isVerifyingDns = true;
+      _verificationMessage = null;
+    });
+
+    try {
+      final response = await _resolvedHttpClient.get(
+        Uri.parse('https://test.nextdns.io'),
+      );
+
+      if (response.statusCode < 200 || response.statusCode >= 300) {
+        if (!mounted) {
+          return;
+        }
+        setState(() {
+          _verificationMessage =
+              '❌ Verification failed (status ${response.statusCode}).';
+        });
+        return;
+      }
+
+      final decoded = jsonDecode(response.body);
+      String detectedProfile = '';
+      if (decoded is Map) {
+        final map = decoded.map(
+          (key, value) => MapEntry(key.toString(), value),
+        );
+        detectedProfile = (map['profile'] as String? ?? '').trim();
+        if (detectedProfile.isEmpty) {
+          detectedProfile = (map['id'] as String? ?? '').trim();
+        }
+      }
+
+      if (!mounted) {
+        return;
+      }
+
+      if (detectedProfile.toLowerCase() == profileId.toLowerCase()) {
+        setState(() {
+          _verificationMessage = '✅ Protected — NextDNS profile is active.';
+        });
+      } else {
+        setState(() {
+          _verificationMessage =
+              '❌ Not yet protected. Detected profile: ${detectedProfile.isEmpty ? 'unknown' : detectedProfile}';
+        });
+      }
+    } catch (_) {
+      if (!mounted) {
+        return;
+      }
+      setState(() {
+        _verificationMessage = '❌ Verification failed. Check internet and retry.';
+      });
+    } finally {
+      if (mounted) {
+        setState(() {
+          _isVerifyingDns = false;
+        });
+      }
+    }
   }
 
   void _showErrorDialog(String message) {

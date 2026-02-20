@@ -24,10 +24,10 @@ class DnsVpnService : VpnService() {
     companion object {
         private const val TAG = "DnsVpnService"
         private const val VPN_ADDRESS = "10.0.0.1"
-        private const val INTERCEPT_DNS = "8.8.8.8"
-        private const val FALLBACK_DNS_PRIMARY = "1.1.1.1"
-        private const val FALLBACK_DNS_SECONDARY = "8.8.8.8"
-        private const val DEFAULT_UPSTREAM_DNS = "8.8.8.8"
+        private const val INTERCEPT_DNS = "45.90.28.0"
+        private const val FALLBACK_DNS_PRIMARY = "45.90.30.0"
+        private const val FALLBACK_DNS_SECONDARY = "45.90.30.0"
+        private const val DEFAULT_UPSTREAM_DNS = "45.90.28.0"
         private const val NOTIFICATION_ID = 1001
         private const val CHANNEL_ID = "dns_vpn_channel"
 

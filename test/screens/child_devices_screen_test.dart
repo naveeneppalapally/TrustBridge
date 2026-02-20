@@ -1,7 +1,11 @@
+import 'dart:convert';
+
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:fake_cloud_firestore/fake_cloud_firestore.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
+import 'package:http/http.dart' as http;
+import 'package:http/testing.dart';
 import 'package:trustbridge_app/models/child_profile.dart';
 import 'package:trustbridge_app/screens/child_devices_screen.dart';
 import 'package:trustbridge_app/services/firestore_service.dart';
@@ -106,6 +110,52 @@ void main() {
       await tester.pumpAndSettle();
 
       expect(find.text('This device ID is already linked.'), findsOneWidget);
+    });
+
+    testWidgets('shows QR setup and verifies NextDNS routing for linked profile',
+        (tester) async {
+      await tester.binding.setSurfaceSize(const Size(430, 1300));
+      addTearDown(() => tester.binding.setSurfaceSize(null));
+
+      const parentId = 'parent-device-d';
+      child = child.copyWith(nextDnsProfileId: 'abc123');
+      await seedChild(parentId);
+
+      final client = MockClient((request) async {
+        if (request.url.toString() == 'https://test.nextdns.io') {
+          return http.Response(
+            jsonEncode({'profile': 'abc123'}),
+            200,
+          );
+        }
+        return http.Response('{}', 200);
+      });
+
+      await tester.pumpWidget(
+        MaterialApp(
+          home: ChildDevicesScreen(
+            child: child,
+            parentIdOverride: parentId,
+            firestoreService: firestoreService,
+            httpClient: client,
+          ),
+        ),
+      );
+      await tester.pumpAndSettle();
+
+      expect(find.byKey(const Key('child_device_setup_qr')), findsOneWidget);
+      expect(find.byKey(const Key('verify_nextdns_button')), findsOneWidget);
+
+      await tester.scrollUntilVisible(
+        find.byKey(const Key('verify_nextdns_button')),
+        250,
+        scrollable: find.byType(Scrollable).first,
+      );
+      await tester.tap(find.byKey(const Key('verify_nextdns_button')));
+      await tester.pumpAndSettle();
+
+      expect(find.byKey(const Key('child_device_verify_message')), findsOneWidget);
+      expect(find.textContaining('Protected'), findsOneWidget);
     });
   });
 }

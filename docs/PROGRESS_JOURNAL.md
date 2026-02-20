@@ -3081,6 +3081,45 @@ high-frequency user pain points.
 
 ---
 
+## Day 121 - NextDNS Integration Fixes (PPTX Scoped)
+
+Program goal: implement only the NextDNS integration items from the
+Days 121-130 fix-plan PPTX and keep non-NextDNS items out of scope.
+
+### Commit entries
+
+1. **2026-02-20 10:31:01 +05:30**  
+   Message: `Implement NextDNS-only integration fixes from PPTX Days 121-130`  
+   Changes:
+   - Updated native VPN defaults to NextDNS anycast:
+     - `android/app/src/main/kotlin/com/navee/trustbridge/vpn/DnsVpnService.kt`
+     - `android/app/src/main/kotlin/com/navee/trustbridge/vpn/VpnPreferencesStore.kt`
+     - `android/app/src/main/kotlin/com/navee/trustbridge/vpn/DnsPacketHandler.kt`
+   - Updated VPN protection UI default upstream label:
+     - `lib/screens/vpn_protection_screen.dart`
+   - Merged NextDNS controls into category blocking flow:
+     - `lib/screens/block_categories_screen.dart`
+     - service toggles + safe-search controls
+     - sync of mapped category/domain updates to NextDNS
+     - persisted child `nextDnsControls` payload
+   - Expanded child-device NextDNS setup experience:
+     - `lib/screens/child_devices_screen.dart`
+     - QR setup payload, Private DNS deep-link, live `test.nextdns.io` verify
+   - Added Usage Reports NextDNS analytics card:
+     - `lib/screens/usage_reports_screen.dart`
+     - blocked-sites metric + top blocked domains + connect fallback
+   - Added package for QR rendering:
+     - `pubspec.yaml`, `pubspec.lock` (`qr_flutter`)
+   - Updated/added tests:
+     - `test/screens/block_categories_screen_test.dart`
+     - `test/screens/child_devices_screen_test.dart`
+     - `test/screens/usage_reports_screen_test.dart`
+   Validation:
+   - `flutter analyze` passed.
+   - `flutter test` passed (329 tests).
+
+---
+
 ## Day 115 - NextDNS API Foundation (Week 24 Day 1)
 
 Program goal: build production-ready NextDNS API primitives with secure API key storage and normalized failure handling.
