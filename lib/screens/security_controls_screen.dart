@@ -123,23 +123,23 @@ class _SecurityControlsScreenState extends State<SecurityControlsScreen> {
               ),
               const SizedBox(height: 6),
               Text(
-                'Manage your access and privacy settings',
+                'Keep your TrustBridge app safe for parent-only controls',
                 style: Theme.of(context).textTheme.bodyMedium?.copyWith(
                       color: Colors.grey.shade600,
                     ),
               ),
               const SizedBox(height: 18),
-              _buildSectionHeader('Access Control'),
+              _buildSectionHeader('Lock Your TrustBridge App'),
               _buildAccessControlCard(context, parentId),
               const SizedBox(height: 8),
               Text(
-                'Biometric authentication helps prevent unauthorized access to parent controls.',
+                'Skip typing password - use fingerprint instead.',
                 style: Theme.of(context).textTheme.bodySmall?.copyWith(
                       color: Colors.grey.shade600,
                     ),
               ),
               const SizedBox(height: 18),
-              _buildSectionHeader('Configuration'),
+              _buildSectionHeader('Security Options'),
               _buildConfigurationCard(
                 context,
                 parentId: parentId,
@@ -164,7 +164,7 @@ class _SecurityControlsScreenState extends State<SecurityControlsScreen> {
                     SizedBox(width: 10),
                     Expanded(
                       child: Text(
-                        'Encryption Active — Your biometric data is stored locally and encrypted.',
+                        'Your data is secure and private.',
                         style: TextStyle(
                           color: Color(0xFF1E3A8A),
                           fontWeight: FontWeight.w600,
@@ -185,11 +185,11 @@ class _SecurityControlsScreenState extends State<SecurityControlsScreen> {
     return Padding(
       padding: const EdgeInsets.only(left: 4, bottom: 6),
       child: Text(
-        title.toUpperCase(),
+        title,
         style: TextStyle(
           fontSize: 12,
           fontWeight: FontWeight.w700,
-          letterSpacing: 0.7,
+          letterSpacing: 0.2,
           color: Colors.grey.shade600,
         ),
       ),
@@ -207,8 +207,8 @@ class _SecurityControlsScreenState extends State<SecurityControlsScreen> {
           backgroundColor: Colors.blue.withValues(alpha: 0.14),
           child: const Icon(Icons.fingerprint, color: Colors.blue),
         ),
-        title: const Text('Biometric Unlock'),
-        subtitle: const Text('Face ID or Fingerprint'),
+        title: const Text('Use Fingerprint or Face to Open'),
+        subtitle: const Text('Face unlock or fingerprint'),
         trailing: Switch(
           key: const Key('security_biometric_switch'),
           value: _biometricLoginEnabled,
@@ -251,7 +251,7 @@ class _SecurityControlsScreenState extends State<SecurityControlsScreen> {
                 style: TextStyle(fontWeight: FontWeight.w800, fontSize: 10),
               ),
             ),
-            title: const Text('App PIN'),
+            title: const Text('Change App PIN (4-digit code)'),
             subtitle: Text('Last changed $daysSincePinChange days ago'),
             trailing: const Icon(Icons.chevron_right),
             onTap: () => _changePinFlow(parentId),
@@ -268,8 +268,8 @@ class _SecurityControlsScreenState extends State<SecurityControlsScreen> {
           ListTile(
             key: const Key('security_login_history_tile'),
             leading: const Icon(Icons.history),
-            title: const Text('Login History'),
-            subtitle: Text('$activeSessions Active Sessions'),
+            title: const Text('Devices That Opened TrustBridge'),
+            subtitle: Text('Signed in on $activeSessions phone(s) right now'),
             trailing: const Icon(Icons.chevron_right),
             onTap: () =>
                 _showInfo('Login history details screen is coming soon.'),
@@ -278,7 +278,7 @@ class _SecurityControlsScreenState extends State<SecurityControlsScreen> {
           ListTile(
             key: const Key('security_two_factor_tile'),
             leading: const Icon(Icons.phonelink_lock_outlined),
-            title: const Text('Two-Factor Auth'),
+            title: const Text('2-Step Login Protection'),
             subtitle: Text(twoFactorEnabled ? 'Enabled' : 'Disabled'),
             trailing: const Icon(Icons.chevron_right),
             onTap: () => _toggleTwoFactor(parentId, twoFactorEnabled),

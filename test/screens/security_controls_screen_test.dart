@@ -46,8 +46,12 @@ void main() {
       await tester.pumpAndSettle();
 
       expect(find.text('Security'), findsWidgets);
-      expect(find.text('ACCESS CONTROL'), findsOneWidget);
-      expect(find.text('CONFIGURATION'), findsOneWidget);
+      expect(find.text('Lock Your TrustBridge App'), findsOneWidget);
+      expect(find.text('Security Options'), findsOneWidget);
+      expect(find.text('Use Fingerprint or Face to Open'), findsOneWidget);
+      expect(find.text('Change App PIN (4-digit code)'), findsOneWidget);
+      expect(find.text('Devices That Opened TrustBridge'), findsOneWidget);
+      expect(find.text('2-Step Login Protection'), findsOneWidget);
       expect(
           find.byKey(const Key('security_biometric_switch')), findsOneWidget);
       expect(find.byKey(const Key('security_app_pin_tile')), findsOneWidget);

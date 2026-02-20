@@ -60,7 +60,7 @@ void main() {
       );
     }
 
-    testWidgets('renders 4 bottom navigation tabs', (tester) async {
+    testWidgets('renders 5 bottom navigation tabs', (tester) async {
       const parentId = 'parent-shell-a';
       await seedChild(parentId);
 
@@ -71,7 +71,8 @@ void main() {
       expect(find.text('Dashboard'), findsWidgets);
       expect(find.text('Schedule'), findsOneWidget);
       expect(find.text('Reports'), findsOneWidget);
-      expect(find.text('Security'), findsOneWidget);
+      expect(find.text('Block Apps'), findsOneWidget);
+      expect(find.text('Settings'), findsOneWidget);
     });
 
     testWidgets('switches tabs and shows schedule screen', (tester) async {
@@ -98,6 +99,21 @@ void main() {
       await tester.pump(const Duration(milliseconds: 300));
 
       expect(find.text('Usage Reports'), findsOneWidget);
+    });
+
+    testWidgets('settings tab opens parent settings screen', (tester) async {
+      const parentId = 'parent-shell-settings';
+      await seedChild(parentId);
+
+      await tester.pumpWidget(buildTestShell(parentId: parentId));
+      await tester.pump(const Duration(milliseconds: 300));
+
+      await tester.tap(find.text('Settings'));
+      await tester.pump(const Duration(milliseconds: 500));
+      await tester.pump(const Duration(milliseconds: 500));
+
+      expect(find.text('Settings'), findsWidgets);
+      expect(find.byKey(const Key('settings_profile_card')), findsOneWidget);
     });
 
     testWidgets('shows dashboard badge when pending requests exist',

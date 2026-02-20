@@ -3081,6 +3081,49 @@ high-frequency user pain points.
 
 ---
 
+## Day 122-126 - PPTX Remaining Non-NextDNS Fixes
+
+Program goal: complete the remaining PPT issues after the NextDNS-only pass,
+focused on parent UX clarity and navigation (Issue 4, 5, 7A).
+
+### Commit entries
+
+1. **2026-02-20 10:48:09 +05:30**  
+   Message: `Implement remaining non-NextDNS PPT fixes (Issue 4, 5, 7A)`  
+   Changes:
+   - Updated `lib/widgets/parent_shell.dart`:
+     - bottom navigation expanded from 4 to 5 tabs
+     - `Security` tab renamed/rewired to `Block Apps`
+     - new `Settings` tab routed to `ParentSettingsScreen`
+     - added `_ParentBlockAppsTab` to load child and open `BlockCategoriesScreen`
+   - Updated `lib/screens/security_controls_screen.dart`:
+     - replaced technical copy with plain-language labels
+     - section labels updated to:
+       - `Lock Your TrustBridge App`
+       - `Security Options`
+     - updated control labels:
+       - fingerprint/face unlock wording
+       - app PIN wording
+       - login devices wording
+       - two-step protection wording
+     - info card text simplified to:
+       - `Your data is secure and private.`
+   - Updated `lib/screens/schedule_creator_screen.dart`:
+     - added routine-description card for:
+       - Bedtime, School, Study, Custom
+     - updated restriction descriptions for:
+       - Block Distractions
+       - Block Everything
+   - Updated tests:
+     - `test/widgets/parent_shell_test.dart`
+     - `test/screens/security_controls_screen_test.dart`
+     - `test/screens/schedule_creator_screen_test.dart`
+   Validation:
+   - `flutter analyze` passed.
+   - `flutter test` passed (330 tests).
+
+---
+
 ## Day 121 - NextDNS Integration Fixes (PPTX Scoped)
 
 Program goal: implement only the NextDNS integration items from the

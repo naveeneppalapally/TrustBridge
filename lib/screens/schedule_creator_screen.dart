@@ -55,13 +55,14 @@ class _ScheduleCreatorScreenState extends State<ScheduleCreatorScreen> {
     _sourceSchedule = schedule;
     _type = schedule?.type ?? ScheduleType.bedtime;
     _action = schedule?.action ?? ScheduleAction.blockDistracting;
-    _days = (schedule?.days ?? const {
-      Day.monday,
-      Day.tuesday,
-      Day.wednesday,
-      Day.thursday,
-      Day.friday,
-    })
+    _days = (schedule?.days ??
+            const {
+              Day.monday,
+              Day.tuesday,
+              Day.wednesday,
+              Day.thursday,
+              Day.friday,
+            })
         .toSet();
     _startTime = schedule?.startTime ?? '21:00';
     _endTime = schedule?.endTime ?? '07:30';
@@ -85,6 +86,8 @@ class _ScheduleCreatorScreenState extends State<ScheduleCreatorScreen> {
           ),
           const SizedBox(height: 10),
           _buildRoutineTypeRow(),
+          const SizedBox(height: 10),
+          _buildRoutineDescriptionCard(),
           const SizedBox(height: 18),
           _buildTimeCard(),
           const SizedBox(height: 18),
@@ -109,8 +112,9 @@ class _ScheduleCreatorScreenState extends State<ScheduleCreatorScreen> {
           _buildRestrictionCard(
             key: const Key('schedule_block_distractions_card'),
             title: 'Block Distractions',
-            subtitle:
-                'Social media, games, and streaming apps are restricted during this routine.',
+            subtitle: 'Social media, games, and streaming apps are blocked.\n'
+                'School apps, WhatsApp, and phone calls stay available.\n'
+                'Good for homework time.',
             action: ScheduleAction.blockDistracting,
           ),
           const SizedBox(height: 10),
@@ -118,7 +122,9 @@ class _ScheduleCreatorScreenState extends State<ScheduleCreatorScreen> {
             key: const Key('schedule_block_all_card'),
             title: 'Block Everything',
             subtitle:
-                'Total lockout. Only emergency calls and essential apps stay available.',
+                'Total lockout - only phone calls and emergency services work.\n'
+                'No internet, no apps, no YouTube.\n'
+                'Use for bedtime or exam periods.',
             action: ScheduleAction.blockAll,
           ),
           const SizedBox(height: 14),
@@ -199,6 +205,26 @@ class _ScheduleCreatorScreenState extends State<ScheduleCreatorScreen> {
               ),
             )
             .toList(growable: false),
+      ),
+    );
+  }
+
+  Widget _buildRoutineDescriptionCard() {
+    return Container(
+      key: const Key('schedule_routine_description_card'),
+      padding: const EdgeInsets.all(12),
+      decoration: BoxDecoration(
+        color: Colors.blue.withValues(alpha: 0.08),
+        borderRadius: BorderRadius.circular(12),
+        border: Border.all(color: Colors.blue.withValues(alpha: 0.20)),
+      ),
+      child: Text(
+        _typeDescription(_type),
+        key: const Key('schedule_routine_description_text'),
+        style: TextStyle(
+          color: Colors.grey[800],
+          height: 1.3,
+        ),
       ),
     );
   }
@@ -341,8 +367,9 @@ class _ScheduleCreatorScreenState extends State<ScheduleCreatorScreen> {
         decoration: BoxDecoration(
           borderRadius: BorderRadius.circular(14),
           border: Border.all(
-            color:
-                selected ? const Color(0xFF207CF8) : Colors.grey.withValues(alpha: 0.40),
+            color: selected
+                ? const Color(0xFF207CF8)
+                : Colors.grey.withValues(alpha: 0.40),
             width: selected ? 2 : 1,
           ),
           color: selected ? const Color(0x1A207CF8) : Colors.transparent,
@@ -566,10 +593,10 @@ class _ScheduleCreatorScreenState extends State<ScheduleCreatorScreen> {
     if (startParts.length != 2 || endParts.length != 2) {
       return '--';
     }
-    final startMinutes =
-        (int.tryParse(startParts[0]) ?? 0) * 60 + (int.tryParse(startParts[1]) ?? 0);
-    final endMinutes =
-        (int.tryParse(endParts[0]) ?? 0) * 60 + (int.tryParse(endParts[1]) ?? 0);
+    final startMinutes = (int.tryParse(startParts[0]) ?? 0) * 60 +
+        (int.tryParse(startParts[1]) ?? 0);
+    final endMinutes = (int.tryParse(endParts[0]) ?? 0) * 60 +
+        (int.tryParse(endParts[1]) ?? 0);
 
     var diff = endMinutes - startMinutes;
     if (diff <= 0) {
@@ -602,6 +629,23 @@ class _ScheduleCreatorScreenState extends State<ScheduleCreatorScreen> {
         return 'Block Distractions';
       case ScheduleAction.allowAll:
         return 'Allow All';
+    }
+  }
+
+  String _typeDescription(ScheduleType type) {
+    switch (type) {
+      case ScheduleType.bedtime:
+        return 'Blocks YouTube, games, and social media after bedtime hours. '
+            'Emergency calls always work.';
+      case ScheduleType.school:
+        return 'During school hours, only study and communication apps are '
+            'available. Entertainment is blocked.';
+      case ScheduleType.homework:
+        return 'Gaming and video sites blocked for focused study time. '
+            'WhatsApp and phone calls still work.';
+      case ScheduleType.custom:
+        return 'You choose exactly which apps to block and when. '
+            'Full control over every detail.';
     }
   }
 

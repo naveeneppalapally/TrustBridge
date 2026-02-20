@@ -2,10 +2,11 @@ import 'package:flutter/material.dart';
 
 import '../models/access_request.dart';
 import '../models/child_profile.dart';
+import '../screens/block_categories_screen.dart';
 import '../screens/dashboard_screen.dart';
+import '../screens/parent_settings_screen.dart';
 import '../screens/schedule_creator_screen.dart';
 import '../screens/usage_reports_screen.dart';
-import '../screens/vpn_protection_screen.dart';
 import '../services/auth_service.dart';
 import '../services/firestore_service.dart';
 import '../theme/app_theme.dart';
@@ -59,8 +60,8 @@ class _ParentShellState extends State<ParentShell> {
     final rawIndex = widget.initialIndex;
     _currentIndex = rawIndex < 0
         ? 0
-        : rawIndex > 3
-            ? 3
+        : rawIndex > 4
+            ? 4
             : rawIndex;
   }
 
@@ -107,7 +108,12 @@ class _ParentShellState extends State<ParentShell> {
         parentIdOverride: widget.parentIdOverride,
       ),
       const UsageReportsScreen(),
-      VpnProtectionScreen(
+      _ParentBlockAppsTab(
+        authService: widget.authService,
+        firestoreService: widget.firestoreService,
+        parentIdOverride: widget.parentIdOverride,
+      ),
+      ParentSettingsScreen(
         authService: widget.authService,
         firestoreService: widget.firestoreService,
         parentIdOverride: widget.parentIdOverride,
@@ -157,7 +163,11 @@ class _ParentShellState extends State<ParentShell> {
               ),
               const BottomNavigationBarItem(
                 icon: Icon(Icons.security_rounded),
-                label: 'Security',
+                label: 'Block Apps',
+              ),
+              const BottomNavigationBarItem(
+                icon: Icon(Icons.settings_rounded),
+                label: 'Settings',
               ),
             ],
           ),
@@ -295,6 +305,114 @@ class _ParentScheduleTabState extends State<_ParentScheduleTab> {
         }
 
         return ScheduleCreatorScreen(
+          child: children.first,
+          authService: widget.authService,
+          firestoreService: widget.firestoreService,
+          parentIdOverride: widget.parentIdOverride,
+        );
+      },
+    );
+  }
+}
+
+class _ParentBlockAppsTab extends StatefulWidget {
+  const _ParentBlockAppsTab({
+    this.authService,
+    this.firestoreService,
+    this.parentIdOverride,
+  });
+
+  final AuthService? authService;
+  final FirestoreService? firestoreService;
+  final String? parentIdOverride;
+
+  @override
+  State<_ParentBlockAppsTab> createState() => _ParentBlockAppsTabState();
+}
+
+class _ParentBlockAppsTabState extends State<_ParentBlockAppsTab> {
+  AuthService? _authService;
+  FirestoreService? _firestoreService;
+
+  AuthService get _resolvedAuthService {
+    _authService ??= widget.authService ?? AuthService();
+    return _authService!;
+  }
+
+  FirestoreService get _resolvedFirestoreService {
+    _firestoreService ??= widget.firestoreService ?? FirestoreService();
+    return _firestoreService!;
+  }
+
+  String? get _parentId {
+    final override = widget.parentIdOverride?.trim();
+    if (override != null && override.isNotEmpty) {
+      return override;
+    }
+    return _resolvedAuthService.currentUser?.uid;
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final parentId = _parentId;
+    if (parentId == null || parentId.trim().isEmpty) {
+      return const Scaffold(
+        body: Center(
+          child: Text('Please sign in to manage app blocking rules.'),
+        ),
+      );
+    }
+
+    return StreamBuilder<List<ChildProfile>>(
+      key: ValueKey<String>('parent_shell_block_apps_children_$parentId'),
+      stream: _resolvedFirestoreService.getChildrenStream(parentId),
+      builder: (context, snapshot) {
+        if (snapshot.connectionState == ConnectionState.waiting &&
+            !snapshot.hasData) {
+          return const Scaffold(
+            body: Center(child: CircularProgressIndicator()),
+          );
+        }
+
+        if (snapshot.hasError) {
+          return Scaffold(
+            appBar: AppBar(title: const Text('Block Apps')),
+            body: Center(
+              child: Padding(
+                padding: const EdgeInsets.all(24),
+                child: Text(
+                  'Unable to load child profiles for blocking.\n${snapshot.error}',
+                  textAlign: TextAlign.center,
+                ),
+              ),
+            ),
+          );
+        }
+
+        final children = snapshot.data ?? const <ChildProfile>[];
+        if (children.isEmpty) {
+          return Scaffold(
+            appBar: AppBar(title: const Text('Block Apps')),
+            body: const Center(
+              child: Padding(
+                padding: EdgeInsets.all(24),
+                child: Column(
+                  mainAxisAlignment: MainAxisAlignment.center,
+                  children: <Widget>[
+                    Icon(Icons.family_restroom, size: 56),
+                    SizedBox(height: 12),
+                    Text(
+                      'Add a child profile first to configure app blocking.',
+                      textAlign: TextAlign.center,
+                    ),
+                  ],
+                ),
+              ),
+            ),
+          );
+        }
+
+        return BlockCategoriesScreen(
           child: children.first,
           authService: widget.authService,
           firestoreService: widget.firestoreService,
