@@ -9,6 +9,16 @@ service cloud.firestore {
       return isAuthed() && request.auth.uid == parentId;
     }
 
+    function isSixDigitCode(value) {
+      return value is string && value.matches('^[0-9]{6}$');
+    }
+
+    function isChildOwner(childId) {
+      return isAuthed() &&
+        exists(/databases/$(database)/documents/children/$(childId)) &&
+        get(/databases/$(database)/documents/children/$(childId)).data.parentId == request.auth.uid;
+    }
+
     function hasOnlyKeys(data, allowedKeys) {
       return data.keys().hasOnly(allowedKeys);
     }
@@ -50,6 +60,25 @@ service cloud.firestore {
         data[field] in ['6-9', '10-13', '14-17'];
     }
 
+    function hasRequiredAlertLocks(data) {
+      return !('alertPreferences' in data) ||
+        (
+          data.alertPreferences is map &&
+          (
+            !('vpnDisabled' in data.alertPreferences) ||
+            data.alertPreferences.vpnDisabled == true
+          ) &&
+          (
+            !('uninstallAttempt' in data.alertPreferences) ||
+            data.alertPreferences.uninstallAttempt == true
+          ) &&
+          (
+            !('deviceOffline24h' in data.alertPreferences) ||
+            data.alertPreferences.deviceOffline24h == true
+          )
+        );
+    }
+
     // Parent profile document.
     match /parents/{parentId} {
       allow read: if isParent(parentId);
@@ -66,12 +95,14 @@ service cloud.firestore {
         isOptionalTimestamp(request.resource.data, 'createdAt') &&
         isOptionalTimestamp(request.resource.data, 'updatedAt') &&
         isOptionalTimestamp(request.resource.data, 'fcmTokenUpdatedAt') &&
-        isOptionalTimestamp(request.resource.data, 'onboardingCompletedAt');
+        isOptionalTimestamp(request.resource.data, 'onboardingCompletedAt') &&
+        hasRequiredAlertLocks(request.resource.data);
 
       allow update: if isParent(parentId) &&
         isRequiredString(request.resource.data, 'parentId', 128) &&
         request.resource.data.parentId == resource.data.parentId &&
-        request.resource.data.parentId == parentId;
+        request.resource.data.parentId == parentId &&
+        hasRequiredAlertLocks(request.resource.data);
 
       allow delete: if false;
 
@@ -206,6 +237,53 @@ service cloud.firestore {
           request.resource.data.nextDnsControls is map);
 
       allow delete: if isAuthed() && resource.data.parentId == request.auth.uid;
+
+      // Child device metadata records used for pairing and per-device push tokens.
+      match /devices/{deviceId} {
+        allow read: if isChildOwner(childId);
+
+        allow create, update: if isChildOwner(childId) &&
+          isRequiredString(request.resource.data, 'parentId', 128) &&
+          request.resource.data.parentId == request.auth.uid &&
+          isOptionalString(request.resource.data, 'model', 120) &&
+          isOptionalString(request.resource.data, 'osVersion', 120) &&
+          isOptionalString(request.resource.data, 'fcmToken', 2048) &&
+          isOptionalTimestamp(request.resource.data, 'pairedAt');
+
+        allow delete: if false;
+      }
+    }
+
+    // Parent-generated setup codes used to pair child devices.
+    match /pairing_codes/{code} {
+      allow read: if isAuthed();
+
+      allow create: if isAuthed() &&
+        isSixDigitCode(code) &&
+        hasOnlyKeys(
+          request.resource.data,
+          ['code', 'childId', 'parentId', 'createdAt', 'expiresAt', 'used']
+        ) &&
+        request.resource.data.code == code &&
+        isRequiredString(request.resource.data, 'childId', 128) &&
+        isRequiredString(request.resource.data, 'parentId', 128) &&
+        request.resource.data.parentId == request.auth.uid &&
+        isRequiredTimestamp(request.resource.data, 'createdAt') &&
+        isRequiredTimestamp(request.resource.data, 'expiresAt') &&
+        isRequiredBool(request.resource.data, 'used') &&
+        request.resource.data.used == false;
+
+      allow update: if isAuthed() &&
+        request.resource.data.diff(resource.data).affectedKeys().hasOnly(
+          ['used', 'usedAt', 'usedByDeviceId']
+        ) &&
+        resource.data.used == false &&
+        isRequiredBool(request.resource.data, 'used') &&
+        request.resource.data.used == true &&
+        isOptionalTimestamp(request.resource.data, 'usedAt') &&
+        isOptionalString(request.resource.data, 'usedByDeviceId', 128);
+
+      allow delete: if false;
     }
 
     // Queue used by Cloud Functions (client can write, cannot read).

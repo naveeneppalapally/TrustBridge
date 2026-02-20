@@ -1,4 +1,7 @@
+import 'dart:async';
+
 import 'package:flutter/material.dart';
+import 'package:trustbridge_app/config/feature_gates.dart';
 
 import '../models/access_request.dart';
 import '../models/child_profile.dart';
@@ -6,8 +9,10 @@ import '../screens/block_categories_screen.dart';
 import '../screens/dashboard_screen.dart';
 import '../screens/parent_settings_screen.dart';
 import '../screens/schedule_creator_screen.dart';
+import '../screens/upgrade_screen.dart';
 import '../screens/usage_reports_screen.dart';
 import '../services/auth_service.dart';
+import '../services/feature_gate_service.dart';
 import '../services/firestore_service.dart';
 import '../theme/app_theme.dart';
 
@@ -33,8 +38,10 @@ class _ParentShellState extends State<ParentShell> {
   AuthService? _authService;
   FirestoreService? _firestoreService;
   Stream<List<AccessRequest>>? _pendingRequestsStream;
+  Stream<int>? _unreadBypassAlertCountStream;
   String? _pendingStreamParentId;
   late int _currentIndex;
+  final FeatureGateService _featureGateService = FeatureGateService();
 
   AuthService get _resolvedAuthService {
     _authService ??= widget.authService ?? AuthService();
@@ -66,12 +73,16 @@ class _ParentShellState extends State<ParentShell> {
   }
 
   void _ensurePendingRequestsStream(String parentId) {
-    if (_pendingRequestsStream != null && _pendingStreamParentId == parentId) {
+    if (_pendingRequestsStream != null &&
+        _unreadBypassAlertCountStream != null &&
+        _pendingStreamParentId == parentId) {
       return;
     }
     _pendingStreamParentId = parentId;
     _pendingRequestsStream =
         _resolvedFirestoreService.getPendingRequestsStream(parentId);
+    _unreadBypassAlertCountStream =
+        _resolvedFirestoreService.getUnreadBypassAlertCountStream(parentId);
   }
 
   @override
@@ -123,57 +134,91 @@ class _ParentShellState extends State<ParentShell> {
     return StreamBuilder<List<AccessRequest>>(
       key: ValueKey<String>('parent_shell_pending_$parentId'),
       stream: _pendingRequestsStream,
-      builder: (context, snapshot) {
-        final pendingCount = snapshot.data?.length ?? 0;
+      builder: (context, pendingSnapshot) {
+        final pendingCount = pendingSnapshot.data?.length ?? 0;
+        return StreamBuilder<int>(
+          key: ValueKey<String>('parent_shell_unread_alerts_$parentId'),
+          stream: _unreadBypassAlertCountStream,
+          builder: (context, alertSnapshot) {
+            final unreadAlertCount = alertSnapshot.data ?? 0;
+            final totalBadgeCount = pendingCount + unreadAlertCount;
 
-        return Scaffold(
-          body: IndexedStack(
-            index: _currentIndex,
-            children: pages,
-          ),
-          bottomNavigationBar: BottomNavigationBar(
-            key: const Key('parent_shell_bottom_nav'),
-            currentIndex: _currentIndex,
-            type: BottomNavigationBarType.fixed,
-            selectedItemColor: AppColors.primary,
-            unselectedItemColor: AppColors.navUnselected,
-            backgroundColor:
-                Theme.of(context).bottomNavigationBarTheme.backgroundColor,
-            elevation: 8,
-            onTap: (index) {
-              if (index == _currentIndex) {
-                return;
-              }
-              setState(() {
-                _currentIndex = index;
-              });
-            },
-            items: <BottomNavigationBarItem>[
-              BottomNavigationBarItem(
-                icon: _DashboardNavIcon(pendingCount: pendingCount),
-                label: 'Dashboard',
+            return Scaffold(
+              body: IndexedStack(
+                index: _currentIndex,
+                children: pages,
               ),
-              const BottomNavigationBarItem(
-                icon: Icon(Icons.schedule_rounded),
-                label: 'Schedule',
+              bottomNavigationBar: BottomNavigationBar(
+                key: const Key('parent_shell_bottom_nav'),
+                currentIndex: _currentIndex,
+                type: BottomNavigationBarType.fixed,
+                selectedItemColor: AppColors.primary,
+                unselectedItemColor: AppColors.navUnselected,
+                backgroundColor:
+                    Theme.of(context).bottomNavigationBarTheme.backgroundColor,
+                elevation: 8,
+                onTap: (index) {
+                  unawaited(_handleTabTap(index));
+                },
+                items: <BottomNavigationBarItem>[
+                  BottomNavigationBarItem(
+                    icon: _DashboardNavIcon(pendingCount: totalBadgeCount),
+                    label: 'Dashboard',
+                  ),
+                  const BottomNavigationBarItem(
+                    icon: Icon(Icons.schedule_rounded),
+                    label: 'Schedule',
+                  ),
+                  const BottomNavigationBarItem(
+                    icon: Icon(Icons.bar_chart_rounded),
+                    label: 'Reports',
+                  ),
+                  const BottomNavigationBarItem(
+                    icon: Icon(Icons.security_rounded),
+                    label: 'Block Apps',
+                  ),
+                  const BottomNavigationBarItem(
+                    icon: Icon(Icons.settings_rounded),
+                    label: 'Settings',
+                  ),
+                ],
               ),
-              const BottomNavigationBarItem(
-                icon: Icon(Icons.bar_chart_rounded),
-                label: 'Reports',
-              ),
-              const BottomNavigationBarItem(
-                icon: Icon(Icons.security_rounded),
-                label: 'Block Apps',
-              ),
-              const BottomNavigationBarItem(
-                icon: Icon(Icons.settings_rounded),
-                label: 'Settings',
-              ),
-            ],
-          ),
+            );
+          },
         );
       },
     );
+  }
+
+  Future<void> _handleTabTap(int index) async {
+    if (index == _currentIndex) {
+      return;
+    }
+
+    if (index == 1) {
+      GateResult gate;
+      try {
+        gate = await _featureGateService.checkGate(AppFeature.schedules);
+      } catch (_) {
+        // Fail-open in non-Firebase test contexts.
+        gate = const GateResult(allowed: true);
+      }
+      if (!gate.allowed) {
+        if (!mounted) {
+          return;
+        }
+        await UpgradeScreen.maybeShow(
+          context,
+          feature: AppFeature.schedules,
+          reason: gate.upgradeReason,
+        );
+        return;
+      }
+    }
+
+    setState(() {
+      _currentIndex = index;
+    });
   }
 }
 

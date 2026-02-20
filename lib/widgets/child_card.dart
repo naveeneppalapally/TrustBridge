@@ -21,6 +21,8 @@ class ChildCard extends StatelessWidget {
     this.deviceName,
     this.usageMinutesOverride,
     this.usageLimitMinutesOverride,
+    this.deviceHealthStatusLabel,
+    this.deviceHealthStatusColor,
   });
 
   final ChildProfile child;
@@ -31,6 +33,8 @@ class ChildCard extends StatelessWidget {
   final String? deviceName;
   final int? usageMinutesOverride;
   final int? usageLimitMinutesOverride;
+  final String? deviceHealthStatusLabel;
+  final Color? deviceHealthStatusColor;
 
   bool _isPausedNow() {
     final pausedUntil = child.pausedUntil;
@@ -276,6 +280,28 @@ class ChildCard extends StatelessWidget {
                                     color: Colors.grey.shade500,
                                   ),
                         ),
+                        if (deviceHealthStatusLabel != null) ...[
+                          const SizedBox(height: 6),
+                          Container(
+                            padding: const EdgeInsets.symmetric(
+                              horizontal: 10,
+                              vertical: 4,
+                            ),
+                            decoration: BoxDecoration(
+                              color: (deviceHealthStatusColor ?? Colors.orange)
+                                  .withValues(alpha: 0.14),
+                              borderRadius: BorderRadius.circular(999),
+                            ),
+                            child: Text(
+                              deviceHealthStatusLabel!,
+                              style: TextStyle(
+                                color: deviceHealthStatusColor ?? Colors.orange,
+                                fontSize: 11,
+                                fontWeight: FontWeight.w700,
+                              ),
+                            ),
+                          ),
+                        ],
                       ],
                     ),
                   ),

@@ -123,6 +123,20 @@ class FirestoreService {
     );
   }
 
+  /// Stores DPDPA guardian consent acknowledgement metadata.
+  Future<void> recordGuardianConsent(String parentId) async {
+    if (parentId.trim().isEmpty) {
+      throw ArgumentError.value(parentId, 'parentId', 'Parent ID is required.');
+    }
+    await _firestore.collection('parents').doc(parentId).set(
+      <String, dynamic>{
+        'consentGiven': true,
+        'consentTimestamp': FieldValue.serverTimestamp(),
+      },
+      SetOptions(merge: true),
+    );
+  }
+
   /// Check if onboarding is complete for a parent.
   Future<bool> isOnboardingComplete(String parentId) async {
     if (parentId.trim().isEmpty) {
@@ -313,6 +327,132 @@ class FirestoreService {
         'updatedAt': FieldValue.serverTimestamp(),
       },
       SetOptions(merge: true),
+    );
+  }
+
+  /// Updates parent alert preferences used by protection/bypass notifications.
+  Future<void> updateAlertPreferences({
+    required String parentId,
+    bool? vpnDisabled,
+    bool? uninstallAttempt,
+    bool? privateDnsChanged,
+    bool? deviceOffline30m,
+    bool? deviceOffline24h,
+    bool? emailSeriousAlerts,
+  }) async {
+    if (parentId.trim().isEmpty) {
+      throw ArgumentError.value(parentId, 'parentId', 'Parent ID is required.');
+    }
+
+    final updates = <String, dynamic>{};
+    if (vpnDisabled != null) {
+      updates['vpnDisabled'] = vpnDisabled;
+    }
+    if (uninstallAttempt != null) {
+      updates['uninstallAttempt'] = uninstallAttempt;
+    }
+    if (privateDnsChanged != null) {
+      updates['privateDnsChanged'] = privateDnsChanged;
+    }
+    if (deviceOffline30m != null) {
+      updates['deviceOffline30m'] = deviceOffline30m;
+    }
+    if (deviceOffline24h != null) {
+      updates['deviceOffline24h'] = deviceOffline24h;
+    }
+    if (emailSeriousAlerts != null) {
+      updates['emailSeriousAlerts'] = emailSeriousAlerts;
+    }
+
+    if (updates.isEmpty) {
+      return;
+    }
+
+    await _firestore.collection('parents').doc(parentId).set(
+      <String, dynamic>{
+        'alertPreferences': updates,
+        'updatedAt': FieldValue.serverTimestamp(),
+      },
+      SetOptions(merge: true),
+    );
+  }
+
+  /// Returns alert preferences map for the parent account.
+  Future<Map<String, dynamic>> getAlertPreferences(String parentId) async {
+    if (parentId.trim().isEmpty) {
+      throw ArgumentError.value(parentId, 'parentId', 'Parent ID is required.');
+    }
+
+    final snapshot = await _firestore.collection('parents').doc(parentId).get();
+    final data = snapshot.data();
+    final raw = data?['alertPreferences'];
+    if (raw is Map<String, dynamic>) {
+      return raw;
+    }
+    if (raw is Map) {
+      return raw.map(
+        (key, value) => MapEntry(key.toString(), value),
+      );
+    }
+    return <String, dynamic>{};
+  }
+
+  /// Logs a 24h offline bypass event for a child device and queues parent alert.
+  ///
+  /// This method is idempotent within a 24-hour window per device.
+  Future<void> logDeviceOffline24hAlert({
+    required String parentId,
+    required String childId,
+    required String childNickname,
+    required String deviceId,
+  }) async {
+    final normalizedParentId = parentId.trim();
+    final normalizedChildId = childId.trim();
+    final normalizedDeviceId = deviceId.trim();
+    if (normalizedParentId.isEmpty ||
+        normalizedChildId.isEmpty ||
+        normalizedDeviceId.isEmpty) {
+      return;
+    }
+
+    final cutoff = DateTime.now()
+        .subtract(const Duration(hours: 24))
+        .millisecondsSinceEpoch;
+
+    final recentEvent = await _firestore
+        .collection('bypass_events')
+        .doc(normalizedDeviceId)
+        .collection('events')
+        .where('type', isEqualTo: 'device_offline_24h')
+        .where('timestampEpochMs', isGreaterThanOrEqualTo: cutoff)
+        .limit(1)
+        .get();
+    if (recentEvent.docs.isNotEmpty) {
+      return;
+    }
+
+    await _firestore
+        .collection('bypass_events')
+        .doc(normalizedDeviceId)
+        .collection('events')
+        .add(<String, dynamic>{
+      'type': 'device_offline_24h',
+      'timestamp': FieldValue.serverTimestamp(),
+      'timestampEpochMs': DateTime.now().millisecondsSinceEpoch,
+      'deviceId': normalizedDeviceId,
+      'childId': normalizedChildId,
+      'childNickname':
+          childNickname.trim().isEmpty ? 'Child' : childNickname.trim(),
+      'parentId': normalizedParentId,
+      'read': false,
+    });
+
+    await queueParentNotification(
+      parentId: normalizedParentId,
+      title: 'Device offline for 24+ hours',
+      body:
+          '${childNickname.trim().isEmpty ? 'Your child' : childNickname.trim()} has not checked in for 24+ hours.',
+      route: '/parent/bypass-alerts',
     );
   }
 
@@ -1415,6 +1555,21 @@ class FirestoreService {
               .map((doc) => AccessRequest.fromFirestore(doc))
               .toList(),
         );
+  }
+
+  /// Stream unread bypass alert count for a parent.
+  Stream<int> getUnreadBypassAlertCountStream(String parentId) {
+    if (parentId.trim().isEmpty) {
+      throw ArgumentError.value(parentId, 'parentId', 'Parent ID is required.');
+    }
+
+    return _firestore
+        .collectionGroup('events')
+        .where('parentId', isEqualTo: parentId)
+        .where('read', isEqualTo: false)
+        .limit(100)
+        .snapshots()
+        .map((snapshot) => snapshot.docs.length);
   }
 
   /// Stream recent access requests for a specific child profile.

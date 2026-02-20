@@ -9,8 +9,10 @@ import 'package:trustbridge_app/models/child_profile.dart';
 import 'package:trustbridge_app/screens/add_child_screen.dart';
 import 'package:trustbridge_app/screens/child_detail_screen.dart';
 import 'package:trustbridge_app/screens/parent_settings_screen.dart';
+import 'package:trustbridge_app/services/app_mode_service.dart';
 import 'package:trustbridge_app/services/auth_service.dart';
 import 'package:trustbridge_app/services/firestore_service.dart';
+import 'package:trustbridge_app/services/heartbeat_service.dart';
 import 'package:trustbridge_app/services/performance_service.dart';
 import 'package:trustbridge_app/services/policy_vpn_sync_service.dart';
 import 'package:trustbridge_app/utils/app_lock_guard.dart';
@@ -50,6 +52,10 @@ class _DashboardScreenState extends State<DashboardScreen>
   Stopwatch? _dashboardLoadStopwatch;
   bool _isUpdatingPauseAll = false;
   bool _fabVisible = false;
+  String _lastHealthFingerprint = '';
+  final Map<String, _ChildDeviceHealth> _deviceHealthByChildId =
+      <String, _ChildDeviceHealth>{};
+  final Set<String> _offline24hAlertedDeviceIds = <String>{};
 
   @override
   void initState() {
@@ -152,10 +158,11 @@ class _DashboardScreenState extends State<DashboardScreen>
 
   Future<void> _handleSignOut() async {
     await _resolvedAuthService.signOut();
+    await AppModeService().clearMode();
     if (!mounted) {
       return;
     }
-    Navigator.of(context).pushReplacementNamed('/login');
+    Navigator.of(context).pushReplacementNamed('/welcome');
   }
 
   Future<void> _openSettings() async {
@@ -467,6 +474,78 @@ class _DashboardScreenState extends State<DashboardScreen>
     return null;
   }
 
+  String _childrenHealthFingerprint(List<ChildProfile> children) {
+    if (children.isEmpty) {
+      return 'none';
+    }
+    final tokens = <String>[];
+    for (final child in children) {
+      final deviceIds = child.deviceIds.toList()..sort();
+      tokens.add('${child.id}:${deviceIds.join(',')}');
+    }
+    tokens.sort();
+    return tokens.join('|');
+  }
+
+  Future<void> _refreshDeviceHealth({
+    required List<ChildProfile> children,
+    required String parentId,
+  }) async {
+    final nextState = <String, _ChildDeviceHealth>{};
+    for (final child in children) {
+      Duration? mostRecentHeartbeatAge;
+      String? mostRecentDeviceId;
+
+      for (final deviceId in child.deviceIds) {
+        Duration? age;
+        try {
+          age = await HeartbeatService.timeSinceLastSeen(deviceId);
+        } catch (_) {
+          // Heartbeat lookup is best-effort and may be unavailable in tests.
+          continue;
+        }
+        if (age == null) {
+          continue;
+        }
+        if (mostRecentHeartbeatAge == null || age < mostRecentHeartbeatAge) {
+          mostRecentHeartbeatAge = age;
+          mostRecentDeviceId = deviceId;
+        }
+      }
+
+      if (mostRecentHeartbeatAge == null || mostRecentDeviceId == null) {
+        continue;
+      }
+
+      if (mostRecentHeartbeatAge > const Duration(hours: 24)) {
+        nextState[child.id] = const _ChildDeviceHealth.critical();
+        if (_offline24hAlertedDeviceIds.add(mostRecentDeviceId)) {
+          try {
+            await _resolvedFirestoreService.logDeviceOffline24hAlert(
+              parentId: parentId,
+              childId: child.id,
+              childNickname: child.nickname,
+              deviceId: mostRecentDeviceId,
+            );
+          } catch (_) {
+            // Best effort alerting.
+          }
+        }
+      } else if (mostRecentHeartbeatAge > const Duration(minutes: 30)) {
+        nextState[child.id] = const _ChildDeviceHealth.warning();
+      }
+    }
+
+    if (!mounted) {
+      return;
+    }
+    setState(() {
+      _deviceHealthByChildId
+        ..clear()
+        ..addAll(nextState);
+    });
+  }
+
   @override
   Widget build(BuildContext context) {
     final l10n = _l10n(context);
@@ -553,6 +632,21 @@ class _DashboardScreenState extends State<DashboardScreen>
               }
 
               final children = snapshot.data ?? const <ChildProfile>[];
+              final healthFingerprint = _childrenHealthFingerprint(children);
+              if (healthFingerprint != _lastHealthFingerprint) {
+                _lastHealthFingerprint = healthFingerprint;
+                WidgetsBinding.instance.addPostFrameCallback((_) {
+                  if (!mounted) {
+                    return;
+                  }
+                  unawaited(
+                    _refreshDeviceHealth(
+                      children: children,
+                      parentId: parentId,
+                    ),
+                  );
+                });
+              }
               final screenTimeLabel = children.isEmpty
                   ? '--'
                   : _formatDurationLabel(
@@ -725,6 +819,7 @@ class _DashboardScreenState extends State<DashboardScreen>
                             delegate: SliverChildBuilderDelegate(
                               (context, index) {
                                 final child = children[index];
+                                final health = _deviceHealthByChildId[child.id];
                                 return ChildCard(
                                   child: child,
                                   onTap: () {
@@ -741,6 +836,8 @@ class _DashboardScreenState extends State<DashboardScreen>
                                   onResumeInternet: () =>
                                       _toggleChildPause(child),
                                   onLocate: () => _openLocateStub(child),
+                                  deviceHealthStatusLabel: health?.label,
+                                  deviceHealthStatusColor: health?.color,
                                 );
                               },
                               childCount: children.length,
@@ -750,6 +847,7 @@ class _DashboardScreenState extends State<DashboardScreen>
                             delegate: SliverChildBuilderDelegate(
                               (context, index) {
                                 final child = children[index];
+                                final health = _deviceHealthByChildId[child.id];
                                 return Padding(
                                   padding: const EdgeInsets.only(bottom: 14),
                                   child: ChildCard(
@@ -768,6 +866,8 @@ class _DashboardScreenState extends State<DashboardScreen>
                                     onResumeInternet: () =>
                                         _toggleChildPause(child),
                                     onLocate: () => _openLocateStub(child),
+                                    deviceHealthStatusLabel: health?.label,
+                                    deviceHealthStatusColor: health?.color,
                                   ),
                                 );
                               },
@@ -1255,4 +1355,22 @@ class _SecurityQuickActionsCard extends StatelessWidget {
 
 AppLocalizations _l10n(BuildContext context) {
   return AppLocalizations.of(context) ?? AppLocalizationsEn();
+}
+
+class _ChildDeviceHealth {
+  const _ChildDeviceHealth({
+    required this.label,
+    required this.color,
+  });
+
+  const _ChildDeviceHealth.warning()
+      : label = 'Not seen recently',
+        color = Colors.orange;
+
+  const _ChildDeviceHealth.critical()
+      : label = 'May be offline or removed',
+        color = Colors.red;
+
+  final String label;
+  final Color color;
 }
