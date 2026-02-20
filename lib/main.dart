@@ -40,6 +40,7 @@ import 'package:trustbridge_app/services/firestore_service.dart';
 import 'package:trustbridge_app/services/notification_service.dart';
 import 'package:trustbridge_app/services/blocklist_workmanager_service.dart';
 import 'package:trustbridge_app/services/onboarding_state_service.dart';
+import 'package:trustbridge_app/services/pairing_service.dart';
 import 'package:trustbridge_app/services/policy_vpn_sync_service.dart';
 import 'package:trustbridge_app/theme/app_theme.dart';
 import 'package:trustbridge_app/widgets/child_shell.dart';
@@ -260,7 +261,7 @@ class _MyAppState extends State<MyApp> {
       case '/beta-feedback-history':
         return const BetaFeedbackHistoryScreen();
       case '/child/status':
-        return const ChildModeShell();
+        return const _ChildModeEntryScreen();
       case '/child/setup':
         return const ChildSetupScreen();
       case '/child/protection-permission':
@@ -274,7 +275,7 @@ class _MyAppState extends State<MyApp> {
         if (arguments is ChildProfile) {
           return ChildShell(child: arguments);
         }
-        return const ChildModeShell();
+        return const _ChildModeEntryScreen();
       case '/onboarding':
         if (arguments is! String || arguments.trim().isEmpty) {
           return const LoginScreen();
@@ -284,7 +285,7 @@ class _MyAppState extends State<MyApp> {
         if (arguments is ChildProfile) {
           return ChildRequestsScreen(child: arguments);
         }
-        return const ChildModeShell();
+        return const _ChildModeEntryScreen();
       default:
         return const WelcomeScreen();
     }
@@ -325,10 +326,56 @@ class _ModeRootScreenState extends State<_ModeRootScreen> {
           case AppMode.parent:
             return const AuthWrapper();
           case AppMode.child:
-            return const ChildModeShell();
+            return const _ChildModeEntryScreen();
           case AppMode.unset:
             return const WelcomeScreen();
         }
+      },
+    );
+  }
+}
+
+class _ChildModeEntryScreen extends StatefulWidget {
+  const _ChildModeEntryScreen();
+
+  @override
+  State<_ChildModeEntryScreen> createState() => _ChildModeEntryScreenState();
+}
+
+class _ChildModeEntryScreenState extends State<_ChildModeEntryScreen> {
+  final PairingService _pairingService = PairingService();
+  Future<bool>? _pairedFuture;
+
+  @override
+  void initState() {
+    super.initState();
+    _pairedFuture = _isPairingComplete();
+  }
+
+  Future<bool> _isPairingComplete() async {
+    final childId = await _pairingService.getPairedChildId();
+    final parentId = await _pairingService.getPairedParentId();
+    return (childId?.trim().isNotEmpty ?? false) &&
+        (parentId?.trim().isNotEmpty ?? false);
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return FutureBuilder<bool>(
+      future: _pairedFuture,
+      builder: (context, snapshot) {
+        if (snapshot.connectionState == ConnectionState.waiting) {
+          return const Scaffold(
+            body: Center(child: CircularProgressIndicator()),
+          );
+        }
+
+        final paired = snapshot.data ?? false;
+        if (!paired) {
+          return const ChildSetupScreen();
+        }
+
+        return const ChildModeShell();
       },
     );
   }
