@@ -1,6 +1,9 @@
 import 'package:flutter/material.dart';
+import 'package:trustbridge_app/config/feature_gates.dart';
 import 'package:trustbridge_app/models/child_profile.dart';
+import 'package:trustbridge_app/screens/upgrade_screen.dart';
 import 'package:trustbridge_app/services/auth_service.dart';
+import 'package:trustbridge_app/services/feature_gate_service.dart';
 import 'package:trustbridge_app/services/firestore_service.dart';
 import 'package:trustbridge_app/services/nextdns_api_service.dart';
 
@@ -26,10 +29,12 @@ class _NextDnsSetupScreenState extends State<NextDnsSetupScreen> {
   AuthService? _authService;
   FirestoreService? _firestoreService;
   NextDnsApiService? _nextDnsApiService;
+  final FeatureGateService _featureGateService = FeatureGateService();
 
   final TextEditingController _apiKeyController = TextEditingController();
 
   bool _loading = true;
+  bool _gateAllowed = true;
   bool _connecting = false;
   bool _migrating = false;
   String? _error;
@@ -66,13 +71,42 @@ class _NextDnsSetupScreenState extends State<NextDnsSetupScreen> {
   @override
   void initState() {
     super.initState();
-    _loadSetupState();
+    _resolveGateAndLoad();
   }
 
   @override
   void dispose() {
     _apiKeyController.dispose();
     super.dispose();
+  }
+
+  Future<void> _resolveGateAndLoad() async {
+    final gate = await () async {
+      try {
+        return await _featureGateService
+            .checkGate(AppFeature.nextDnsIntegration);
+      } catch (_) {
+        // Allow setup in non-Firebase test contexts.
+        return const GateResult(allowed: true);
+      }
+    }();
+    if (!gate.allowed) {
+      if (!mounted) {
+        return;
+      }
+      setState(() {
+        _gateAllowed = false;
+        _loading = false;
+      });
+      await UpgradeScreen.maybeShow(
+        context,
+        feature: AppFeature.nextDnsIntegration,
+        reason: gate.upgradeReason,
+      );
+      return;
+    }
+    _gateAllowed = true;
+    await _loadSetupState();
   }
 
   Future<void> _loadSetupState() async {
@@ -305,6 +339,36 @@ class _NextDnsSetupScreenState extends State<NextDnsSetupScreen> {
       return Scaffold(
         appBar: AppBar(title: const Text('NextDNS Setup')),
         body: const Center(child: Text('Not logged in')),
+      );
+    }
+
+    if (!_gateAllowed) {
+      return Scaffold(
+        appBar: AppBar(title: const Text('NextDNS Setup')),
+        body: Center(
+          child: Padding(
+            padding: const EdgeInsets.all(24),
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                const Icon(Icons.lock_outline, size: 42),
+                const SizedBox(height: 10),
+                const Text(
+                  'NextDNS integration is available with TrustBridge Pro.',
+                  textAlign: TextAlign.center,
+                ),
+                const SizedBox(height: 12),
+                FilledButton(
+                  onPressed: () => UpgradeScreen.maybeShow(
+                    context,
+                    feature: AppFeature.nextDnsIntegration,
+                  ),
+                  child: const Text('Upgrade options'),
+                ),
+              ],
+            ),
+          ),
+        ),
       );
     }
 

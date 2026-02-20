@@ -4553,3 +4553,260 @@ release notes, and distribution pipeline validation.
    - Firebase App Distribution upload/distribution passed.
 
 ---
+
+## Day 121 - Open Source Blocklist Foundation (Week 25 Day 1)
+
+Program goal: establish local open-source blocklist data foundations in SQLite
+using StevenBlack sources, with parser + tests.
+
+### Commit entries
+
+1. **2026-02-20**
+   Commit: `[pending]`
+   Message: `Implement Day 121 open source blocklist foundation`
+   Changes:
+   - Added `lib/models/blocklist_source.dart`
+   - Added `lib/config/blocklist_sources.dart`
+   - Added `lib/services/blocklist_db_service.dart`
+   - Added `lib/services/blocklist_parser.dart`
+   - Added tests:
+     - `test/services/blocklist_parser_test.dart`
+     - `test/services/blocklist_db_service_test.dart`
+   Validation:
+   - `flutter analyze` passed.
+   - `flutter test test/services/blocklist_parser_test.dart` passed.
+   - `flutter test test/services/blocklist_db_service_test.dart` passed.
+
+---
+
+## Day 122 - Blocklist Sync Engine (Week 25 Day 2)
+
+Program goal: sync blocklists into local DB, support periodic background sync,
+and expose sync status in parent UI.
+
+### Commit entries
+
+1. **2026-02-20**
+   Commit: `[pending]`
+   Message: `Implement Day 122 blocklist sync engine`
+   Changes:
+   - Added/updated:
+     - `lib/services/blocklist_sync_service.dart`
+     - `lib/services/blocklist_workmanager_service.dart`
+     - `lib/widgets/blocklist_status_card.dart`
+   - Integrated status/sync controls into parent settings.
+   - Added tests:
+     - `test/services/blocklist_sync_service_test.dart`
+   Validation:
+   - `flutter analyze` passed.
+   - `flutter test test/services/blocklist_sync_service_test.dart` passed.
+
+---
+
+## Day 123 - Local DNS Instant App Blocking (Week 25 Day 3)
+
+Program goal: decouple core social/app blocking from NextDNS delays by adding
+local instant matching + VPN side integration.
+
+### Commit entries
+
+1. **2026-02-20**
+   Commit: `[pending]`
+   Message: `Implement Day 123 local DNS instant app blocking`
+   Changes:
+   - Added/updated:
+     - `lib/config/social_media_domains.dart`
+     - `lib/services/policy_vpn_sync_service.dart`
+     - Android VPN/native DNS enforcement components
+   - Added enforcement badge + related UI wiring.
+   - Added/updated tests:
+     - `test/config/social_media_domains_test.dart`
+     - `test/services/policy_vpn_sync_service_test.dart`
+   Validation:
+   - `flutter analyze` passed.
+   - Targeted tests passed.
+
+---
+
+## Day 124 - Parent/Child App Mode Architecture (Week 25 Day 4)
+
+Program goal: split app behavior into explicit parent vs child modes with
+route guards and mode persistence.
+
+### Commit entries
+
+1. **2026-02-20**
+   Commit: `[pending]`
+   Message: `Implement Day 124 app mode architecture`
+   Changes:
+   - Added:
+     - `lib/models/app_mode.dart`
+     - `lib/services/app_mode_service.dart`
+     - `lib/screens/welcome_screen.dart`
+     - routing guard files under `lib/routing/`
+     - `lib/widgets/child_shell.dart`
+   - Updated app routing + mode-aware entry flow in `lib/main.dart`.
+   - Added tests:
+     - `test/services/app_mode_service_test.dart`
+     - `test/routing/router_guard_test.dart`
+     - `test/routing/child_mode_access_test.dart`
+   Validation:
+   - `flutter analyze` passed.
+   - Targeted tests passed.
+
+---
+
+## Day 125 - Child Pairing Flow (Week 25 Day 5)
+
+Program goal: add parent-child device pairing flow with setup code lifecycle
+and child setup transitions.
+
+### Commit entries
+
+1. **2026-02-20**
+   Commit: `[pending]`
+   Message: `Implement Day 125 child device pairing flow`
+   Changes:
+   - Added:
+     - `lib/services/pairing_service.dart`
+     - `lib/screens/add_child_device_screen.dart`
+     - `lib/screens/child_setup_screen.dart`
+   - Integrated post-pairing path into child setup/protection entry.
+   - Added tests:
+     - `test/services/pairing_service_test.dart`
+   Validation:
+   - `flutter analyze` passed.
+   - `flutter test test/services/pairing_service_test.dart` passed.
+
+---
+
+## Day 126 - Child UX Simplification (Week 26 Day 1)
+
+Program goal: deliver child-first status/request flow screens with simple,
+friendly language and focused interactions.
+
+### Commit entries
+
+1. **2026-02-20**
+   Commit: `[pending]`
+   Message: `Implement Day 126 child UX simplified status and request flow`
+   Changes:
+   - Added/updated:
+     - `lib/screens/child/child_status_screen.dart`
+     - `lib/screens/child/blocked_overlay_screen.dart`
+     - `lib/screens/child/request_access_screen.dart`
+     - `lib/widgets/child/*`
+   - Added/updated tests for child screens/widgets.
+   Validation:
+   - `flutter analyze` passed.
+   - Child screen tests passed.
+
+---
+
+## Day 127 - Security Role Split (Week 26 Day 2)
+
+Program goal: tighten child-visible messaging, hide technical leakage, and
+enforce parent-only gates for sensitive actions.
+
+### Commit entries
+
+1. **2026-02-20**
+   Commit: `[pending]`
+   Message: `Implement Day 127 security role split`
+   Changes:
+   - Added `lib/utils/child_friendly_errors.dart`.
+   - Updated child shell/surfaces for sanitized errors and safe copy.
+   - Added/updated pin-gated navigation paths for parent-sensitive actions.
+   - Added tests:
+     - `test/utils/child_friendly_errors_test.dart`
+   Validation:
+   - `flutter analyze` passed.
+   - Targeted tests passed.
+
+---
+
+## Day 128 - Device Admin + Bypass Detection (Week 26 Day 3)
+
+Program goal: add Android device-admin hooks and bypass event detection with
+alert surface for parents.
+
+### Commit entries
+
+1. **2026-02-20**
+   Commit: `[pending]`
+   Message: `Implement Day 128 device admin and bypass detection`
+   Changes:
+   - Added Android Device Admin receiver/resources.
+   - Added services:
+     - `lib/services/device_admin_service.dart`
+     - `lib/services/bypass_detection_service.dart`
+   - Added parent bypass alerts surface under `lib/screens/parent/`.
+   - Added tests:
+     - `test/services/device_admin_service_test.dart`
+     - `test/services/bypass_detection_service_test.dart`
+   Validation:
+   - `flutter analyze` passed.
+   - Targeted tests passed.
+
+---
+
+## Day 129 - Heartbeat + Alert Pipeline (Week 26 Day 4)
+
+Program goal: complete bypass pipeline with heartbeat, dedup/escalation,
+offline detection, command pipeline, and parent alert preferences.
+
+### Commit entries
+
+1. **2026-02-20**
+   Commit: `[pending]`
+   Message: `Implement Day 129 bypass alert pipeline and heartbeat`
+   Changes:
+   - Added/updated services:
+     - `lib/services/heartbeat_service.dart`
+     - `lib/services/bypass_alert_dedup_service.dart`
+     - `lib/services/remote_command_service.dart`
+     - `lib/services/blocklist_workmanager_service.dart`
+   - Added `lib/screens/parent/alert_preferences_screen.dart`.
+   - Updated dashboard/parent shell/bypass alerts for health badges, offline
+     events, unread alert badges, and command status.
+   - Added tests:
+     - `test/services/heartbeat_service_test.dart`
+     - `test/services/bypass_alert_dedup_service_test.dart`
+     - `test/services/remote_command_service_test.dart`
+   Validation:
+   - `flutter analyze` passed.
+   - Targeted tests passed.
+
+---
+
+## Day 130 - Monetization + OSS Attribution (Week 26 Day 5)
+
+Program goal: add subscription model + gates + upgrade flow + open source
+license surfacing + onboarding legal consent alignment.
+
+### Commit entries
+
+1. **2026-02-20**
+   Commit: `[pending]`
+   Message: `Implement Day 130 monetization and open source attribution`
+   Changes:
+   - Added:
+     - `lib/models/subscription.dart`
+     - `lib/config/feature_gates.dart`
+     - `lib/config/subscription_pricing.dart`
+     - `lib/services/subscription_service.dart`
+     - `lib/services/feature_gate_service.dart`
+     - `lib/services/purchase_service.dart`
+     - `lib/screens/upgrade_screen.dart`
+     - `lib/screens/open_source_licenses_screen.dart`
+   - Integrated feature gates across relevant parent/child flows.
+   - Added onboarding consent/legal links cloud sync behavior.
+   - Updated Firestore rules for required alert-lock constraints.
+   - Added tests:
+     - `test/services/feature_gate_service_test.dart`
+     - `test/services/subscription_service_test.dart`
+   Validation:
+   - `flutter analyze` passed.
+   - `flutter test` passed (full suite).
+
+---

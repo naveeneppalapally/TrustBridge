@@ -1,9 +1,12 @@
 import 'package:flutter/material.dart';
 import 'package:trustbridge_app/l10n/app_localizations.dart';
 import 'package:trustbridge_app/l10n/app_localizations_en.dart';
+import 'package:trustbridge_app/config/feature_gates.dart';
+import 'package:trustbridge_app/screens/upgrade_screen.dart';
 
 import '../models/access_request.dart';
 import '../services/auth_service.dart';
+import '../services/feature_gate_service.dart';
 import '../services/firestore_service.dart';
 import '../utils/expiry_label_utils.dart';
 import '../widgets/empty_state.dart';
@@ -34,6 +37,9 @@ class _ParentRequestsScreenState extends State<ParentRequestsScreen>
   Stream<List<AccessRequest>>? _pendingRequestsStream;
   Stream<List<AccessRequest>>? _allRequestsStream;
   String? _streamsParentId;
+  Future<GateResult>? _gateFuture;
+  String? _gateParentId;
+  final FeatureGateService _featureGateService = FeatureGateService();
 
   AuthService get _resolvedAuthService {
     _authService ??= widget.authService ?? AuthService();
@@ -57,6 +63,15 @@ class _ParentRequestsScreenState extends State<ParentRequestsScreen>
         _resolvedFirestoreService.getPendingRequestsStream(parentId);
     _allRequestsStream =
         _resolvedFirestoreService.getAllRequestsStream(parentId);
+  }
+
+  Future<GateResult> _resolveGate(String parentId) {
+    if (_gateFuture != null && _gateParentId == parentId) {
+      return _gateFuture!;
+    }
+    _gateParentId = parentId;
+    _gateFuture = _featureGateService.checkGate(AppFeature.requestApproveFlow);
+    return _gateFuture!;
   }
 
   @override
@@ -96,12 +111,49 @@ class _ParentRequestsScreenState extends State<ParentRequestsScreen>
           ? Center(
               child: Text(l10n.notLoggedInMessage),
             )
-          : TabBarView(
-              controller: _tabController,
-              children: <Widget>[
-                _buildPendingTab(parentId),
-                _buildHistoryTab(parentId),
-              ],
+          : FutureBuilder<GateResult>(
+              future: _resolveGate(parentId),
+              builder: (context, gateSnapshot) {
+                if (gateSnapshot.connectionState == ConnectionState.waiting) {
+                  return const Center(child: CircularProgressIndicator());
+                }
+                final gate = gateSnapshot.data;
+                if (gate != null && !gate.allowed) {
+                  return Center(
+                    child: Padding(
+                      padding: const EdgeInsets.all(24),
+                      child: Column(
+                        mainAxisSize: MainAxisSize.min,
+                        children: [
+                          const Icon(Icons.lock_outline, size: 42),
+                          const SizedBox(height: 10),
+                          Text(
+                            gate.upgradeReason ??
+                                'Request management requires TrustBridge Pro.',
+                            textAlign: TextAlign.center,
+                          ),
+                          const SizedBox(height: 12),
+                          FilledButton(
+                            onPressed: () => UpgradeScreen.maybeShow(
+                              context,
+                              feature: AppFeature.requestApproveFlow,
+                              reason: gate.upgradeReason,
+                            ),
+                            child: const Text('Upgrade options'),
+                          ),
+                        ],
+                      ),
+                    ),
+                  );
+                }
+                return TabBarView(
+                  controller: _tabController,
+                  children: <Widget>[
+                    _buildPendingTab(parentId),
+                    _buildHistoryTab(parentId),
+                  ],
+                );
+              },
             ),
     );
   }

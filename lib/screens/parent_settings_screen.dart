@@ -1,6 +1,9 @@
 import 'package:flutter/material.dart';
+import 'package:firebase_core/firebase_core.dart';
 import 'package:trustbridge_app/l10n/app_localizations.dart';
 import 'package:trustbridge_app/l10n/app_localizations_en.dart';
+import 'package:trustbridge_app/config/feature_gates.dart';
+import 'package:trustbridge_app/models/blocklist_source.dart';
 import 'package:trustbridge_app/screens/beta_feedback_history_screen.dart';
 import 'package:trustbridge_app/screens/beta_feedback_screen.dart';
 import 'package:trustbridge_app/screens/change_password_screen.dart';
@@ -8,11 +11,18 @@ import 'package:trustbridge_app/screens/family_management_screen.dart';
 import 'package:trustbridge_app/screens/help_support_screen.dart';
 import 'package:trustbridge_app/screens/nextdns_setup_screen.dart';
 import 'package:trustbridge_app/screens/onboarding_screen.dart';
+import 'package:trustbridge_app/screens/parent/alert_preferences_screen.dart';
+import 'package:trustbridge_app/screens/parent/protection_settings_screen.dart';
 import 'package:trustbridge_app/screens/privacy_center_screen.dart';
 import 'package:trustbridge_app/screens/premium_screen.dart';
 import 'package:trustbridge_app/screens/security_controls_screen.dart';
+import 'package:trustbridge_app/screens/upgrade_screen.dart';
 import 'package:trustbridge_app/services/auth_service.dart';
+import 'package:trustbridge_app/services/app_mode_service.dart';
+import 'package:trustbridge_app/services/blocklist_sync_service.dart';
+import 'package:trustbridge_app/services/feature_gate_service.dart';
 import 'package:trustbridge_app/services/firestore_service.dart';
+import 'package:trustbridge_app/widgets/blocklist_status_card.dart';
 import 'package:url_launcher/url_launcher.dart';
 
 class ParentSettingsScreen extends StatefulWidget {
@@ -34,11 +44,15 @@ class ParentSettingsScreen extends StatefulWidget {
 class _ParentSettingsScreenState extends State<ParentSettingsScreen> {
   AuthService? _authService;
   FirestoreService? _firestoreService;
+  BlocklistSyncService? _blocklistSyncService;
+  final FeatureGateService _featureGateService = FeatureGateService();
 
   bool _biometricLoginEnabled = false;
   bool _incognitoModeEnabled = false;
   bool _hasChanges = false;
   bool _isSaving = false;
+  bool _isSyncingBlocklists = false;
+  int _blocklistStatusRefreshToken = 0;
 
   AuthService get _resolvedAuthService {
     _authService ??= widget.authService ?? AuthService();
@@ -50,9 +64,16 @@ class _ParentSettingsScreenState extends State<ParentSettingsScreen> {
     return _firestoreService!;
   }
 
+  BlocklistSyncService get _resolvedBlocklistSyncService {
+    _blocklistSyncService ??= BlocklistSyncService();
+    return _blocklistSyncService!;
+  }
+
   String? get _parentId {
     return widget.parentIdOverride ?? _resolvedAuthService.currentUser?.uid;
   }
+
+  bool get _canUseBlocklistSync => Firebase.apps.isNotEmpty;
 
   @override
   Widget build(BuildContext context) {
@@ -142,34 +163,42 @@ class _ParentSettingsScreenState extends State<ParentSettingsScreen> {
           final subscriptionTier = _extractSubscriptionTier(profile);
           final isPremium = subscriptionTier == 'premium';
 
-          return ListView(
+          return SingleChildScrollView(
             padding: const EdgeInsets.fromLTRB(16, 12, 16, 28),
-            children: [
-              _buildProfileCard(
-                context,
-                displayName: displayName,
-                email: accountEmail,
-              ),
-              const SizedBox(height: 18),
-              _buildSectionHeader('Account'),
-              _buildAccountCard(
-                context,
-                email: accountEmail,
-                phone: accountPhone,
-              ),
-              const SizedBox(height: 18),
-              _buildSectionHeader('Subscription'),
-              _buildSubscriptionCard(
-                context,
-                isPremium: isPremium,
-              ),
-              const SizedBox(height: 18),
-              _buildSectionHeader('Security & Privacy'),
-              _buildSecurityPrivacyCard(context),
-              const SizedBox(height: 18),
-              _buildSectionHeader('About'),
-              _buildAboutCard(context),
-            ],
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.stretch,
+              children: [
+                _buildProfileCard(
+                  context,
+                  displayName: displayName,
+                  email: accountEmail,
+                ),
+                const SizedBox(height: 18),
+                _buildSectionHeader('Account'),
+                _buildAccountCard(
+                  context,
+                  email: accountEmail,
+                  phone: accountPhone,
+                ),
+                const SizedBox(height: 18),
+                _buildSectionHeader('Subscription'),
+                _buildSubscriptionCard(
+                  context,
+                  isPremium: isPremium,
+                ),
+                const SizedBox(height: 18),
+                _buildSectionHeader('Security & Privacy'),
+                _buildSecurityPrivacyCard(context),
+                if (_canUseBlocklistSync) ...[
+                  const SizedBox(height: 18),
+                  _buildSectionHeader('Blocklists'),
+                  _buildBlocklistCard(context),
+                ],
+                const SizedBox(height: 18),
+                _buildSectionHeader('About'),
+                _buildAboutCard(context),
+              ],
+            ),
           );
         },
       ),
@@ -414,6 +443,25 @@ class _ParentSettingsScreenState extends State<ParentSettingsScreen> {
             trailing: const Icon(Icons.chevron_right),
             onTap: () => _openSecurityControls(context),
           ),
+          const Divider(height: 1),
+          ListTile(
+            key: const Key('settings_protection_settings_tile'),
+            leading: const Icon(Icons.shield_moon_outlined),
+            title: const Text('Protection Settings'),
+            subtitle:
+                const Text('Status, alerts, and advanced troubleshooting'),
+            trailing: const Icon(Icons.chevron_right),
+            onTap: () => _openProtectionSettings(context),
+          ),
+          const Divider(height: 1),
+          ListTile(
+            key: const Key('settings_alert_preferences_tile'),
+            leading: const Icon(Icons.tune_outlined),
+            title: const Text('Alert Preferences'),
+            subtitle: const Text('Choose which protection alerts you receive'),
+            trailing: const Icon(Icons.chevron_right),
+            onTap: () => _openAlertPreferences(context),
+          ),
           Padding(
             padding: const EdgeInsets.fromLTRB(16, 0, 16, 14),
             child: Text(
@@ -452,11 +500,28 @@ class _ParentSettingsScreenState extends State<ParentSettingsScreen> {
           ),
           const Divider(height: 1),
           ListTile(
+            key: const Key('settings_open_source_licenses_tile'),
+            leading: const Icon(Icons.gavel_outlined),
+            title: const Text('Open Source Licenses'),
+            trailing: const Icon(Icons.chevron_right),
+            onTap: () => _openOpenSourceLicenses(context),
+          ),
+          const Divider(height: 1),
+          ListTile(
             key: const Key('settings_analytics_tile'),
             leading: const Icon(Icons.bar_chart_outlined),
             title: const Text('Protection Analytics'),
             trailing: const Icon(Icons.chevron_right),
             onTap: () => Navigator.of(context).pushNamed('/dns-analytics'),
+          ),
+          const Divider(height: 1),
+          ListTile(
+            key: const Key('settings_bypass_alerts_tile'),
+            leading: const Icon(Icons.notification_important_outlined),
+            title: const Text('Protection Alerts'),
+            subtitle: const Text('Bypass attempts and safety events'),
+            trailing: const Icon(Icons.chevron_right),
+            onTap: () => _openBypassAlerts(context),
           ),
           const Divider(height: 1),
           ListTile(
@@ -487,7 +552,10 @@ class _ParentSettingsScreenState extends State<ParentSettingsScreen> {
             key: Key('settings_version_tile'),
             leading: Icon(Icons.info_outline),
             title: Text('Version'),
-            subtitle: Text('1.0.0-alpha.1 (Build 60)'),
+            subtitle: Text(
+              '${String.fromEnvironment('FLUTTER_BUILD_NAME', defaultValue: '1.0.0-beta.1')} '
+              '(Build ${String.fromEnvironment('FLUTTER_BUILD_NUMBER', defaultValue: '114')})',
+            ),
           ),
           const Divider(height: 1),
           ListTile(
@@ -501,6 +569,24 @@ class _ParentSettingsScreenState extends State<ParentSettingsScreen> {
           ),
         ],
       ),
+    );
+  }
+
+  Widget _buildBlocklistCard(BuildContext context) {
+    if (!_canUseBlocklistSync) {
+      return const SizedBox.shrink();
+    }
+    return FutureBuilder<List<BlocklistSyncStatus>>(
+      key: ValueKey<int>(_blocklistStatusRefreshToken),
+      future: _resolvedBlocklistSyncService.getStatus(),
+      builder: (context, snapshot) {
+        final statuses = snapshot.data ?? const <BlocklistSyncStatus>[];
+        return BlocklistStatusCard(
+          statuses: statuses,
+          isSyncing: _isSyncingBlocklists,
+          onSyncNow: _syncBlocklistsNow,
+        );
+      },
     );
   }
 
@@ -562,12 +648,78 @@ class _ParentSettingsScreenState extends State<ParentSettingsScreen> {
     }
   }
 
+  Future<void> _syncBlocklistsNow() async {
+    if (_isSyncingBlocklists) {
+      return;
+    }
+    if (!_canUseBlocklistSync) {
+      return;
+    }
+
+    setState(() {
+      _isSyncingBlocklists = true;
+    });
+
+    try {
+      final results = await _resolvedBlocklistSyncService.syncAll(
+        _enabledBlocklistCategories(),
+        forceRefresh: true,
+      );
+
+      if (!mounted) {
+        return;
+      }
+
+      final successful = results.where((result) => result.success).toList();
+      final failed = results.where((result) => !result.success).toList();
+      final loadedDomains = successful.fold<int>(
+        0,
+        (sum, result) => sum + result.domainsLoaded,
+      );
+
+      setState(() {
+        _isSyncingBlocklists = false;
+        _blocklistStatusRefreshToken += 1;
+      });
+
+      if (failed.isEmpty) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text(
+              'Blocklists synced: $loadedDomains domains loaded.',
+            ),
+          ),
+        );
+      } else {
+        final firstError = failed.first.errorMessage ?? 'Unknown error';
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text(
+              'Partial sync: ${successful.length}/${results.length} succeeded. $firstError',
+            ),
+          ),
+        );
+      }
+    } catch (error) {
+      if (!mounted) {
+        return;
+      }
+      setState(() {
+        _isSyncingBlocklists = false;
+      });
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text('Blocklist sync failed: $error')),
+      );
+    }
+  }
+
   Future<void> _signOut() async {
     await _resolvedAuthService.signOut();
+    await AppModeService().clearMode();
     if (!mounted) {
       return;
     }
-    Navigator.of(context).pushReplacementNamed('/login');
+    Navigator.of(context).pushReplacementNamed('/welcome');
   }
 
   Future<void> _openExternalUrl(String url) async {
@@ -599,6 +751,30 @@ class _ParentSettingsScreenState extends State<ParentSettingsScreen> {
     await Navigator.of(context).push(
       MaterialPageRoute(
         builder: (_) => SecurityControlsScreen(
+          authService: widget.authService,
+          firestoreService: widget.firestoreService,
+          parentIdOverride: widget.parentIdOverride,
+        ),
+      ),
+    );
+  }
+
+  Future<void> _openProtectionSettings(BuildContext context) async {
+    await Navigator.of(context).push(
+      MaterialPageRoute(
+        builder: (_) => ProtectionSettingsScreen(
+          authService: widget.authService,
+          firestoreService: widget.firestoreService,
+          parentIdOverride: widget.parentIdOverride,
+        ),
+      ),
+    );
+  }
+
+  Future<void> _openAlertPreferences(BuildContext context) async {
+    await Navigator.of(context).push(
+      MaterialPageRoute(
+        builder: (_) => AlertPreferencesScreen(
           authService: widget.authService,
           firestoreService: widget.firestoreService,
           parentIdOverride: widget.parentIdOverride,
@@ -672,6 +848,23 @@ class _ParentSettingsScreenState extends State<ParentSettingsScreen> {
   }
 
   Future<void> _openNextDnsSetup(BuildContext context) async {
+    final gate =
+        await _featureGateService.checkGate(AppFeature.nextDnsIntegration);
+    if (!gate.allowed) {
+      if (!context.mounted) {
+        return;
+      }
+      await UpgradeScreen.maybeShow(
+        context,
+        feature: AppFeature.nextDnsIntegration,
+        reason: gate.upgradeReason,
+      );
+      return;
+    }
+
+    if (!context.mounted) {
+      return;
+    }
     await Navigator.of(context).push(
       MaterialPageRoute(
         builder: (_) => NextDnsSetupScreen(
@@ -683,6 +876,25 @@ class _ParentSettingsScreenState extends State<ParentSettingsScreen> {
     );
   }
 
+  Future<void> _openBypassAlerts(BuildContext context) async {
+    final gate = await _featureGateService.checkGate(AppFeature.bypassAlerts);
+    if (!gate.allowed) {
+      if (!context.mounted) {
+        return;
+      }
+      await UpgradeScreen.maybeShow(
+        context,
+        feature: AppFeature.bypassAlerts,
+        reason: gate.upgradeReason,
+      );
+      return;
+    }
+    if (!context.mounted) {
+      return;
+    }
+    await Navigator.of(context).pushNamed('/parent/bypass-alerts');
+  }
+
   Future<void> _openChangePassword(BuildContext context, String email) async {
     await Navigator.of(context).push(
       MaterialPageRoute(
@@ -692,6 +904,10 @@ class _ParentSettingsScreenState extends State<ParentSettingsScreen> {
         ),
       ),
     );
+  }
+
+  Future<void> _openOpenSourceLicenses(BuildContext context) async {
+    await Navigator.of(context).pushNamed('/open-source-licenses');
   }
 
   void _hydrateFromProfile(Map<String, dynamic>? profile) {
@@ -744,6 +960,12 @@ class _ParentSettingsScreenState extends State<ParentSettingsScreen> {
       return tier.trim().toLowerCase();
     }
     return 'free';
+  }
+
+  List<BlocklistCategory> _enabledBlocklistCategories() {
+    // Current app state does not store category-level blocklist toggles yet.
+    // Sync all bundled categories so local data stays fresh.
+    return List<BlocklistCategory>.from(BlocklistCategory.values);
   }
 }
 
