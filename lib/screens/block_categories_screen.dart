@@ -1,11 +1,15 @@
 import 'package:flutter/material.dart';
+import 'package:trustbridge_app/config/feature_gates.dart';
 import 'package:trustbridge_app/models/child_profile.dart';
 import 'package:trustbridge_app/models/content_categories.dart';
 import 'package:trustbridge_app/models/policy.dart';
+import 'package:trustbridge_app/screens/upgrade_screen.dart';
 import 'package:trustbridge_app/services/auth_service.dart';
+import 'package:trustbridge_app/services/feature_gate_service.dart';
 import 'package:trustbridge_app/services/firestore_service.dart';
 import 'package:trustbridge_app/services/nextdns_api_service.dart';
 import 'package:trustbridge_app/services/vpn_service.dart';
+import 'package:trustbridge_app/utils/parent_pin_gate.dart';
 import 'package:trustbridge_app/widgets/empty_state.dart';
 
 class BlockCategoriesScreen extends StatefulWidget {
@@ -52,6 +56,7 @@ class _BlockCategoriesScreenState extends State<BlockCategoriesScreen> {
   FirestoreService? _firestoreService;
   VpnServiceBase? _vpnService;
   NextDnsApiService? _nextDnsApiService;
+  final FeatureGateService _featureGateService = FeatureGateService();
 
   late final Set<String> _initialBlockedCategories;
   late final Set<String> _initialBlockedDomains;
@@ -220,6 +225,7 @@ class _BlockCategoriesScreenState extends State<BlockCategoriesScreen> {
   Widget _buildCategoryCard(ContentCategory category) {
     final isBlocked = _blockedCategories.contains(category.id);
     final iconColor = _categoryColor(category.id);
+    final enforcementBadge = _buildEnforcementBadgeForCategory(category.id);
 
     return Card(
       margin: const EdgeInsets.only(bottom: 10),
@@ -242,9 +248,16 @@ class _BlockCategoriesScreenState extends State<BlockCategoriesScreen> {
               child: Column(
                 crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
-                  Text(
-                    category.name,
-                    style: const TextStyle(fontWeight: FontWeight.w700),
+                  Row(
+                    children: [
+                      Expanded(
+                        child: Text(
+                          category.name,
+                          style: const TextStyle(fontWeight: FontWeight.w700),
+                        ),
+                      ),
+                      if (enforcementBadge != null) enforcementBadge,
+                    ],
                   ),
                   const SizedBox(height: 2),
                   Text(
@@ -261,19 +274,10 @@ class _BlockCategoriesScreenState extends State<BlockCategoriesScreen> {
               value: isBlocked,
               onChanged: _isLoading || _isSyncingNextDns
                   ? null
-                  : (enabled) {
-                      setState(() {
-                        if (enabled) {
-                          _blockedCategories.add(category.id);
-                        } else {
-                          _blockedCategories.remove(category.id);
-                        }
-                      });
-                      _syncNextDnsCategoryForLocalToggle(
-                        localCategoryId: category.id,
-                        blocked: enabled,
-                      );
-                    },
+                  : (enabled) => _toggleCategoryWithPin(
+                        categoryId: category.id,
+                        enabled: enabled,
+                      ),
             ),
           ],
         ),
@@ -308,6 +312,8 @@ class _BlockCategoriesScreenState extends State<BlockCategoriesScreen> {
                 Expanded(
                   child: Text(domain),
                 ),
+                _buildInstantBadge(),
+                const SizedBox(width: 8),
                 InkWell(
                   key: Key('custom_domain_remove_$domain'),
                   onTap: _isLoading || _isSyncingNextDns
@@ -371,7 +377,8 @@ class _BlockCategoriesScreenState extends State<BlockCategoriesScreen> {
             const SizedBox(width: 12),
             ElevatedButton(
               key: const Key('block_categories_save_button'),
-              onPressed: (_isLoading || _isSyncingNextDns) ? null : _saveChanges,
+              onPressed:
+                  (_isLoading || _isSyncingNextDns) ? null : _saveChanges,
               child: _isLoading
                   ? const SizedBox(
                       width: 16,
@@ -501,6 +508,67 @@ class _BlockCategoriesScreenState extends State<BlockCategoriesScreen> {
         ),
       );
     }
+  }
+
+  Future<void> _toggleCategoryWithPin({
+    required String categoryId,
+    required bool enabled,
+  }) async {
+    if (_isProOnlyCategory(categoryId)) {
+      final gate = await () async {
+        try {
+          return await _featureGateService
+              .checkGate(AppFeature.categoryBlocking);
+        } catch (_) {
+          // Fail-open for non-Firebase test contexts.
+          return const GateResult(allowed: true);
+        }
+      }();
+      if (!gate.allowed) {
+        if (mounted) {
+          await UpgradeScreen.maybeShow(
+            context,
+            feature: AppFeature.categoryBlocking,
+            reason: gate.upgradeReason,
+          );
+        }
+        return;
+      }
+    }
+
+    if (!mounted) {
+      return;
+    }
+    final authorized = await requireParentPin(context);
+    if (!authorized) {
+      if (!mounted) {
+        return;
+      }
+      final messenger = ScaffoldMessenger.of(context);
+      messenger.showSnackBar(
+        const SnackBar(
+            content: Text('Parent PIN required to change protection.')),
+      );
+      return;
+    }
+
+    setState(() {
+      if (enabled) {
+        _blockedCategories.add(categoryId);
+      } else {
+        _blockedCategories.remove(categoryId);
+      }
+    });
+    await _syncNextDnsCategoryForLocalToggle(
+      localCategoryId: categoryId,
+      blocked: enabled,
+    );
+  }
+
+  bool _isProOnlyCategory(String categoryId) {
+    return categoryId == 'adult-content' ||
+        categoryId == 'gambling' ||
+        categoryId == 'malware';
   }
 
   Future<void> _syncVpnRulesIfRunning(Policy updatedPolicy) async {
@@ -643,7 +711,8 @@ class _BlockCategoriesScreenState extends State<BlockCategoriesScreen> {
 
   Future<void> _persistNextDnsControlsOnly() async {
     final profileId = _nextDnsProfileId;
-    final parentId = widget.parentIdOverride ?? _resolvedAuthService.currentUser?.uid;
+    final parentId =
+        widget.parentIdOverride ?? _resolvedAuthService.currentUser?.uid;
     if (profileId == null || parentId == null) {
       return;
     }
@@ -690,7 +759,8 @@ class _BlockCategoriesScreenState extends State<BlockCategoriesScreen> {
     }
   }
 
-  Future<void> _syncNextDnsDomain(String domain, {required bool blocked}) async {
+  Future<void> _syncNextDnsDomain(String domain,
+      {required bool blocked}) async {
     final profileId = _nextDnsProfileId;
     if (profileId == null) {
       return;
@@ -793,7 +863,8 @@ class _BlockCategoriesScreenState extends State<BlockCategoriesScreen> {
       }
       rollback();
       ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(content: Text('NextDNS parental controls sync failed: $error')),
+        SnackBar(
+            content: Text('NextDNS parental controls sync failed: $error')),
       );
     } finally {
       if (mounted) {
@@ -935,5 +1006,65 @@ class _BlockCategoriesScreenState extends State<BlockCategoriesScreen> {
         .where((word) => word.trim().isNotEmpty)
         .map((word) => '${word[0].toUpperCase()}${word.substring(1)}')
         .join(' ');
+  }
+
+  Widget? _buildEnforcementBadgeForCategory(String categoryId) {
+    if (_isInstantCategory(categoryId)) {
+      return _buildInstantBadge();
+    }
+    if (_isNextDnsCategory(categoryId)) {
+      return _buildNextDnsBadge();
+    }
+    return null;
+  }
+
+  bool _isInstantCategory(String categoryId) {
+    return categoryId == 'social-networks';
+  }
+
+  bool _isNextDnsCategory(String categoryId) {
+    return categoryId == 'adult-content' ||
+        categoryId == 'gambling' ||
+        categoryId == 'malware';
+  }
+
+  Widget _buildInstantBadge() {
+    return Tooltip(
+      message: 'Changes apply in under 1 second',
+      child: Container(
+        padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
+        decoration: BoxDecoration(
+          color: Colors.green.withValues(alpha: 0.14),
+          borderRadius: BorderRadius.circular(999),
+        ),
+        child: const Text(
+          '\u26a1 Instant',
+          style: TextStyle(
+            color: Colors.green,
+            fontSize: 11,
+            fontWeight: FontWeight.w700,
+          ),
+        ),
+      ),
+    );
+  }
+
+  Widget _buildNextDnsBadge() {
+    final enabled = _hasNextDnsProfile;
+    return Container(
+      padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
+      decoration: BoxDecoration(
+        color: Colors.blue.withValues(alpha: enabled ? 0.14 : 0.08),
+        borderRadius: BorderRadius.circular(999),
+      ),
+      child: Text(
+        '\u2601\ufe0f NextDNS',
+        style: TextStyle(
+          color: enabled ? Colors.blue.shade700 : Colors.blueGrey,
+          fontSize: 11,
+          fontWeight: FontWeight.w700,
+        ),
+      ),
+    );
   }
 }

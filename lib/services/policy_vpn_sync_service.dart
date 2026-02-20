@@ -1,10 +1,14 @@
 import 'dart:async';
 
 import 'package:flutter/foundation.dart';
+import 'package:path/path.dart' as p;
+import 'package:sqflite/sqflite.dart';
 
 import '../models/access_request.dart';
+import '../models/blocklist_source.dart';
 import '../models/child_profile.dart';
 import 'auth_service.dart';
+import 'blocklist_sync_service.dart';
 import 'firestore_service.dart';
 import 'performance_service.dart';
 import 'vpn_service.dart';
@@ -49,20 +53,26 @@ class PolicyVpnSyncService extends ChangeNotifier {
   PolicyVpnSyncService({
     FirestoreService? firestoreService,
     VpnServiceBase? vpnService,
+    BlocklistSyncService? blocklistSyncService,
     AuthService? authService,
     String? Function()? parentIdResolver,
+    String? blocklistDatabasePathOverride,
     Duration exceptionRefreshGrace = const Duration(seconds: 1),
   })  : _firestoreService = firestoreService ?? FirestoreService(),
         _vpnService = vpnService ?? VpnService(),
+        _blocklistSyncService = blocklistSyncService,
         _authService = authService,
         _parentIdResolver = parentIdResolver,
+        _blocklistDatabasePathOverride = blocklistDatabasePathOverride,
         _exceptionRefreshGrace = exceptionRefreshGrace;
 
   final FirestoreService _firestoreService;
   final VpnServiceBase _vpnService;
+  BlocklistSyncService? _blocklistSyncService;
   final PerformanceService _performanceService = PerformanceService();
   AuthService? _authService;
   final String? Function()? _parentIdResolver;
+  final String? _blocklistDatabasePathOverride;
   final Duration _exceptionRefreshGrace;
 
   StreamSubscription<List<ChildProfile>>? _childrenSubscription;
@@ -78,6 +88,74 @@ class PolicyVpnSyncService extends ChangeNotifier {
   bool get isSyncing => _isSyncing;
   DateTime? get nextExceptionRefreshAt => _nextExceptionRefreshAt;
 
+  BlocklistSyncService get _resolvedBlocklistSyncService {
+    _blocklistSyncService ??= BlocklistSyncService();
+    return _blocklistSyncService!;
+  }
+
+  /// Handles category-enable side effects for local blocklist enforcement.
+  Future<void> onCategoryEnabled(BlocklistCategory category) async {
+    await _resolvedBlocklistSyncService.syncAll(
+      <BlocklistCategory>[category],
+      forceRefresh: false,
+    );
+    await _refreshVpnRulesFromLatestPolicies();
+  }
+
+  /// Handles category-disable side effects for local blocklist enforcement.
+  Future<void> onCategoryDisabled(BlocklistCategory category) async {
+    await _resolvedBlocklistSyncService.onCategoryDisabled(category);
+    await _refreshVpnRulesFromLatestPolicies();
+  }
+
+  /// Adds a custom blocked domain to local blocklist storage.
+  Future<void> addCustomBlockedDomain(String domain) async {
+    final normalized = _normalizeCustomDomain(domain);
+    if (!_isValidCustomDomain(normalized)) {
+      throw ArgumentError.value(
+        domain,
+        'domain',
+        'Domain must be a valid host (e.g., reddit.com).',
+      );
+    }
+
+    final db = await _openBlocklistDatabase();
+    try {
+      await db.insert(
+        'blocked_domains',
+        <String, Object>{
+          'domain': normalized,
+          'category': 'custom',
+          'source_id': 'custom',
+        },
+        conflictAlgorithm: ConflictAlgorithm.replace,
+      );
+    } finally {
+      await db.close();
+    }
+    await _refreshVpnRulesFromLatestPolicies();
+  }
+
+  /// Removes a custom blocked domain from local blocklist storage.
+  Future<void> removeCustomBlockedDomain(String domain) async {
+    final normalized = _normalizeCustomDomain(domain);
+    if (normalized.isEmpty) {
+      return;
+    }
+
+    final db = await _openBlocklistDatabase();
+    try {
+      await db.delete(
+        'blocked_domains',
+        where: 'domain = ? AND source_id = ?',
+        whereArgs: <Object>[normalized, 'custom'],
+      );
+    } finally {
+      await db.close();
+    }
+    await _refreshVpnRulesFromLatestPolicies();
+  }
+
   String? _resolveParentId() {
     final overridden = _parentIdResolver?.call()?.trim();
     if (overridden != null && overridden.isNotEmpty) {
@@ -85,6 +163,16 @@ class PolicyVpnSyncService extends ChangeNotifier {
     }
     _authService ??= AuthService();
     return _authService?.currentUser?.uid;
+  }
+
+  Future<void> _refreshVpnRulesFromLatestPolicies() async {
+    final parentId = _resolveParentId();
+    if (parentId == null || parentId.isEmpty) {
+      return;
+    }
+
+    final children = await _firestoreService.getChildrenOnce(parentId);
+    await _syncToVpn(children);
   }
 
   /// Start listening to policy changes and auto-sync to active VPN.
@@ -363,5 +451,65 @@ class PolicyVpnSyncService extends ChangeNotifier {
       }
       unawaited(syncNow());
     });
+  }
+
+  String _normalizeCustomDomain(String domain) {
+    var normalized = domain.trim().toLowerCase();
+    if (normalized.startsWith('http://')) {
+      normalized = normalized.substring('http://'.length);
+    } else if (normalized.startsWith('https://')) {
+      normalized = normalized.substring('https://'.length);
+    }
+    if (normalized.startsWith('www.')) {
+      normalized = normalized.substring(4);
+    }
+    final slashIndex = normalized.indexOf('/');
+    if (slashIndex >= 0) {
+      normalized = normalized.substring(0, slashIndex);
+    }
+    while (normalized.endsWith('.')) {
+      normalized = normalized.substring(0, normalized.length - 1);
+    }
+    return normalized;
+  }
+
+  bool _isValidCustomDomain(String value) {
+    if (value.isEmpty || value.contains(' ')) {
+      return false;
+    }
+    final pattern = RegExp(r'^[a-z0-9][a-z0-9.-]*\.[a-z]{2,}$');
+    if (!pattern.hasMatch(value)) {
+      return false;
+    }
+    return !value.contains('..');
+  }
+
+  Future<Database> _openBlocklistDatabase() async {
+    final path = _blocklistDatabasePathOverride ?? await _resolveDbPath();
+    return openDatabase(
+      path,
+      version: 1,
+      onCreate: (db, version) async {
+        await db.execute('''
+CREATE TABLE blocked_domains (
+  domain TEXT PRIMARY KEY,
+  category TEXT NOT NULL,
+  source_id TEXT NOT NULL
+)
+''');
+        await db.execute('''
+CREATE TABLE blocklist_meta (
+  source_id TEXT PRIMARY KEY,
+  last_synced INTEGER NOT NULL,
+  domain_count INTEGER NOT NULL DEFAULT 0
+)
+''');
+      },
+    );
+  }
+
+  Future<String> _resolveDbPath() async {
+    final databasesPath = await getDatabasesPath();
+    return p.join(databasesPath, 'trustbridge_blocklist.db');
   }
 }

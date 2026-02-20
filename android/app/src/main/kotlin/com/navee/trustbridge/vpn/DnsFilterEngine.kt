@@ -6,9 +6,49 @@ import android.util.Log
 class DnsFilterEngine(private val context: Context) {
     companion object {
         private const val TAG = "DnsFilterEngine"
+        private val SOCIAL_MEDIA_DOMAINS = setOf(
+            "instagram.com",
+            "cdninstagram.com",
+            "i.instagram.com",
+            "graph.instagram.com",
+            "tiktok.com",
+            "tiktokcdn.com",
+            "muscdn.com",
+            "tiktokv.com",
+            "byteoversea.com",
+            "twitter.com",
+            "t.co",
+            "twimg.com",
+            "api.twitter.com",
+            "x.com",
+            "abs.twimg.com",
+            "snapchat.com",
+            "snap.com",
+            "sc-cdn.net",
+            "snapkit.com",
+            "facebook.com",
+            "fb.com",
+            "fbcdn.net",
+            "connect.facebook.net",
+            "facebook.net",
+            "youtube.com",
+            "youtu.be",
+            "googlevideo.com",
+            "ytimg.com",
+            "youtube-nocookie.com",
+            "reddit.com",
+            "redd.it",
+            "redditmedia.com",
+            "reddituploads.com",
+            "redditstatic.com",
+            "roblox.com",
+            "rbxcdn.com",
+            "robloxlabs.com"
+        )
     }
 
     private val blocklistStore = BlocklistStore(context)
+    private val localBlocklistDb = LocalBlocklistDbReader(context)
     private val blockedDomains = mutableSetOf<String>()
     private val blockedCategories = mutableSetOf<String>()
     private val temporaryAllowedDomains = mutableSetOf<String>()
@@ -34,7 +74,17 @@ class DnsFilterEngine(private val context: Context) {
         if (findMatchingAllowRule(normalizedDomain) != null) {
             return false
         }
-        return findMatchingRule(normalizedDomain) != null
+        if (findMatchingRule(normalizedDomain) != null) {
+            return true
+        }
+        if (isInstantSocialBlock(normalizedDomain)) {
+            return true
+        }
+        val dbCategory = localBlocklistDb.getCategory(normalizedDomain)
+        if (dbCategory != null && isDbCategoryEnabled(dbCategory)) {
+            return true
+        }
+        return false
     }
 
     @Synchronized
@@ -50,9 +100,6 @@ class DnsFilterEngine(private val context: Context) {
 
         val nextDomains = mutableSetOf<String>()
         nextDomains.addAll(customDomains.map(::normalizeDomain).filter { it.isNotEmpty() })
-        nextCategories.forEach { category ->
-            nextDomains.addAll(loadCategoryDomains(category).map(::normalizeDomain))
-        }
         val nextAllowedDomains = allowedDomains
             .map(::normalizeDomain)
             .filter { it.isNotEmpty() }
@@ -156,95 +203,6 @@ class DnsFilterEngine(private val context: Context) {
         }
     }
 
-    private fun loadCategoryDomains(category: String): List<String> {
-        return when (category) {
-            "social-networks" -> listOf(
-                "facebook.com",
-                "instagram.com",
-                "x.com",
-                "tiktok.com",
-                "snapchat.com",
-                "reddit.com",
-                "discord.com",
-                "pinterest.com"
-            )
-
-            "adult-content" -> listOf(
-                "pornhub.com",
-                "xvideos.com",
-                "xnxx.com",
-                "xhamster.com"
-            )
-
-            "gambling" -> listOf(
-                "bet365.com",
-                "1xbet.com",
-                "betway.com",
-                "draftkings.com",
-                "fanduel.com"
-            )
-
-            "weapons" -> listOf(
-                "guns.com",
-                "brownells.com",
-                "cheaperthandirt.com"
-            )
-
-            "drugs" -> listOf(
-                "weedmaps.com",
-                "leafly.com",
-                "erowid.org"
-            )
-
-            "violence" -> listOf(
-                "bestgore.fun",
-                "worldstarhiphop.com"
-            )
-
-            "dating" -> listOf(
-                "tinder.com",
-                "bumble.com",
-                "hinge.co"
-            )
-
-            "chat" -> listOf(
-                "omegle.com",
-                "chatroulette.com"
-            )
-
-            "streaming" -> listOf(
-                "youtube.com",
-                "twitch.tv",
-                "netflix.com"
-            )
-
-            "games" -> listOf(
-                "roblox.com",
-                "epicgames.com",
-                "steamcommunity.com"
-            )
-
-            "shopping" -> listOf(
-                "amazon.com",
-                "ebay.com",
-                "walmart.com"
-            )
-
-            "forums" -> listOf(
-                "reddit.com",
-                "quora.com"
-            )
-
-            "news" -> listOf(
-                "cnn.com",
-                "bbc.com",
-                "nytimes.com"
-            )
-
-            else -> emptyList()
-        }
-    }
-
     private fun normalizeDomain(domain: String): String {
         var value = domain.trim().lowercase()
         if (value.startsWith("*.")) {
@@ -283,9 +241,46 @@ class DnsFilterEngine(private val context: Context) {
         return null
     }
 
+    private fun isInstantSocialBlock(normalizedDomain: String): Boolean {
+        if (!isSocialCategoryEnabled()) {
+            return false
+        }
+
+        if (SOCIAL_MEDIA_DOMAINS.contains(normalizedDomain)) {
+            return true
+        }
+        for (blocked in SOCIAL_MEDIA_DOMAINS) {
+            if (normalizedDomain.endsWith(".$blocked")) {
+                return true
+            }
+        }
+        return false
+    }
+
+    private fun isSocialCategoryEnabled(): Boolean {
+        return blockedCategories.contains("social") ||
+            blockedCategories.contains("social-networks")
+    }
+
+    private fun isDbCategoryEnabled(category: String): Boolean {
+        return when (category) {
+            "social" -> isSocialCategoryEnabled()
+            "adult" -> blockedCategories.contains("adult-content")
+            "gambling" -> blockedCategories.contains("gambling")
+            "malware" -> blockedCategories.contains("malware")
+            "ads" -> blockedCategories.contains("ads")
+            "custom" -> true
+            else -> false
+        }
+    }
+
     fun close() {
         try {
             blocklistStore.close()
+        } catch (_: Exception) {
+        }
+        try {
+            localBlocklistDb.close()
         } catch (_: Exception) {
         }
     }

@@ -6,6 +6,7 @@ import android.app.NotificationManager
 import android.content.Context
 import android.content.Intent
 import android.os.Build
+import com.navee.trustbridge.vpn.LocalBlocklistDbReader
 
 class TrustBridgeVpnService : android.net.VpnService() {
     companion object {
@@ -17,6 +18,52 @@ class TrustBridgeVpnService : android.net.VpnService() {
         @Volatile
         var isRunning: Boolean = false
             private set
+
+        private val SOCIAL_MEDIA_DOMAINS = setOf(
+            "instagram.com",
+            "cdninstagram.com",
+            "i.instagram.com",
+            "graph.instagram.com",
+            "tiktok.com",
+            "tiktokcdn.com",
+            "muscdn.com",
+            "tiktokv.com",
+            "byteoversea.com",
+            "twitter.com",
+            "t.co",
+            "twimg.com",
+            "api.twitter.com",
+            "x.com",
+            "abs.twimg.com",
+            "snapchat.com",
+            "snap.com",
+            "sc-cdn.net",
+            "snapkit.com",
+            "facebook.com",
+            "fb.com",
+            "fbcdn.net",
+            "connect.facebook.net",
+            "facebook.net",
+            "youtube.com",
+            "youtu.be",
+            "googlevideo.com",
+            "ytimg.com",
+            "youtube-nocookie.com",
+            "reddit.com",
+            "redd.it",
+            "redditmedia.com",
+            "reddituploads.com",
+            "redditstatic.com",
+            "roblox.com",
+            "rbxcdn.com",
+            "robloxlabs.com"
+        )
+    }
+
+    private val blockedCategories = mutableSetOf<String>()
+    private var nextDnsHostname: String? = null
+    private val blocklistDb: LocalBlocklistDbReader by lazy {
+        LocalBlocklistDbReader(applicationContext)
     }
 
     override fun onStartCommand(intent: Intent?, flags: Int, startId: Int): Int {
@@ -37,6 +84,7 @@ class TrustBridgeVpnService : android.net.VpnService() {
 
     override fun onDestroy() {
         stopVpn()
+        blocklistDb.close()
         super.onDestroy()
     }
 
@@ -70,7 +118,7 @@ class TrustBridgeVpnService : android.net.VpnService() {
         return if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
             Notification.Builder(this, CHANNEL_ID)
                 .setContentTitle("TrustBridge Protection Active")
-                .setContentText("Network filtering foundation is running.")
+                .setContentText("🛡️ TrustBridge is protecting this device")
                 .setSmallIcon(android.R.drawable.stat_sys_warning)
                 .setOngoing(true)
                 .build()
@@ -78,10 +126,40 @@ class TrustBridgeVpnService : android.net.VpnService() {
             @Suppress("DEPRECATION")
             Notification.Builder(this)
                 .setContentTitle("TrustBridge Protection Active")
-                .setContentText("Network filtering foundation is running.")
+                .setContentText("🛡️ TrustBridge is protecting this device")
                 .setSmallIcon(android.R.drawable.stat_sys_warning)
                 .setOngoing(true)
                 .build()
         }
+    }
+
+    private fun isDomainBlocked(domain: String): Boolean {
+        val normalized = domain.trim().lowercase()
+        if (normalized.isBlank()) {
+            return false
+        }
+
+        if (isSocialCategoryEnabled()) {
+            if (SOCIAL_MEDIA_DOMAINS.contains(normalized)) {
+                return true
+            }
+            for (blocked in SOCIAL_MEDIA_DOMAINS) {
+                if (normalized.endsWith(".$blocked")) {
+                    return true
+                }
+            }
+        }
+
+        return blocklistDb.isDomainBlocked(normalized)
+    }
+
+    private fun getUpstreamDns(): String {
+        val nextDns = nextDnsHostname?.trim()
+        return if (nextDns.isNullOrEmpty()) "1.1.1.1" else nextDns
+    }
+
+    private fun isSocialCategoryEnabled(): Boolean {
+        return blockedCategories.contains("social") ||
+            blockedCategories.contains("social-networks")
     }
 }

@@ -10,13 +10,13 @@ import kotlin.math.min
 
 class DnsPacketHandler(
     private val filterEngine: DnsFilterEngine,
-    private val upstreamDns: String = "45.90.28.0",
+    private val upstreamDns: String = "1.1.1.1",
     private val protectSocket: ((DatagramSocket) -> Unit)? = null
 ) {
     companion object {
         private const val TAG = "DnsPacketHandler"
         private const val DNS_PORT = 53
-        private const val FALLBACK_DNS = "45.90.30.0"
+        private const val FALLBACK_DNS = "8.8.8.8"
         private const val TIMEOUT_MS = 5_000
         private const val MAX_QUERY_LOG_ENTRIES = 250
     }
@@ -201,25 +201,16 @@ class DnsPacketHandler(
         val questionEnd = findQuestionEndOffset(query) ?: return query
         val responseHeaderAndQuestion = query.copyOfRange(0, questionEnd)
 
-        // Set response flags (QR=1, RD copied, RA=1, RCODE=0)
+        // Set response flags (QR=1, preserve opcode/RD, set NXDOMAIN RCODE=3).
         responseHeaderAndQuestion[2] =
             (responseHeaderAndQuestion[2].toInt() or 0x80).toByte()
-        responseHeaderAndQuestion[3] = 0x80.toByte()
+        responseHeaderAndQuestion[3] =
+            ((responseHeaderAndQuestion[3].toInt() and 0xF0) or 0x03).toByte()
 
-        // ANCOUNT = 1
+        // ANCOUNT = 0 (NXDOMAIN with no answers)
         responseHeaderAndQuestion[6] = 0x00
-        responseHeaderAndQuestion[7] = 0x01
-
-        val answer = byteArrayOf(
-            0xC0.toByte(), 0x0C.toByte(), // Name pointer
-            0x00, 0x01, // Type A
-            0x00, 0x01, // Class IN
-            0x00, 0x00, 0x00, 0x3C, // TTL 60s
-            0x00, 0x04, // RDLENGTH
-            0x00, 0x00, 0x00, 0x00 // 0.0.0.0
-        )
-
-        return responseHeaderAndQuestion + answer
+        responseHeaderAndQuestion[7] = 0x00
+        return responseHeaderAndQuestion
     }
 
     private fun forwardToUpstreamDns(query: ByteArray): ByteArray {

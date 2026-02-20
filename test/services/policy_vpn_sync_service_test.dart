@@ -1,10 +1,18 @@
 import 'dart:async';
+import 'dart:io';
 
 import 'package:fake_cloud_firestore/fake_cloud_firestore.dart';
 import 'package:flutter_test/flutter_test.dart';
+import 'package:http/http.dart' as http;
+import 'package:http/testing.dart';
+import 'package:path/path.dart' as p;
+import 'package:sqflite_common_ffi/sqflite_ffi.dart';
 import 'package:trustbridge_app/models/access_request.dart';
+import 'package:trustbridge_app/models/blocklist_source.dart';
 import 'package:trustbridge_app/models/child_profile.dart';
 import 'package:trustbridge_app/models/policy.dart';
+import 'package:trustbridge_app/services/blocklist_db_service.dart';
+import 'package:trustbridge_app/services/blocklist_sync_service.dart';
 import 'package:trustbridge_app/services/firestore_service.dart';
 import 'package:trustbridge_app/services/policy_vpn_sync_service.dart';
 import 'package:trustbridge_app/services/vpn_service.dart';
@@ -152,6 +160,11 @@ class _FakeFirestoreService extends FirestoreService {
 }
 
 void main() {
+  setUpAll(() {
+    sqfliteFfiInit();
+    databaseFactory = databaseFactoryFfi;
+  });
+
   group('PolicyVpnSyncService', () {
     late _FakeVpnService fakeVpn;
     late _FakeFirestoreService fakeFirestore;
@@ -354,6 +367,166 @@ void main() {
       await Future<void>.delayed(const Duration(milliseconds: 30));
 
       expect(fakeVpn.updateCalls, 1);
+    });
+  });
+
+  group('PolicyVpnSyncService blocklist operations', () {
+    late _FakeVpnService fakeVpn;
+    late _FakeFirestoreService fakeFirestore;
+    late BlocklistDbService dbService;
+    late BlocklistSyncService blocklistSyncService;
+    late PolicyVpnSyncService syncService;
+    late Directory tempDir;
+    late String customDbPath;
+
+    setUp(() async {
+      fakeVpn = _FakeVpnService();
+      fakeFirestore = _FakeFirestoreService();
+      fakeVpn.vpnRunning = true;
+      tempDir = await Directory.systemTemp.createTemp(
+        'trustbridge_policy_sync_test_',
+      );
+      customDbPath = p.join(tempDir.path, 'trustbridge_blocklist.db');
+
+      await BlocklistDbService.configureForTesting(
+        databasePath: inMemoryDatabasePath,
+      );
+      dbService = BlocklistDbService();
+      await dbService.init();
+
+      blocklistSyncService = BlocklistSyncService(
+        httpClient: MockClient(
+          (_) async => http.Response('0.0.0.0 instagram.com', 200),
+        ),
+        dbService: dbService,
+        firestore: FakeFirebaseFirestore(),
+        parentIdResolver: () => 'parent-test',
+        nowProvider: () => DateTime(2026, 3, 1),
+        enableRemoteLogging: false,
+      );
+
+      syncService = PolicyVpnSyncService(
+        vpnService: fakeVpn,
+        firestoreService: fakeFirestore,
+        blocklistSyncService: blocklistSyncService,
+        parentIdResolver: () => 'parent-test',
+        blocklistDatabasePathOverride: customDbPath,
+      );
+    });
+
+    tearDown(() async {
+      syncService.dispose();
+      await fakeFirestore.disposeController();
+      await dbService.close();
+      if (tempDir.existsSync()) {
+        await tempDir.delete(recursive: true);
+      }
+    });
+
+    test('onCategoryEnabled(social) triggers VPN update call', () async {
+      fakeFirestore.children = <ChildProfile>[
+        ChildProfile.create(
+          nickname: 'Child',
+          ageBand: AgeBand.middle,
+        ).copyWith(
+          policy: Policy.presetForAgeBand(AgeBand.middle).copyWith(
+            blockedCategories: const <String>['social-networks'],
+          ),
+        ),
+      ];
+
+      await syncService.onCategoryEnabled(BlocklistCategory.social);
+
+      expect(fakeVpn.updateCalls, greaterThanOrEqualTo(1));
+      expect(fakeVpn.lastCategories, contains('social-networks'));
+    });
+
+    test(
+      'onCategoryDisabled(social) clears synced domains and updates VPN',
+      () async {
+        await dbService.insertDomains(
+          const <String>['instagram.com'],
+          BlocklistCategory.social,
+          'stevenblack_social',
+        );
+
+        fakeFirestore.children = <ChildProfile>[
+          ChildProfile.create(
+            nickname: 'Child',
+            ageBand: AgeBand.middle,
+          ).copyWith(
+            policy: Policy.presetForAgeBand(AgeBand.middle).copyWith(
+              blockedCategories: const <String>[],
+            ),
+          ),
+        ];
+
+        await syncService.onCategoryDisabled(BlocklistCategory.social);
+
+        expect(await dbService.isDomainBlocked('instagram.com'), isFalse);
+        expect(fakeVpn.updateCalls, greaterThanOrEqualTo(1));
+      },
+    );
+
+    test('addCustomBlockedDomain stores domain in SQLite with source=custom',
+        () async {
+      await syncService.addCustomBlockedDomain('instagram.com');
+
+      final db = await openDatabase(customDbPath);
+      final rows = await db.query(
+        'blocked_domains',
+        where: 'domain = ?',
+        whereArgs: const <Object>['instagram.com'],
+      );
+      await db.close();
+
+      expect(rows.length, 1);
+      expect(rows.first['source_id'], 'custom');
+      expect(rows.first['category'], 'custom');
+    });
+
+    test('removeCustomBlockedDomain deletes domain from SQLite', () async {
+      final db = await openDatabase(
+        customDbPath,
+        version: 1,
+        onCreate: (database, version) async {
+          await database.execute('''
+CREATE TABLE blocked_domains (
+  domain TEXT PRIMARY KEY,
+  category TEXT NOT NULL,
+  source_id TEXT NOT NULL
+)
+''');
+          await database.execute('''
+CREATE TABLE blocklist_meta (
+  source_id TEXT PRIMARY KEY,
+  last_synced INTEGER NOT NULL,
+  domain_count INTEGER NOT NULL DEFAULT 0
+)
+''');
+        },
+      );
+      await db.insert(
+        'blocked_domains',
+        <String, Object>{
+          'domain': 'instagram.com',
+          'category': 'custom',
+          'source_id': 'custom',
+        },
+      );
+      await db.close();
+
+      await syncService.removeCustomBlockedDomain('instagram.com');
+
+      final verifyDb = await openDatabase(customDbPath);
+      final rows = await verifyDb.query(
+        'blocked_domains',
+        where: 'domain = ?',
+        whereArgs: const <Object>['instagram.com'],
+      );
+      await verifyDb.close();
+
+      expect(rows, isEmpty);
     });
   });
 }

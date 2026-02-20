@@ -25,11 +25,12 @@ class DnsVpnService : VpnService() {
         private const val TAG = "DnsVpnService"
         private const val VPN_ADDRESS = "10.0.0.1"
         private const val INTERCEPT_DNS = "45.90.28.0"
-        private const val FALLBACK_DNS_PRIMARY = "45.90.30.0"
-        private const val FALLBACK_DNS_SECONDARY = "45.90.30.0"
-        private const val DEFAULT_UPSTREAM_DNS = "45.90.28.0"
+        private const val FALLBACK_DNS_PRIMARY = "1.1.1.1"
+        private const val FALLBACK_DNS_SECONDARY = "8.8.8.8"
+        private const val DEFAULT_UPSTREAM_DNS = "1.1.1.1"
         private const val NOTIFICATION_ID = 1001
         private const val CHANNEL_ID = "dns_vpn_channel"
+        private const val MAX_RECONNECT_ATTEMPTS = 3
 
         const val ACTION_START = "com.navee.trustbridge.vpn.START"
         const val ACTION_STOP = "com.navee.trustbridge.vpn.STOP"
@@ -137,6 +138,8 @@ class DnsVpnService : VpnService() {
     private var activeUnderlyingNetwork: Network? = null
     @Volatile
     private var reconnectScheduledFromRevoke: Boolean = false
+    @Volatile
+    private var reconnectAttemptCount: Int = 0
     private var lastAppliedCategories: List<String> = emptyList()
     private var lastAppliedDomains: List<String> = emptyList()
     private var lastAppliedAllowedDomains: List<String> = emptyList()
@@ -305,6 +308,7 @@ class DnsVpnService : VpnService() {
             serviceRunning = true
             isRunning = true
             vpnPreferencesStore.setEnabled(true)
+            reconnectAttemptCount = 0
             startedAtEpochMs = System.currentTimeMillis()
             queriesProcessed = 0
             queriesBlocked = 0
@@ -547,7 +551,7 @@ class DnsVpnService : VpnService() {
                 "DNS Filter Service",
                 NotificationManager.IMPORTANCE_LOW
             ).apply {
-                description = "TrustBridge DNS filtering is active"
+                description = "TrustBridge protection is active"
                 setShowBadge(false)
             }
 
@@ -566,7 +570,7 @@ class DnsVpnService : VpnService() {
         return NotificationCompat.Builder(this, CHANNEL_ID)
             .setSmallIcon(R.mipmap.ic_launcher)
             .setContentTitle("TrustBridge Protection Active")
-            .setContentText("DNS filtering is running")
+            .setContentText("🛡️ TrustBridge is protecting this device")
             .setContentIntent(pendingIntent)
             .setOngoing(true)
             .setPriority(NotificationCompat.PRIORITY_LOW)
@@ -581,17 +585,27 @@ class DnsVpnService : VpnService() {
 
         if (!shouldReconnect || reconnectScheduledFromRevoke) {
             Log.d(TAG, "VPN permission revoked")
+            logBypassEvent("vpn_disabled")
+            stopVpn(stopService = true, markDisabled = true)
+            return
+        }
+
+        if (reconnectAttemptCount >= MAX_RECONNECT_ATTEMPTS) {
+            Log.w(TAG, "Reconnect attempts exhausted after revoke")
+            logBypassEvent("vpn_disabled")
             stopVpn(stopService = true, markDisabled = true)
             return
         }
 
         reconnectScheduledFromRevoke = true
+        reconnectAttemptCount += 1
         Log.w(TAG, "VPN revoked on Android 14; scheduling reconnect attempt")
+        logBypassEvent("vpn_disabled")
         stopVpn(stopService = false, markDisabled = false)
 
         thread(name = "dns-vpn-reconnect") {
             try {
-                Thread.sleep(1200)
+                Thread.sleep(5000)
             } catch (_: InterruptedException) {
             }
 
@@ -608,6 +622,19 @@ class DnsVpnService : VpnService() {
             } else {
                 startService(restartIntent)
             }
+            reconnectScheduledFromRevoke = false
+        }
+    }
+
+    private fun logBypassEvent(type: String) {
+        try {
+            val prefs = getSharedPreferences("trustbridge_bypass_queue", MODE_PRIVATE)
+            val existing = prefs.getStringSet("events", mutableSetOf())?.toMutableSet()
+                ?: mutableSetOf()
+            existing.add("$type|${System.currentTimeMillis()}")
+            prefs.edit().putStringSet("events", existing).apply()
+        } catch (_: Exception) {
+            // Never throw from revoke path.
         }
     }
 

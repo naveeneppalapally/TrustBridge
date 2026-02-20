@@ -19,7 +19,7 @@ internal class VpnPreferencesStore(context: Context) {
         private const val KEY_BLOCKED_DOMAINS = "vpn_blocked_domains"
         private const val KEY_TEMP_ALLOWED_DOMAINS = "vpn_temp_allowed_domains"
         private const val KEY_UPSTREAM_DNS = "vpn_upstream_dns"
-        private const val DEFAULT_UPSTREAM_DNS = "45.90.28.0"
+        private const val DEFAULT_UPSTREAM_DNS = "1.1.1.1"
     }
 
     private val prefs = context.applicationContext.getSharedPreferences(
