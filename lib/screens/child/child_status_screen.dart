@@ -110,10 +110,26 @@ class _ChildStatusScreenState extends State<ChildStatusScreen> {
     return Center(
       child: Padding(
         padding: const EdgeInsets.all(24),
-        child: Text(
-          message,
-          textAlign: TextAlign.center,
-          style: Theme.of(context).textTheme.bodyLarge,
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            Text(
+              message,
+              textAlign: TextAlign.center,
+              style: Theme.of(context).textTheme.bodyLarge,
+            ),
+            const SizedBox(height: 14),
+            FilledButton(
+              onPressed: () async {
+                await _resolvedPairingService.clearLocalPairing();
+                if (!context.mounted) {
+                  return;
+                }
+                Navigator.of(context).pushReplacementNamed('/child/setup');
+              },
+              child: const Text('Restart setup'),
+            ),
+          ],
         ),
       ),
     );

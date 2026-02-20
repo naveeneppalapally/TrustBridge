@@ -99,6 +99,8 @@ class _ChildSetupScreenState extends State<ChildSetupScreen> {
       return;
     }
 
+    await _resolvedPairingService.clearLocalPairing();
+
     setState(() {
       _isConnecting = false;
       _errorMessage = _friendlyErrorMessage(result.error);

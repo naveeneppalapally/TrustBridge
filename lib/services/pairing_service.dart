@@ -259,6 +259,12 @@ class PairingService {
     return normalized;
   }
 
+  /// Clears local pairing identifiers for recovery from interrupted setup.
+  Future<void> clearLocalPairing() async {
+    await _secureStorage.delete(key: _pairedChildIdKey);
+    await _secureStorage.delete(key: _pairedParentIdKey);
+  }
+
   /// Watches pairing-code usage state.
   Stream<bool> watchCodeUsed(String code) {
     final normalizedCode = code.trim();
