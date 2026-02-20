@@ -1,7 +1,9 @@
 package com.navee.trustbridge
 
 import android.app.AppOpsManager
+import android.app.admin.DevicePolicyManager
 import android.content.Intent
+import android.content.ComponentName
 import android.app.usage.UsageStatsManager
 import android.os.Build
 import android.os.PowerManager
@@ -14,24 +16,30 @@ import com.navee.trustbridge.vpn.BlocklistStore
 import com.navee.trustbridge.vpn.DnsFilterEngine
 import com.navee.trustbridge.vpn.DnsVpnService
 import com.navee.trustbridge.vpn.VpnPreferencesStore
+import dev.fluttercommunity.workmanager.WorkmanagerPlugin
 import io.flutter.embedding.android.FlutterFragmentActivity
 import io.flutter.embedding.engine.FlutterEngine
 import io.flutter.plugin.common.MethodCall
 import io.flutter.plugin.common.MethodChannel
+import io.flutter.plugin.common.PluginRegistry
+import io.flutter.plugins.GeneratedPluginRegistrant
 
 class MainActivity : FlutterFragmentActivity() {
     companion object {
         private const val VPN_PERMISSION_REQUEST_CODE = 44123
+        private const val DEVICE_ADMIN_PERMISSION_REQUEST_CODE = 44124
         private val CHANNEL_NAMES = listOf(
             "trustbridge/vpn",
             "com.navee.trustbridge/vpn"
         )
+        private const val DEVICE_ADMIN_CHANNEL = "com.navee.trustbridge/device_admin"
         private val USAGE_CHANNEL_NAMES = listOf(
             "com.navee.trustbridge/usage_stats"
         )
     }
 
     private var pendingPermissionResult: MethodChannel.Result? = null
+    private var pendingDeviceAdminResult: MethodChannel.Result? = null
     private val blocklistStore: BlocklistStore by lazy {
         BlocklistStore(applicationContext)
     }
@@ -41,6 +49,11 @@ class MainActivity : FlutterFragmentActivity() {
 
     override fun configureFlutterEngine(flutterEngine: FlutterEngine) {
         super.configureFlutterEngine(flutterEngine)
+        WorkmanagerPlugin.setPluginRegistrantCallback(
+            PluginRegistry.PluginRegistrantCallback {
+                GeneratedPluginRegistrant.registerWith(flutterEngine)
+            }
+        )
 
         CHANNEL_NAMES.forEach { channelName ->
             MethodChannel(
@@ -58,6 +71,13 @@ class MainActivity : FlutterFragmentActivity() {
             ).setMethodCallHandler { call, result ->
                 handleUsageMethodCall(call, result)
             }
+        }
+
+        MethodChannel(
+            flutterEngine.dartExecutor.binaryMessenger,
+            DEVICE_ADMIN_CHANNEL
+        ).setMethodCallHandler { call, result ->
+            handleDeviceAdminMethodCall(call, result)
         }
     }
 
@@ -318,6 +338,23 @@ class MainActivity : FlutterFragmentActivity() {
         }
     }
 
+    private fun handleDeviceAdminMethodCall(call: MethodCall, result: MethodChannel.Result) {
+        when (call.method) {
+            "isDeviceAdminActive" -> result.success(isDeviceAdminActive())
+
+            "requestDeviceAdmin" -> requestDeviceAdmin(result)
+
+            "removeDeviceAdmin" -> {
+                removeDeviceAdmin()
+                result.success(true)
+            }
+
+            "getPrivateDnsMode" -> result.success(getPrivateDnsMode())
+
+            else -> result.notImplemented()
+        }
+    }
+
     private fun handleUsageMethodCall(call: MethodCall, result: MethodChannel.Result) {
         when (call.method) {
             "hasUsageStatsPermission" -> result.success(hasUsageStatsPermission())
@@ -328,6 +365,60 @@ class MainActivity : FlutterFragmentActivity() {
             }
             else -> result.notImplemented()
         }
+    }
+
+    private fun isDeviceAdminActive(): Boolean {
+        val policyManager = getSystemService(DevicePolicyManager::class.java) ?: return false
+        return policyManager.isAdminActive(deviceAdminComponent())
+    }
+
+    private fun requestDeviceAdmin(result: MethodChannel.Result) {
+        if (isDeviceAdminActive()) {
+            result.success(true)
+            return
+        }
+        if (pendingDeviceAdminResult != null) {
+            result.error(
+                "request_in_progress",
+                "Device admin request already in progress.",
+                null
+            )
+            return
+        }
+
+        val intent = Intent(DevicePolicyManager.ACTION_ADD_DEVICE_ADMIN).apply {
+            putExtra(DevicePolicyManager.EXTRA_DEVICE_ADMIN, deviceAdminComponent())
+            putExtra(
+                DevicePolicyManager.EXTRA_ADD_EXPLANATION,
+                "Keeps parental protection active on this device."
+            )
+        }
+        pendingDeviceAdminResult = result
+        @Suppress("DEPRECATION")
+        startActivityForResult(intent, DEVICE_ADMIN_PERMISSION_REQUEST_CODE)
+    }
+
+    private fun removeDeviceAdmin() {
+        val policyManager = getSystemService(DevicePolicyManager::class.java) ?: return
+        val componentName = deviceAdminComponent()
+        if (policyManager.isAdminActive(componentName)) {
+            policyManager.removeActiveAdmin(componentName)
+        }
+    }
+
+    private fun getPrivateDnsMode(): String {
+        if (Build.VERSION.SDK_INT < Build.VERSION_CODES.P) {
+            return ""
+        }
+        return try {
+            Settings.Global.getString(contentResolver, "private_dns_mode") ?: ""
+        } catch (_: Exception) {
+            ""
+        }
+    }
+
+    private fun deviceAdminComponent(): ComponentName {
+        return ComponentName(this, TrustBridgeAdminReceiver::class.java)
     }
 
     private fun hasUsageStatsPermission(): Boolean {
@@ -543,6 +634,11 @@ class MainActivity : FlutterFragmentActivity() {
             val granted = hasVpnPermission()
             pendingPermissionResult?.success(granted)
             pendingPermissionResult = null
+            return
+        }
+        if (requestCode == DEVICE_ADMIN_PERMISSION_REQUEST_CODE) {
+            pendingDeviceAdminResult?.success(isDeviceAdminActive())
+            pendingDeviceAdminResult = null
         }
     }
 
