@@ -2,6 +2,8 @@ import 'dart:async';
 
 import 'package:firebase_auth/firebase_auth.dart';
 import 'package:flutter/material.dart';
+import 'package:trustbridge_app/models/app_mode.dart';
+import 'package:trustbridge_app/services/app_mode_service.dart';
 import 'package:trustbridge_app/services/auth_service.dart';
 
 class LoginScreen extends StatefulWidget {
@@ -13,6 +15,7 @@ class LoginScreen extends StatefulWidget {
 
 class _LoginScreenState extends State<LoginScreen> {
   final AuthService _authService = AuthService();
+  final AppModeService _appModeService = AppModeService();
   final TextEditingController _phoneController = TextEditingController();
   final TextEditingController _otpController = TextEditingController();
   StreamSubscription<User?>? _authSubscription;
@@ -22,12 +25,20 @@ class _LoginScreenState extends State<LoginScreen> {
   bool _hasNavigatedToDashboard = false;
   String? _errorMessage;
 
-  void _goToDashboardIfNeeded() {
+  Future<void> _goToDashboardIfNeeded() async {
     if (!mounted || _hasNavigatedToDashboard) {
       return;
     }
     _hasNavigatedToDashboard = true;
-    Navigator.of(context).pushReplacementNamed('/dashboard');
+    try {
+      await _appModeService.setMode(AppMode.parent);
+    } catch (_) {
+      // Navigation should still proceed if secure mode persistence fails.
+    }
+    if (!mounted) {
+      return;
+    }
+    Navigator.of(context).pushReplacementNamed('/parent/dashboard');
   }
 
   String _friendlyError(String fallback) {
@@ -58,7 +69,7 @@ class _LoginScreenState extends State<LoginScreen> {
       if (!mounted || user == null) {
         return;
       }
-      _goToDashboardIfNeeded();
+      unawaited(_goToDashboardIfNeeded());
     });
   }
 
@@ -133,7 +144,7 @@ class _LoginScreenState extends State<LoginScreen> {
       return;
     }
 
-    _goToDashboardIfNeeded();
+    await _goToDashboardIfNeeded();
   }
 
   Future<void> _showEmailAuthSheet() async {
@@ -201,7 +212,7 @@ class _LoginScreenState extends State<LoginScreen> {
               if (sheetNavigator.canPop()) {
                 sheetNavigator.pop();
               }
-              _goToDashboardIfNeeded();
+              await _goToDashboardIfNeeded();
             }
 
             final bottomInset = MediaQuery.of(context).viewInsets.bottom;

@@ -2,8 +2,10 @@ import 'package:flutter/material.dart';
 import 'package:flutter/scheduler.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 
+import '../config/social_media_domains.dart';
 import '../models/child_profile.dart';
-import '../screens/blocked_overlay_screen.dart';
+import '../screens/child/child_status_screen.dart' as child_mode;
+import '../screens/child/blocked_overlay_screen.dart';
 import '../screens/child_requests_screen.dart';
 import '../screens/child_status_screen.dart';
 import '../screens/child_tutorial_screen.dart';
@@ -75,19 +77,43 @@ class _ChildShellState extends State<ChildShell> {
           MaterialPageRoute(
             fullscreenDialog: true,
             builder: (_) => BlockedOverlayScreen(
+              appName: _friendlyAppName(event.domain),
               modeName: event.modeName,
-              remainingLabel: event.remainingLabel ?? '1h 34m',
-              blockedDomain: event.domain,
-              child: widget.child,
-              authService: widget.authService,
-              firestoreService: widget.firestoreService,
-              parentIdOverride: widget.parentIdOverride,
+              untilLabel: event.remainingLabel ?? 'later',
             ),
           ),
         );
         _overlayVisible = false;
       });
     });
+  }
+
+  String _friendlyAppName(String domain) {
+    final normalized = domain.trim().toLowerCase();
+    final appKey = SocialMediaDomains.appForDomain(normalized);
+    if (appKey == null) {
+      return 'This app';
+    }
+    switch (appKey) {
+      case 'instagram':
+        return 'Instagram';
+      case 'tiktok':
+        return 'TikTok';
+      case 'twitter':
+        return 'Twitter / X';
+      case 'snapchat':
+        return 'Snapchat';
+      case 'facebook':
+        return 'Facebook';
+      case 'youtube':
+        return 'YouTube';
+      case 'reddit':
+        return 'Reddit';
+      case 'roblox':
+        return 'Roblox';
+      default:
+        return 'This app';
+    }
   }
 
   void _scheduleTutorialGateCheck() {
@@ -196,6 +222,66 @@ class _ChildHelpScreen extends StatelessWidget {
           ),
         ),
       ),
+    );
+  }
+}
+
+/// Locked child mode shell shown when device mode is configured as child.
+///
+/// TODO(day126): Replace placeholder content with full child status experience.
+class ChildModeShell extends StatelessWidget {
+  const ChildModeShell({super.key});
+
+  @override
+  Widget build(BuildContext context) {
+    return Scaffold(
+      appBar: AppBar(
+        title: const Text('TrustBridge'),
+        automaticallyImplyLeading: false,
+        actions: const <Widget>[
+          Padding(
+            padding: EdgeInsets.only(right: 12),
+            child: _VpnStatusIndicator(),
+          ),
+        ],
+      ),
+      body: const child_mode.ChildStatusScreen(),
+    );
+  }
+}
+
+class _VpnStatusIndicator extends StatefulWidget {
+  const _VpnStatusIndicator();
+
+  @override
+  State<_VpnStatusIndicator> createState() => _VpnStatusIndicatorState();
+}
+
+class _VpnStatusIndicatorState extends State<_VpnStatusIndicator> {
+  final VpnService _vpnService = VpnService();
+  late Future<VpnStatus> _statusFuture;
+
+  @override
+  void initState() {
+    super.initState();
+    _statusFuture = _vpnService.getStatus();
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return FutureBuilder<VpnStatus>(
+      future: _statusFuture,
+      builder: (context, snapshot) {
+        final running = snapshot.data?.isRunning == true;
+        return Tooltip(
+          message: running ? 'Protection active' : 'Protection needs attention',
+          child: Icon(
+            Icons.circle,
+            size: 12,
+            color: running ? Colors.green : Colors.red,
+          ),
+        );
+      },
     );
   }
 }

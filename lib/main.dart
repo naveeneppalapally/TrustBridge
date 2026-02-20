@@ -12,19 +12,33 @@ import 'package:flutter_localizations/flutter_localizations.dart';
 import 'package:provider/provider.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 import 'package:trustbridge_app/firebase_options.dart';
+import 'package:trustbridge_app/models/app_mode.dart';
+import 'package:trustbridge_app/models/blocklist_source.dart';
 import 'package:trustbridge_app/models/child_profile.dart';
+import 'package:trustbridge_app/config/feature_gates.dart';
 import 'package:trustbridge_app/screens/add_child_screen.dart';
+import 'package:trustbridge_app/screens/add_child_device_screen.dart';
 import 'package:trustbridge_app/screens/beta_feedback_history_screen.dart';
 import 'package:trustbridge_app/screens/beta_feedback_screen.dart';
+import 'package:trustbridge_app/screens/child_protection_permission_screen.dart';
+import 'package:trustbridge_app/screens/child_setup_screen.dart';
 import 'package:trustbridge_app/screens/child_requests_screen.dart';
 import 'package:trustbridge_app/screens/dns_analytics_screen.dart';
 import 'package:trustbridge_app/screens/login_screen.dart';
 import 'package:trustbridge_app/screens/onboarding_screen.dart';
+import 'package:trustbridge_app/screens/open_source_licenses_screen.dart';
+import 'package:trustbridge_app/screens/parent/bypass_alerts_screen.dart';
+import 'package:trustbridge_app/screens/parent/alert_preferences_screen.dart';
 import 'package:trustbridge_app/screens/parent_requests_screen.dart';
+import 'package:trustbridge_app/screens/upgrade_screen.dart';
+import 'package:trustbridge_app/screens/welcome_screen.dart';
+import 'package:trustbridge_app/routing/router_guard.dart';
 import 'package:trustbridge_app/services/auth_service.dart';
+import 'package:trustbridge_app/services/app_mode_service.dart';
 import 'package:trustbridge_app/services/crashlytics_service.dart';
 import 'package:trustbridge_app/services/firestore_service.dart';
 import 'package:trustbridge_app/services/notification_service.dart';
+import 'package:trustbridge_app/services/blocklist_workmanager_service.dart';
 import 'package:trustbridge_app/services/onboarding_state_service.dart';
 import 'package:trustbridge_app/services/policy_vpn_sync_service.dart';
 import 'package:trustbridge_app/theme/app_theme.dart';
@@ -36,6 +50,15 @@ Future<void> main() async {
   await Firebase.initializeApp(
     options: DefaultFirebaseOptions.currentPlatform,
   );
+  await AppModeService().primeCache();
+  try {
+    await BlocklistWorkmanagerService.initialize();
+    await BlocklistWorkmanagerService.registerWeeklySync(
+      List<BlocklistCategory>.from(BlocklistCategory.values),
+    );
+  } catch (error) {
+    debugPrint('[BlocklistWork] Initialization skipped: $error');
+  }
   if (!kDebugMode) {
     await _initCrashlytics();
   }
@@ -165,43 +188,148 @@ class _MyAppState extends State<MyApp> {
         theme: AppTheme.light(),
         darkTheme: AppTheme.dark(),
         themeMode: ThemeMode.system,
-        home: const AuthWrapper(),
-        routes: {
-          '/login': (context) => const LoginScreen(),
-          '/dashboard': (context) => const _DashboardEntryScreen(),
-          '/add-child': (context) => const AddChildScreen(),
-          '/parent-requests': (context) => const ParentRequestsScreen(),
-          '/dns-analytics': (context) => const DnsAnalyticsScreen(),
-          '/beta-feedback': (context) => const BetaFeedbackScreen(),
-          '/beta-feedback-history': (context) =>
-              const BetaFeedbackHistoryScreen(),
-          '/child-shell': (context) {
-            final child =
-                ModalRoute.of(context)!.settings.arguments as ChildProfile;
-            return ChildShell(child: child);
-          },
-          '/onboarding': (context) {
-            final parentId = ModalRoute.of(context)?.settings.arguments;
-            if (parentId is! String || parentId.trim().isEmpty) {
-              return const LoginScreen();
-            }
-            return OnboardingScreen(parentId: parentId);
-          },
-          '/child-status': (context) {
-            final child =
-                ModalRoute.of(context)!.settings.arguments as ChildProfile;
-            return ChildShell(
-              child: child,
-              initialIndex: 0,
-            );
-          },
-          '/child-requests': (context) {
-            final child =
-                ModalRoute.of(context)!.settings.arguments as ChildProfile;
-            return ChildRequestsScreen(child: child);
-          },
-        },
+        home: const _ModeRootScreen(),
+        onGenerateRoute: _onGenerateRoute,
       ),
+    );
+  }
+
+  Route<dynamic> _onGenerateRoute(RouteSettings settings) {
+    final requested = settings.name ?? '/welcome';
+    final redirect = resolveModeRedirect(
+      mode: AppModeService().cachedMode,
+      location: requested,
+    );
+    final resolvedName = _canonicalRouteName(redirect ?? requested);
+
+    return MaterialPageRoute<void>(
+      settings: RouteSettings(
+        name: resolvedName,
+        arguments: settings.arguments,
+      ),
+      builder: (_) => _buildRouteScreen(
+        routeName: resolvedName,
+        arguments: settings.arguments,
+      ),
+    );
+  }
+
+  String _canonicalRouteName(String routeName) {
+    switch (routeName) {
+      case '/login':
+        return '/parent/login';
+      case '/dashboard':
+        return '/parent/dashboard';
+      case '/child-status':
+        return '/child/status';
+      default:
+        return routeName;
+    }
+  }
+
+  Widget _buildRouteScreen({
+    required String routeName,
+    required Object? arguments,
+  }) {
+    switch (routeName) {
+      case '/welcome':
+        return const WelcomeScreen();
+      case '/parent/login':
+        return const LoginScreen();
+      case '/parent/dashboard':
+        return const _DashboardEntryScreen();
+      case '/add-child':
+        return const AddChildScreen();
+      case '/parent-requests':
+        return const ParentRequestsScreen();
+      case '/parent/bypass-alerts':
+        return const BypassAlertsScreen();
+      case '/parent/alert-preferences':
+        return const AlertPreferencesScreen();
+      case '/dns-analytics':
+        return const DnsAnalyticsScreen();
+      case '/upgrade':
+        if (arguments is AppFeature) {
+          return UpgradeScreen(triggeredBy: arguments);
+        }
+        return const UpgradeScreen(triggeredBy: AppFeature.schedules);
+      case '/open-source-licenses':
+        return const OpenSourceLicensesScreen();
+      case '/beta-feedback':
+        return const BetaFeedbackScreen();
+      case '/beta-feedback-history':
+        return const BetaFeedbackHistoryScreen();
+      case '/child/status':
+        return const ChildModeShell();
+      case '/child/setup':
+        return const ChildSetupScreen();
+      case '/child/protection-permission':
+        return const ChildProtectionPermissionScreen();
+      case '/add-child-device':
+        if (arguments is ChildProfile) {
+          return AddChildDeviceScreen(child: arguments);
+        }
+        return const ParentShell();
+      case '/child-shell':
+        if (arguments is ChildProfile) {
+          return ChildShell(child: arguments);
+        }
+        return const ChildModeShell();
+      case '/onboarding':
+        if (arguments is! String || arguments.trim().isEmpty) {
+          return const LoginScreen();
+        }
+        return OnboardingScreen(parentId: arguments);
+      case '/child-requests':
+        if (arguments is ChildProfile) {
+          return ChildRequestsScreen(child: arguments);
+        }
+        return const ChildModeShell();
+      default:
+        return const WelcomeScreen();
+    }
+  }
+}
+
+class _ModeRootScreen extends StatefulWidget {
+  const _ModeRootScreen();
+
+  @override
+  State<_ModeRootScreen> createState() => _ModeRootScreenState();
+}
+
+class _ModeRootScreenState extends State<_ModeRootScreen> {
+  final AppModeService _appModeService = AppModeService();
+  Future<void>? _modePrimeFuture;
+
+  @override
+  void initState() {
+    super.initState();
+    _modePrimeFuture = _appModeService.primeCache();
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return FutureBuilder<void>(
+      future: _modePrimeFuture,
+      builder: (context, snapshot) {
+        if (snapshot.connectionState == ConnectionState.waiting) {
+          return const Scaffold(
+            body: Center(
+              child: CircularProgressIndicator(),
+            ),
+          );
+        }
+
+        switch (_appModeService.cachedMode) {
+          case AppMode.parent:
+            return const AuthWrapper();
+          case AppMode.child:
+            return const ChildModeShell();
+          case AppMode.unset:
+            return const WelcomeScreen();
+        }
+      },
     );
   }
 }
