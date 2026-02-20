@@ -1,5 +1,4 @@
 import 'package:firebase_core/firebase_core.dart';
-import 'package:flutter/foundation.dart';
 import 'package:flutter/widgets.dart';
 import 'package:workmanager/workmanager.dart';
 
@@ -60,7 +59,6 @@ class BlocklistWorkmanagerService {
     }
     await Workmanager().initialize(
       callbackDispatcher,
-      isInDebugMode: kDebugMode,
     );
     _initialized = true;
   }
