@@ -45,7 +45,7 @@ class RemoteCommandService {
         _uniqueTaskName,
         taskName,
         frequency: _pollFrequency,
-        existingWorkPolicy: ExistingWorkPolicy.replace,
+        existingWorkPolicy: ExistingPeriodicWorkPolicy.replace,
       );
     } catch (_) {
       // Registration is best effort.

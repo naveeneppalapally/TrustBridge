@@ -87,7 +87,7 @@ class BlocklistWorkmanagerService {
       inputData: <String, dynamic>{
         _categoriesInputKey: _encodeCategories(enabledCategories),
       },
-      existingWorkPolicy: ExistingWorkPolicy.replace,
+      existingWorkPolicy: ExistingPeriodicWorkPolicy.replace,
     );
   }
 

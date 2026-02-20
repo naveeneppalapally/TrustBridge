@@ -59,7 +59,7 @@ dependencies:
   shared_preferences: ^2.2.2
   sqflite: ^2.3.0
   path: ^1.8.3
-  workmanager: ^0.5.2
+  workmanager: ^0.9.0+3
   in_app_purchase: ^3.2.3
   flutter_oss_licenses: ^3.0.12
 

@@ -16,13 +16,10 @@ import com.navee.trustbridge.vpn.BlocklistStore
 import com.navee.trustbridge.vpn.DnsFilterEngine
 import com.navee.trustbridge.vpn.DnsVpnService
 import com.navee.trustbridge.vpn.VpnPreferencesStore
-import dev.fluttercommunity.workmanager.WorkmanagerPlugin
 import io.flutter.embedding.android.FlutterFragmentActivity
 import io.flutter.embedding.engine.FlutterEngine
 import io.flutter.plugin.common.MethodCall
 import io.flutter.plugin.common.MethodChannel
-import io.flutter.plugin.common.PluginRegistry
-import io.flutter.plugins.GeneratedPluginRegistrant
 
 class MainActivity : FlutterFragmentActivity() {
     companion object {
@@ -49,11 +46,6 @@ class MainActivity : FlutterFragmentActivity() {
 
     override fun configureFlutterEngine(flutterEngine: FlutterEngine) {
         super.configureFlutterEngine(flutterEngine)
-        WorkmanagerPlugin.setPluginRegistrantCallback(
-            PluginRegistry.PluginRegistrantCallback {
-                GeneratedPluginRegistrant.registerWith(flutterEngine)
-            }
-        )
 
         CHANNEL_NAMES.forEach { channelName ->
             MethodChannel(

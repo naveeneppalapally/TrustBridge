@@ -46,7 +46,7 @@ class HeartbeatService {
         _uniqueTaskName,
         taskName,
         frequency: _preferredFrequency,
-        existingWorkPolicy: ExistingWorkPolicy.replace,
+        existingWorkPolicy: ExistingPeriodicWorkPolicy.replace,
       );
     } catch (_) {
       // Android periodic jobs often enforce a 15-minute minimum.
@@ -55,7 +55,7 @@ class HeartbeatService {
           _uniqueTaskName,
           taskName,
           frequency: _fallbackFrequency,
-          existingWorkPolicy: ExistingWorkPolicy.replace,
+          existingWorkPolicy: ExistingPeriodicWorkPolicy.replace,
         );
       } catch (_) {
         // Registration is best effort.
