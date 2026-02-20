@@ -1,5 +1,6 @@
 import 'dart:async';
 
+import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:flutter/material.dart';
 import 'package:qr_flutter/qr_flutter.dart';
 
@@ -106,16 +107,38 @@ class _AddChildDeviceScreenState extends State<AddChildDeviceScreen> {
         _loading = false;
         _generating = false;
       });
-    } catch (_) {
+    } catch (error) {
       if (!mounted) {
         return;
       }
       setState(() {
         _loading = false;
         _generating = false;
-        _error = 'Could not generate code. Please try again.';
+        _error = _friendlyGenerateError(error);
       });
     }
+  }
+
+  String _friendlyGenerateError(Object error) {
+    if (error is FirebaseException) {
+      switch (error.code) {
+        case 'permission-denied':
+          return 'Permission denied. Deploy latest Firestore rules, then sign in again.';
+        case 'unavailable':
+          return 'Network unavailable. Please check internet and try again.';
+        default:
+          final message = error.message?.trim();
+          if (message != null && message.isNotEmpty) {
+            return message;
+          }
+      }
+    }
+
+    if (error is StateError) {
+      return error.message;
+    }
+
+    return 'Could not generate code. Please try again.';
   }
 
   Future<void> _showConnectedDialog() async {
@@ -233,7 +256,16 @@ class _AddChildDeviceScreenState extends State<AddChildDeviceScreen> {
                   ),
                 ),
                 const SizedBox(height: 14),
-                if (_isExpired)
+                if (_code == null)
+                  Text(
+                    'No active code. Generate a new one.',
+                    textAlign: TextAlign.center,
+                    style: theme.textTheme.bodyMedium?.copyWith(
+                      color: theme.colorScheme.onSurfaceVariant,
+                      fontWeight: FontWeight.w700,
+                    ),
+                  )
+                else if (_isExpired)
                   Text(
                     'Code expired. Generate a new one.',
                     textAlign: TextAlign.center,
