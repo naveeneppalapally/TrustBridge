@@ -3960,6 +3960,318 @@ configuration, and encryption status presentation.
 
 ---
 
+## Day 95 - Child Home Screen Redesign (Week 20 Day 1)
+
+Program goal: redesign the child home experience with clearer status framing
+and action-first layout.
+
+### Commit entries
+
+1. **2026-02-19 18:23:28 +05:30**  
+   Commit: `2a6e60a`  
+   Message: `Implement Day 95 child home screen redesign`  
+   Changes:
+   - Updated `lib/screens/child_status_screen.dart`:
+     - refreshed child home visual hierarchy and status presentation
+     - improved CTA and summary arrangement for day-to-day use
+   - Updated `test/screens/child_status_screen_test.dart`:
+     - assertions aligned to redesigned child home behavior
+   Validation:
+   - `flutter analyze` passed.
+   - `flutter test test/screens/child_status_screen_test.dart` passed.
+
+---
+
+## Day 96 - Child Request Screen Redesign (Week 20 Day 2)
+
+Program goal: improve the child request submission flow with better structure,
+preview clarity, and cleaner request payload modeling.
+
+### Commit entries
+
+1. **2026-02-19 18:27:25 +05:30**  
+   Commit: `16bfcdc`  
+   Message: `Implement Day 96 child request screen redesign`  
+   Changes:
+   - Updated `lib/screens/child_request_screen.dart`:
+     - redesigned request form sections and interaction flow
+   - Updated `lib/models/access_request.dart`:
+     - request model updates to support redesigned flow
+   - Updated `lib/screens/parent_requests_screen.dart`:
+     - compatible handling of request payload updates
+   - Updated `test/screens/child_request_screen_test.dart`:
+     - redesigned form and behavior assertions
+   Validation:
+   - `flutter analyze` passed.
+   - `flutter test test/screens/child_request_screen_test.dart` passed.
+
+---
+
+## Day 97 - Request Sent Success Screen (Week 20 Day 3)
+
+Program goal: confirm successful request submission with a dedicated success
+screen and cleaner post-submit navigation.
+
+### Commit entries
+
+1. **2026-02-19 18:30:05 +05:30**  
+   Commit: `16ec506`  
+   Message: `Implement Day 97 request sent success screen`  
+   Changes:
+   - Added `lib/screens/request_sent_screen.dart`.
+   - Updated `lib/screens/child_request_screen.dart`:
+     - routes to success state after send
+   - Added `test/screens/request_sent_screen_test.dart`.
+   Validation:
+   - `flutter analyze` passed.
+   - `flutter test test/screens/request_sent_screen_test.dart` passed.
+
+---
+
+## Day 98 - Parent Approval Bottom Sheet Redesign (Week 20 Day 4)
+
+Program goal: streamline parent decision flow with a clearer and faster
+approval bottom-sheet experience.
+
+### Commit entries
+
+1. **2026-02-19 18:34:26 +05:30**  
+   Commit: `73f2ed4`  
+   Message: `Implement Day 98 parent approval bottom sheet redesign`  
+   Changes:
+   - Updated `lib/screens/parent_requests_screen.dart`:
+     - redesigned approval bottom sheet UI and decision affordances
+   - Updated `test/screens/parent_requests_screen_test.dart`:
+     - approval sheet interaction coverage updated for new design
+   Validation:
+   - `flutter analyze` passed.
+   - `flutter test test/screens/parent_requests_screen_test.dart` passed.
+
+---
+
+## Day 99 - Approval Success Animation Screen (Week 20 Day 5)
+
+Program goal: improve decision confirmation UX with an approval success
+experience and transition feedback.
+
+### Commit entries
+
+1. **2026-02-19 18:37:38 +05:30**  
+   Commit: `4a7fe92`  
+   Message: `Implement Day 99 approval success animation screen`  
+   Changes:
+   - Added `lib/screens/approval_success_screen.dart`.
+   - Updated `lib/screens/parent_requests_screen.dart`:
+     - wired approval-success navigation flow
+   - Added/updated tests:
+     - `test/screens/approval_success_screen_test.dart`
+     - `test/screens/parent_requests_screen_test.dart`
+   Validation:
+   - `flutter analyze` passed.
+   - `flutter test test/screens/approval_success_screen_test.dart test/screens/parent_requests_screen_test.dart` passed.
+
+---
+
+## Day 100 - Add Child Screen Redesign (Week 21 Day 1)
+
+Program goal: redesign add-child onboarding form for clearer validation and
+faster parent setup.
+
+### Commit entries
+
+1. **2026-02-19 18:40:37 +05:30**  
+   Commit: `d618688`  
+   Message: `Implement Day 100 add child screen redesign`  
+   Changes:
+   - Updated `lib/screens/add_child_screen.dart`:
+     - refreshed layout and validation UX for child creation
+   - Updated `test/screens/add_child_screen_test.dart`:
+     - adapted to redesigned form states and interactions
+   Validation:
+   - `flutter analyze` passed.
+   - `flutter test test/screens/add_child_screen_test.dart` passed.
+
+---
+
+## Day 101 - Category Blocking Screen Redesign (Week 21 Day 2)
+
+Program goal: modernize category blocking controls and make custom domain
+management clearer.
+
+### Commit entries
+
+1. **2026-02-19 18:44:31 +05:30**  
+   Commit: `4fe5edb`  
+   Message: `Implement Day 101 category blocking screen redesign`  
+   Changes:
+   - Updated `lib/screens/block_categories_screen.dart`:
+     - redesigned category toggles and custom-block UI composition
+   - Updated `test/screens/block_categories_screen_test.dart`:
+     - assertions updated for redesigned structure and behavior
+   Validation:
+   - `flutter analyze` passed.
+   - `flutter test test/screens/block_categories_screen_test.dart` passed.
+
+---
+
+## Day 102 - Schedule Editor Screen Redesign (Week 21 Day 3)
+
+Program goal: improve schedule authoring UX with clearer editor structure and
+more deterministic form behavior.
+
+### Commit entries
+
+1. **2026-02-19 18:48:21 +05:30**  
+   Commit: `adecb16`  
+   Message: `Implement Day 102 schedule editor screen redesign`  
+   Changes:
+   - Updated `lib/screens/schedule_creator_screen.dart`:
+     - redesigned schedule editor flow and interaction layout
+   - Updated `test/screens/schedule_creator_screen_test.dart`:
+     - editor coverage aligned to redesigned UX
+   Validation:
+   - `flutter analyze` passed.
+   - `flutter test test/screens/schedule_creator_screen_test.dart` passed.
+
+---
+
+## Day 103 - Child Detail Screen Redesign (Week 21 Day 4)
+
+Program goal: refresh child detail information architecture for faster policy,
+schedule, and activity navigation.
+
+### Commit entries
+
+1. **2026-02-19 19:06:25 +05:30**  
+   Commit: `df19663`  
+   Message: `Implement Day 103 child detail screen redesign`  
+   Changes:
+   - Updated `lib/screens/child_detail_screen.dart`:
+     - redesigned child detail layout and action grouping
+   - Updated `test/screens/child_detail_screen_test.dart`:
+     - expectations aligned to redesigned UI and flows
+   Validation:
+   - `flutter analyze` passed.
+   - `flutter test test/screens/child_detail_screen_test.dart` passed.
+
+---
+
+## Day 104 - Usage Reports Screen + Reports Tab Wiring (Week 21 Day 5)
+
+Program goal: introduce a dedicated reports experience and wire it into parent
+shell navigation.
+
+### Commit entries
+
+1. **2026-02-19 19:12:46 +05:30**  
+   Commit: `1586e30`  
+   Message: `Implement Day 104 usage reports screen and reports tab wiring`  
+   Changes:
+   - Updated `lib/screens/usage_reports_screen.dart`:
+     - reports screen foundation and chart-based sections
+   - Updated `lib/widgets/parent_shell.dart`:
+     - wired reports tab to usage reports destination
+   - Updated tests:
+     - `test/screens/usage_reports_screen_test.dart`
+     - `test/widgets/parent_shell_test.dart`
+   Validation:
+   - `flutter analyze` passed.
+   - `flutter test test/screens/usage_reports_screen_test.dart test/widgets/parent_shell_test.dart` passed.
+
+---
+
+## Day 105 - Blocked Overlay Screen + VPN Event Wiring (Week 22 Day 1)
+
+Program goal: show a clear blocked-state overlay and connect VPN-side events
+to child-facing UX.
+
+### Commit entries
+
+1. **2026-02-19 19:20:59 +05:30**  
+   Commit: `ab8094a`  
+   Message: `Implement Day 105 blocked overlay screen and VPN event wiring`  
+   Changes:
+   - Added `lib/screens/blocked_overlay_screen.dart`.
+   - Updated `lib/services/vpn_service.dart`:
+     - wired blocked-event integration points
+   - Updated `lib/widgets/child_shell.dart`:
+     - blocked overlay routing/placement integration
+   - Added `test/screens/blocked_overlay_screen_test.dart`.
+   Validation:
+   - `flutter analyze` passed.
+   - `flutter test test/screens/blocked_overlay_screen_test.dart` passed.
+
+---
+
+## Day 106 - Child Tutorial Onboarding Flow (Week 22 Day 2)
+
+Program goal: add guided child onboarding steps before entering normal
+child-shell usage.
+
+### Commit entries
+
+1. **2026-02-19 19:24:04 +05:30**  
+   Commit: `25a7d95`  
+   Message: `Implement Day 106 child tutorial onboarding flow`  
+   Changes:
+   - Added `lib/screens/child_tutorial_screen.dart`.
+   - Updated `lib/main.dart` and `lib/widgets/child_shell.dart`:
+     - tutorial-entry flow and child-shell integration
+   - Added/updated tests:
+     - `test/screens/child_tutorial_screen_test.dart`
+     - `test/widgets/child_shell_test.dart`
+   Validation:
+   - `flutter analyze` passed.
+   - `flutter test test/screens/child_tutorial_screen_test.dart test/widgets/child_shell_test.dart` passed.
+
+---
+
+## Day 107 - Family Management Screen (Week 22 Day 3)
+
+Program goal: add family management controls for subscription members and
+child profile visibility from settings.
+
+### Commit entries
+
+1. **2026-02-19 19:29:24 +05:30**  
+   Commit: `1dc852f`  
+   Message: `Implement Day 107 family management screen`  
+   Changes:
+   - Added `lib/screens/family_management_screen.dart`.
+   - Updated `lib/screens/parent_settings_screen.dart`:
+     - navigation entry into family management
+   - Added/updated tests:
+     - `test/screens/family_management_screen_test.dart`
+     - `test/screens/parent_settings_screen_test.dart`
+   Validation:
+   - `flutter analyze` passed.
+   - `flutter test test/screens/family_management_screen_test.dart test/screens/parent_settings_screen_test.dart` passed.
+
+---
+
+## Day 108 - Premium Upgrade Screen (Week 22 Day 4)
+
+Program goal: introduce premium upsell destination and settings integration for
+upgrade pathways.
+
+### Commit entries
+
+1. **2026-02-19 19:33:48 +05:30**  
+   Commit: `e411bdd`  
+   Message: `Implement Day 108 premium upgrade screen`  
+   Changes:
+   - Added `lib/screens/premium_screen.dart`.
+   - Updated `lib/screens/parent_settings_screen.dart`:
+     - upgrade navigation and premium entry surfaces
+   - Added/updated tests:
+     - `test/screens/premium_screen_test.dart`
+     - `test/screens/parent_settings_screen_test.dart`
+   Validation:
+   - `flutter analyze` passed.
+   - `flutter test test/screens/premium_screen_test.dart test/screens/parent_settings_screen_test.dart` passed.
+
+---
+
 ## Day 109 - Loading Skeletons and Shimmer (Week 22 Day 5)
 
 Program goal: improve perceived performance by replacing spinner-only loading
