@@ -42,7 +42,7 @@ class BlockedOverlayScreen extends StatelessWidget {
                 _buildShieldIcon(),
                 const SizedBox(height: 22),
                 Text(
-                  'This is blocked during $modeName',
+                  'This app is off right now',
                   key: const Key('blocked_overlay_title'),
                   textAlign: TextAlign.center,
                   style: Theme.of(context).textTheme.headlineSmall?.copyWith(
@@ -52,7 +52,7 @@ class BlockedOverlayScreen extends StatelessWidget {
                 ),
                 const SizedBox(height: 12),
                 Text(
-                  'To help you focus on your studies, this app is currently unavailable.',
+                  'This is blocked during $modeName',
                   textAlign: TextAlign.center,
                   style: Theme.of(context).textTheme.bodyMedium?.copyWith(
                         color: Colors.grey[700],
@@ -61,12 +61,12 @@ class BlockedOverlayScreen extends StatelessWidget {
                 ),
                 if (blockedDomain != null &&
                     blockedDomain!.trim().isNotEmpty) ...[
-                  const SizedBox(height: 8),
+                  const SizedBox(height: 6),
                   Text(
-                    blockedDomain!,
+                    blockedDomain!.trim(),
+                    textAlign: TextAlign.center,
                     style: Theme.of(context).textTheme.bodySmall?.copyWith(
                           color: Colors.grey[600],
-                          fontWeight: FontWeight.w700,
                         ),
                   ),
                 ],
@@ -88,7 +88,7 @@ class BlockedOverlayScreen extends StatelessWidget {
                     onPressed: () => _handleRequestAccess(context),
                     icon: const Icon(Icons.assignment_outlined),
                     label: const Text(
-                      'Request Access',
+                      'Ask to use it',
                       style: TextStyle(
                         fontSize: 16,
                         fontWeight: FontWeight.w700,
@@ -111,7 +111,7 @@ class BlockedOverlayScreen extends StatelessWidget {
                     ),
                     onPressed: () => _handleDismiss(context),
                     child: const Text(
-                      'I Understand',
+                      'OK, I understand',
                       style: TextStyle(fontWeight: FontWeight.w700),
                     ),
                   ),
@@ -165,7 +165,7 @@ class BlockedOverlayScreen extends StatelessWidget {
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
           Text(
-            'STATUS - $remainingLabel - until free time begins',
+            'Free time starts in $remainingLabel',
             style: Theme.of(context).textTheme.bodyMedium?.copyWith(
                   fontWeight: FontWeight.w700,
                   color: const Color(0xFF334155),
