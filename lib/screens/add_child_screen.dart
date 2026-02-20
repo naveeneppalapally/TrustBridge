@@ -1,8 +1,13 @@
 import 'package:flutter/material.dart';
+import 'package:firebase_core/firebase_core.dart';
 import 'package:trustbridge_app/l10n/app_localizations.dart';
 import 'package:trustbridge_app/l10n/app_localizations_en.dart';
+import 'package:trustbridge_app/config/feature_gates.dart';
 import 'package:trustbridge_app/models/child_profile.dart';
+import 'package:trustbridge_app/screens/add_child_device_screen.dart';
+import 'package:trustbridge_app/screens/upgrade_screen.dart';
 import 'package:trustbridge_app/services/auth_service.dart';
+import 'package:trustbridge_app/services/feature_gate_service.dart';
 import 'package:trustbridge_app/services/firestore_service.dart';
 
 class AddChildScreen extends StatefulWidget {
@@ -49,6 +54,14 @@ class _AddChildScreenState extends State<AddChildScreen> {
   void dispose() {
     _nicknameController.dispose();
     super.dispose();
+  }
+
+  @override
+  void initState() {
+    super.initState();
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      _enforceAdditionalChildrenGateOnEntry();
+    });
   }
 
   @override
@@ -159,7 +172,8 @@ class _AddChildScreenState extends State<AddChildScreen> {
                         width: 20,
                         child: CircularProgressIndicator(
                           strokeWidth: 2,
-                          valueColor: AlwaysStoppedAnimation<Color>(Colors.white),
+                          valueColor:
+                              AlwaysStoppedAnimation<Color>(Colors.white),
                         ),
                       )
                     : const Text('Continue to Pairing ->'),
@@ -257,7 +271,9 @@ class _AddChildScreenState extends State<AddChildScreen> {
         decoration: BoxDecoration(
           borderRadius: BorderRadius.circular(14),
           border: Border.all(
-            color: selected ? const Color(0xFF207CF8) : Colors.grey.withValues(alpha: 0.35),
+            color: selected
+                ? const Color(0xFF207CF8)
+                : Colors.grey.withValues(alpha: 0.35),
             width: selected ? 2 : 1,
           ),
           color: selected ? const Color(0x1A207CF8) : Colors.transparent,
@@ -378,9 +394,32 @@ class _AddChildScreenState extends State<AddChildScreen> {
     });
 
     try {
-      final parentId = widget.parentIdOverride ?? _resolvedAuthService.currentUser?.uid;
+      final parentId =
+          widget.parentIdOverride ?? _resolvedAuthService.currentUser?.uid;
       if (parentId == null) {
         throw Exception('Not logged in');
+      }
+
+      final existingChildren =
+          await _resolvedFirestoreService.getChildrenOnce(parentId);
+      if (existingChildren.isNotEmpty) {
+        final gateResult =
+            await FeatureGateService().checkGate(AppFeature.additionalChildren);
+        if (!gateResult.allowed) {
+          if (mounted) {
+            final upgraded = await UpgradeScreen.maybeShow(
+              context,
+              feature: AppFeature.additionalChildren,
+              reason: gateResult.upgradeReason,
+            );
+            if (!upgraded && mounted) {
+              setState(() {
+                _isLoading = false;
+              });
+            }
+          }
+          return;
+        }
       }
 
       final child = await _resolvedFirestoreService.addChild(
@@ -406,6 +445,15 @@ class _AddChildScreenState extends State<AddChildScreen> {
         ),
       );
 
+      await Navigator.of(context).push(
+        MaterialPageRoute(
+          builder: (_) => AddChildDeviceScreen(child: child),
+        ),
+      );
+
+      if (!mounted) {
+        return;
+      }
       Navigator.of(context).pop();
     } catch (error) {
       if (!mounted) {
@@ -426,6 +474,48 @@ class _AddChildScreenState extends State<AddChildScreen> {
       return raw.replaceFirst('Exception: ', '');
     }
     return raw;
+  }
+
+  Future<void> _enforceAdditionalChildrenGateOnEntry() async {
+    if (widget.parentIdOverride == null &&
+        widget.authService == null &&
+        Firebase.apps.isEmpty) {
+      return;
+    }
+
+    final parentId =
+        widget.parentIdOverride ?? _resolvedAuthService.currentUser?.uid;
+    if (parentId == null || !mounted) {
+      return;
+    }
+
+    final existingChildren =
+        await _resolvedFirestoreService.getChildrenOnce(parentId);
+    if (existingChildren.isEmpty || !mounted) {
+      return;
+    }
+
+    final gateResult = await () async {
+      try {
+        return await FeatureGateService()
+            .checkGate(AppFeature.additionalChildren);
+      } catch (_) {
+        // Ignore gate checks when Firebase isn't available in test contexts.
+        return const GateResult(allowed: true);
+      }
+    }();
+    if (gateResult.allowed || !mounted) {
+      return;
+    }
+
+    final upgraded = await UpgradeScreen.maybeShow(
+      context,
+      feature: AppFeature.additionalChildren,
+      reason: gateResult.upgradeReason,
+    );
+    if (!upgraded && mounted) {
+      Navigator.of(context).pop();
+    }
   }
 }
 

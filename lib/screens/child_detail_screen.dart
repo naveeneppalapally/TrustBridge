@@ -4,6 +4,7 @@ import 'package:flutter/material.dart';
 import 'package:intl/intl.dart';
 import 'package:trustbridge_app/models/child_profile.dart';
 import 'package:trustbridge_app/models/schedule.dart';
+import 'package:trustbridge_app/screens/add_child_device_screen.dart';
 import 'package:trustbridge_app/screens/child_activity_log_screen.dart';
 import 'package:trustbridge_app/screens/child_devices_screen.dart';
 import 'package:trustbridge_app/screens/edit_child_screen.dart';
@@ -644,6 +645,10 @@ class _ChildDetailScreenState extends State<ChildDetailScreen> {
                           ),
                     ),
                   ),
+                  TextButton(
+                    onPressed: () => _openPairDeviceScreen(context),
+                    child: const Text('Pair Phone'),
+                  ),
                   Icon(Icons.chevron_right, color: Colors.grey.shade600),
                 ],
               ),
@@ -961,6 +966,14 @@ class _ChildDetailScreenState extends State<ChildDetailScreen> {
     setState(() {
       _child = updatedChild;
     });
+  }
+
+  Future<void> _openPairDeviceScreen(BuildContext context) async {
+    await Navigator.of(context).push<bool>(
+      MaterialPageRoute(
+        builder: (_) => AddChildDeviceScreen(child: _child),
+      ),
+    );
   }
 
   Future<void> _openActivityLog(BuildContext context) async {
