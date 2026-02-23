@@ -49,6 +49,39 @@ internal class LocalBlocklistDbReader(context: Context) {
         return null
     }
 
+    fun countDomainsForEnabledCategories(enabledCategories: Set<String>): Int {
+        val db = openDatabaseOrNull() ?: return 0
+        val mapped = mutableSetOf<String>()
+        if (enabledCategories.contains("social") || enabledCategories.contains("social-networks")) {
+            mapped.add("social")
+        }
+        if (enabledCategories.contains("ads")) {
+            mapped.add("ads")
+        }
+        if (enabledCategories.contains("adult-content") || enabledCategories.contains("adult")) {
+            mapped.add("adult")
+        }
+        if (enabledCategories.contains("gambling")) {
+            mapped.add("gambling")
+        }
+        if (enabledCategories.contains("malware")) {
+            mapped.add("malware")
+        }
+        if (mapped.isEmpty()) {
+            return 0
+        }
+
+        val placeholders = mapped.joinToString(",") { "?" }
+        val args = mapped.toTypedArray()
+        val cursor = db.rawQuery(
+            "SELECT COUNT(*) FROM blocked_domains WHERE category IN ($placeholders)",
+            args
+        )
+        cursor.use { c ->
+            return if (c.moveToFirst()) c.getInt(0) else 0
+        }
+    }
+
     @Synchronized
     fun close() {
         try {

@@ -1,6 +1,7 @@
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:fake_cloud_firestore/fake_cloud_firestore.dart';
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:provider/provider.dart';
 import 'package:trustbridge_app/screens/domain_policy_tester_screen.dart';
@@ -185,10 +186,50 @@ void main() {
   group('VpnProtectionScreen', () {
     late FakeFirebaseFirestore fakeFirestore;
     late FirestoreService firestoreService;
+    late Map<String, String> secureStorage;
+    const secureStorageChannel =
+        MethodChannel('plugins.it_nomads.com/flutter_secure_storage');
 
     setUp(() {
       fakeFirestore = FakeFirebaseFirestore();
       firestoreService = FirestoreService(firestore: fakeFirestore);
+      secureStorage = <String, String>{
+        'trustbridge_pin_enabled': 'false',
+      };
+      TestDefaultBinaryMessengerBinding.instance.defaultBinaryMessenger
+          .setMockMethodCallHandler(secureStorageChannel, (call) async {
+        switch (call.method) {
+          case 'read':
+            return secureStorage[call.arguments['key'] as String? ?? ''];
+          case 'write':
+            final key = call.arguments['key'] as String? ?? '';
+            final value = call.arguments['value'] as String?;
+            if (value == null) {
+              secureStorage.remove(key);
+            } else {
+              secureStorage[key] = value;
+            }
+            return null;
+          case 'delete':
+            secureStorage.remove(call.arguments['key'] as String? ?? '');
+            return null;
+          case 'deleteAll':
+            secureStorage.clear();
+            return null;
+          case 'containsKey':
+            return secureStorage
+                .containsKey(call.arguments['key'] as String? ?? '');
+          case 'readAll':
+            return Map<String, String>.from(secureStorage);
+          default:
+            return null;
+        }
+      });
+    });
+
+    tearDown(() {
+      TestDefaultBinaryMessengerBinding.instance.defaultBinaryMessenger
+          .setMockMethodCallHandler(secureStorageChannel, null);
     });
 
     Future<void> seedParent(

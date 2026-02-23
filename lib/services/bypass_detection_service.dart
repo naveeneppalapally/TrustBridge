@@ -130,6 +130,7 @@ class BypassDetectionService {
   Future<void> alertParent(String type) async {
     final parentId = await _pairingService.getPairedParentId();
     final deviceId = await _pairingService.getOrCreateDeviceId();
+    final childId = await _pairingService.getPairedChildId();
     if (parentId == null || parentId.isEmpty) {
       return;
     }
@@ -145,6 +146,8 @@ class BypassDetectionService {
 
     final payload = <String, dynamic>{
       'parentId': parentId,
+      if (childId != null && childId.trim().isNotEmpty) 'childId': childId.trim(),
+      'deviceId': deviceId,
       'title': title,
       'body': title,
       'route': '/parent/bypass-alerts',

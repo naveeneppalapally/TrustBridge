@@ -521,6 +521,47 @@ class _ScheduleCreatorScreenState extends State<ScheduleCreatorScreen> {
         }
       }
 
+      final conflicts = _findScheduleConflicts(
+        candidate: updatedSchedule,
+        existingSchedules: schedules
+            .where(
+              (schedule) =>
+                  schedule.id != updatedSchedule.id && schedule.enabled,
+            )
+            .toList(growable: false),
+      );
+      if (conflicts.isNotEmpty) {
+        if (mounted) {
+          setState(() {
+            _isLoading = false;
+          });
+          final previewLines = conflicts.take(3).map((conflict) {
+            return '${_dayName(conflict.day)} · ${conflict.scheduleName}';
+          }).join('\n');
+          final overflowLine = conflicts.length > 3
+              ? '\n+${conflicts.length - 3} more overlap(s)'
+              : '';
+          await showDialog<void>(
+            context: context,
+            builder: (context) => AlertDialog(
+              title: const Text('Schedule conflict'),
+              content: Text(
+                'This schedule overlaps with another active schedule:\n'
+                '$previewLines$overflowLine\n\n'
+                'Adjust the time or disable the conflicting schedule first.',
+              ),
+              actions: [
+                TextButton(
+                  onPressed: () => Navigator.of(context).pop(),
+                  child: const Text('OK'),
+                ),
+              ],
+            ),
+          );
+        }
+        return;
+      }
+
       final updatedPolicy = widget.child.policy.copyWith(
         schedules: schedules,
       );
@@ -608,6 +649,94 @@ class _ScheduleCreatorScreenState extends State<ScheduleCreatorScreen> {
     return '${hours}h ${mins.toString().padLeft(2, '0')}m';
   }
 
+  List<_ScheduleConflict> _findScheduleConflicts({
+    required Schedule candidate,
+    required List<Schedule> existingSchedules,
+  }) {
+    final conflicts = <_ScheduleConflict>[];
+    final candidateWindowsByDay = _windowsByDay(candidate);
+
+    for (final schedule in existingSchedules) {
+      final otherWindowsByDay = _windowsByDay(schedule);
+      for (final day in Day.values) {
+        final candidateWindows =
+            candidateWindowsByDay[day] ?? const <_MinuteWindow>[];
+        final otherWindows =
+            otherWindowsByDay[day] ?? const <_MinuteWindow>[];
+        if (candidateWindows.isEmpty || otherWindows.isEmpty) {
+          continue;
+        }
+
+        final overlaps = candidateWindows.any((candidateWindow) {
+          return otherWindows.any(
+            (otherWindow) => _windowsOverlap(candidateWindow, otherWindow),
+          );
+        });
+        if (overlaps) {
+          conflicts.add(
+            _ScheduleConflict(
+              day: day,
+              scheduleName: schedule.name,
+            ),
+          );
+          break;
+        }
+      }
+    }
+
+    return conflicts;
+  }
+
+  Map<Day, List<_MinuteWindow>> _windowsByDay(Schedule schedule) {
+    final result = <Day, List<_MinuteWindow>>{
+      for (final day in Day.values) day: <_MinuteWindow>[],
+    };
+    final startMinutes = _toMinutes(schedule.startTime);
+    final endMinutes = _toMinutes(schedule.endTime);
+
+    for (final day in schedule.days) {
+      if (endMinutes > startMinutes) {
+        _appendWindow(result, day, startMinutes, endMinutes);
+      } else {
+        _appendWindow(result, day, startMinutes, 24 * 60);
+        _appendWindow(result, _nextDay(day), 0, endMinutes);
+      }
+    }
+
+    return result;
+  }
+
+  void _appendWindow(
+    Map<Day, List<_MinuteWindow>> windowsByDay,
+    Day day,
+    int start,
+    int end,
+  ) {
+    if (end <= start) {
+      return;
+    }
+    windowsByDay[day]?.add(_MinuteWindow(start: start, end: end));
+  }
+
+  bool _windowsOverlap(_MinuteWindow left, _MinuteWindow right) {
+    return left.start < right.end && right.start < left.end;
+  }
+
+  Day _nextDay(Day day) {
+    final index = Day.values.indexOf(day);
+    return Day.values[(index + 1) % Day.values.length];
+  }
+
+  int _toMinutes(String hhmm) {
+    final parts = hhmm.split(':');
+    if (parts.length != 2) {
+      return 0;
+    }
+    final hour = int.tryParse(parts[0]) ?? 0;
+    final minute = int.tryParse(parts[1]) ?? 0;
+    return (hour * 60) + minute;
+  }
+
   String _typeLabel(ScheduleType type) {
     switch (type) {
       case ScheduleType.bedtime:
@@ -690,4 +819,43 @@ class _ScheduleCreatorScreenState extends State<ScheduleCreatorScreen> {
         return 'S';
     }
   }
+
+  String _dayName(Day day) {
+    switch (day) {
+      case Day.monday:
+        return 'Monday';
+      case Day.tuesday:
+        return 'Tuesday';
+      case Day.wednesday:
+        return 'Wednesday';
+      case Day.thursday:
+        return 'Thursday';
+      case Day.friday:
+        return 'Friday';
+      case Day.saturday:
+        return 'Saturday';
+      case Day.sunday:
+        return 'Sunday';
+    }
+  }
+}
+
+class _MinuteWindow {
+  const _MinuteWindow({
+    required this.start,
+    required this.end,
+  });
+
+  final int start;
+  final int end;
+}
+
+class _ScheduleConflict {
+  const _ScheduleConflict({
+    required this.day,
+    required this.scheduleName,
+  });
+
+  final Day day;
+  final String scheduleName;
 }

@@ -35,9 +35,17 @@ exports.sendParentNotificationFromQueue = onDocumentCreated(
 
     const parentId =
       typeof data.parentId === "string" ? data.parentId.trim() : "";
+    const childId = typeof data.childId === "string" ? data.childId.trim() : "";
+    const deviceId =
+      typeof data.deviceId === "string" ? data.deviceId.trim() : "";
+    const eventType =
+      typeof data.eventType === "string" ? data.eventType.trim() : "";
     const title = typeof data.title === "string" ? data.title.trim() : "";
     const body = typeof data.body === "string" ? data.body.trim() : "";
     const route = typeof data.route === "string" ? data.route.trim() : "";
+    const isChildTarget =
+      childId &&
+      (eventType === "access_request_response" || route.startsWith("/child/"));
 
     if (!parentId || !title || !body || !route) {
       await queueRef.set(
@@ -55,20 +63,131 @@ exports.sendParentNotificationFromQueue = onDocumentCreated(
       return;
     }
 
+    if (isChildTarget) {
+      const devicesSnapshot = await db
+          .collection("children")
+          .doc(childId)
+          .collection("devices")
+          .get();
+
+      const tokens = [];
+      for (const doc of devicesSnapshot.docs) {
+        if (deviceId && doc.id !== deviceId) {
+          continue;
+        }
+        const token = typeof doc.get("fcmToken") === "string" ?
+          doc.get("fcmToken").trim() : "";
+        if (token) {
+          tokens.push(token);
+        }
+      }
+      const uniqueTokens = Array.from(new Set(tokens));
+
+      if (!uniqueTokens.length) {
+        await queueRef.set(
+            {
+              processed: true,
+              status: "skipped_no_child_token",
+              processedAt: admin.firestore.FieldValue.serverTimestamp(),
+            },
+            {merge: true},
+        );
+        logger.info("Child has no FCM token. Notification skipped.", {
+          queueId: event.params.queueId,
+          childId,
+          deviceId: deviceId || null,
+        });
+        return;
+      }
+
+      const failures = [];
+      const messageIds = [];
+      for (const token of uniqueTokens) {
+        const message = {
+          token,
+          notification: {
+            title,
+            body,
+          },
+          data: {
+            route,
+            type: eventType || "access_request_response",
+            queueId: event.params.queueId,
+          },
+          android: {
+            priority: "high",
+            notification: {
+              channelId: "trustbridge_requests",
+              clickAction: "FLUTTER_NOTIFICATION_CLICK",
+            },
+          },
+        };
+
+        try {
+          const messageId = await admin.messaging().send(message);
+          messageIds.push(messageId);
+        } catch (error) {
+          failures.push(error);
+        }
+      }
+
+      if (!messageIds.length) {
+        const firstError = failures[0];
+        await queueRef.set(
+            {
+              processed: true,
+              status: "failed",
+              processedAt: admin.firestore.FieldValue.serverTimestamp(),
+              errorCode:
+                firstError && firstError.code ?
+                  String(firstError.code) : "unknown",
+              errorMessage:
+                firstError && firstError.message ?
+                  String(firstError.message).slice(0, 500) : "Unknown error",
+            },
+            {merge: true},
+        );
+        logger.error("Failed to send child notification.", {
+          queueId: event.params.queueId,
+          childId,
+          error: firstError,
+        });
+        return;
+      }
+
+      await queueRef.set(
+          {
+            processed: true,
+            status: failures.length ? "partial_sent" : "sent",
+            processedAt: admin.firestore.FieldValue.serverTimestamp(),
+            deliveredCount: messageIds.length,
+            attemptedCount: uniqueTokens.length,
+            fcmMessageId: messageIds[0],
+          },
+          {merge: true},
+      );
+      logger.info("Child notification sent.", {
+        queueId: event.params.queueId,
+        childId,
+        deliveredCount: messageIds.length,
+        attemptedCount: uniqueTokens.length,
+      });
+      return;
+    }
+
     const parentDoc = await db.collection("parents").doc(parentId).get();
     const token =
-      parentDoc.exists && typeof parentDoc.get("fcmToken") === "string"
-        ? parentDoc.get("fcmToken").trim()
-        : "";
+      parentDoc.exists && typeof parentDoc.get("fcmToken") === "string" ?
+        parentDoc.get("fcmToken").trim() : "";
 
     if (!token) {
       await queueRef.set(
-        {
-          processed: true,
-          status: "skipped_no_token",
-          processedAt: admin.firestore.FieldValue.serverTimestamp(),
-        },
-        {merge: true},
+          {
+            processed: true,
+            status: "skipped_no_token",
+            processedAt: admin.firestore.FieldValue.serverTimestamp(),
+          },
+          {merge: true},
       );
       logger.info("Parent has no FCM token. Notification skipped.", {
         queueId: event.params.queueId,
@@ -85,7 +204,7 @@ exports.sendParentNotificationFromQueue = onDocumentCreated(
       },
       data: {
         route,
-        type: "access_request",
+        type: eventType || "access_request",
         queueId: event.params.queueId,
       },
       android: {
@@ -100,13 +219,13 @@ exports.sendParentNotificationFromQueue = onDocumentCreated(
     try {
       const messageId = await admin.messaging().send(message);
       await queueRef.set(
-        {
-          processed: true,
-          status: "sent",
-          processedAt: admin.firestore.FieldValue.serverTimestamp(),
-          fcmMessageId: messageId,
-        },
-        {merge: true},
+          {
+            processed: true,
+            status: "sent",
+            processedAt: admin.firestore.FieldValue.serverTimestamp(),
+            fcmMessageId: messageId,
+          },
+          {merge: true},
       );
       logger.info("Parent notification sent.", {
         queueId: event.params.queueId,
@@ -115,17 +234,17 @@ exports.sendParentNotificationFromQueue = onDocumentCreated(
       });
     } catch (error) {
       await queueRef.set(
-        {
-          processed: true,
-          status: "failed",
-          processedAt: admin.firestore.FieldValue.serverTimestamp(),
-          errorCode: error && error.code ? String(error.code) : "unknown",
-          errorMessage:
-            error && error.message
-              ? String(error.message).slice(0, 500)
-              : "Unknown error",
-        },
-        {merge: true},
+          {
+            processed: true,
+            status: "failed",
+            processedAt: admin.firestore.FieldValue.serverTimestamp(),
+            errorCode: error && error.code ? String(error.code) : "unknown",
+            errorMessage:
+              error && error.message ?
+                String(error.message).slice(0, 500) :
+                "Unknown error",
+          },
+          {merge: true},
       );
       logger.error("Failed to send parent notification.", {
         queueId: event.params.queueId,
@@ -138,7 +257,7 @@ exports.sendParentNotificationFromQueue = onDocumentCreated(
 
 exports.expireApprovedAccessRequests = onSchedule(
   {
-    schedule: "every 5 minutes",
+    schedule: "every 1 minutes",
     region: "asia-south1",
     timeZone: "Asia/Kolkata",
     retryCount: 0,

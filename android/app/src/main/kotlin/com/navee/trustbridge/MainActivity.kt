@@ -15,6 +15,7 @@ import java.util.Locale
 import com.navee.trustbridge.vpn.BlocklistStore
 import com.navee.trustbridge.vpn.DnsFilterEngine
 import com.navee.trustbridge.vpn.DnsVpnService
+import com.navee.trustbridge.vpn.VpnEventDispatcher
 import com.navee.trustbridge.vpn.VpnPreferencesStore
 import io.flutter.embedding.android.FlutterFragmentActivity
 import io.flutter.embedding.engine.FlutterEngine
@@ -37,6 +38,7 @@ class MainActivity : FlutterFragmentActivity() {
 
     private var pendingPermissionResult: MethodChannel.Result? = null
     private var pendingDeviceAdminResult: MethodChannel.Result? = null
+    private var primaryVpnChannel: MethodChannel? = null
     private val blocklistStore: BlocklistStore by lazy {
         BlocklistStore(applicationContext)
     }
@@ -48,11 +50,16 @@ class MainActivity : FlutterFragmentActivity() {
         super.configureFlutterEngine(flutterEngine)
 
         CHANNEL_NAMES.forEach { channelName ->
-            MethodChannel(
+            val channel = MethodChannel(
                 flutterEngine.dartExecutor.binaryMessenger,
                 channelName
-            ).setMethodCallHandler { call, result ->
+            )
+            channel.setMethodCallHandler { call, result ->
                 handleMethodCall(call, result)
+            }
+            if (channelName == "com.navee.trustbridge/vpn") {
+                primaryVpnChannel = channel
+                VpnEventDispatcher.attach(channel)
             }
         }
 
@@ -553,7 +560,17 @@ class MainActivity : FlutterFragmentActivity() {
 
     private fun startServiceCompat(intent: Intent) {
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
-            startForegroundService(intent)
+            val requiresForegroundStart = when (intent.action) {
+                DnsVpnService.ACTION_START,
+                DnsVpnService.ACTION_RESTART -> true
+                else -> false
+            }
+
+            if (requiresForegroundStart) {
+                startForegroundService(intent)
+            } else {
+                startService(intent)
+            }
         } else {
             startService(intent)
         }
@@ -572,24 +589,42 @@ class MainActivity : FlutterFragmentActivity() {
             return true
         }
 
-        return try {
-            val intent = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.UPSIDE_DOWN_CAKE) {
+        fun launch(intent: Intent): Boolean {
+            return try {
+                startActivity(intent.apply { addFlags(Intent.FLAG_ACTIVITY_NEW_TASK) })
+                true
+            } catch (_: Exception) {
+                false
+            }
+        }
+
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.UPSIDE_DOWN_CAKE) {
+            return launch(
                 Intent(
                     Settings.ACTION_APPLICATION_DETAILS_SETTINGS,
                     Uri.parse("package:$packageName")
                 )
-            } else {
-                Intent(Settings.ACTION_REQUEST_IGNORE_BATTERY_OPTIMIZATIONS).apply {
-                    data = Uri.parse("package:$packageName")
-                }
-            }.apply {
-                addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
-            }
-            startActivity(intent)
-            true
-        } catch (_: Exception) {
-            false
+            )
         }
+
+        val directRequest = Intent(Settings.ACTION_REQUEST_IGNORE_BATTERY_OPTIMIZATIONS).apply {
+            data = Uri.parse("package:$packageName")
+        }
+        if (launch(directRequest)) {
+            return true
+        }
+
+        // Some OEM builds block the direct request intent; fall back to broader settings.
+        if (launch(Intent(Settings.ACTION_IGNORE_BATTERY_OPTIMIZATION_SETTINGS))) {
+            return true
+        }
+
+        return launch(
+            Intent(
+                Settings.ACTION_APPLICATION_DETAILS_SETTINGS,
+                Uri.parse("package:$packageName")
+            )
+        )
     }
 
     private fun openVpnSettings(): Boolean {
@@ -635,6 +670,8 @@ class MainActivity : FlutterFragmentActivity() {
     }
 
     override fun onDestroy() {
+        VpnEventDispatcher.detach(primaryVpnChannel)
+        primaryVpnChannel = null
         try {
             blocklistStore.close()
         } catch (_: Exception) {

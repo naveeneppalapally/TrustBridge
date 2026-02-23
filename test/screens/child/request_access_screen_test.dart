@@ -81,7 +81,8 @@ void main() {
       final data = docs.docs.first.data();
       expect(data['childId'], 'child-1');
       expect(data['childNickname'], 'Rahul');
-      expect(data['requestedApp'], 'Instagram');
+      expect(data['appOrSite'], 'Instagram');
+      expect(data['durationLabel'], '30 min');
       expect(data['status'], 'pending');
     });
 

@@ -172,7 +172,7 @@ void main() {
       expect(find.byType(SkeletonListTile), findsWidgets);
     });
 
-    testWidgets('shows permission state when usage access is denied',
+    testWidgets('shows child-report waiting state when usage data is unavailable',
         (tester) async {
       await pumpScreen(
         tester,
@@ -182,8 +182,8 @@ void main() {
         ),
       );
 
-      expect(find.text('Usage access required'), findsOneWidget);
-      expect(find.text('Grant Access'), findsOneWidget);
+      expect(find.text('No child devices paired'), findsOneWidget);
+      expect(find.text('Grant Access'), findsNothing);
       expect(find.byKey(const Key('usage_reports_nextdns_card')), findsOneWidget);
     });
 

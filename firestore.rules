@@ -13,10 +13,36 @@ service cloud.firestore {
       return value is string && value.matches('^[0-9]{6}$');
     }
 
-    function isChildOwner(childId) {
+    function isChildParent(childId) {
       return isAuthed() &&
         exists(/databases/$(database)/documents/children/$(childId)) &&
         get(/databases/$(database)/documents/children/$(childId)).data.parentId == request.auth.uid;
+    }
+
+    function isChildDevice(childId) {
+      return isChildParent(childId) || (
+        isAuthed() &&
+        exists(/databases/$(database)/documents/children/$(childId)/devices/$(request.auth.uid))
+      );
+    }
+
+    function childParentMatches(childId, parentId) {
+      return childId is string &&
+        parentId is string &&
+        exists(/databases/$(database)/documents/children/$(childId)) &&
+        get(/databases/$(database)/documents/children/$(childId)).data.parentId == parentId;
+    }
+
+    function isRegisteredChildDevice(childId, deviceId) {
+      return childId is string &&
+        deviceId is string &&
+        exists(/databases/$(database)/documents/children/$(childId)/devices/$(deviceId));
+    }
+
+    function parentOwnsRootDevice(deviceId) {
+      return isAuthed() &&
+        exists(/databases/$(database)/documents/devices/$(deviceId)) &&
+        get(/databases/$(database)/documents/devices/$(deviceId)).data.parentId == request.auth.uid;
     }
 
     function hasOnlyKeys(data, allowedKeys) {
@@ -42,8 +68,19 @@ service cloud.firestore {
         (data[field] is int && data[field] >= min && data[field] <= max);
     }
 
+    function isRequiredInt(data, field, min, max) {
+      return field in data &&
+        data[field] is int &&
+        data[field] >= min &&
+        data[field] <= max;
+    }
+
     function isRequiredBool(data, field) {
       return field in data && data[field] is bool;
+    }
+
+    function isOptionalBool(data, field) {
+      return !(field in data) || data[field] is bool;
     }
 
     function isRequiredTimestamp(data, field) {
@@ -52,6 +89,19 @@ service cloud.firestore {
 
     function isOptionalTimestamp(data, field) {
       return !(field in data) || data[field] == null || data[field] is timestamp;
+    }
+
+    function isOptionalManualMode(data, field) {
+      return !(field in data) ||
+        data[field] == null ||
+        (
+          data[field] is map &&
+          data[field].keys().hasOnly(['mode', 'setAt', 'expiresAt']) &&
+          isRequiredString(data[field], 'mode', 32) &&
+          data[field].mode in ['homework', 'bedtime', 'free'] &&
+          isOptionalTimestamp(data[field], 'setAt') &&
+          isOptionalTimestamp(data[field], 'expiresAt')
+        );
     }
 
     function isAllowedAgeBand(data, field) {
@@ -108,9 +158,17 @@ service cloud.firestore {
 
       // Access requests live under each parent.
       match /access_requests/{requestId} {
-        allow read: if isParent(parentId);
+        allow read: if isParent(parentId) ||
+          (isAuthed() &&
+            ('childId' in resource.data) &&
+            resource.data.childId is string &&
+            isChildDevice(resource.data.childId));
 
-        allow create: if isParent(parentId) &&
+        allow create: if (isParent(parentId) ||
+            (isAuthed() &&
+              ('childId' in request.resource.data) &&
+              request.resource.data.childId is string &&
+              isChildDevice(request.resource.data.childId))) &&
           hasOnlyKeys(
             request.resource.data,
             [
@@ -173,7 +231,8 @@ service cloud.firestore {
 
     // Child profiles (top-level collection in v1 schema).
     match /children/{childId} {
-      allow read: if isAuthed() && resource.data.parentId == request.auth.uid;
+      allow read: if (isAuthed() && resource.data.parentId == request.auth.uid) ||
+        isChildDevice(childId);
 
       allow create: if isAuthed() &&
         hasOnlyKeys(
@@ -187,6 +246,7 @@ service cloud.firestore {
             'updatedAt',
             'parentId',
             'pausedUntil',
+            'manualMode',
             'nextDnsProfileId',
             'deviceMetadata',
             'nextDnsControls'
@@ -201,54 +261,249 @@ service cloud.firestore {
         isRequiredString(request.resource.data, 'parentId', 128) &&
         request.resource.data.parentId == request.auth.uid &&
         isOptionalTimestamp(request.resource.data, 'pausedUntil') &&
+        isOptionalManualMode(request.resource.data, 'manualMode') &&
         isOptionalString(request.resource.data, 'nextDnsProfileId', 32) &&
         (!('deviceMetadata' in request.resource.data) ||
           request.resource.data.deviceMetadata is map) &&
         (!('nextDnsControls' in request.resource.data) ||
           request.resource.data.nextDnsControls is map);
 
-      allow update: if isAuthed() &&
-        resource.data.parentId == request.auth.uid &&
-        request.resource.data.parentId == resource.data.parentId &&
-        request.resource.data.diff(resource.data).affectedKeys().hasOnly(
-          [
-            'nickname',
-            'ageBand',
-            'deviceIds',
-            'policy',
-            'pausedUntil',
-            'updatedAt',
-            'nextDnsProfileId',
-            'deviceMetadata',
-            'nextDnsControls'
-          ]
-        ) &&
-        isRequiredString(request.resource.data, 'nickname', 30) &&
-        isAllowedAgeBand(request.resource.data, 'ageBand') &&
-        request.resource.data.deviceIds is list &&
-        request.resource.data.policy is map &&
-        isRequiredTimestamp(request.resource.data, 'createdAt') &&
-        isRequiredTimestamp(request.resource.data, 'updatedAt') &&
-        isOptionalTimestamp(request.resource.data, 'pausedUntil') &&
-        isOptionalString(request.resource.data, 'nextDnsProfileId', 32) &&
-        (!('deviceMetadata' in request.resource.data) ||
-          request.resource.data.deviceMetadata is map) &&
-        (!('nextDnsControls' in request.resource.data) ||
-          request.resource.data.nextDnsControls is map);
+      allow update: if (
+          isAuthed() &&
+          resource.data.parentId == request.auth.uid &&
+          request.resource.data.parentId == resource.data.parentId &&
+          request.resource.data.diff(resource.data).affectedKeys().hasOnly(
+            [
+              'nickname',
+              'ageBand',
+              'deviceIds',
+              'policy',
+              'pausedUntil',
+              'manualMode',
+              'updatedAt',
+              'nextDnsProfileId',
+              'deviceMetadata',
+              'nextDnsControls'
+            ]
+          ) &&
+          isRequiredString(request.resource.data, 'nickname', 30) &&
+          isAllowedAgeBand(request.resource.data, 'ageBand') &&
+          request.resource.data.deviceIds is list &&
+          request.resource.data.policy is map &&
+          isRequiredTimestamp(request.resource.data, 'createdAt') &&
+          isRequiredTimestamp(request.resource.data, 'updatedAt') &&
+          isOptionalTimestamp(request.resource.data, 'pausedUntil') &&
+          isOptionalManualMode(request.resource.data, 'manualMode') &&
+          isOptionalString(request.resource.data, 'nextDnsProfileId', 32) &&
+          (!('deviceMetadata' in request.resource.data) ||
+            request.resource.data.deviceMetadata is map) &&
+          (!('nextDnsControls' in request.resource.data) ||
+            request.resource.data.nextDnsControls is map)
+        ) || (
+          isChildDevice(childId) &&
+          request.resource.data.parentId == resource.data.parentId &&
+          request.resource.data.diff(resource.data).affectedKeys().hasOnly(
+            ['deviceIds', 'updatedAt']
+          ) &&
+          request.resource.data.deviceIds is list &&
+          request.resource.data.deviceIds.hasAny([request.auth.uid]) &&
+          isRequiredTimestamp(request.resource.data, 'updatedAt')
+        );
 
       allow delete: if isAuthed() && resource.data.parentId == request.auth.uid;
 
       // Child device metadata records used for pairing and per-device push tokens.
       match /devices/{deviceId} {
-        allow read: if isChildOwner(childId);
+        allow read: if isChildParent(childId) ||
+          (isAuthed() && request.auth.uid == deviceId);
 
-        allow create, update: if isChildOwner(childId) &&
+        allow create, update: if (isChildParent(childId) ||
+            (isAuthed() && request.auth.uid == deviceId)) &&
           isRequiredString(request.resource.data, 'parentId', 128) &&
-          request.resource.data.parentId == request.auth.uid &&
+          request.resource.data.parentId ==
+            get(/databases/$(database)/documents/children/$(childId)).data.parentId &&
           isOptionalString(request.resource.data, 'model', 120) &&
           isOptionalString(request.resource.data, 'osVersion', 120) &&
           isOptionalString(request.resource.data, 'fcmToken', 2048) &&
           isOptionalTimestamp(request.resource.data, 'pairedAt');
+
+        allow delete: if false;
+      }
+
+      // Optional policy documents used by diagnostics/experiments.
+      match /policy/{policyDocId} {
+        allow read: if isChildParent(childId) || isChildDevice(childId);
+        allow create, update, delete: if isChildParent(childId);
+      }
+
+      // Child-uploaded usage snapshots rendered in parent reports.
+      match /usage_reports/{reportId} {
+        allow read: if isChildParent(childId) || isChildDevice(childId);
+
+        allow create, update: if isChildDevice(childId) &&
+          hasOnlyKeys(
+            request.resource.data,
+            [
+              'totalScreenTimeMs',
+              'averageDailyScreenTimeMs',
+              'categorySlices',
+              'dailyTrend',
+              'topApps',
+              'uploadedAt',
+              'deviceUploadedAtLocal'
+            ]
+          ) &&
+          isRequiredInt(request.resource.data, 'totalScreenTimeMs', 0, 4102444800000) &&
+          isRequiredInt(request.resource.data, 'averageDailyScreenTimeMs', 0, 4102444800000) &&
+          ('categorySlices' in request.resource.data) &&
+          request.resource.data.categorySlices is list &&
+          ('dailyTrend' in request.resource.data) &&
+          request.resource.data.dailyTrend is list &&
+          ('topApps' in request.resource.data) &&
+          request.resource.data.topApps is list &&
+          isOptionalTimestamp(request.resource.data, 'uploadedAt') &&
+          isOptionalString(request.resource.data, 'deviceUploadedAtLocal', 80);
+
+        allow delete: if false;
+      }
+    }
+
+    // Device heartbeat + command queue (root collection).
+    match /devices/{deviceId} {
+      allow read: if isAuthed() &&
+        (
+          request.auth.uid == deviceId ||
+          (
+            'parentId' in resource.data &&
+            resource.data.parentId is string &&
+            resource.data.parentId == request.auth.uid
+          )
+        );
+
+      allow create, update: if isAuthed() &&
+        isRequiredString(request.resource.data, 'deviceId', 128) &&
+        request.resource.data.deviceId == deviceId &&
+        isRequiredString(request.resource.data, 'parentId', 128) &&
+        request.resource.data.parentId == request.auth.uid &&
+        isRequiredString(request.resource.data, 'childId', 128) &&
+        childParentMatches(
+          request.resource.data.childId,
+          request.resource.data.parentId
+        ) &&
+        isRegisteredChildDevice(request.resource.data.childId, deviceId) &&
+        isOptionalTimestamp(request.resource.data, 'lastSeen') &&
+        isOptionalInt(request.resource.data, 'lastSeenEpochMs', 0, 4102444800000) &&
+        isOptionalBool(request.resource.data, 'vpnActive') &&
+        isOptionalString(request.resource.data, 'appVersion', 120) &&
+        isOptionalTimestamp(request.resource.data, 'updatedAt');
+
+      allow delete: if false;
+
+      // Parent-to-child remote command queue.
+      match /pendingCommands/{commandId} {
+        allow read: if isAuthed() &&
+          (
+            request.auth.uid == deviceId ||
+            (
+              'parentId' in resource.data &&
+              resource.data.parentId is string &&
+              resource.data.parentId == request.auth.uid
+            )
+          );
+
+        allow create: if isAuthed() &&
+          isRequiredString(request.resource.data, 'commandId', 128) &&
+          request.resource.data.commandId == commandId &&
+          isRequiredString(request.resource.data, 'parentId', 128) &&
+          request.resource.data.parentId == request.auth.uid &&
+          isRequiredString(request.resource.data, 'command', 64) &&
+          request.resource.data.command in [
+            'restartVpn',
+            'clearPairingAndStopProtection'
+          ] &&
+          isRequiredString(request.resource.data, 'status', 32) &&
+          request.resource.data.status == 'pending' &&
+          isOptionalString(request.resource.data, 'childId', 128) &&
+          isOptionalString(request.resource.data, 'reason', 120) &&
+          isOptionalInt(request.resource.data, 'attempts', 0, 10) &&
+          isOptionalTimestamp(request.resource.data, 'sentAt');
+
+        allow update: if isAuthed() &&
+          resource.data.parentId == request.auth.uid &&
+          request.resource.data.parentId == resource.data.parentId &&
+          request.resource.data.commandId == resource.data.commandId &&
+          request.resource.data.command == resource.data.command &&
+          request.resource.data.diff(resource.data).affectedKeys().hasOnly(
+            ['status', 'attempts', 'executedAt', 'error', 'updatedAt']
+          ) &&
+          isRequiredString(request.resource.data, 'status', 32) &&
+          request.resource.data.status in ['pending', 'executed', 'failed'] &&
+          isOptionalInt(request.resource.data, 'attempts', 0, 10) &&
+          isOptionalTimestamp(request.resource.data, 'executedAt') &&
+          isOptionalString(request.resource.data, 'error', 200) &&
+          isOptionalTimestamp(request.resource.data, 'updatedAt');
+
+        allow delete: if false;
+      }
+
+      // Child-side bypass dedup metadata.
+      match /lastAlerts/{eventType} {
+        allow read: if parentOwnsRootDevice(deviceId);
+
+        allow create, update: if parentOwnsRootDevice(deviceId) &&
+          isOptionalTimestamp(request.resource.data, 'lastAlertAt') &&
+          isOptionalInt(request.resource.data, 'lastAlertAtEpochMs', 0, 4102444800000) &&
+          isOptionalString(request.resource.data, 'eventType', 64);
+
+        allow delete: if false;
+      }
+    }
+
+    // Bypass events logged from child devices and reviewed by parents.
+    match /bypass_events/{deviceId} {
+      allow read, write: if false;
+
+      match /events/{eventId} {
+        allow read: if isAuthed() &&
+          (
+            request.auth.uid == deviceId ||
+            (
+              'parentId' in resource.data &&
+              resource.data.parentId is string &&
+              resource.data.parentId == request.auth.uid
+            )
+          );
+
+        allow create: if isAuthed() &&
+          isRequiredString(request.resource.data, 'type', 64) &&
+          isRequiredString(request.resource.data, 'deviceId', 128) &&
+          request.resource.data.deviceId == deviceId &&
+          isRequiredString(request.resource.data, 'childId', 128) &&
+          isRequiredString(request.resource.data, 'parentId', 128) &&
+          childParentMatches(
+            request.resource.data.childId,
+            request.resource.data.parentId
+          ) &&
+          (
+            request.auth.uid == request.resource.data.parentId ||
+            (
+              request.auth.uid == deviceId &&
+              isRegisteredChildDevice(request.resource.data.childId, deviceId)
+            )
+          ) &&
+          isRequiredInt(request.resource.data, 'timestampEpochMs', 0, 4102444800000) &&
+          isOptionalTimestamp(request.resource.data, 'timestamp') &&
+          isRequiredBool(request.resource.data, 'read') &&
+          isOptionalString(request.resource.data, 'childNickname', 60);
+
+        allow update: if isAuthed() &&
+          resource.data.parentId == request.auth.uid &&
+          request.resource.data.diff(resource.data).affectedKeys().hasOnly(
+            ['read', 'readAt']
+          ) &&
+          isRequiredBool(request.resource.data, 'read') &&
+          request.resource.data.read == true &&
+          isOptionalTimestamp(request.resource.data, 'readAt');
 
         allow delete: if false;
       }
@@ -293,13 +548,39 @@ service cloud.firestore {
       allow create: if isAuthed() &&
         hasOnlyKeys(
           request.resource.data,
-          ['parentId', 'title', 'body', 'route', 'processed', 'sentAt']
+          [
+            'parentId',
+            'childId',
+            'deviceId',
+            'title',
+            'body',
+            'route',
+            'eventType',
+            'processed',
+            'sentAt'
+          ]
         ) &&
         isRequiredString(request.resource.data, 'parentId', 128) &&
-        request.resource.data.parentId == request.auth.uid &&
+        (
+          request.resource.data.parentId == request.auth.uid ||
+          (
+            isRequiredString(request.resource.data, 'childId', 128) &&
+            isRequiredString(request.resource.data, 'deviceId', 128) &&
+            request.resource.data.parentId == request.auth.uid &&
+            childParentMatches(
+              request.resource.data.childId,
+              request.resource.data.parentId
+            ) &&
+            isRegisteredChildDevice(
+              request.resource.data.childId,
+              request.resource.data.deviceId
+            )
+          )
+        ) &&
         isRequiredString(request.resource.data, 'title', 100) &&
         isRequiredString(request.resource.data, 'body', 300) &&
         isRequiredString(request.resource.data, 'route', 100) &&
+        isOptionalString(request.resource.data, 'eventType', 64) &&
         isRequiredBool(request.resource.data, 'processed') &&
         request.resource.data.processed == false &&
         isRequiredTimestamp(request.resource.data, 'sentAt');

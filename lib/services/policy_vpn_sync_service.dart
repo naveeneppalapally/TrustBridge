@@ -340,11 +340,8 @@ class PolicyVpnSyncService extends ChangeNotifier {
       final vpnRunning = await _vpnService.isVpnRunning();
       if (!vpnRunning) {
         _clearExceptionRefreshSchedule();
-        final result = SyncResult.empty();
-        _lastSyncResult = result;
-        _isSyncing = false;
-        notifyListeners();
-        return result;
+        // Even when VPN is not running, still persist the merged rules so
+        // they are immediately applied when the VPN starts later.
       }
 
       final parentId = _resolveParentId();

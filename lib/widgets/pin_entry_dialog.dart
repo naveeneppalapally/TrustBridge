@@ -43,7 +43,9 @@ class _PinEntryDialogState extends State<_PinEntryDialog> {
   }
 
   void _onDigitPressed(String digit) {
-    if (_isChecking || _entered.length >= 4) {
+    if (_isChecking ||
+        _appLockService.isTemporarilyLocked ||
+        _entered.length >= 4) {
       return;
     }
 
@@ -58,7 +60,7 @@ class _PinEntryDialogState extends State<_PinEntryDialog> {
   }
 
   void _onBackspacePressed() {
-    if (_isChecking || _entered.isEmpty) {
+    if (_isChecking || _appLockService.isTemporarilyLocked || _entered.isEmpty) {
       return;
     }
     setState(() {
@@ -68,6 +70,17 @@ class _PinEntryDialogState extends State<_PinEntryDialog> {
   }
 
   Future<void> _verifyPin() async {
+    if (_appLockService.isTemporarilyLocked) {
+      final remaining = _appLockService.remainingLockDuration;
+      final seconds = remaining == null ? 0 : remaining.inSeconds.clamp(1, 999);
+      setState(() {
+        _entered = '';
+        _isChecking = false;
+        _error = 'Too many attempts. Try again in ${seconds}s.';
+      });
+      return;
+    }
+
     setState(() {
       _isChecking = true;
       _error = null;
@@ -84,10 +97,15 @@ class _PinEntryDialogState extends State<_PinEntryDialog> {
     }
 
     HapticFeedback.heavyImpact();
+    final remaining = _appLockService.remainingLockDuration;
+    final lockedNow = _appLockService.isTemporarilyLocked;
+    final seconds = remaining == null ? 0 : remaining.inSeconds.clamp(1, 999);
     setState(() {
       _entered = '';
       _isChecking = false;
-      _error = 'Incorrect PIN. Try again.';
+      _error = lockedNow
+          ? 'Too many attempts. Try again in ${seconds}s.'
+          : 'Incorrect PIN. Try again.';
     });
   }
 
@@ -161,6 +179,7 @@ class _PinEntryDialogState extends State<_PinEntryDialog> {
               _PinNumpad(
                 onDigitPressed: _onDigitPressed,
                 onBackspacePressed: _onBackspacePressed,
+                enabled: !_isChecking && !_appLockService.isTemporarilyLocked,
               ),
               if (_biometricAvailable) ...<Widget>[
                 const SizedBox(height: 16),
@@ -191,10 +210,12 @@ class _PinNumpad extends StatelessWidget {
   const _PinNumpad({
     required this.onDigitPressed,
     required this.onBackspacePressed,
+    required this.enabled,
   });
 
   final ValueChanged<String> onDigitPressed;
   final VoidCallback onBackspacePressed;
+  final bool enabled;
 
   static const List<List<String>> _rows = <List<String>>[
     <String>['1', '2', '3'],
@@ -230,7 +251,9 @@ class _PinNumpad extends StatelessWidget {
                   padding: const EdgeInsets.all(keyMargin),
                   child: InkWell(
                     borderRadius: BorderRadius.circular(12),
-                    onTap: () {
+                    onTap: !enabled
+                        ? null
+                        : () {
                       if (isBackspace) {
                         onBackspacePressed();
                       } else {

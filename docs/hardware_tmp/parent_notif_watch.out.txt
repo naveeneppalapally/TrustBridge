@@ -1,0 +1,41 @@
+00:00 +0: loading C:/Users/navee/Documents/TrustBridge/parental_controls_app/integration_test/real_device_notification_probe_test.dart
+Running Gradle task 'assembleDebug'...                             53.3s
+√ Built build\app\outputs\flutter-apk\app-debug.apk
+Installing build\app\outputs\flutter-apk\app-debug.apk...           8.1s
+00:00 +0: real-device notification probe role runner
+[FCM] Permission: AuthorizationStatus.authorized
+[NOTIF_PROBE] parent uid=0EIwuwki7IfzaTzMnyi2V87A9Og1 token_len=142
+[NOTIF_PROBE] parent token saved
+[NOTIF_PROBE] watch start label=parent seconds=140
+[NOTIF_PROBE] watch tick label=parent ts=2026-02-22T21:52:42.347086
+[NOTIF_PROBE] watch tick label=parent ts=2026-02-22T21:52:47.356347
+[NOTIF_PROBE] watch tick label=parent ts=2026-02-22T21:52:52.359606
+[NOTIF_PROBE] watch tick label=parent ts=2026-02-22T21:52:57.364034
+[NOTIF_PROBE] watch tick label=parent ts=2026-02-22T21:53:02.367541
+[NOTIF_PROBE] watch tick label=parent ts=2026-02-22T21:53:07.371433
+[NOTIF_PROBE] watch tick label=parent ts=2026-02-22T21:53:12.378399
+[NOTIF_PROBE] watch tick label=parent ts=2026-02-22T21:53:17.381550
+[NOTIF_PROBE] watch tick label=parent ts=2026-02-22T21:53:22.384457
+[NOTIF_PROBE] watch tick label=parent ts=2026-02-22T21:53:27.388247
+[NOTIF_PROBE] watch tick label=parent ts=2026-02-22T21:53:32.394939
+[NOTIF_PROBE] watch tick label=parent ts=2026-02-22T21:53:37.399569
+[NOTIF_PROBE] watch tick label=parent ts=2026-02-22T21:53:42.403206
+[NOTIF_PROBE] watch tick label=parent ts=2026-02-22T21:53:47.408800
+[NOTIF_PROBE] watch tick label=parent ts=2026-02-22T21:53:52.413148
+[NOTIF_PROBE] watch tick label=parent ts=2026-02-22T21:53:57.418308
+[NOTIF_PROBE] watch tick label=parent ts=2026-02-22T21:54:02.422263
+[NOTIF_PROBE] watch tick label=parent ts=2026-02-22T21:54:07.428226
+[NOTIF_PROBE] watch tick label=parent ts=2026-02-22T21:54:12.432297
+[NOTIF_PROBE] watch tick label=parent ts=2026-02-22T21:54:17.434836
+[NOTIF_PROBE] watch tick label=parent ts=2026-02-22T21:54:22.439195
+[FCM] Foreground message: 0:1771777465853143%aa612849aa612849
+[NOTIF_PROBE] watch tick label=parent ts=2026-02-22T21:54:27.442353
+[NOTIF_PROBE] watch tick label=parent ts=2026-02-22T21:54:32.447347
+[NOTIF_PROBE] watch tick label=parent ts=2026-02-22T21:54:37.452414
+[NOTIF_PROBE] watch tick label=parent ts=2026-02-22T21:54:42.456234
+[NOTIF_PROBE] watch tick label=parent ts=2026-02-22T21:54:47.460587
+[NOTIF_PROBE] watch tick label=parent ts=2026-02-22T21:54:52.464213
+[NOTIF_PROBE] watch tick label=parent ts=2026-02-22T21:54:57.468458
+[NOTIF_PROBE] watch end label=parent
+02:24 +1: (tearDownAll)
+02:24 +1: All tests passed!

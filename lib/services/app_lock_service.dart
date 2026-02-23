@@ -13,9 +13,13 @@ class AppLockService extends ChangeNotifier {
   static const String _pinKey = 'trustbridge_parent_pin';
   static const String _enabledKey = 'trustbridge_pin_enabled';
   static const Duration _gracePeriod = Duration(seconds: 60);
+  static const int _maxFailedAttempts = 5;
+  static const Duration _failedAttemptLockout = Duration(seconds: 30);
 
   final LocalAuthentication _localAuth = LocalAuthentication();
   DateTime? _lastUnlockedAt;
+  int _failedAttempts = 0;
+  DateTime? _lockedUntil;
 
   Future<bool> isEnabled() async {
     try {
@@ -57,11 +61,24 @@ class AppLockService extends ChangeNotifier {
   }
 
   Future<bool> verifyPin(String enteredPin) async {
+    final lockExpiry = _lockedUntil;
+    if (lockExpiry != null && lockExpiry.isAfter(DateTime.now())) {
+      return false;
+    }
+
     try {
       final storedPin = await _storage.read(key: _pinKey);
       final isMatch = storedPin != null && storedPin == enteredPin;
       if (isMatch) {
+        _failedAttempts = 0;
+        _lockedUntil = null;
         markUnlocked();
+      } else {
+        _failedAttempts += 1;
+        if (_failedAttempts >= _maxFailedAttempts) {
+          _failedAttempts = 0;
+          _lockedUntil = DateTime.now().add(_failedAttemptLockout);
+        }
       }
       return isMatch;
     } catch (error) {
@@ -73,6 +90,8 @@ class AppLockService extends ChangeNotifier {
   Future<void> disableLock() async {
     await _storage.write(key: _enabledKey, value: 'false');
     _lastUnlockedAt = null;
+    _failedAttempts = 0;
+    _lockedUntil = null;
     notifyListeners();
   }
 
@@ -80,6 +99,8 @@ class AppLockService extends ChangeNotifier {
     await _storage.delete(key: _pinKey);
     await _storage.write(key: _enabledKey, value: 'false');
     _lastUnlockedAt = null;
+    _failedAttempts = 0;
+    _lockedUntil = null;
     notifyListeners();
   }
 
@@ -93,6 +114,23 @@ class AppLockService extends ChangeNotifier {
 
   void markUnlocked() {
     _lastUnlockedAt = DateTime.now();
+  }
+
+  bool get isTemporarilyLocked {
+    final lockExpiry = _lockedUntil;
+    return lockExpiry != null && lockExpiry.isAfter(DateTime.now());
+  }
+
+  Duration? get remainingLockDuration {
+    final lockExpiry = _lockedUntil;
+    if (lockExpiry == null) {
+      return null;
+    }
+    final remaining = lockExpiry.difference(DateTime.now());
+    if (remaining.isNegative || remaining == Duration.zero) {
+      return null;
+    }
+    return remaining;
   }
 
   Future<bool> isBiometricAvailable() async {

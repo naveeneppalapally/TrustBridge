@@ -831,15 +831,74 @@ class _ChildDetailScreenState extends State<ChildDetailScreen> {
   }
 
   Future<void> _setQuickMode(BuildContext context, _QuickMode mode) async {
+    final parentId = _resolvedParentId;
+    if (parentId == null) {
+      _showMessage(context, 'Not logged in');
+      return;
+    }
+
+    final previousOverride = _quickModeOverride;
     setState(() {
       _quickModeOverride = mode;
     });
 
-    _showMessage(
-      context,
-      '${_quickModeLabel(mode)} mode selected for quick focus.',
-      success: true,
-    );
+    try {
+      switch (mode) {
+        case _QuickMode.homework:
+          await _resolvedFirestoreService.setChildManualMode(
+            parentId: parentId,
+            childId: _child.id,
+            mode: 'homework',
+          );
+          break;
+        case _QuickMode.bedtime:
+          await _resolvedFirestoreService.setChildManualMode(
+            parentId: parentId,
+            childId: _child.id,
+            mode: 'bedtime',
+          );
+          break;
+        case _QuickMode.freePlay:
+          await _resolvedFirestoreService.setChildManualMode(
+            parentId: parentId,
+            childId: _child.id,
+            mode: null,
+          );
+          await _resolvedFirestoreService.setChildPause(
+            parentId: parentId,
+            childId: _child.id,
+            pausedUntil: null,
+          );
+          break;
+      }
+
+      final refreshed = await _resolvedFirestoreService.getChild(
+        parentId: parentId,
+        childId: _child.id,
+      );
+      if (refreshed != null && mounted) {
+        setState(() {
+          _child = refreshed;
+        });
+      }
+
+      if (!context.mounted) {
+        return;
+      }
+      _showMessage(
+        context,
+        '${_quickModeLabel(mode)} mode is now live on the child device.',
+        success: true,
+      );
+    } catch (error) {
+      if (!mounted) {
+        return;
+      }
+      setState(() {
+        _quickModeOverride = previousOverride;
+      });
+      _showMessage(context, 'Unable to apply quick mode: $error');
+    }
   }
 
   Future<void> _toggleSchedule(
@@ -1041,19 +1100,25 @@ class _ChildDetailScreenState extends State<ChildDetailScreen> {
     }
 
     final pausedUntil = DateTime.now().add(duration);
-    final updatedChild = _child.copyWith(pausedUntil: pausedUntil);
 
     try {
-      await _resolvedFirestoreService.updateChild(
+      await _resolvedFirestoreService.setChildPause(
         parentId: parentId,
-        child: updatedChild,
+        childId: _child.id,
+        pausedUntil: pausedUntil,
+      );
+      final refreshed = await _resolvedFirestoreService.getChild(
+        parentId: parentId,
+        childId: _child.id,
       );
       if (!context.mounted) {
         return;
       }
-      setState(() {
-        _child = updatedChild;
-      });
+      if (refreshed != null) {
+        setState(() {
+          _child = refreshed;
+        });
+      }
       _showMessage(
         context,
         'Internet paused until ${_formatTime(pausedUntil)}',

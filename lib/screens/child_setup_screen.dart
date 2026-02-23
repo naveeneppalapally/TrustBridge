@@ -1,7 +1,9 @@
+import 'package:firebase_auth/firebase_auth.dart';
+import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 
+import '../services/heartbeat_service.dart';
 import '../services/pairing_service.dart';
-import '../utils/child_friendly_errors.dart';
 
 /// Child setup flow where a child enters a parent-generated pairing code.
 class ChildSetupScreen extends StatefulWidget {
@@ -27,7 +29,9 @@ class _ChildSetupScreenState extends State<ChildSetupScreen> {
   late final List<FocusNode> _focusNodes;
 
   bool _isConnecting = false;
+  bool _isReady = false;
   String? _errorMessage;
+  String? _lastAuthErrorCode;
 
   @override
   void initState() {
@@ -37,6 +41,7 @@ class _ChildSetupScreenState extends State<ChildSetupScreen> {
       (_) => TextEditingController(),
     );
     _focusNodes = List<FocusNode>.generate(6, (_) => FocusNode());
+    _ensureAuthenticatedSession();
   }
 
   @override
@@ -55,6 +60,56 @@ class _ChildSetupScreenState extends State<ChildSetupScreen> {
   bool get _canConnect =>
       !_isConnecting &&
       _controllers.every((controller) => controller.text.trim().length == 1);
+
+  Future<void> _ensureAuthenticatedSession() async {
+    setState(() {
+      _isReady = false;
+      _errorMessage = null;
+      _lastAuthErrorCode = null;
+    });
+
+    try {
+      final currentUser = FirebaseAuth.instance.currentUser;
+      if (currentUser == null) {
+        if (!mounted) {
+          return;
+        }
+        setState(() {
+          _isReady = false;
+          _lastAuthErrorCode = 'missing-parent-session';
+          _errorMessage =
+              'Sign in with the parent account on this device before child setup.';
+        });
+        return;
+      }
+      if (!mounted) {
+        return;
+      }
+      setState(() {
+        _isReady = true;
+        _lastAuthErrorCode = null;
+      });
+    } on FirebaseAuthException catch (error) {
+      if (!mounted) {
+        return;
+      }
+      final code = error.code.trim().toLowerCase();
+      setState(() {
+        _isReady = false;
+        _lastAuthErrorCode = code;
+        _errorMessage = _friendlyAuthInitError(code);
+      });
+    } catch (_) {
+      if (!mounted) {
+        return;
+      }
+      setState(() {
+        _isReady = false;
+        _lastAuthErrorCode = null;
+        _errorMessage = 'Could not connect. Check internet and try again.';
+      });
+    }
+  }
 
   void _onDigitChanged(int index, String value) {
     if (value.length > 1) {
@@ -78,7 +133,7 @@ class _ChildSetupScreenState extends State<ChildSetupScreen> {
   }
 
   Future<void> _connect() async {
-    if (!_canConnect) {
+    if (!_isReady || !_canConnect) {
       return;
     }
 
@@ -87,15 +142,39 @@ class _ChildSetupScreenState extends State<ChildSetupScreen> {
       _errorMessage = null;
     });
 
-    final deviceId = await _resolvedPairingService.getOrCreateDeviceId();
-    final result = await _resolvedPairingService.validateAndPair(_code, deviceId);
+    PairingResult result;
+    try {
+      final deviceId = await _resolvedPairingService.getOrCreateDeviceId();
+      result = await _resolvedPairingService.validateAndPair(_code, deviceId);
+    } catch (_) {
+      if (!mounted) {
+        return;
+      }
+      setState(() {
+        _isConnecting = false;
+        _errorMessage = 'Could not verify this code right now. Try again.';
+      });
+      return;
+    }
 
     if (!mounted) {
       return;
     }
 
     if (result.success) {
-      Navigator.of(context).pushReplacementNamed('/child/protection-permission');
+      // Fire an immediate heartbeat so the parent dashboard shows the child
+      // device as online right away, rather than waiting for the next
+      // periodic WorkManager heartbeat (10-15 min).
+      try {
+        await HeartbeatService.sendHeartbeat();
+      } catch (_) {
+        // Non-fatal; the periodic task will send the heartbeat later.
+      }
+      if (!mounted) {
+        return;
+      }
+      Navigator.of(context)
+          .pushReplacementNamed('/child/protection-permission');
       return;
     }
 
@@ -119,9 +198,28 @@ class _ChildSetupScreenState extends State<ChildSetupScreen> {
         return 'That code has expired. Ask your parent to generate a new one.';
       case PairingError.alreadyUsed:
         return 'That code has already been used.';
+      case PairingError.permissionDenied:
+        return 'Setup permission is blocked. Ask your parent to check app setup.';
       case PairingError.networkError:
       case null:
-        return ChildFriendlyErrors.sanitise('network error');
+        return 'Could not verify this code right now. Try again.';
+    }
+  }
+
+  String _friendlyAuthInitError(String code) {
+    switch (code) {
+      case 'missing-parent-session':
+        return 'Sign in with the parent account on this device before child setup.';
+      case 'network-request-failed':
+        return 'Could not connect. Check internet and try again.';
+      case 'app-not-authorized':
+      case 'invalid-api-key':
+      case 'api-key-not-valid':
+        return 'This app build is not authorized for Firebase. Ask your parent to update app setup (SHA/API key).';
+      case 'too-many-requests':
+        return 'Too many attempts. Wait a minute and try again.';
+      default:
+        return 'Setup needs your parent\'s help right now.';
     }
   }
 
@@ -155,27 +253,33 @@ class _ChildSetupScreenState extends State<ChildSetupScreen> {
                   ),
             ),
             const SizedBox(height: 28),
-            Row(
-              mainAxisAlignment: MainAxisAlignment.spaceBetween,
-              children: List<Widget>.generate(6, (index) {
-                return SizedBox(
-                  width: 44,
-                  child: TextField(
-                    controller: _controllers[index],
-                    focusNode: _focusNodes[index],
-                    enabled: !_isConnecting,
-                    keyboardType: TextInputType.number,
-                    textAlign: TextAlign.center,
-                    maxLength: 1,
-                    decoration: const InputDecoration(
-                      counterText: '',
-                      border: OutlineInputBorder(),
+            if (!_isReady && _errorMessage == null)
+              const Padding(
+                padding: EdgeInsets.symmetric(vertical: 24),
+                child: Center(child: CircularProgressIndicator()),
+              )
+            else
+              Row(
+                mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                children: List<Widget>.generate(6, (index) {
+                  return SizedBox(
+                    width: 44,
+                    child: TextField(
+                      controller: _controllers[index],
+                      focusNode: _focusNodes[index],
+                      enabled: !_isConnecting && _isReady,
+                      keyboardType: TextInputType.number,
+                      textAlign: TextAlign.center,
+                      maxLength: 1,
+                      decoration: const InputDecoration(
+                        counterText: '',
+                        border: OutlineInputBorder(),
+                      ),
+                      onChanged: (value) => _onDigitChanged(index, value),
                     ),
-                    onChanged: (value) => _onDigitChanged(index, value),
-                  ),
-                );
-              }),
-            ),
+                  );
+                }),
+              ),
             if (_errorMessage != null) ...[
               const SizedBox(height: 14),
               Text(
@@ -186,12 +290,30 @@ class _ChildSetupScreenState extends State<ChildSetupScreen> {
                   fontWeight: FontWeight.w600,
                 ),
               ),
+              if (kDebugMode && _lastAuthErrorCode != null) ...[
+                const SizedBox(height: 6),
+                Text(
+                  'Auth code: $_lastAuthErrorCode',
+                  textAlign: TextAlign.center,
+                  style: Theme.of(context).textTheme.bodySmall?.copyWith(
+                        color: Colors.red.shade300,
+                        fontWeight: FontWeight.w500,
+                      ),
+                ),
+              ],
+              if (!_isReady) ...[
+                const SizedBox(height: 10),
+                TextButton(
+                  onPressed: _isConnecting ? null : _ensureAuthenticatedSession,
+                  child: const Text('Retry'),
+                ),
+              ],
             ],
             const SizedBox(height: 28),
             SizedBox(
               height: 52,
               child: FilledButton.icon(
-                onPressed: _canConnect ? _connect : null,
+                onPressed: (_isReady && _canConnect) ? _connect : null,
                 icon: _isConnecting
                     ? const SizedBox(
                         width: 18,

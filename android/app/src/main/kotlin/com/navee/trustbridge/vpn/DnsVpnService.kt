@@ -1,5 +1,6 @@
 package com.navee.trustbridge.vpn
 
+import android.app.AlarmManager
 import android.app.Notification
 import android.app.NotificationChannel
 import android.app.NotificationManager
@@ -12,6 +13,7 @@ import android.net.NetworkRequest
 import android.net.VpnService
 import android.os.Build
 import android.os.ParcelFileDescriptor
+import android.provider.Settings
 import android.util.Log
 import androidx.core.app.NotificationCompat
 import com.navee.trustbridge.MainActivity
@@ -31,6 +33,13 @@ class DnsVpnService : VpnService() {
         private const val NOTIFICATION_ID = 1001
         private const val CHANNEL_ID = "dns_vpn_channel"
         private const val MAX_RECONNECT_ATTEMPTS = 3
+        private const val MAX_BOOT_RESTORE_RETRY_ATTEMPTS = 4
+        private val BOOT_RESTORE_RETRY_DELAYS_MS = longArrayOf(
+            15_000L,
+            30_000L,
+            60_000L,
+            120_000L
+        )
 
         const val ACTION_START = "com.navee.trustbridge.vpn.START"
         const val ACTION_STOP = "com.navee.trustbridge.vpn.STOP"
@@ -42,6 +51,8 @@ class DnsVpnService : VpnService() {
         const val EXTRA_BLOCKED_DOMAINS = "blockedDomains"
         const val EXTRA_TEMP_ALLOWED_DOMAINS = "temporaryAllowedDomains"
         const val EXTRA_UPSTREAM_DNS = "upstreamDns"
+        const val EXTRA_BOOT_RESTORE = "bootRestore"
+        const val EXTRA_BOOT_RESTORE_ATTEMPT = "bootRestoreAttempt"
 
         @Volatile
         var isRunning: Boolean = false
@@ -80,6 +91,9 @@ class DnsVpnService : VpnService() {
         @Volatile
         private var currentUpstreamDns: String = DEFAULT_UPSTREAM_DNS
 
+        @Volatile
+        private var privateDnsMode: String = ""
+
         fun statusSnapshot(permissionGranted: Boolean): Map<String, Any?> {
             return mapOf(
                 "supported" to true,
@@ -95,8 +109,14 @@ class DnsVpnService : VpnService() {
                 "startedAtEpochMs" to startedAtEpochMs,
                 "lastRuleUpdateEpochMs" to lastRuleUpdateEpochMs,
                 "recentQueryCount" to recentQueryLogs.size,
-                "upstreamDns" to currentUpstreamDns
+                "upstreamDns" to currentUpstreamDns,
+                "privateDnsMode" to privateDnsMode,
+                "privateDnsActive" to isPrivateDnsActive()
             )
+        }
+
+        private fun isPrivateDnsActive(): Boolean {
+            return privateDnsMode == "opportunistic" || privateDnsMode == "hostname"
         }
 
         @Synchronized
@@ -140,6 +160,10 @@ class DnsVpnService : VpnService() {
     private var reconnectScheduledFromRevoke: Boolean = false
     @Volatile
     private var reconnectAttemptCount: Int = 0
+    @Volatile
+    private var activeBootRestoreStart: Boolean = false
+    @Volatile
+    private var activeBootRestoreAttempt: Int = 0
     private var lastAppliedCategories: List<String> = emptyList()
     private var lastAppliedDomains: List<String> = emptyList()
     private var lastAppliedAllowedDomains: List<String> = emptyList()
@@ -147,6 +171,8 @@ class DnsVpnService : VpnService() {
 
     @Volatile
     private var serviceRunning: Boolean = false
+    @Volatile
+    private var foregroundActive: Boolean = false
 
     override fun onCreate() {
         super.onCreate()
@@ -164,7 +190,7 @@ class DnsVpnService : VpnService() {
         }
         filterEngine = DnsFilterEngine(this)
         blockedCategoryCount = filterEngine.blockedCategoryCount()
-        blockedDomainCount = filterEngine.blockedDomainCount()
+        blockedDomainCount = filterEngine.effectiveBlockedDomainCount()
         lastRuleUpdateEpochMs = System.currentTimeMillis()
         Log.d(TAG, "DNS VPN service created")
     }
@@ -175,8 +201,13 @@ class DnsVpnService : VpnService() {
 
         return when (action) {
             ACTION_START -> {
+                activeBootRestoreStart =
+                    intent?.getBooleanExtra(EXTRA_BOOT_RESTORE, false) == true
+                activeBootRestoreAttempt =
+                    intent?.getIntExtra(EXTRA_BOOT_RESTORE_ATTEMPT, 0) ?: 0
                 vpnPreferencesStore.setEnabled(true)
                 reconnectScheduledFromRevoke = false
+                ensureForegroundStarted()
                 val categories =
                     intent?.getStringArrayListExtra(EXTRA_BLOCKED_CATEGORIES)?.toList()
                         ?: lastAppliedCategories
@@ -206,8 +237,13 @@ class DnsVpnService : VpnService() {
             }
 
             ACTION_RESTART -> {
+                activeBootRestoreStart =
+                    intent?.getBooleanExtra(EXTRA_BOOT_RESTORE, false) == true
+                activeBootRestoreAttempt =
+                    intent?.getIntExtra(EXTRA_BOOT_RESTORE_ATTEMPT, 0) ?: 0
                 vpnPreferencesStore.setEnabled(true)
                 reconnectScheduledFromRevoke = false
+                ensureForegroundStarted()
                 val hasCategories = intent?.hasExtra(EXTRA_BLOCKED_CATEGORIES) == true
                 val hasDomains = intent?.hasExtra(EXTRA_BLOCKED_DOMAINS) == true
                 val hasAllowedDomains = intent?.hasExtra(EXTRA_TEMP_ALLOWED_DOMAINS) == true
@@ -260,6 +296,8 @@ class DnsVpnService : VpnService() {
             }
 
             ACTION_STOP -> {
+                activeBootRestoreStart = false
+                activeBootRestoreAttempt = 0
                 vpnPreferencesStore.setEnabled(false)
                 stopVpn(stopService = true, markDisabled = true)
                 START_NOT_STICKY
@@ -276,6 +314,7 @@ class DnsVpnService : VpnService() {
         }
 
         try {
+            ensureForegroundStarted()
             val builder = Builder()
                 .setSession("TrustBridge DNS Filter")
                 .addAddress(VPN_ADDRESS, 32)
@@ -292,8 +331,18 @@ class DnsVpnService : VpnService() {
 
             vpnInterface = builder.establish()
             if (vpnInterface == null) {
-                Log.e(TAG, "Failed to establish VPN interface")
-                stopSelf()
+                val hasPersistedPermission = VpnService.prepare(this) == null
+                Log.e(
+                    TAG,
+                    "Failed to establish VPN interface " +
+                        "(bootRestore=$activeBootRestoreStart " +
+                        "attempt=$activeBootRestoreAttempt " +
+                        "permissionPersisted=$hasPersistedPermission)"
+                )
+                if (activeBootRestoreStart && hasPersistedPermission) {
+                    scheduleBootRestoreRetry()
+                }
+                stopVpn(stopService = true, markDisabled = false)
                 return
             }
 
@@ -302,6 +351,12 @@ class DnsVpnService : VpnService() {
                 upstreamDns = lastAppliedUpstreamDns,
                 protectSocket = { socket ->
                     protect(socket)
+                },
+                onBlockedDomain = { domain ->
+                    VpnEventDispatcher.notifyBlockedDomain(
+                        domain = domain,
+                        modeName = currentModeNameForBlockedEvent()
+                    )
                 }
             )
 
@@ -309,6 +364,7 @@ class DnsVpnService : VpnService() {
             isRunning = true
             vpnPreferencesStore.setEnabled(true)
             reconnectAttemptCount = 0
+            activeBootRestoreAttempt = 0
             startedAtEpochMs = System.currentTimeMillis()
             queriesProcessed = 0
             queriesBlocked = 0
@@ -319,13 +375,76 @@ class DnsVpnService : VpnService() {
             packetHandler?.clearRecentQueries()
             currentUpstreamDns = lastAppliedUpstreamDns
 
-            startForeground(NOTIFICATION_ID, createNotification())
             registerNetworkCallback()
+            detectPrivateDns()
             startPacketProcessing()
-            Log.d(TAG, "DNS VPN started (upstream=$lastAppliedUpstreamDns)")
+            Log.d(TAG, "DNS VPN started (upstream=$lastAppliedUpstreamDns, privateDns=$privateDnsMode)")
         } catch (error: Exception) {
             Log.e(TAG, "Failed to start VPN", error)
             stopVpn(stopService = true, markDisabled = false)
+        }
+    }
+
+    private fun scheduleBootRestoreRetry() {
+        val nextAttempt = activeBootRestoreAttempt + 1
+        if (nextAttempt > MAX_BOOT_RESTORE_RETRY_ATTEMPTS) {
+            Log.w(TAG, "Boot restore retries exhausted")
+            return
+        }
+
+        val config = vpnPreferencesStore.loadConfig()
+        if (!config.enabled) {
+            Log.d(TAG, "Boot restore retry skipped: VPN no longer enabled")
+            return
+        }
+
+        val delayMs = BOOT_RESTORE_RETRY_DELAYS_MS.getOrElse(nextAttempt - 1) {
+            BOOT_RESTORE_RETRY_DELAYS_MS.last()
+        }
+        val retryIntent = Intent(this, DnsVpnService::class.java).apply {
+            action = ACTION_START
+            putExtra(EXTRA_BOOT_RESTORE, true)
+            putExtra(EXTRA_BOOT_RESTORE_ATTEMPT, nextAttempt)
+            putStringArrayListExtra(
+                EXTRA_BLOCKED_CATEGORIES,
+                ArrayList(config.blockedCategories)
+            )
+            putStringArrayListExtra(
+                EXTRA_BLOCKED_DOMAINS,
+                ArrayList(config.blockedDomains)
+            )
+            putStringArrayListExtra(
+                EXTRA_TEMP_ALLOWED_DOMAINS,
+                ArrayList(config.temporaryAllowedDomains)
+            )
+            putExtra(EXTRA_UPSTREAM_DNS, config.upstreamDns)
+        }
+
+        val pendingIntent = PendingIntent.getService(
+            this,
+            2000 + nextAttempt,
+            retryIntent,
+            PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE
+        )
+        val alarmManager = getSystemService(AlarmManager::class.java)
+        if (alarmManager == null) {
+            Log.w(TAG, "Boot restore retry scheduling skipped: AlarmManager unavailable")
+            return
+        }
+
+        val triggerAtMs = System.currentTimeMillis() + delayMs
+        Log.w(
+            TAG,
+            "Scheduling boot restore retry attempt=$nextAttempt in ${delayMs}ms"
+        )
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.M) {
+            alarmManager.setExactAndAllowWhileIdle(
+                AlarmManager.RTC_WAKEUP,
+                triggerAtMs,
+                pendingIntent
+            )
+        } else {
+            alarmManager.setExact(AlarmManager.RTC_WAKEUP, triggerAtMs, pendingIntent)
         }
     }
 
@@ -372,7 +491,7 @@ class DnsVpnService : VpnService() {
     }
 
     private fun stopVpn(stopService: Boolean, markDisabled: Boolean) {
-        if (!serviceRunning && vpnInterface == null) {
+        if (!serviceRunning && vpnInterface == null && !foregroundActive) {
             if (markDisabled) {
                 vpnPreferencesStore.setEnabled(false)
             }
@@ -404,11 +523,14 @@ class DnsVpnService : VpnService() {
         packetThread?.interrupt()
         packetThread = null
 
-        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.N) {
-            stopForeground(STOP_FOREGROUND_REMOVE)
-        } else {
-            @Suppress("DEPRECATION")
-            stopForeground(true)
+        if (foregroundActive) {
+            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.N) {
+                stopForeground(STOP_FOREGROUND_REMOVE)
+            } else {
+                @Suppress("DEPRECATION")
+                stopForeground(true)
+            }
+            foregroundActive = false
         }
 
         if (stopService) {
@@ -523,8 +645,27 @@ class DnsVpnService : VpnService() {
         )
         filterEngine.updateFilterRules(categories, domains, temporaryAllowedDomains)
         blockedCategoryCount = filterEngine.blockedCategoryCount()
-        blockedDomainCount = filterEngine.blockedDomainCount()
+        blockedDomainCount = filterEngine.effectiveBlockedDomainCount()
         lastRuleUpdateEpochMs = System.currentTimeMillis()
+    }
+
+    private fun currentModeNameForBlockedEvent(): String {
+        if (lastAppliedCategories.contains("__block_all__")) {
+            return "Pause Mode"
+        }
+
+        val focusCategoryHit = lastAppliedCategories.any { category ->
+            category == "social" ||
+                category == "social-networks" ||
+                category == "chat" ||
+                category == "streaming" ||
+                category == "games"
+        }
+        if (focusCategoryHit) {
+            return "Focus Mode"
+        }
+
+        return "Protection Mode"
     }
 
     private fun applyUpstreamDns(upstreamDns: String?) {
@@ -542,6 +683,40 @@ class DnsVpnService : VpnService() {
     private fun normalizeUpstreamDns(value: String?): String {
         val normalized = value?.trim().orEmpty()
         return if (normalized.isEmpty()) DEFAULT_UPSTREAM_DNS else normalized
+    }
+
+    private fun detectPrivateDns() {
+        if (Build.VERSION.SDK_INT < Build.VERSION_CODES.P) {
+            privateDnsMode = ""
+            return
+        }
+        try {
+            val mode = Settings.Global.getString(contentResolver, "private_dns_mode")
+                ?: ""
+            privateDnsMode = mode
+            if (mode == "opportunistic" || mode == "hostname") {
+                Log.w(
+                    TAG,
+                    "⚠️ Private DNS is ACTIVE (mode=$mode). " +
+                        "DNS-over-TLS will bypass VPN's UDP/53 interception. " +
+                        "Blocking may not work until Private DNS is disabled."
+                )
+            } else {
+                Log.d(TAG, "Private DNS mode=$mode (OK – DNS interception should work)")
+            }
+        } catch (error: Exception) {
+            Log.w(TAG, "Could not read private_dns_mode setting", error)
+            privateDnsMode = ""
+        }
+    }
+
+    @Synchronized
+    private fun ensureForegroundStarted() {
+        if (foregroundActive) {
+            return
+        }
+        startForeground(NOTIFICATION_ID, createNotification())
+        foregroundActive = true
     }
 
     private fun createNotification(): Notification {

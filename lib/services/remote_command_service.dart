@@ -1,6 +1,7 @@
 import 'dart:async';
 
 import 'package:cloud_firestore/cloud_firestore.dart';
+import 'package:firebase_auth/firebase_auth.dart';
 import 'package:workmanager/workmanager.dart';
 
 import 'pairing_service.dart';
@@ -25,6 +26,9 @@ class RemoteCommandService {
   static const String _uniqueTaskName =
       'trustbridge_remote_command_poll_unique';
   static const Duration _pollFrequency = Duration(minutes: 15);
+  static const String commandRestartVpn = 'restartVpn';
+  static const String commandClearPairingAndStopProtection =
+      'clearPairingAndStopProtection';
 
   RemoteCommandService({
     FirebaseFirestore? firestore,
@@ -54,6 +58,45 @@ class RemoteCommandService {
 
   /// Parent sends a restart protection command.
   Future<String> sendRestartVpnCommand(String deviceId) async {
+    return _sendCommand(
+      deviceId: deviceId,
+      command: commandRestartVpn,
+    );
+  }
+
+  /// Parent sends a cleanup command after child profile deletion/unlink.
+  Future<String> sendClearPairingAndStopProtectionCommand(
+    String deviceId, {
+    String? childId,
+    String? reason,
+  }) async {
+    return _sendCommand(
+      deviceId: deviceId,
+      command: commandClearPairingAndStopProtection,
+      extraData: <String, dynamic>{
+        if (childId != null && childId.trim().isNotEmpty) 'childId': childId.trim(),
+        if (reason != null && reason.trim().isNotEmpty) 'reason': reason.trim(),
+      },
+    );
+  }
+
+  Future<String> _sendCommand({
+    required String deviceId,
+    required String command,
+    Map<String, dynamic> extraData = const <String, dynamic>{},
+  }) async {
+    var parentId = (await _pairingService.getPairedParentId())?.trim();
+    if (parentId == null || parentId.isEmpty) {
+      try {
+        parentId = FirebaseAuth.instance.currentUser?.uid.trim();
+      } catch (_) {
+        parentId = null;
+      }
+    }
+    if (parentId == null || parentId.isEmpty) {
+      throw StateError('Parent must be signed in to send commands.');
+    }
+
     final ref = _firestore
         .collection('devices')
         .doc(deviceId)
@@ -61,10 +104,12 @@ class RemoteCommandService {
         .doc();
     await ref.set(<String, dynamic>{
       'commandId': ref.id,
-      'command': 'restartVpn',
+      'parentId': parentId,
+      'command': command,
       'status': 'pending',
       'attempts': 0,
       'sentAt': FieldValue.serverTimestamp(),
+      ...extraData,
     });
     return ref.id;
   }
@@ -84,15 +129,6 @@ class RemoteCommandService {
       final command = (data['command'] as String?) ?? '';
       final attempts = _readInt(data['attempts']);
 
-      if (command != 'restartVpn') {
-        await doc.reference.update(<String, dynamic>{
-          'status': 'failed',
-          'error': 'Unknown command',
-          'executedAt': FieldValue.serverTimestamp(),
-        });
-        continue;
-      }
-
       if (attempts >= 3) {
         await doc.reference.update(<String, dynamic>{
           'status': 'failed',
@@ -103,7 +139,10 @@ class RemoteCommandService {
       }
 
       try {
-        final executed = await _vpnService.restartVpn();
+        final executed = await _executeCommand(
+          command: command,
+          payload: data,
+        );
         await doc.reference.update(<String, dynamic>{
           'status': executed ? 'executed' : 'failed',
           'attempts': attempts + 1,
@@ -117,6 +156,59 @@ class RemoteCommandService {
         });
       }
     }
+  }
+
+  Future<bool> _executeCommand({
+    required String command,
+    required Map<String, dynamic> payload,
+  }) async {
+    switch (command) {
+      case commandRestartVpn:
+        return _vpnService.restartVpn();
+      case commandClearPairingAndStopProtection:
+        return _clearPairingAndStopProtection(payload);
+      default:
+        return false;
+    }
+  }
+
+  Future<bool> _clearPairingAndStopProtection(
+    Map<String, dynamic> payload,
+  ) async {
+    final targetChildId = (payload['childId'] as String?)?.trim();
+    final localChildId = (await _pairingService.getPairedChildId())?.trim();
+    if (targetChildId != null &&
+        targetChildId.isNotEmpty &&
+        localChildId != null &&
+        localChildId.isNotEmpty &&
+        targetChildId != localChildId) {
+      // Command was intended for an earlier child assignment on this device.
+      return true;
+    }
+
+    try {
+      await _vpnService.updateFilterRules(
+        blockedCategories: const <String>[],
+        blockedDomains: const <String>[],
+        temporaryAllowedDomains: const <String>[],
+      );
+    } catch (_) {
+      // Best-effort cleanup.
+    }
+
+    try {
+      await _vpnService.stopVpn();
+    } catch (_) {
+      // Best-effort cleanup.
+    }
+
+    try {
+      await _pairingService.clearLocalPairing();
+    } catch (_) {
+      return false;
+    }
+
+    return true;
   }
 
   /// Parent watches command status stream by command id.

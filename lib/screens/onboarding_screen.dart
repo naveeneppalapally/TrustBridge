@@ -514,6 +514,12 @@ class _OnboardingScreenState extends State<OnboardingScreen> {
           number: '3',
           label: 'Allow VPN permission when Android prompts',
         ),
+        const SizedBox(height: 10),
+        _stepRow(
+          context,
+          number: '4',
+          label: 'Set TrustBridge battery to Unrestricted / Don\'t optimize',
+        ),
         const SizedBox(height: 20),
         OutlinedButton.icon(
           onPressed: () async {
@@ -531,7 +537,7 @@ class _OnboardingScreenState extends State<OnboardingScreen> {
         ),
         const SizedBox(height: 10),
         Text(
-          'You can always revisit this setup guide from Settings.',
+          'Important on Vivo/Oppo/Realme devices: if battery optimization stays on, Android may stop protection later. You can always revisit this setup guide from Settings.',
           textAlign: TextAlign.center,
           style: Theme.of(context).textTheme.bodySmall?.copyWith(
                 color: Colors.grey.shade600,

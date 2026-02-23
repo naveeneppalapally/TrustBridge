@@ -21,6 +21,9 @@ enum PairingError {
   /// Code has already been consumed.
   alreadyUsed,
 
+  /// Caller is authenticated but missing permission for the pairing operation.
+  permissionDenied,
+
   /// Unexpected network/runtime issue.
   networkError,
 }
@@ -66,6 +69,21 @@ class PairingResult {
       error: error,
     );
   }
+}
+
+/// Canonical child/parent linkage resolved from pairing storage or cloud.
+class PairingContext {
+  /// Creates a pairing context.
+  const PairingContext({
+    required this.childId,
+    required this.parentId,
+  });
+
+  /// Paired child profile id.
+  final String childId;
+
+  /// Owning parent uid.
+  final String parentId;
 }
 
 class _PairingGuardException implements Exception {
@@ -120,16 +138,36 @@ class PairingService {
       throw ArgumentError.value(childId, 'childId', 'Child ID is required.');
     }
 
-    final parentId = (_currentUserIdResolver?.call() ?? FirebaseAuth.instance.currentUser?.uid)
+    final parentId = (_currentUserIdResolver?.call() ??
+            FirebaseAuth.instance.currentUser?.uid)
         ?.trim();
     if (parentId == null || parentId.isEmpty) {
       throw StateError('Parent must be signed in to generate pairing codes.');
     }
 
+    final childSnapshot =
+        await _firestore.collection('children').doc(trimmedChildId).get();
+    if (!childSnapshot.exists) {
+      throw StateError(
+          'Child profile not found. Please refresh and try again.');
+    }
+    final childData = childSnapshot.data() ?? const <String, dynamic>{};
+    final childParentId = (childData['parentId'] as String?)?.trim();
+    if (childParentId == null ||
+        childParentId.isEmpty ||
+        childParentId != parentId) {
+      throw StateError(
+        'You can only generate setup codes for your own child profiles.',
+      );
+    }
+
     final code = await _generateUniqueSixDigitCode();
     final expiresAt = _nowProvider().add(_expiryWindow);
 
-    await _firestore.collection('pairing_codes').doc(code).set(<String, dynamic>{
+    await _firestore
+        .collection('pairing_codes')
+        .doc(code)
+        .set(<String, dynamic>{
       'code': code,
       'childId': trimmedChildId,
       'parentId': parentId,
@@ -157,7 +195,8 @@ class PairingService {
       String? parentId;
 
       await _firestore.runTransaction((transaction) async {
-        final codeRef = _firestore.collection('pairing_codes').doc(normalizedCode);
+        final codeRef =
+            _firestore.collection('pairing_codes').doc(normalizedCode);
         final codeSnapshot = await transaction.get(codeRef);
         if (!codeSnapshot.exists) {
           throw const _PairingGuardException(PairingError.invalidCode);
@@ -194,33 +233,48 @@ class PairingService {
         return PairingResult.failure(PairingError.networkError);
       }
 
-      final childRef = _firestore.collection('children').doc(childId);
-      await childRef.set(
-        <String, dynamic>{
-          'parentId': parentId,
-          'deviceIds': FieldValue.arrayUnion(<String>[normalizedDeviceId]),
-          'updatedAt': FieldValue.serverTimestamp(),
-        },
-        SetOptions(merge: true),
-      );
-
       await _secureStorage.write(key: _pairedChildIdKey, value: childId);
       await _secureStorage.write(key: _pairedParentIdKey, value: parentId);
       await _appModeService.setMode(AppMode.child);
 
-      await _saveDeviceRecord(
-        childId: childId!,
-        parentId: parentId!,
-        deviceId: normalizedDeviceId,
-      );
+      try {
+        await _saveDeviceRecord(
+          childId: childId!,
+          parentId: parentId!,
+          deviceId: normalizedDeviceId,
+        );
+      } catch (_) {
+        // Non-fatal in child pairing bootstrap.
+      }
+
+      final childRef = _firestore.collection('children').doc(childId);
+      try {
+        await childRef.set(
+          <String, dynamic>{
+            'parentId': parentId,
+            'deviceIds': FieldValue.arrayUnion(<String>[normalizedDeviceId]),
+            'updatedAt': FieldValue.serverTimestamp(),
+          },
+          SetOptions(merge: true),
+        );
+      } catch (_) {
+        // Non-fatal in child pairing bootstrap. Device record still allows access.
+      }
 
       return PairingResult.success(
         childId: childId!,
         parentId: parentId!,
       );
+      // Note: The caller (child setup screen) should trigger an immediate
+      // HeartbeatService.sendHeartbeat() after receiving this success result
+      // so that the parent dashboard shows the device as online right away.
     } on _PairingGuardException catch (error) {
       return PairingResult.failure(error.error);
-    } on FirebaseException {
+    } on FirebaseException catch (error) {
+      final code = error.code.trim().toLowerCase();
+      if (code == 'permission-denied' || code == 'unauthenticated') {
+        return PairingResult.failure(PairingError.permissionDenied);
+      }
       return PairingResult.failure(PairingError.networkError);
     } catch (_) {
       return PairingResult.failure(PairingError.networkError);
@@ -229,14 +283,49 @@ class PairingService {
 
   /// Returns persisted device ID or creates one on first run.
   Future<String> getOrCreateDeviceId() async {
+    String? authUid;
+    try {
+      authUid = FirebaseAuth.instance.currentUser?.uid.trim();
+    } catch (_) {
+      authUid = null;
+    }
+
     final existing = (await _secureStorage.read(key: _deviceIdKey))?.trim();
     if (existing != null && existing.isNotEmpty) {
+      if (_isLegacyAuthBoundDeviceId(
+        existingDeviceId: existing,
+        currentAuthUid: authUid,
+      )) {
+        final migrated = const Uuid().v4();
+        await _secureStorage.write(key: _deviceIdKey, value: migrated);
+        return migrated;
+      }
       return existing;
     }
 
     final generated = const Uuid().v4();
     await _secureStorage.write(key: _deviceIdKey, value: generated);
     return generated;
+  }
+
+  bool _isLegacyAuthBoundDeviceId({
+    required String existingDeviceId,
+    required String? currentAuthUid,
+  }) {
+    if (currentAuthUid == null || currentAuthUid.isEmpty) {
+      return false;
+    }
+    if (existingDeviceId != currentAuthUid) {
+      return false;
+    }
+    final uuidPattern = RegExp(
+      r'^[0-9a-fA-F]{8}-'
+      r'[0-9a-fA-F]{4}-'
+      r'[0-9a-fA-F]{4}-'
+      r'[0-9a-fA-F]{4}-'
+      r'[0-9a-fA-F]{12}$',
+    );
+    return !uuidPattern.hasMatch(existingDeviceId);
   }
 
   /// Reads the paired child identifier stored locally.
@@ -257,6 +346,93 @@ class PairingService {
       return null;
     }
     return normalized;
+  }
+
+  /// Attempts to recover pairing context from cloud using this device ID.
+  ///
+  /// This is used when local secure storage is stale or cleared unexpectedly.
+  Future<PairingContext?> recoverPairingFromCloud() async {
+    final deviceId = await getOrCreateDeviceId();
+    if (deviceId.trim().isEmpty) {
+      return null;
+    }
+
+    try {
+      final childrenSnapshot = await _firestore
+          .collection('children')
+          .where('deviceIds', arrayContains: deviceId)
+          .limit(1)
+          .get();
+      if (childrenSnapshot.docs.isNotEmpty) {
+        final doc = childrenSnapshot.docs.first;
+        final parentId = (doc.data()['parentId'] as String?)?.trim();
+        final childId = doc.id.trim();
+        if (parentId != null && parentId.isNotEmpty && childId.isNotEmpty) {
+          await _secureStorage.write(key: _pairedChildIdKey, value: childId);
+          await _secureStorage.write(key: _pairedParentIdKey, value: parentId);
+          return PairingContext(childId: childId, parentId: parentId);
+        }
+      }
+    } catch (_) {
+      // Continue with secondary lookup strategy.
+    }
+
+    try {
+      final deviceSnapshot = await _firestore
+          .collectionGroup('devices')
+          .where(FieldPath.documentId, isEqualTo: deviceId)
+          .limit(1)
+          .get();
+      if (deviceSnapshot.docs.isEmpty) {
+        return null;
+      }
+
+      final deviceDoc = deviceSnapshot.docs.first;
+      final childDocRef = deviceDoc.reference.parent.parent;
+      final childId = childDocRef?.id.trim();
+      var parentId = (deviceDoc.data()['parentId'] as String?)?.trim();
+      final childSnapshot = childDocRef == null ? null : await childDocRef.get();
+
+      if (childSnapshot == null || !childSnapshot.exists) {
+        return null;
+      }
+
+      if ((parentId == null || parentId.isEmpty) &&
+          childDocRef != null &&
+          childDocRef.path.isNotEmpty) {
+        final childData = childSnapshot.data();
+        final rawParentId = childData?['parentId'];
+        if (rawParentId is String && rawParentId.trim().isNotEmpty) {
+          parentId = rawParentId.trim();
+        }
+      }
+
+      final childData = childSnapshot.data() ?? const <String, dynamic>{};
+      final rawDeviceIds = childData['deviceIds'];
+      if (rawDeviceIds is List) {
+        final registeredDeviceIds = rawDeviceIds
+            .map((raw) => raw?.toString().trim() ?? '')
+            .where((id) => id.isNotEmpty)
+            .toSet();
+        if (registeredDeviceIds.isNotEmpty &&
+            !registeredDeviceIds.contains(deviceId)) {
+          return null;
+        }
+      }
+
+      if (childId == null ||
+          childId.isEmpty ||
+          parentId == null ||
+          parentId.isEmpty) {
+        return null;
+      }
+
+      await _secureStorage.write(key: _pairedChildIdKey, value: childId);
+      await _secureStorage.write(key: _pairedParentIdKey, value: parentId);
+      return PairingContext(childId: childId, parentId: parentId);
+    } catch (_) {
+      return null;
+    }
   }
 
   /// Clears local pairing identifiers for recovery from interrupted setup.

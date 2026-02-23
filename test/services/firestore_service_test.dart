@@ -164,12 +164,26 @@ void main() {
       expect(createdAt, originalCreatedAt);
     });
 
-    test('deleteChild removes document', () async {
+    test('deleteChild removes document and enqueues cleanup commands', () async {
       final child = await firestoreService.addChild(
         parentId: 'parentA',
         nickname: 'Delete Me',
         ageBand: AgeBand.middle,
       );
+
+      await fakeFirestore.collection('children').doc(child.id).update(
+        <String, dynamic>{
+          'deviceIds': <String>['device-1'],
+        },
+      );
+      await fakeFirestore
+          .collection('children')
+          .doc(child.id)
+          .collection('devices')
+          .doc('device-2')
+          .set(<String, dynamic>{
+        'parentId': 'parentA',
+      });
 
       await firestoreService.deleteChild(
         parentId: 'parentA',
@@ -179,6 +193,25 @@ void main() {
       final snapshot =
           await fakeFirestore.collection('children').doc(child.id).get();
       expect(snapshot.exists, isFalse);
+
+      final device1Commands = await fakeFirestore
+          .collection('devices')
+          .doc('device-1')
+          .collection('pendingCommands')
+          .get();
+      final device2Commands = await fakeFirestore
+          .collection('devices')
+          .doc('device-2')
+          .collection('pendingCommands')
+          .get();
+
+      expect(device1Commands.docs, hasLength(1));
+      expect(
+        device1Commands.docs.single.data()['command'],
+        'clearPairingAndStopProtection',
+      );
+      expect(device1Commands.docs.single.data()['childId'], child.id);
+      expect(device2Commands.docs, hasLength(1));
     });
 
     test('pauseAllChildren sets pausedUntil for all parent children', () async {
@@ -698,6 +731,15 @@ void main() {
       expect(data['parentReply'], 'Okay for homework only');
       expect(data['respondedAt'], isA<Timestamp>());
       expect(data['expiresAt'], isA<Timestamp>());
+
+      final queueSnapshot =
+          await fakeFirestore.collection('notification_queue').get();
+      expect(queueSnapshot.docs, hasLength(1));
+      final queueData = queueSnapshot.docs.first.data();
+      expect(queueData['parentId'], 'parent-a');
+      expect(queueData['childId'], 'child-a');
+      expect(queueData['eventType'], 'access_request_response');
+      expect(queueData['route'], '/child/status');
     });
 
     test('respondToAccessRequest marks request denied without expiry',
@@ -728,6 +770,15 @@ void main() {
       expect(data['status'], RequestStatus.denied.name);
       expect(data['respondedAt'], isA<Timestamp>());
       expect(data['expiresAt'], isNull);
+
+      final queueSnapshot =
+          await fakeFirestore.collection('notification_queue').get();
+      expect(queueSnapshot.docs, hasLength(1));
+      final queueData = queueSnapshot.docs.first.data();
+      expect(queueData['parentId'], 'parent-a');
+      expect(queueData['childId'], 'child-b');
+      expect(queueData['eventType'], 'access_request_response');
+      expect(queueData['route'], '/child/status');
     });
 
     test('respondToAccessRequest applies approved duration override', () async {

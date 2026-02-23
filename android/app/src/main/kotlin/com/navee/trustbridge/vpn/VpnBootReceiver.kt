@@ -31,6 +31,8 @@ class VpnBootReceiver : BroadcastReceiver() {
         Log.d(TAG, "Boot restore: starting VPN with persisted rules")
         val serviceIntent = Intent(context, DnsVpnService::class.java).apply {
             this.action = DnsVpnService.ACTION_START
+            putExtra(DnsVpnService.EXTRA_BOOT_RESTORE, true)
+            putExtra(DnsVpnService.EXTRA_BOOT_RESTORE_ATTEMPT, 0)
             putStringArrayListExtra(
                 DnsVpnService.EXTRA_BLOCKED_CATEGORIES,
                 ArrayList(config.blockedCategories)

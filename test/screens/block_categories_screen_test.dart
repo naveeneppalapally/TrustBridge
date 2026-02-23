@@ -2,6 +2,7 @@ import 'dart:convert';
 
 import 'package:fake_cloud_firestore/fake_cloud_firestore.dart';
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:http/http.dart' as http;
 import 'package:http/testing.dart';
@@ -13,12 +14,52 @@ import 'package:trustbridge_app/services/nextdns_api_service.dart';
 void main() {
   group('BlockCategoriesScreen', () {
     late ChildProfile testChild;
+    late Map<String, String> secureStorage;
+    const secureStorageChannel =
+        MethodChannel('plugins.it_nomads.com/flutter_secure_storage');
 
-    setUp(() {
+    setUp(() async {
       testChild = ChildProfile.create(
         nickname: 'Test Child',
         ageBand: AgeBand.young,
       );
+      secureStorage = <String, String>{
+        'trustbridge_pin_enabled': 'false',
+      };
+      TestDefaultBinaryMessengerBinding.instance.defaultBinaryMessenger
+          .setMockMethodCallHandler(secureStorageChannel, (call) async {
+        switch (call.method) {
+          case 'read':
+            return secureStorage[call.arguments['key'] as String? ?? ''];
+          case 'write':
+            final key = call.arguments['key'] as String? ?? '';
+            final value = call.arguments['value'] as String?;
+            if (value == null) {
+              secureStorage.remove(key);
+            } else {
+              secureStorage[key] = value;
+            }
+            return null;
+          case 'delete':
+            secureStorage.remove(call.arguments['key'] as String? ?? '');
+            return null;
+          case 'deleteAll':
+            secureStorage.clear();
+            return null;
+          case 'containsKey':
+            return secureStorage
+                .containsKey(call.arguments['key'] as String? ?? '');
+          case 'readAll':
+            return Map<String, String>.from(secureStorage);
+          default:
+            return null;
+        }
+      });
+    });
+
+    tearDown(() {
+      TestDefaultBinaryMessengerBinding.instance.defaultBinaryMessenger
+          .setMockMethodCallHandler(secureStorageChannel, null);
     });
 
     testWidgets('renders search and category section', (tester) async {
@@ -58,7 +99,8 @@ void main() {
       await tester.pump();
 
       expect(find.text('CUSTOM BLOCKED SITES'), findsOneWidget);
-      expect(find.byKey(const Key('block_categories_add_domain')), findsOneWidget);
+      expect(
+          find.byKey(const Key('block_categories_add_domain')), findsOneWidget);
     });
 
     testWidgets('switch updates state and shows sticky save bar',
@@ -73,12 +115,14 @@ void main() {
       );
       await tester.pump();
 
-      expect(find.byKey(const Key('block_categories_save_button')), findsNothing);
+      expect(
+          find.byKey(const Key('block_categories_save_button')), findsNothing);
 
       await tester.tap(find.byType(Switch).first);
       await tester.pumpAndSettle();
 
-      expect(find.byKey(const Key('block_categories_save_button')), findsOneWidget);
+      expect(find.byKey(const Key('block_categories_save_button')),
+          findsOneWidget);
       expect(find.textContaining('Safe Mode Active'), findsOneWidget);
     });
 
@@ -105,7 +149,8 @@ void main() {
         find.byKey(const Key('block_categories_domain_input')),
         'reddit.com',
       );
-      await tester.tap(find.byKey(const Key('block_categories_add_domain_confirm')));
+      await tester
+          .tap(find.byKey(const Key('block_categories_add_domain_confirm')));
       await tester.pumpAndSettle();
 
       expect(find.text('reddit.com'), findsOneWidget);
@@ -152,7 +197,8 @@ void main() {
         find.byKey(const Key('block_categories_nextdns_card')),
         findsOneWidget,
       );
-      expect(find.byKey(const Key('nextdns_safe_search_switch')), findsOneWidget);
+      expect(
+          find.byKey(const Key('nextdns_safe_search_switch')), findsOneWidget);
     });
   });
 }

@@ -1,0 +1,418 @@
+00:00 +0: loading C:/Users/navee/Documents/TrustBridge/parental_controls_app/integration_test/real_device_vpn_smoke_test.dart
+Running Gradle task 'assembleDebug'...                             37.7s
+√ Built build\app\outputs\flutter-apk\app-debug.apk
+Installing build\app\outputs\flutter-apk\app-debug.apk...           8.2s
+00:00 +0: real-device vpn smoke role runner
+[VPN_SMOKE] initial permission=false running=false
+[VPN_SMOKE] requestPermission returned=true
+[Performance] startTrace(vpn_start)
+[Crashlytics] VPN started successfully
+[VPN_SMOKE] startVpn returned=true domain=reddit.com
+[VPN_SMOKE] updateFilterRules returned=true
+[VPN_SMOKE] status supported=true permission=true running=true processed=5 blocked=0 allowed=5 privateDns=false mode=off
+[VPN_SMOKE] telemetry running=true intercepted=5 blocked=0 allowed=5
+[VPN_SMOKE] cache categories=0 domains=1 sampleDomains=[reddit.com]
+[VPN_SMOKE] query domain=z-m-gateway.facebook.com blocked=false ts=2026-02-22T20:57:14.577
+[VPN_SMOKE] query domain=connectivitycheck.android.com blocked=false ts=2026-02-22T20:57:13.303
+[VPN_SMOKE] query domain=in-main-appstore.vivoglobal.com blocked=false ts=2026-02-22T20:57:13.271
+[VPN_SMOKE] query domain=mtalk.google.com blocked=false ts=2026-02-22T20:57:13.120
+[VPN_SMOKE] query domain=android.apis.google.com blocked=false ts=2026-02-22T20:57:13.020
+[VPN_SMOKE] status supported=true permission=true running=true processed=5 blocked=0 allowed=5 privateDns=false mode=off
+[VPN_SMOKE] telemetry running=true intercepted=5 blocked=0 allowed=5
+[VPN_SMOKE] cache categories=0 domains=1 sampleDomains=[reddit.com]
+[VPN_SMOKE] query domain=z-m-gateway.facebook.com blocked=false ts=2026-02-22T20:57:14.577
+[VPN_SMOKE] query domain=connectivitycheck.android.com blocked=false ts=2026-02-22T20:57:13.303
+[VPN_SMOKE] query domain=in-main-appstore.vivoglobal.com blocked=false ts=2026-02-22T20:57:13.271
+[VPN_SMOKE] query domain=mtalk.google.com blocked=false ts=2026-02-22T20:57:13.120
+[VPN_SMOKE] query domain=android.apis.google.com blocked=false ts=2026-02-22T20:57:13.020
+[VPN_SMOKE] status supported=true permission=true running=true processed=5 blocked=0 allowed=5 privateDns=false mode=off
+[VPN_SMOKE] telemetry running=true intercepted=5 blocked=0 allowed=5
+[VPN_SMOKE] cache categories=0 domains=1 sampleDomains=[reddit.com]
+[VPN_SMOKE] query domain=z-m-gateway.facebook.com blocked=false ts=2026-02-22T20:57:14.577
+[VPN_SMOKE] query domain=connectivitycheck.android.com blocked=false ts=2026-02-22T20:57:13.303
+[VPN_SMOKE] query domain=in-main-appstore.vivoglobal.com blocked=false ts=2026-02-22T20:57:13.271
+[VPN_SMOKE] query domain=mtalk.google.com blocked=false ts=2026-02-22T20:57:13.120
+[VPN_SMOKE] query domain=android.apis.google.com blocked=false ts=2026-02-22T20:57:13.020
+[VPN_SMOKE] status supported=true permission=true running=true processed=5 blocked=0 allowed=5 privateDns=false mode=off
+[VPN_SMOKE] telemetry running=true intercepted=5 blocked=0 allowed=5
+[VPN_SMOKE] cache categories=0 domains=1 sampleDomains=[reddit.com]
+[VPN_SMOKE] query domain=z-m-gateway.facebook.com blocked=false ts=2026-02-22T20:57:14.577
+[VPN_SMOKE] query domain=connectivitycheck.android.com blocked=false ts=2026-02-22T20:57:13.303
+[VPN_SMOKE] query domain=in-main-appstore.vivoglobal.com blocked=false ts=2026-02-22T20:57:13.271
+[VPN_SMOKE] query domain=mtalk.google.com blocked=false ts=2026-02-22T20:57:13.120
+[VPN_SMOKE] query domain=android.apis.google.com blocked=false ts=2026-02-22T20:57:13.020
+[VPN_SMOKE] status supported=true permission=true running=true processed=5 blocked=0 allowed=5 privateDns=false mode=off
+[VPN_SMOKE] telemetry running=true intercepted=5 blocked=0 allowed=5
+[VPN_SMOKE] cache categories=0 domains=1 sampleDomains=[reddit.com]
+[VPN_SMOKE] query domain=z-m-gateway.facebook.com blocked=false ts=2026-02-22T20:57:14.577
+[VPN_SMOKE] query domain=connectivitycheck.android.com blocked=false ts=2026-02-22T20:57:13.303
+[VPN_SMOKE] query domain=in-main-appstore.vivoglobal.com blocked=false ts=2026-02-22T20:57:13.271
+[VPN_SMOKE] query domain=mtalk.google.com blocked=false ts=2026-02-22T20:57:13.120
+[VPN_SMOKE] query domain=android.apis.google.com blocked=false ts=2026-02-22T20:57:13.020
+[VPN_SMOKE] status supported=true permission=true running=true processed=5 blocked=0 allowed=5 privateDns=false mode=off
+[VPN_SMOKE] telemetry running=true intercepted=5 blocked=0 allowed=5
+[VPN_SMOKE] cache categories=0 domains=1 sampleDomains=[reddit.com]
+[VPN_SMOKE] query domain=z-m-gateway.facebook.com blocked=false ts=2026-02-22T20:57:14.577
+[VPN_SMOKE] query domain=connectivitycheck.android.com blocked=false ts=2026-02-22T20:57:13.303
+[VPN_SMOKE] query domain=in-main-appstore.vivoglobal.com blocked=false ts=2026-02-22T20:57:13.271
+[VPN_SMOKE] query domain=mtalk.google.com blocked=false ts=2026-02-22T20:57:13.120
+[VPN_SMOKE] query domain=android.apis.google.com blocked=false ts=2026-02-22T20:57:13.020
+[VPN_SMOKE] status supported=true permission=true running=true processed=5 blocked=0 allowed=5 privateDns=false mode=off
+[VPN_SMOKE] telemetry running=true intercepted=5 blocked=0 allowed=5
+[VPN_SMOKE] cache categories=0 domains=1 sampleDomains=[reddit.com]
+[VPN_SMOKE] query domain=z-m-gateway.facebook.com blocked=false ts=2026-02-22T20:57:14.577
+[VPN_SMOKE] query domain=connectivitycheck.android.com blocked=false ts=2026-02-22T20:57:13.303
+[VPN_SMOKE] query domain=in-main-appstore.vivoglobal.com blocked=false ts=2026-02-22T20:57:13.271
+[VPN_SMOKE] query domain=mtalk.google.com blocked=false ts=2026-02-22T20:57:13.120
+[VPN_SMOKE] query domain=android.apis.google.com blocked=false ts=2026-02-22T20:57:13.020
+[VPN_SMOKE] status supported=true permission=true running=true processed=5 blocked=0 allowed=5 privateDns=false mode=off
+[VPN_SMOKE] telemetry running=true intercepted=5 blocked=0 allowed=5
+[VPN_SMOKE] cache categories=0 domains=1 sampleDomains=[reddit.com]
+[VPN_SMOKE] query domain=z-m-gateway.facebook.com blocked=false ts=2026-02-22T20:57:14.577
+[VPN_SMOKE] query domain=connectivitycheck.android.com blocked=false ts=2026-02-22T20:57:13.303
+[VPN_SMOKE] query domain=in-main-appstore.vivoglobal.com blocked=false ts=2026-02-22T20:57:13.271
+[VPN_SMOKE] query domain=mtalk.google.com blocked=false ts=2026-02-22T20:57:13.120
+[VPN_SMOKE] query domain=android.apis.google.com blocked=false ts=2026-02-22T20:57:13.020
+[VPN_SMOKE] status supported=true permission=true running=true processed=5 blocked=0 allowed=5 privateDns=false mode=off
+[VPN_SMOKE] telemetry running=true intercepted=5 blocked=0 allowed=5
+[VPN_SMOKE] cache categories=0 domains=1 sampleDomains=[reddit.com]
+[VPN_SMOKE] query domain=z-m-gateway.facebook.com blocked=false ts=2026-02-22T20:57:14.577
+[VPN_SMOKE] query domain=connectivitycheck.android.com blocked=false ts=2026-02-22T20:57:13.303
+[VPN_SMOKE] query domain=in-main-appstore.vivoglobal.com blocked=false ts=2026-02-22T20:57:13.271
+[VPN_SMOKE] query domain=mtalk.google.com blocked=false ts=2026-02-22T20:57:13.120
+[VPN_SMOKE] query domain=android.apis.google.com blocked=false ts=2026-02-22T20:57:13.020
+[VPN_SMOKE] status supported=true permission=true running=true processed=5 blocked=0 allowed=5 privateDns=false mode=off
+[VPN_SMOKE] telemetry running=true intercepted=5 blocked=0 allowed=5
+[VPN_SMOKE] cache categories=0 domains=1 sampleDomains=[reddit.com]
+[VPN_SMOKE] query domain=z-m-gateway.facebook.com blocked=false ts=2026-02-22T20:57:14.577
+[VPN_SMOKE] query domain=connectivitycheck.android.com blocked=false ts=2026-02-22T20:57:13.303
+[VPN_SMOKE] query domain=in-main-appstore.vivoglobal.com blocked=false ts=2026-02-22T20:57:13.271
+[VPN_SMOKE] query domain=mtalk.google.com blocked=false ts=2026-02-22T20:57:13.120
+[VPN_SMOKE] query domain=android.apis.google.com blocked=false ts=2026-02-22T20:57:13.020
+[VPN_SMOKE] status supported=true permission=true running=true processed=22 blocked=0 allowed=22 privateDns=false mode=off
+[VPN_SMOKE] telemetry running=true intercepted=22 blocked=0 allowed=22
+[VPN_SMOKE] cache categories=0 domains=1 sampleDomains=[reddit.com]
+[VPN_SMOKE] query domain=fonts.gstatic.com blocked=false ts=2026-02-22T20:57:35.154
+[VPN_SMOKE] query domain=fonts.gstatic.com blocked=false ts=2026-02-22T20:57:35.119
+[VPN_SMOKE] query domain=www.google.com blocked=false ts=2026-02-22T20:57:35.078
+[VPN_SMOKE] query domain=www.google.com blocked=false ts=2026-02-22T20:57:35.044
+[VPN_SMOKE] query domain=dns.google blocked=false ts=2026-02-22T20:57:35.007
+[VPN_SMOKE] query domain=dns.google blocked=false ts=2026-02-22T20:57:34.970
+[VPN_SMOKE] query domain=chrome.cloudflare-dns.com blocked=false ts=2026-02-22T20:57:34.933
+[VPN_SMOKE] query domain=chrome.cloudflare-dns.com blocked=false ts=2026-02-22T20:57:34.900
+[VPN_SMOKE] query domain=dns.google blocked=false ts=2026-02-22T20:57:34.869
+[VPN_SMOKE] query domain=dns.google blocked=false ts=2026-02-22T20:57:34.837
+[VPN_SMOKE] status supported=true permission=true running=true processed=22 blocked=0 allowed=22 privateDns=false mode=off
+[VPN_SMOKE] telemetry running=true intercepted=22 blocked=0 allowed=22
+[VPN_SMOKE] cache categories=0 domains=1 sampleDomains=[reddit.com]
+[VPN_SMOKE] query domain=fonts.gstatic.com blocked=false ts=2026-02-22T20:57:35.154
+[VPN_SMOKE] query domain=fonts.gstatic.com blocked=false ts=2026-02-22T20:57:35.119
+[VPN_SMOKE] query domain=www.google.com blocked=false ts=2026-02-22T20:57:35.078
+[VPN_SMOKE] query domain=www.google.com blocked=false ts=2026-02-22T20:57:35.044
+[VPN_SMOKE] query domain=dns.google blocked=false ts=2026-02-22T20:57:35.007
+[VPN_SMOKE] query domain=dns.google blocked=false ts=2026-02-22T20:57:34.970
+[VPN_SMOKE] query domain=chrome.cloudflare-dns.com blocked=false ts=2026-02-22T20:57:34.933
+[VPN_SMOKE] query domain=chrome.cloudflare-dns.com blocked=false ts=2026-02-22T20:57:34.900
+[VPN_SMOKE] query domain=dns.google blocked=false ts=2026-02-22T20:57:34.869
+[VPN_SMOKE] query domain=dns.google blocked=false ts=2026-02-22T20:57:34.837
+[VPN_SMOKE] status supported=true permission=true running=true processed=22 blocked=0 allowed=22 privateDns=false mode=off
+[VPN_SMOKE] telemetry running=true intercepted=22 blocked=0 allowed=22
+[VPN_SMOKE] cache categories=0 domains=1 sampleDomains=[reddit.com]
+[VPN_SMOKE] query domain=fonts.gstatic.com blocked=false ts=2026-02-22T20:57:35.154
+[VPN_SMOKE] query domain=fonts.gstatic.com blocked=false ts=2026-02-22T20:57:35.119
+[VPN_SMOKE] query domain=www.google.com blocked=false ts=2026-02-22T20:57:35.078
+[VPN_SMOKE] query domain=www.google.com blocked=false ts=2026-02-22T20:57:35.044
+[VPN_SMOKE] query domain=dns.google blocked=false ts=2026-02-22T20:57:35.007
+[VPN_SMOKE] query domain=dns.google blocked=false ts=2026-02-22T20:57:34.970
+[VPN_SMOKE] query domain=chrome.cloudflare-dns.com blocked=false ts=2026-02-22T20:57:34.933
+[VPN_SMOKE] query domain=chrome.cloudflare-dns.com blocked=false ts=2026-02-22T20:57:34.900
+[VPN_SMOKE] query domain=dns.google blocked=false ts=2026-02-22T20:57:34.869
+[VPN_SMOKE] query domain=dns.google blocked=false ts=2026-02-22T20:57:34.837
+[VPN_SMOKE] status supported=true permission=true running=true processed=22 blocked=0 allowed=22 privateDns=false mode=off
+[VPN_SMOKE] telemetry running=true intercepted=22 blocked=0 allowed=22
+[VPN_SMOKE] cache categories=0 domains=1 sampleDomains=[reddit.com]
+[VPN_SMOKE] query domain=fonts.gstatic.com blocked=false ts=2026-02-22T20:57:35.154
+[VPN_SMOKE] query domain=fonts.gstatic.com blocked=false ts=2026-02-22T20:57:35.119
+[VPN_SMOKE] query domain=www.google.com blocked=false ts=2026-02-22T20:57:35.078
+[VPN_SMOKE] query domain=www.google.com blocked=false ts=2026-02-22T20:57:35.044
+[VPN_SMOKE] query domain=dns.google blocked=false ts=2026-02-22T20:57:35.007
+[VPN_SMOKE] query domain=dns.google blocked=false ts=2026-02-22T20:57:34.970
+[VPN_SMOKE] query domain=chrome.cloudflare-dns.com blocked=false ts=2026-02-22T20:57:34.933
+[VPN_SMOKE] query domain=chrome.cloudflare-dns.com blocked=false ts=2026-02-22T20:57:34.900
+[VPN_SMOKE] query domain=dns.google blocked=false ts=2026-02-22T20:57:34.869
+[VPN_SMOKE] query domain=dns.google blocked=false ts=2026-02-22T20:57:34.837
+[VPN_SMOKE] status supported=true permission=true running=true processed=23 blocked=0 allowed=23 privateDns=false mode=off
+[VPN_SMOKE] telemetry running=true intercepted=23 blocked=0 allowed=23
+[VPN_SMOKE] cache categories=0 domains=1 sampleDomains=[reddit.com]
+[VPN_SMOKE] query domain=firebaselogging-pa.googleapis.com blocked=false ts=2026-02-22T20:57:43.132
+[VPN_SMOKE] query domain=fonts.gstatic.com blocked=false ts=2026-02-22T20:57:35.154
+[VPN_SMOKE] query domain=fonts.gstatic.com blocked=false ts=2026-02-22T20:57:35.119
+[VPN_SMOKE] query domain=www.google.com blocked=false ts=2026-02-22T20:57:35.078
+[VPN_SMOKE] query domain=www.google.com blocked=false ts=2026-02-22T20:57:35.044
+[VPN_SMOKE] query domain=dns.google blocked=false ts=2026-02-22T20:57:35.007
+[VPN_SMOKE] query domain=dns.google blocked=false ts=2026-02-22T20:57:34.970
+[VPN_SMOKE] query domain=chrome.cloudflare-dns.com blocked=false ts=2026-02-22T20:57:34.933
+[VPN_SMOKE] query domain=chrome.cloudflare-dns.com blocked=false ts=2026-02-22T20:57:34.900
+[VPN_SMOKE] query domain=dns.google blocked=false ts=2026-02-22T20:57:34.869
+[VPN_SMOKE] status supported=true permission=true running=true processed=23 blocked=0 allowed=23 privateDns=false mode=off
+[VPN_SMOKE] telemetry running=true intercepted=23 blocked=0 allowed=23
+[VPN_SMOKE] cache categories=0 domains=1 sampleDomains=[reddit.com]
+[VPN_SMOKE] query domain=firebaselogging-pa.googleapis.com blocked=false ts=2026-02-22T20:57:43.132
+[VPN_SMOKE] query domain=fonts.gstatic.com blocked=false ts=2026-02-22T20:57:35.154
+[VPN_SMOKE] query domain=fonts.gstatic.com blocked=false ts=2026-02-22T20:57:35.119
+[VPN_SMOKE] query domain=www.google.com blocked=false ts=2026-02-22T20:57:35.078
+[VPN_SMOKE] query domain=www.google.com blocked=false ts=2026-02-22T20:57:35.044
+[VPN_SMOKE] query domain=dns.google blocked=false ts=2026-02-22T20:57:35.007
+[VPN_SMOKE] query domain=dns.google blocked=false ts=2026-02-22T20:57:34.970
+[VPN_SMOKE] query domain=chrome.cloudflare-dns.com blocked=false ts=2026-02-22T20:57:34.933
+[VPN_SMOKE] query domain=chrome.cloudflare-dns.com blocked=false ts=2026-02-22T20:57:34.900
+[VPN_SMOKE] query domain=dns.google blocked=false ts=2026-02-22T20:57:34.869
+[VPN_SMOKE] status supported=true permission=true running=true processed=23 blocked=0 allowed=23 privateDns=false mode=off
+[VPN_SMOKE] telemetry running=true intercepted=23 blocked=0 allowed=23
+[VPN_SMOKE] cache categories=0 domains=1 sampleDomains=[reddit.com]
+[VPN_SMOKE] query domain=firebaselogging-pa.googleapis.com blocked=false ts=2026-02-22T20:57:43.132
+[VPN_SMOKE] query domain=fonts.gstatic.com blocked=false ts=2026-02-22T20:57:35.154
+[VPN_SMOKE] query domain=fonts.gstatic.com blocked=false ts=2026-02-22T20:57:35.119
+[VPN_SMOKE] query domain=www.google.com blocked=false ts=2026-02-22T20:57:35.078
+[VPN_SMOKE] query domain=www.google.com blocked=false ts=2026-02-22T20:57:35.044
+[VPN_SMOKE] query domain=dns.google blocked=false ts=2026-02-22T20:57:35.007
+[VPN_SMOKE] query domain=dns.google blocked=false ts=2026-02-22T20:57:34.970
+[VPN_SMOKE] query domain=chrome.cloudflare-dns.com blocked=false ts=2026-02-22T20:57:34.933
+[VPN_SMOKE] query domain=chrome.cloudflare-dns.com blocked=false ts=2026-02-22T20:57:34.900
+[VPN_SMOKE] query domain=dns.google blocked=false ts=2026-02-22T20:57:34.869
+[VPN_SMOKE] status supported=true permission=true running=true processed=23 blocked=0 allowed=23 privateDns=false mode=off
+[VPN_SMOKE] telemetry running=true intercepted=23 blocked=0 allowed=23
+[VPN_SMOKE] cache categories=0 domains=1 sampleDomains=[reddit.com]
+[VPN_SMOKE] query domain=firebaselogging-pa.googleapis.com blocked=false ts=2026-02-22T20:57:43.132
+[VPN_SMOKE] query domain=fonts.gstatic.com blocked=false ts=2026-02-22T20:57:35.154
+[VPN_SMOKE] query domain=fonts.gstatic.com blocked=false ts=2026-02-22T20:57:35.119
+[VPN_SMOKE] query domain=www.google.com blocked=false ts=2026-02-22T20:57:35.078
+[VPN_SMOKE] query domain=www.google.com blocked=false ts=2026-02-22T20:57:35.044
+[VPN_SMOKE] query domain=dns.google blocked=false ts=2026-02-22T20:57:35.007
+[VPN_SMOKE] query domain=dns.google blocked=false ts=2026-02-22T20:57:34.970
+[VPN_SMOKE] query domain=chrome.cloudflare-dns.com blocked=false ts=2026-02-22T20:57:34.933
+[VPN_SMOKE] query domain=chrome.cloudflare-dns.com blocked=false ts=2026-02-22T20:57:34.900
+[VPN_SMOKE] query domain=dns.google blocked=false ts=2026-02-22T20:57:34.869
+[VPN_SMOKE] status supported=true permission=true running=true processed=24 blocked=0 allowed=24 privateDns=false mode=off
+[VPN_SMOKE] telemetry running=true intercepted=24 blocked=0 allowed=24
+[VPN_SMOKE] cache categories=0 domains=1 sampleDomains=[reddit.com]
+[VPN_SMOKE] query domain=google-ohttp-relay-safebrowsing.fastly-edge.com blocked=false ts=2026-02-22T20:57:50.708
+[VPN_SMOKE] query domain=firebaselogging-pa.googleapis.com blocked=false ts=2026-02-22T20:57:43.132
+[VPN_SMOKE] query domain=fonts.gstatic.com blocked=false ts=2026-02-22T20:57:35.154
+[VPN_SMOKE] query domain=fonts.gstatic.com blocked=false ts=2026-02-22T20:57:35.119
+[VPN_SMOKE] query domain=www.google.com blocked=false ts=2026-02-22T20:57:35.078
+[VPN_SMOKE] query domain=www.google.com blocked=false ts=2026-02-22T20:57:35.044
+[VPN_SMOKE] query domain=dns.google blocked=false ts=2026-02-22T20:57:35.007
+[VPN_SMOKE] query domain=dns.google blocked=false ts=2026-02-22T20:57:34.970
+[VPN_SMOKE] query domain=chrome.cloudflare-dns.com blocked=false ts=2026-02-22T20:57:34.933
+[VPN_SMOKE] query domain=chrome.cloudflare-dns.com blocked=false ts=2026-02-22T20:57:34.900
+[VPN_SMOKE] status supported=true permission=true running=true processed=24 blocked=0 allowed=24 privateDns=false mode=off
+[VPN_SMOKE] telemetry running=true intercepted=24 blocked=0 allowed=24
+[VPN_SMOKE] cache categories=0 domains=1 sampleDomains=[reddit.com]
+[VPN_SMOKE] query domain=google-ohttp-relay-safebrowsing.fastly-edge.com blocked=false ts=2026-02-22T20:57:50.708
+[VPN_SMOKE] query domain=firebaselogging-pa.googleapis.com blocked=false ts=2026-02-22T20:57:43.132
+[VPN_SMOKE] query domain=fonts.gstatic.com blocked=false ts=2026-02-22T20:57:35.154
+[VPN_SMOKE] query domain=fonts.gstatic.com blocked=false ts=2026-02-22T20:57:35.119
+[VPN_SMOKE] query domain=www.google.com blocked=false ts=2026-02-22T20:57:35.078
+[VPN_SMOKE] query domain=www.google.com blocked=false ts=2026-02-22T20:57:35.044
+[VPN_SMOKE] query domain=dns.google blocked=false ts=2026-02-22T20:57:35.007
+[VPN_SMOKE] query domain=dns.google blocked=false ts=2026-02-22T20:57:34.970
+[VPN_SMOKE] query domain=chrome.cloudflare-dns.com blocked=false ts=2026-02-22T20:57:34.933
+[VPN_SMOKE] query domain=chrome.cloudflare-dns.com blocked=false ts=2026-02-22T20:57:34.900
+[VPN_SMOKE] status supported=true permission=true running=true processed=24 blocked=0 allowed=24 privateDns=false mode=off
+[VPN_SMOKE] telemetry running=true intercepted=24 blocked=0 allowed=24
+[VPN_SMOKE] cache categories=0 domains=1 sampleDomains=[reddit.com]
+[VPN_SMOKE] query domain=google-ohttp-relay-safebrowsing.fastly-edge.com blocked=false ts=2026-02-22T20:57:50.708
+[VPN_SMOKE] query domain=firebaselogging-pa.googleapis.com blocked=false ts=2026-02-22T20:57:43.132
+[VPN_SMOKE] query domain=fonts.gstatic.com blocked=false ts=2026-02-22T20:57:35.154
+[VPN_SMOKE] query domain=fonts.gstatic.com blocked=false ts=2026-02-22T20:57:35.119
+[VPN_SMOKE] query domain=www.google.com blocked=false ts=2026-02-22T20:57:35.078
+[VPN_SMOKE] query domain=www.google.com blocked=false ts=2026-02-22T20:57:35.044
+[VPN_SMOKE] query domain=dns.google blocked=false ts=2026-02-22T20:57:35.007
+[VPN_SMOKE] query domain=dns.google blocked=false ts=2026-02-22T20:57:34.970
+[VPN_SMOKE] query domain=chrome.cloudflare-dns.com blocked=false ts=2026-02-22T20:57:34.933
+[VPN_SMOKE] query domain=chrome.cloudflare-dns.com blocked=false ts=2026-02-22T20:57:34.900
+[VPN_SMOKE] status supported=true permission=true running=true processed=24 blocked=0 allowed=24 privateDns=false mode=off
+[VPN_SMOKE] telemetry running=true intercepted=24 blocked=0 allowed=24
+[VPN_SMOKE] cache categories=0 domains=1 sampleDomains=[reddit.com]
+[VPN_SMOKE] query domain=google-ohttp-relay-safebrowsing.fastly-edge.com blocked=false ts=2026-02-22T20:57:50.708
+[VPN_SMOKE] query domain=firebaselogging-pa.googleapis.com blocked=false ts=2026-02-22T20:57:43.132
+[VPN_SMOKE] query domain=fonts.gstatic.com blocked=false ts=2026-02-22T20:57:35.154
+[VPN_SMOKE] query domain=fonts.gstatic.com blocked=false ts=2026-02-22T20:57:35.119
+[VPN_SMOKE] query domain=www.google.com blocked=false ts=2026-02-22T20:57:35.078
+[VPN_SMOKE] query domain=www.google.com blocked=false ts=2026-02-22T20:57:35.044
+[VPN_SMOKE] query domain=dns.google blocked=false ts=2026-02-22T20:57:35.007
+[VPN_SMOKE] query domain=dns.google blocked=false ts=2026-02-22T20:57:34.970
+[VPN_SMOKE] query domain=chrome.cloudflare-dns.com blocked=false ts=2026-02-22T20:57:34.933
+[VPN_SMOKE] query domain=chrome.cloudflare-dns.com blocked=false ts=2026-02-22T20:57:34.900
+[VPN_SMOKE] status supported=true permission=true running=true processed=24 blocked=0 allowed=24 privateDns=false mode=off
+[VPN_SMOKE] telemetry running=true intercepted=24 blocked=0 allowed=24
+[VPN_SMOKE] cache categories=0 domains=1 sampleDomains=[reddit.com]
+[VPN_SMOKE] query domain=google-ohttp-relay-safebrowsing.fastly-edge.com blocked=false ts=2026-02-22T20:57:50.708
+[VPN_SMOKE] query domain=firebaselogging-pa.googleapis.com blocked=false ts=2026-02-22T20:57:43.132
+[VPN_SMOKE] query domain=fonts.gstatic.com blocked=false ts=2026-02-22T20:57:35.154
+[VPN_SMOKE] query domain=fonts.gstatic.com blocked=false ts=2026-02-22T20:57:35.119
+[VPN_SMOKE] query domain=www.google.com blocked=false ts=2026-02-22T20:57:35.078
+[VPN_SMOKE] query domain=www.google.com blocked=false ts=2026-02-22T20:57:35.044
+[VPN_SMOKE] query domain=dns.google blocked=false ts=2026-02-22T20:57:35.007
+[VPN_SMOKE] query domain=dns.google blocked=false ts=2026-02-22T20:57:34.970
+[VPN_SMOKE] query domain=chrome.cloudflare-dns.com blocked=false ts=2026-02-22T20:57:34.933
+[VPN_SMOKE] query domain=chrome.cloudflare-dns.com blocked=false ts=2026-02-22T20:57:34.900
+[VPN_SMOKE] status supported=true permission=true running=true processed=24 blocked=0 allowed=24 privateDns=false mode=off
+[VPN_SMOKE] telemetry running=true intercepted=24 blocked=0 allowed=24
+[VPN_SMOKE] cache categories=0 domains=1 sampleDomains=[reddit.com]
+[VPN_SMOKE] query domain=google-ohttp-relay-safebrowsing.fastly-edge.com blocked=false ts=2026-02-22T20:57:50.708
+[VPN_SMOKE] query domain=firebaselogging-pa.googleapis.com blocked=false ts=2026-02-22T20:57:43.132
+[VPN_SMOKE] query domain=fonts.gstatic.com blocked=false ts=2026-02-22T20:57:35.154
+[VPN_SMOKE] query domain=fonts.gstatic.com blocked=false ts=2026-02-22T20:57:35.119
+[VPN_SMOKE] query domain=www.google.com blocked=false ts=2026-02-22T20:57:35.078
+[VPN_SMOKE] query domain=www.google.com blocked=false ts=2026-02-22T20:57:35.044
+[VPN_SMOKE] query domain=dns.google blocked=false ts=2026-02-22T20:57:35.007
+[VPN_SMOKE] query domain=dns.google blocked=false ts=2026-02-22T20:57:34.970
+[VPN_SMOKE] query domain=chrome.cloudflare-dns.com blocked=false ts=2026-02-22T20:57:34.933
+[VPN_SMOKE] query domain=chrome.cloudflare-dns.com blocked=false ts=2026-02-22T20:57:34.900
+[VPN_SMOKE] status supported=true permission=true running=true processed=24 blocked=0 allowed=24 privateDns=false mode=off
+[VPN_SMOKE] telemetry running=true intercepted=24 blocked=0 allowed=24
+[VPN_SMOKE] cache categories=0 domains=1 sampleDomains=[reddit.com]
+[VPN_SMOKE] query domain=google-ohttp-relay-safebrowsing.fastly-edge.com blocked=false ts=2026-02-22T20:57:50.708
+[VPN_SMOKE] query domain=firebaselogging-pa.googleapis.com blocked=false ts=2026-02-22T20:57:43.132
+[VPN_SMOKE] query domain=fonts.gstatic.com blocked=false ts=2026-02-22T20:57:35.154
+[VPN_SMOKE] query domain=fonts.gstatic.com blocked=false ts=2026-02-22T20:57:35.119
+[VPN_SMOKE] query domain=www.google.com blocked=false ts=2026-02-22T20:57:35.078
+[VPN_SMOKE] query domain=www.google.com blocked=false ts=2026-02-22T20:57:35.044
+[VPN_SMOKE] query domain=dns.google blocked=false ts=2026-02-22T20:57:35.007
+[VPN_SMOKE] query domain=dns.google blocked=false ts=2026-02-22T20:57:34.970
+[VPN_SMOKE] query domain=chrome.cloudflare-dns.com blocked=false ts=2026-02-22T20:57:34.933
+[VPN_SMOKE] query domain=chrome.cloudflare-dns.com blocked=false ts=2026-02-22T20:57:34.900
+[VPN_SMOKE] status supported=true permission=true running=true processed=24 blocked=0 allowed=24 privateDns=false mode=off
+[VPN_SMOKE] telemetry running=true intercepted=24 blocked=0 allowed=24
+[VPN_SMOKE] cache categories=0 domains=1 sampleDomains=[reddit.com]
+[VPN_SMOKE] query domain=google-ohttp-relay-safebrowsing.fastly-edge.com blocked=false ts=2026-02-22T20:57:50.708
+[VPN_SMOKE] query domain=firebaselogging-pa.googleapis.com blocked=false ts=2026-02-22T20:57:43.132
+[VPN_SMOKE] query domain=fonts.gstatic.com blocked=false ts=2026-02-22T20:57:35.154
+[VPN_SMOKE] query domain=fonts.gstatic.com blocked=false ts=2026-02-22T20:57:35.119
+[VPN_SMOKE] query domain=www.google.com blocked=false ts=2026-02-22T20:57:35.078
+[VPN_SMOKE] query domain=www.google.com blocked=false ts=2026-02-22T20:57:35.044
+[VPN_SMOKE] query domain=dns.google blocked=false ts=2026-02-22T20:57:35.007
+[VPN_SMOKE] query domain=dns.google blocked=false ts=2026-02-22T20:57:34.970
+[VPN_SMOKE] query domain=chrome.cloudflare-dns.com blocked=false ts=2026-02-22T20:57:34.933
+[VPN_SMOKE] query domain=chrome.cloudflare-dns.com blocked=false ts=2026-02-22T20:57:34.900
+[VPN_SMOKE] status supported=true permission=true running=true processed=24 blocked=0 allowed=24 privateDns=false mode=off
+[VPN_SMOKE] telemetry running=true intercepted=24 blocked=0 allowed=24
+[VPN_SMOKE] cache categories=0 domains=1 sampleDomains=[reddit.com]
+[VPN_SMOKE] query domain=google-ohttp-relay-safebrowsing.fastly-edge.com blocked=false ts=2026-02-22T20:57:50.708
+[VPN_SMOKE] query domain=firebaselogging-pa.googleapis.com blocked=false ts=2026-02-22T20:57:43.132
+[VPN_SMOKE] query domain=fonts.gstatic.com blocked=false ts=2026-02-22T20:57:35.154
+[VPN_SMOKE] query domain=fonts.gstatic.com blocked=false ts=2026-02-22T20:57:35.119
+[VPN_SMOKE] query domain=www.google.com blocked=false ts=2026-02-22T20:57:35.078
+[VPN_SMOKE] query domain=www.google.com blocked=false ts=2026-02-22T20:57:35.044
+[VPN_SMOKE] query domain=dns.google blocked=false ts=2026-02-22T20:57:35.007
+[VPN_SMOKE] query domain=dns.google blocked=false ts=2026-02-22T20:57:34.970
+[VPN_SMOKE] query domain=chrome.cloudflare-dns.com blocked=false ts=2026-02-22T20:57:34.933
+[VPN_SMOKE] query domain=chrome.cloudflare-dns.com blocked=false ts=2026-02-22T20:57:34.900
+[VPN_SMOKE] status supported=true permission=true running=true processed=24 blocked=0 allowed=24 privateDns=false mode=off
+[VPN_SMOKE] telemetry running=true intercepted=24 blocked=0 allowed=24
+[VPN_SMOKE] cache categories=0 domains=1 sampleDomains=[reddit.com]
+[VPN_SMOKE] query domain=google-ohttp-relay-safebrowsing.fastly-edge.com blocked=false ts=2026-02-22T20:57:50.708
+[VPN_SMOKE] query domain=firebaselogging-pa.googleapis.com blocked=false ts=2026-02-22T20:57:43.132
+[VPN_SMOKE] query domain=fonts.gstatic.com blocked=false ts=2026-02-22T20:57:35.154
+[VPN_SMOKE] query domain=fonts.gstatic.com blocked=false ts=2026-02-22T20:57:35.119
+[VPN_SMOKE] query domain=www.google.com blocked=false ts=2026-02-22T20:57:35.078
+[VPN_SMOKE] query domain=www.google.com blocked=false ts=2026-02-22T20:57:35.044
+[VPN_SMOKE] query domain=dns.google blocked=false ts=2026-02-22T20:57:35.007
+[VPN_SMOKE] query domain=dns.google blocked=false ts=2026-02-22T20:57:34.970
+[VPN_SMOKE] query domain=chrome.cloudflare-dns.com blocked=false ts=2026-02-22T20:57:34.933
+[VPN_SMOKE] query domain=chrome.cloudflare-dns.com blocked=false ts=2026-02-22T20:57:34.900
+[VPN_SMOKE] status supported=true permission=true running=true processed=24 blocked=0 allowed=24 privateDns=false mode=off
+[VPN_SMOKE] telemetry running=true intercepted=24 blocked=0 allowed=24
+[VPN_SMOKE] cache categories=0 domains=1 sampleDomains=[reddit.com]
+[VPN_SMOKE] query domain=google-ohttp-relay-safebrowsing.fastly-edge.com blocked=false ts=2026-02-22T20:57:50.708
+[VPN_SMOKE] query domain=firebaselogging-pa.googleapis.com blocked=false ts=2026-02-22T20:57:43.132
+[VPN_SMOKE] query domain=fonts.gstatic.com blocked=false ts=2026-02-22T20:57:35.154
+[VPN_SMOKE] query domain=fonts.gstatic.com blocked=false ts=2026-02-22T20:57:35.119
+[VPN_SMOKE] query domain=www.google.com blocked=false ts=2026-02-22T20:57:35.078
+[VPN_SMOKE] query domain=www.google.com blocked=false ts=2026-02-22T20:57:35.044
+[VPN_SMOKE] query domain=dns.google blocked=false ts=2026-02-22T20:57:35.007
+[VPN_SMOKE] query domain=dns.google blocked=false ts=2026-02-22T20:57:34.970
+[VPN_SMOKE] query domain=chrome.cloudflare-dns.com blocked=false ts=2026-02-22T20:57:34.933
+[VPN_SMOKE] query domain=chrome.cloudflare-dns.com blocked=false ts=2026-02-22T20:57:34.900
+[VPN_SMOKE] status supported=true permission=true running=true processed=24 blocked=0 allowed=24 privateDns=false mode=off
+[VPN_SMOKE] telemetry running=true intercepted=24 blocked=0 allowed=24
+[VPN_SMOKE] cache categories=0 domains=1 sampleDomains=[reddit.com]
+[VPN_SMOKE] query domain=google-ohttp-relay-safebrowsing.fastly-edge.com blocked=false ts=2026-02-22T20:57:50.708
+[VPN_SMOKE] query domain=firebaselogging-pa.googleapis.com blocked=false ts=2026-02-22T20:57:43.132
+[VPN_SMOKE] query domain=fonts.gstatic.com blocked=false ts=2026-02-22T20:57:35.154
+[VPN_SMOKE] query domain=fonts.gstatic.com blocked=false ts=2026-02-22T20:57:35.119
+[VPN_SMOKE] query domain=www.google.com blocked=false ts=2026-02-22T20:57:35.078
+[VPN_SMOKE] query domain=www.google.com blocked=false ts=2026-02-22T20:57:35.044
+[VPN_SMOKE] query domain=dns.google blocked=false ts=2026-02-22T20:57:35.007
+[VPN_SMOKE] query domain=dns.google blocked=false ts=2026-02-22T20:57:34.970
+[VPN_SMOKE] query domain=chrome.cloudflare-dns.com blocked=false ts=2026-02-22T20:57:34.933
+[VPN_SMOKE] query domain=chrome.cloudflare-dns.com blocked=false ts=2026-02-22T20:57:34.900
+[VPN_SMOKE] status supported=true permission=true running=true processed=24 blocked=0 allowed=24 privateDns=false mode=off
+[VPN_SMOKE] telemetry running=true intercepted=24 blocked=0 allowed=24
+[VPN_SMOKE] cache categories=0 domains=1 sampleDomains=[reddit.com]
+[VPN_SMOKE] query domain=google-ohttp-relay-safebrowsing.fastly-edge.com blocked=false ts=2026-02-22T20:57:50.708
+[VPN_SMOKE] query domain=firebaselogging-pa.googleapis.com blocked=false ts=2026-02-22T20:57:43.132
+[VPN_SMOKE] query domain=fonts.gstatic.com blocked=false ts=2026-02-22T20:57:35.154
+[VPN_SMOKE] query domain=fonts.gstatic.com blocked=false ts=2026-02-22T20:57:35.119
+[VPN_SMOKE] query domain=www.google.com blocked=false ts=2026-02-22T20:57:35.078
+[VPN_SMOKE] query domain=www.google.com blocked=false ts=2026-02-22T20:57:35.044
+[VPN_SMOKE] query domain=dns.google blocked=false ts=2026-02-22T20:57:35.007
+[VPN_SMOKE] query domain=dns.google blocked=false ts=2026-02-22T20:57:34.970
+[VPN_SMOKE] query domain=chrome.cloudflare-dns.com blocked=false ts=2026-02-22T20:57:34.933
+[VPN_SMOKE] query domain=chrome.cloudflare-dns.com blocked=false ts=2026-02-22T20:57:34.900
+[VPN_SMOKE] status supported=true permission=true running=true processed=24 blocked=0 allowed=24 privateDns=false mode=off
+[VPN_SMOKE] telemetry running=true intercepted=24 blocked=0 allowed=24
+[VPN_SMOKE] cache categories=0 domains=1 sampleDomains=[reddit.com]
+[VPN_SMOKE] query domain=google-ohttp-relay-safebrowsing.fastly-edge.com blocked=false ts=2026-02-22T20:57:50.708
+[VPN_SMOKE] query domain=firebaselogging-pa.googleapis.com blocked=false ts=2026-02-22T20:57:43.132
+[VPN_SMOKE] query domain=fonts.gstatic.com blocked=false ts=2026-02-22T20:57:35.154
+[VPN_SMOKE] query domain=fonts.gstatic.com blocked=false ts=2026-02-22T20:57:35.119
+[VPN_SMOKE] query domain=www.google.com blocked=false ts=2026-02-22T20:57:35.078
+[VPN_SMOKE] query domain=www.google.com blocked=false ts=2026-02-22T20:57:35.044
+[VPN_SMOKE] query domain=dns.google blocked=false ts=2026-02-22T20:57:35.007
+[VPN_SMOKE] query domain=dns.google blocked=false ts=2026-02-22T20:57:34.970
+[VPN_SMOKE] query domain=chrome.cloudflare-dns.com blocked=false ts=2026-02-22T20:57:34.933
+[VPN_SMOKE] query domain=chrome.cloudflare-dns.com blocked=false ts=2026-02-22T20:57:34.900
+[VPN_SMOKE] status supported=true permission=true running=true processed=24 blocked=0 allowed=24 privateDns=false mode=off
+[VPN_SMOKE] telemetry running=true intercepted=24 blocked=0 allowed=24
+[VPN_SMOKE] cache categories=0 domains=1 sampleDomains=[reddit.com]
+[VPN_SMOKE] query domain=google-ohttp-relay-safebrowsing.fastly-edge.com blocked=false ts=2026-02-22T20:57:50.708
+[VPN_SMOKE] query domain=firebaselogging-pa.googleapis.com blocked=false ts=2026-02-22T20:57:43.132
+[VPN_SMOKE] query domain=fonts.gstatic.com blocked=false ts=2026-02-22T20:57:35.154
+[VPN_SMOKE] query domain=fonts.gstatic.com blocked=false ts=2026-02-22T20:57:35.119
+[VPN_SMOKE] query domain=www.google.com blocked=false ts=2026-02-22T20:57:35.078
+[VPN_SMOKE] query domain=www.google.com blocked=false ts=2026-02-22T20:57:35.044
+[VPN_SMOKE] query domain=dns.google blocked=false ts=2026-02-22T20:57:35.007
+[VPN_SMOKE] query domain=dns.google blocked=false ts=2026-02-22T20:57:34.970
+[VPN_SMOKE] query domain=chrome.cloudflare-dns.com blocked=false ts=2026-02-22T20:57:34.933
+[VPN_SMOKE] query domain=chrome.cloudflare-dns.com blocked=false ts=2026-02-22T20:57:34.900
+[VPN_SMOKE] status supported=true permission=true running=true processed=24 blocked=0 allowed=24 privateDns=false mode=off
+[VPN_SMOKE] telemetry running=true intercepted=24 blocked=0 allowed=24
+[VPN_SMOKE] cache categories=0 domains=1 sampleDomains=[reddit.com]
+[VPN_SMOKE] query domain=google-ohttp-relay-safebrowsing.fastly-edge.com blocked=false ts=2026-02-22T20:57:50.708
+[VPN_SMOKE] query domain=firebaselogging-pa.googleapis.com blocked=false ts=2026-02-22T20:57:43.132
+[VPN_SMOKE] query domain=fonts.gstatic.com blocked=false ts=2026-02-22T20:57:35.154
+[VPN_SMOKE] query domain=fonts.gstatic.com blocked=false ts=2026-02-22T20:57:35.119
+[VPN_SMOKE] query domain=www.google.com blocked=false ts=2026-02-22T20:57:35.078
+[VPN_SMOKE] query domain=www.google.com blocked=false ts=2026-02-22T20:57:35.044
+[VPN_SMOKE] query domain=dns.google blocked=false ts=2026-02-22T20:57:35.007
+[VPN_SMOKE] query domain=dns.google blocked=false ts=2026-02-22T20:57:34.970
+[VPN_SMOKE] query domain=chrome.cloudflare-dns.com blocked=false ts=2026-02-22T20:57:34.933
+[VPN_SMOKE] query domain=chrome.cloudflare-dns.com blocked=false ts=2026-02-22T20:57:34.900
+[VPN_SMOKE] status supported=true permission=true running=true processed=24 blocked=0 allowed=24 privateDns=false mode=off
+[VPN_SMOKE] telemetry running=true intercepted=24 blocked=0 allowed=24
+[VPN_SMOKE] cache categories=0 domains=1 sampleDomains=[reddit.com]
+[VPN_SMOKE] query domain=google-ohttp-relay-safebrowsing.fastly-edge.com blocked=false ts=2026-02-22T20:57:50.708
+[VPN_SMOKE] query domain=firebaselogging-pa.googleapis.com blocked=false ts=2026-02-22T20:57:43.132
+[VPN_SMOKE] query domain=fonts.gstatic.com blocked=false ts=2026-02-22T20:57:35.154
+[VPN_SMOKE] query domain=fonts.gstatic.com blocked=false ts=2026-02-22T20:57:35.119
+[VPN_SMOKE] query domain=www.google.com blocked=false ts=2026-02-22T20:57:35.078
+[VPN_SMOKE] query domain=www.google.com blocked=false ts=2026-02-22T20:57:35.044
+[VPN_SMOKE] query domain=dns.google blocked=false ts=2026-02-22T20:57:35.007
+[VPN_SMOKE] query domain=dns.google blocked=false ts=2026-02-22T20:57:34.970
+[VPN_SMOKE] query domain=chrome.cloudflare-dns.com blocked=false ts=2026-02-22T20:57:34.933
+[VPN_SMOKE] query domain=chrome.cloudflare-dns.com blocked=false ts=2026-02-22T20:57:34.900
+01:16 +1: (tearDownAll)
+01:18 +1: All tests passed!

@@ -1,0 +1,43 @@
+00:00 +0: loading C:/Users/navee/Documents/TrustBridge/parental_controls_app/integration_test/real_device_notification_probe_test.dart
+Running Gradle task 'assembleDebug'...                             43.2s
+√ Built build\app\outputs\flutter-apk\app-debug.apk
+Installing build\app\outputs\flutter-apk\app-debug.apk...          17.3s
+00:00 +0: real-device notification probe role runner
+[FCM] Permission: AuthorizationStatus.authorized
+[NOTIF_PROBE] child token_len=142
+[NOTIF_PROBE] child token saved childId=d76237d4-ae0d-4374-91ec-3ff1cb2b2bac deviceId=3d428745-165d-4cf6-9c68-85c53331f76c parentId=0EIwuwki7IfzaTzMnyi2V87A9Og1 authUid=0EIwuwki7IfzaTzMnyi2V87A9Og1
+[NOTIF_PROBE] watch start label=child seconds=140
+[NOTIF_PROBE] watch tick label=child ts=2026-02-22T21:58:11.263677
+[NOTIF_PROBE] watch tick label=child ts=2026-02-22T21:58:16.285343
+[NOTIF_PROBE] watch tick label=child ts=2026-02-22T21:58:21.293765
+[NOTIF_PROBE] watch tick label=child ts=2026-02-22T21:58:26.300582
+[NOTIF_PROBE] watch tick label=child ts=2026-02-22T21:58:31.305975
+[NOTIF_PROBE] watch tick label=child ts=2026-02-22T21:58:36.312120
+[NOTIF_PROBE] watch tick label=child ts=2026-02-22T21:58:41.317677
+[NOTIF_PROBE] watch tick label=child ts=2026-02-22T21:58:46.323711
+[NOTIF_PROBE] watch tick label=child ts=2026-02-22T21:58:51.331873
+[NOTIF_PROBE] watch tick label=child ts=2026-02-22T21:58:56.336067
+[NOTIF_PROBE] watch tick label=child ts=2026-02-22T21:59:01.342957
+[NOTIF_PROBE] watch tick label=child ts=2026-02-22T21:59:06.351932
+[NOTIF_PROBE] watch tick label=child ts=2026-02-22T21:59:11.357577
+[NOTIF_PROBE] watch tick label=child ts=2026-02-22T21:59:16.363045
+[NOTIF_PROBE] watch tick label=child ts=2026-02-22T21:59:21.369859
+[NOTIF_PROBE] watch tick label=child ts=2026-02-22T21:59:26.376968
+[NOTIF_PROBE] watch tick label=child ts=2026-02-22T21:59:31.384024
+[NOTIF_PROBE] watch tick label=child ts=2026-02-22T21:59:36.391863
+[NOTIF_PROBE] watch tick label=child ts=2026-02-22T21:59:41.398891
+[NOTIF_PROBE] watch tick label=child ts=2026-02-22T21:59:46.406103
+[NOTIF_PROBE] watch tick label=child ts=2026-02-22T21:59:51.411518
+[NOTIF_PROBE] watch tick label=child ts=2026-02-22T21:59:56.417442
+[NOTIF_PROBE] watch tick label=child ts=2026-02-22T22:00:01.426774
+[NOTIF_PROBE] watch tick label=child ts=2026-02-22T22:00:06.436471
+[NOTIF_PROBE] watch tick label=child ts=2026-02-22T22:00:11.441393
+02:12 +0: loading C:/Users/navee/Documents/TrustBridge/parental_controls_app/integration_test/real_device_notification_probe_test.dart
+No widgets found at Offset(107.0, 489.0).
+02:16 +0: real-device notification probe role runner
+[NOTIF_PROBE] watch tick label=child ts=2026-02-22T22:00:16.448043
+[NOTIF_PROBE] watch tick label=child ts=2026-02-22T22:00:21.455029
+[NOTIF_PROBE] watch tick label=child ts=2026-02-22T22:00:26.462485
+[NOTIF_PROBE] watch end label=child
+02:26 +1: (tearDownAll)
+02:27 +1: All tests passed!

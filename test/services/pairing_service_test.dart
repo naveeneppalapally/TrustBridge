@@ -17,7 +17,7 @@ void main() {
     const childId = 'child-uid-1';
     final now = DateTime(2026, 2, 20, 10, 0, 0);
 
-    setUp(() {
+    setUp(() async {
       FlutterSecureStorage.setMockInitialValues(<String, String>{});
       firestore = FakeFirebaseFirestore();
       storage = const FlutterSecureStorage();
@@ -30,6 +30,22 @@ void main() {
         fcmTokenProvider: () async => 'fcm-token-test',
         nowProvider: () => now,
       );
+
+      await firestore.collection('children').doc(childId).set({
+        'id': childId,
+        'parentId': parentId,
+        'nickname': 'Test Child',
+        'ageBand': '10-13',
+        'policy': {
+          'blockedCategories': <String>[],
+          'blockedDomains': <String>[],
+          'schedules': <Map<String, dynamic>>[],
+          'safeSearchEnabled': true,
+        },
+        'deviceIds': <String>[],
+        'createdAt': Timestamp.fromDate(now),
+        'updatedAt': Timestamp.fromDate(now),
+      });
     });
 
     test('generatePairingCode writes Firestore doc and returns 6-digit code',
@@ -119,10 +135,47 @@ void main() {
 
     test('generated pairing code is always numeric and length 6', () async {
       for (var index = 0; index < 20; index++) {
-        final code = await service.generatePairingCode('child-$index');
+        final loopChildId = 'child-$index';
+        await firestore.collection('children').doc(loopChildId).set({
+          'id': loopChildId,
+          'parentId': parentId,
+          'nickname': 'Child $index',
+          'ageBand': '10-13',
+          'policy': {
+            'blockedCategories': <String>[],
+            'blockedDomains': <String>[],
+            'schedules': <Map<String, dynamic>>[],
+            'safeSearchEnabled': true,
+          },
+          'deviceIds': <String>[],
+          'createdAt': Timestamp.fromDate(now),
+          'updatedAt': Timestamp.fromDate(now),
+        });
+        final code = await service.generatePairingCode(loopChildId);
         expect(code.length, 6);
         expect(RegExp(r'^\d{6}$').hasMatch(code), true);
       }
+    });
+
+    test('recoverPairingFromCloud ignores orphaned child devices subcollection',
+        () async {
+      const deviceId = 'orphan-device-1';
+      await storage.write(key: 'pairing_device_id', value: deviceId);
+      await firestore
+          .collection('children')
+          .doc('deleted-child')
+          .collection('devices')
+          .doc(deviceId)
+          .set(<String, dynamic>{
+        'parentId': parentId,
+        'pairedAt': Timestamp.fromDate(now),
+      });
+
+      final recovered = await service.recoverPairingFromCloud();
+
+      expect(recovered, isNull);
+      expect(await service.getPairedChildId(), isNull);
+      expect(await service.getPairedParentId(), isNull);
     });
   });
 }

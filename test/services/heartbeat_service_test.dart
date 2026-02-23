@@ -1,4 +1,5 @@
 import 'package:fake_cloud_firestore/fake_cloud_firestore.dart';
+import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:trustbridge_app/services/heartbeat_service.dart';
 import 'package:trustbridge_app/services/pairing_service.dart';
@@ -7,23 +8,41 @@ import 'package:trustbridge_app/services/vpn_service.dart';
 void main() {
   group('HeartbeatService', () {
     late FakeFirebaseFirestore firestore;
+    late _FakePairingService pairingService;
+    late _FakeVpnService vpnService;
     final now = DateTime(2026, 2, 20, 12, 0, 0);
 
     setUp(() {
       firestore = FakeFirebaseFirestore();
+      pairingService = _FakePairingService(
+        childId: 'child-1',
+        parentId: 'parent-1',
+        deviceId: 'device-1',
+      );
+      vpnService = _FakeVpnService(running: true);
       HeartbeatService.configureForTesting(
         firestore: firestore,
-        pairingService: _FakePairingService(
-          childId: 'child-1',
-          parentId: 'parent-1',
-          deviceId: 'device-1',
-        ),
-        vpnService: _FakeVpnService(running: true),
+        pairingService: pairingService,
+        vpnService: vpnService,
         nowProvider: () => now,
       );
     });
 
     test('sendHeartbeat updates devices/{deviceId}', () async {
+      await firestore.collection('children').doc('child-1').set(<String, dynamic>{
+        'parentId': 'parent-1',
+        'nickname': 'Kid',
+        'ageBand': 'middle',
+        'deviceIds': <String>['device-1'],
+        'policy': <String, dynamic>{
+          'blockedCategories': <String>[],
+          'blockedDomains': <String>[],
+          'schedules': <Map<String, dynamic>>[],
+        },
+        'createdAt': Timestamp.fromDate(now),
+        'updatedAt': Timestamp.fromDate(now),
+      });
+
       await HeartbeatService.sendHeartbeat();
 
       final snapshot =
@@ -33,6 +52,22 @@ void main() {
       expect(data['vpnActive'], isTrue);
       expect(data['lastSeenEpochMs'], now.millisecondsSinceEpoch);
       expect(data['appVersion'], isNotNull);
+    });
+
+    test('sendHeartbeat clears stale pairing and does not recreate deleted child',
+        () async {
+      await HeartbeatService.sendHeartbeat();
+
+      final deviceSnapshot =
+          await firestore.collection('devices').doc('device-1').get();
+      expect(
+        deviceSnapshot.exists,
+        isFalse,
+        reason: 'Heartbeat must not recreate links for a deleted child profile.',
+      );
+      expect(pairingService.clearLocalPairingCalls, 1);
+      expect(vpnService.stopVpnCalls, 1);
+      expect(vpnService.updateFilterRulesCalls, 1);
     });
 
     test('isOffline returns true for 31 minutes ago', () {
@@ -67,6 +102,7 @@ class _FakePairingService extends PairingService {
   final String childId;
   final String parentId;
   final String deviceId;
+  int clearLocalPairingCalls = 0;
 
   @override
   Future<String> getOrCreateDeviceId() async => deviceId;
@@ -76,12 +112,19 @@ class _FakePairingService extends PairingService {
 
   @override
   Future<String?> getPairedParentId() async => parentId;
+
+  @override
+  Future<void> clearLocalPairing() async {
+    clearLocalPairingCalls += 1;
+  }
 }
 
 class _FakeVpnService implements VpnServiceBase {
   _FakeVpnService({required this.running});
 
   final bool running;
+  int stopVpnCalls = 0;
+  int updateFilterRulesCalls = 0;
 
   @override
   Future<VpnStatus> getStatus() async => VpnStatus(
@@ -149,13 +192,18 @@ class _FakeVpnService implements VpnServiceBase {
       true;
 
   @override
-  Future<bool> stopVpn() async => true;
+  Future<bool> stopVpn() async {
+    stopVpnCalls += 1;
+    return true;
+  }
 
   @override
   Future<bool> updateFilterRules({
     required List<String> blockedCategories,
     required List<String> blockedDomains,
     List<String> temporaryAllowedDomains = const <String>[],
-  }) async =>
-      true;
+  }) async {
+    updateFilterRulesCalls += 1;
+    return true;
+  }
 }

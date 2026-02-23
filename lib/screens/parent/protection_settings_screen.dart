@@ -1,8 +1,10 @@
+import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:flutter/material.dart';
 
 import '../../models/child_profile.dart';
 import '../../services/auth_service.dart';
 import '../../services/firestore_service.dart';
+import '../../services/heartbeat_service.dart';
 import '../../services/vpn_service.dart';
 import '../../utils/parent_pin_gate.dart';
 
@@ -22,7 +24,8 @@ class ProtectionSettingsScreen extends StatefulWidget {
   final String? parentIdOverride;
 
   @override
-  State<ProtectionSettingsScreen> createState() => _ProtectionSettingsScreenState();
+  State<ProtectionSettingsScreen> createState() =>
+      _ProtectionSettingsScreenState();
 }
 
 class _ProtectionSettingsScreenState extends State<ProtectionSettingsScreen> {
@@ -37,6 +40,9 @@ class _ProtectionSettingsScreenState extends State<ProtectionSettingsScreen> {
 
   bool _alertVpnDisabled = true;
   bool _alertBypassAttempts = true;
+
+  final Map<String, Future<_ChildRuntimeStatus>> _runtimeStatusFutures =
+      <String, Future<_ChildRuntimeStatus>>{};
 
   AuthService get _resolvedAuthService {
     _authService ??= widget.authService ?? AuthService();
@@ -132,8 +138,6 @@ class _ProtectionSettingsScreenState extends State<ProtectionSettingsScreen> {
   }
 
   Widget _buildStatusCard(List<ChildProfile> children) {
-    final running = _vpnStatus.isRunning;
-    final statusColor = running ? Colors.green : Colors.red;
     final lastSync = _vpnStatus.lastRuleUpdateAt;
 
     return Card(
@@ -144,7 +148,7 @@ class _ProtectionSettingsScreenState extends State<ProtectionSettingsScreen> {
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
             Text(
-              '🛡️ Protection Status',
+              'Protection Status',
               style: Theme.of(context).textTheme.titleMedium?.copyWith(
                     fontWeight: FontWeight.w800,
                   ),
@@ -154,31 +158,39 @@ class _ProtectionSettingsScreenState extends State<ProtectionSettingsScreen> {
               const Text('No child devices connected yet.')
             else
               ...children.map((child) {
-                return Padding(
-                  padding: const EdgeInsets.only(bottom: 8),
-                  child: Row(
-                    children: [
-                      Expanded(
-                        child: Text(
-                          '${child.nickname}\'s Phone',
-                          style: const TextStyle(fontWeight: FontWeight.w600),
-                        ),
+                return FutureBuilder<_ChildRuntimeStatus>(
+                  future: _runtimeStatusFutureFor(child),
+                  builder: (context, snapshot) {
+                    final runtimeStatus =
+                        snapshot.data ?? const _ChildRuntimeStatus.unknown();
+                    return Padding(
+                      padding: const EdgeInsets.only(bottom: 8),
+                      child: Row(
+                        children: [
+                          Expanded(
+                            child: Text(
+                              '${child.nickname}\'s Phone',
+                              style:
+                                  const TextStyle(fontWeight: FontWeight.w600),
+                            ),
+                          ),
+                          Text(
+                            runtimeStatus.label,
+                            style: TextStyle(
+                              color: runtimeStatus.color,
+                              fontWeight: FontWeight.w700,
+                            ),
+                          ),
+                        ],
                       ),
-                      Text(
-                        running ? '✅ Active' : '🔴 Offline',
-                        style: TextStyle(
-                          color: statusColor,
-                          fontWeight: FontWeight.w700,
-                        ),
-                      ),
-                    ],
-                  ),
+                    );
+                  },
                 );
               }),
             if (lastSync != null) ...[
               const SizedBox(height: 8),
               Text(
-                'Last sync: ${_timeAgo(lastSync)}',
+                'Last local VPN sync: ${_timeAgo(lastSync)}',
                 style: Theme.of(context).textTheme.bodySmall?.copyWith(
                       color: Theme.of(context).colorScheme.onSurfaceVariant,
                     ),
@@ -188,6 +200,78 @@ class _ProtectionSettingsScreenState extends State<ProtectionSettingsScreen> {
         ),
       ),
     );
+  }
+
+  Future<_ChildRuntimeStatus> _runtimeStatusFutureFor(ChildProfile child) {
+    final fingerprint = '${child.id}:${child.deviceIds.join(',')}';
+    final cached = _runtimeStatusFutures[fingerprint];
+    if (cached != null) {
+      return cached;
+    }
+    final future = _loadChildRuntimeStatus(child);
+    _runtimeStatusFutures[fingerprint] = future;
+    return future;
+  }
+
+  Future<_ChildRuntimeStatus> _loadChildRuntimeStatus(ChildProfile child) async {
+    if (child.deviceIds.isEmpty) {
+      return const _ChildRuntimeStatus.notLinked();
+    }
+
+    Duration? bestAge;
+    bool bestVpnActive = false;
+
+    for (final deviceId in child.deviceIds) {
+      final normalizedDeviceId = deviceId.trim();
+      if (normalizedDeviceId.isEmpty) {
+        continue;
+      }
+
+      Duration? age;
+      try {
+        age = await HeartbeatService.timeSinceLastSeen(normalizedDeviceId);
+      } catch (_) {
+        age = null;
+      }
+
+      var vpnActive = false;
+      try {
+        final deviceDoc = await FirebaseFirestore.instance
+            .collection('children')
+            .doc(child.id)
+            .collection('devices')
+            .doc(normalizedDeviceId)
+            .get();
+        if (deviceDoc.exists) {
+          vpnActive = deviceDoc.data()?['vpnActive'] == true;
+        }
+      } catch (_) {
+        vpnActive = false;
+      }
+
+      if (age == null) {
+        continue;
+      }
+
+      if (bestAge == null || age < bestAge) {
+        bestAge = age;
+        bestVpnActive = vpnActive;
+      }
+    }
+
+    if (bestAge == null) {
+      return const _ChildRuntimeStatus.offline();
+    }
+
+    if (bestAge > const Duration(minutes: 30)) {
+      return const _ChildRuntimeStatus.offline();
+    }
+
+    if (bestVpnActive) {
+      return const _ChildRuntimeStatus.active();
+    }
+
+    return const _ChildRuntimeStatus.onlineVpnOff();
   }
 
   Widget _buildAlertTogglesCard(String parentId) {
@@ -422,4 +506,34 @@ class _ProtectionSettingsScreenState extends State<ProtectionSettingsScreen> {
     }
     return '${diff.inDays} d ago';
   }
+}
+
+class _ChildRuntimeStatus {
+  const _ChildRuntimeStatus({
+    required this.label,
+    required this.color,
+  });
+
+  const _ChildRuntimeStatus.active()
+      : label = 'Active',
+        color = Colors.green;
+
+  const _ChildRuntimeStatus.onlineVpnOff()
+      : label = 'Online, VPN off',
+        color = Colors.orange;
+
+  const _ChildRuntimeStatus.offline()
+      : label = 'Offline',
+        color = Colors.red;
+
+  const _ChildRuntimeStatus.notLinked()
+      : label = 'Not linked',
+        color = Colors.grey;
+
+  const _ChildRuntimeStatus.unknown()
+      : label = 'Checking...',
+        color = Colors.grey;
+
+  final String label;
+  final Color color;
 }

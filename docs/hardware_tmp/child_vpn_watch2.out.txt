@@ -1,0 +1,493 @@
+00:00 +0: loading C:/Users/navee/Documents/TrustBridge/parental_controls_app/integration_test/real_device_vpn_smoke_test.dart
+Running Gradle task 'assembleDebug'...                             43.3s
+√ Built build\app\outputs\flutter-apk\app-debug.apk
+Installing build\app\outputs\flutter-apk\app-debug.apk...           9.1s
+00:00 +0: real-device vpn smoke role runner
+[VPN_SMOKE] initial permission=false running=false
+[VPN_SMOKE] requestPermission returned=true
+[Performance] startTrace(vpn_start)
+[Crashlytics] VPN started successfully
+[VPN_SMOKE] startVpn returned=true domain=reddit.com
+[VPN_SMOKE] updateFilterRules returned=true
+[VPN_SMOKE] status supported=true permission=true running=true processed=7 blocked=0 allowed=7 privateDns=false mode=off
+[VPN_SMOKE] telemetry running=true intercepted=7 blocked=0 allowed=7
+[VPN_SMOKE] cache categories=0 domains=1 sampleDomains=[reddit.com]
+[VPN_SMOKE] query domain=z-m-gateway.facebook.com blocked=false ts=2026-02-22T20:54:36.420
+[VPN_SMOKE] query domain=play.googleapis.com blocked=false ts=2026-02-22T20:54:35.905
+[VPN_SMOKE] query domain=android.apis.google.com blocked=false ts=2026-02-22T20:54:35.778
+[VPN_SMOKE] query domain=firebase-settings.crashlytics.com blocked=false ts=2026-02-22T20:54:35.744
+[VPN_SMOKE] query domain=connectivitycheck.android.com blocked=false ts=2026-02-22T20:54:35.094
+[VPN_SMOKE] query domain=in-main-appstore.vivoglobal.com blocked=false ts=2026-02-22T20:54:35.070
+[VPN_SMOKE] query domain=mtalk.google.com blocked=false ts=2026-02-22T20:54:34.980
+[VPN_SMOKE] status supported=true permission=true running=true processed=8 blocked=0 allowed=8 privateDns=false mode=off
+[VPN_SMOKE] telemetry running=true intercepted=8 blocked=0 allowed=8
+[VPN_SMOKE] cache categories=0 domains=1 sampleDomains=[reddit.com]
+[VPN_SMOKE] query domain=graph.facebook.com blocked=false ts=2026-02-22T20:54:38.606
+[VPN_SMOKE] query domain=z-m-gateway.facebook.com blocked=false ts=2026-02-22T20:54:36.420
+[VPN_SMOKE] query domain=play.googleapis.com blocked=false ts=2026-02-22T20:54:35.905
+[VPN_SMOKE] query domain=android.apis.google.com blocked=false ts=2026-02-22T20:54:35.778
+[VPN_SMOKE] query domain=firebase-settings.crashlytics.com blocked=false ts=2026-02-22T20:54:35.744
+[VPN_SMOKE] query domain=connectivitycheck.android.com blocked=false ts=2026-02-22T20:54:35.094
+[VPN_SMOKE] query domain=in-main-appstore.vivoglobal.com blocked=false ts=2026-02-22T20:54:35.070
+[VPN_SMOKE] query domain=mtalk.google.com blocked=false ts=2026-02-22T20:54:34.980
+[VPN_SMOKE] status supported=true permission=true running=true processed=8 blocked=0 allowed=8 privateDns=false mode=off
+[VPN_SMOKE] telemetry running=true intercepted=8 blocked=0 allowed=8
+[VPN_SMOKE] cache categories=0 domains=1 sampleDomains=[reddit.com]
+[VPN_SMOKE] query domain=graph.facebook.com blocked=false ts=2026-02-22T20:54:38.606
+[VPN_SMOKE] query domain=z-m-gateway.facebook.com blocked=false ts=2026-02-22T20:54:36.420
+[VPN_SMOKE] query domain=play.googleapis.com blocked=false ts=2026-02-22T20:54:35.905
+[VPN_SMOKE] query domain=android.apis.google.com blocked=false ts=2026-02-22T20:54:35.778
+[VPN_SMOKE] query domain=firebase-settings.crashlytics.com blocked=false ts=2026-02-22T20:54:35.744
+[VPN_SMOKE] query domain=connectivitycheck.android.com blocked=false ts=2026-02-22T20:54:35.094
+[VPN_SMOKE] query domain=in-main-appstore.vivoglobal.com blocked=false ts=2026-02-22T20:54:35.070
+[VPN_SMOKE] query domain=mtalk.google.com blocked=false ts=2026-02-22T20:54:34.980
+[VPN_SMOKE] status supported=true permission=true running=true processed=8 blocked=0 allowed=8 privateDns=false mode=off
+[VPN_SMOKE] telemetry running=true intercepted=8 blocked=0 allowed=8
+[VPN_SMOKE] cache categories=0 domains=1 sampleDomains=[reddit.com]
+[VPN_SMOKE] query domain=graph.facebook.com blocked=false ts=2026-02-22T20:54:38.606
+[VPN_SMOKE] query domain=z-m-gateway.facebook.com blocked=false ts=2026-02-22T20:54:36.420
+[VPN_SMOKE] query domain=play.googleapis.com blocked=false ts=2026-02-22T20:54:35.905
+[VPN_SMOKE] query domain=android.apis.google.com blocked=false ts=2026-02-22T20:54:35.778
+[VPN_SMOKE] query domain=firebase-settings.crashlytics.com blocked=false ts=2026-02-22T20:54:35.744
+[VPN_SMOKE] query domain=connectivitycheck.android.com blocked=false ts=2026-02-22T20:54:35.094
+[VPN_SMOKE] query domain=in-main-appstore.vivoglobal.com blocked=false ts=2026-02-22T20:54:35.070
+[VPN_SMOKE] query domain=mtalk.google.com blocked=false ts=2026-02-22T20:54:34.980
+[VPN_SMOKE] status supported=true permission=true running=true processed=8 blocked=0 allowed=8 privateDns=false mode=off
+[VPN_SMOKE] telemetry running=true intercepted=8 blocked=0 allowed=8
+[VPN_SMOKE] cache categories=0 domains=1 sampleDomains=[reddit.com]
+[VPN_SMOKE] query domain=graph.facebook.com blocked=false ts=2026-02-22T20:54:38.606
+[VPN_SMOKE] query domain=z-m-gateway.facebook.com blocked=false ts=2026-02-22T20:54:36.420
+[VPN_SMOKE] query domain=play.googleapis.com blocked=false ts=2026-02-22T20:54:35.905
+[VPN_SMOKE] query domain=android.apis.google.com blocked=false ts=2026-02-22T20:54:35.778
+[VPN_SMOKE] query domain=firebase-settings.crashlytics.com blocked=false ts=2026-02-22T20:54:35.744
+[VPN_SMOKE] query domain=connectivitycheck.android.com blocked=false ts=2026-02-22T20:54:35.094
+[VPN_SMOKE] query domain=in-main-appstore.vivoglobal.com blocked=false ts=2026-02-22T20:54:35.070
+[VPN_SMOKE] query domain=mtalk.google.com blocked=false ts=2026-02-22T20:54:34.980
+[VPN_SMOKE] status supported=true permission=true running=true processed=8 blocked=0 allowed=8 privateDns=false mode=off
+[VPN_SMOKE] telemetry running=true intercepted=8 blocked=0 allowed=8
+[VPN_SMOKE] cache categories=0 domains=1 sampleDomains=[reddit.com]
+[VPN_SMOKE] query domain=graph.facebook.com blocked=false ts=2026-02-22T20:54:38.606
+[VPN_SMOKE] query domain=z-m-gateway.facebook.com blocked=false ts=2026-02-22T20:54:36.420
+[VPN_SMOKE] query domain=play.googleapis.com blocked=false ts=2026-02-22T20:54:35.905
+[VPN_SMOKE] query domain=android.apis.google.com blocked=false ts=2026-02-22T20:54:35.778
+[VPN_SMOKE] query domain=firebase-settings.crashlytics.com blocked=false ts=2026-02-22T20:54:35.744
+[VPN_SMOKE] query domain=connectivitycheck.android.com blocked=false ts=2026-02-22T20:54:35.094
+[VPN_SMOKE] query domain=in-main-appstore.vivoglobal.com blocked=false ts=2026-02-22T20:54:35.070
+[VPN_SMOKE] query domain=mtalk.google.com blocked=false ts=2026-02-22T20:54:34.980
+[VPN_SMOKE] status supported=true permission=true running=true processed=9 blocked=0 allowed=9 privateDns=false mode=off
+[VPN_SMOKE] telemetry running=true intercepted=9 blocked=0 allowed=9
+[VPN_SMOKE] cache categories=0 domains=1 sampleDomains=[reddit.com]
+[VPN_SMOKE] query domain=firebaseremoteconfig.googleapis.com blocked=false ts=2026-02-22T20:54:48.981
+[VPN_SMOKE] query domain=graph.facebook.com blocked=false ts=2026-02-22T20:54:38.606
+[VPN_SMOKE] query domain=z-m-gateway.facebook.com blocked=false ts=2026-02-22T20:54:36.420
+[VPN_SMOKE] query domain=play.googleapis.com blocked=false ts=2026-02-22T20:54:35.905
+[VPN_SMOKE] query domain=android.apis.google.com blocked=false ts=2026-02-22T20:54:35.778
+[VPN_SMOKE] query domain=firebase-settings.crashlytics.com blocked=false ts=2026-02-22T20:54:35.744
+[VPN_SMOKE] query domain=connectivitycheck.android.com blocked=false ts=2026-02-22T20:54:35.094
+[VPN_SMOKE] query domain=in-main-appstore.vivoglobal.com blocked=false ts=2026-02-22T20:54:35.070
+[VPN_SMOKE] query domain=mtalk.google.com blocked=false ts=2026-02-22T20:54:34.980
+[VPN_SMOKE] status supported=true permission=true running=true processed=27 blocked=0 allowed=27 privateDns=false mode=off
+[VPN_SMOKE] telemetry running=true intercepted=27 blocked=0 allowed=27
+[VPN_SMOKE] cache categories=0 domains=1 sampleDomains=[reddit.com]
+[VPN_SMOKE] query domain=www.google.com blocked=false ts=2026-02-22T20:54:49.966
+[VPN_SMOKE] query domain=www.google.com blocked=false ts=2026-02-22T20:54:49.940
+[VPN_SMOKE] query domain=cdn.shopify.com blocked=false ts=2026-02-22T20:54:49.908
+[VPN_SMOKE] query domain=cdn.shopify.com blocked=false ts=2026-02-22T20:54:49.876
+[VPN_SMOKE] query domain=xample.com blocked=false ts=2026-02-22T20:54:49.740
+[VPN_SMOKE] query domain=xample.com blocked=false ts=2026-02-22T20:54:49.607
+[VPN_SMOKE] query domain=dns.google blocked=false ts=2026-02-22T20:54:49.584
+[VPN_SMOKE] query domain=dns.google blocked=false ts=2026-02-22T20:54:49.557
+[VPN_SMOKE] query domain=chrome.cloudflare-dns.com blocked=false ts=2026-02-22T20:54:49.533
+[VPN_SMOKE] query domain=chrome.cloudflare-dns.com blocked=false ts=2026-02-22T20:54:49.415
+[VPN_SMOKE] status supported=true permission=true running=true processed=27 blocked=0 allowed=27 privateDns=false mode=off
+[VPN_SMOKE] telemetry running=true intercepted=27 blocked=0 allowed=27
+[VPN_SMOKE] cache categories=0 domains=1 sampleDomains=[reddit.com]
+[VPN_SMOKE] query domain=www.google.com blocked=false ts=2026-02-22T20:54:49.966
+[VPN_SMOKE] query domain=www.google.com blocked=false ts=2026-02-22T20:54:49.940
+[VPN_SMOKE] query domain=cdn.shopify.com blocked=false ts=2026-02-22T20:54:49.908
+[VPN_SMOKE] query domain=cdn.shopify.com blocked=false ts=2026-02-22T20:54:49.876
+[VPN_SMOKE] query domain=xample.com blocked=false ts=2026-02-22T20:54:49.740
+[VPN_SMOKE] query domain=xample.com blocked=false ts=2026-02-22T20:54:49.607
+[VPN_SMOKE] query domain=dns.google blocked=false ts=2026-02-22T20:54:49.584
+[VPN_SMOKE] query domain=dns.google blocked=false ts=2026-02-22T20:54:49.557
+[VPN_SMOKE] query domain=chrome.cloudflare-dns.com blocked=false ts=2026-02-22T20:54:49.533
+[VPN_SMOKE] query domain=chrome.cloudflare-dns.com blocked=false ts=2026-02-22T20:54:49.415
+[VPN_SMOKE] status supported=true permission=true running=true processed=27 blocked=0 allowed=27 privateDns=false mode=off
+[VPN_SMOKE] telemetry running=true intercepted=27 blocked=0 allowed=27
+[VPN_SMOKE] cache categories=0 domains=1 sampleDomains=[reddit.com]
+[VPN_SMOKE] query domain=www.google.com blocked=false ts=2026-02-22T20:54:49.966
+[VPN_SMOKE] query domain=www.google.com blocked=false ts=2026-02-22T20:54:49.940
+[VPN_SMOKE] query domain=cdn.shopify.com blocked=false ts=2026-02-22T20:54:49.908
+[VPN_SMOKE] query domain=cdn.shopify.com blocked=false ts=2026-02-22T20:54:49.876
+[VPN_SMOKE] query domain=xample.com blocked=false ts=2026-02-22T20:54:49.740
+[VPN_SMOKE] query domain=xample.com blocked=false ts=2026-02-22T20:54:49.607
+[VPN_SMOKE] query domain=dns.google blocked=false ts=2026-02-22T20:54:49.584
+[VPN_SMOKE] query domain=dns.google blocked=false ts=2026-02-22T20:54:49.557
+[VPN_SMOKE] query domain=chrome.cloudflare-dns.com blocked=false ts=2026-02-22T20:54:49.533
+[VPN_SMOKE] query domain=chrome.cloudflare-dns.com blocked=false ts=2026-02-22T20:54:49.415
+[VPN_SMOKE] status supported=true permission=true running=true processed=27 blocked=0 allowed=27 privateDns=false mode=off
+[VPN_SMOKE] telemetry running=true intercepted=27 blocked=0 allowed=27
+[VPN_SMOKE] cache categories=0 domains=1 sampleDomains=[reddit.com]
+[VPN_SMOKE] query domain=www.google.com blocked=false ts=2026-02-22T20:54:49.966
+[VPN_SMOKE] query domain=www.google.com blocked=false ts=2026-02-22T20:54:49.940
+[VPN_SMOKE] query domain=cdn.shopify.com blocked=false ts=2026-02-22T20:54:49.908
+[VPN_SMOKE] query domain=cdn.shopify.com blocked=false ts=2026-02-22T20:54:49.876
+[VPN_SMOKE] query domain=xample.com blocked=false ts=2026-02-22T20:54:49.740
+[VPN_SMOKE] query domain=xample.com blocked=false ts=2026-02-22T20:54:49.607
+[VPN_SMOKE] query domain=dns.google blocked=false ts=2026-02-22T20:54:49.584
+[VPN_SMOKE] query domain=dns.google blocked=false ts=2026-02-22T20:54:49.557
+[VPN_SMOKE] query domain=chrome.cloudflare-dns.com blocked=false ts=2026-02-22T20:54:49.533
+[VPN_SMOKE] query domain=chrome.cloudflare-dns.com blocked=false ts=2026-02-22T20:54:49.415
+[VPN_SMOKE] status supported=true permission=true running=true processed=27 blocked=0 allowed=27 privateDns=false mode=off
+[VPN_SMOKE] telemetry running=true intercepted=27 blocked=0 allowed=27
+[VPN_SMOKE] cache categories=0 domains=1 sampleDomains=[reddit.com]
+[VPN_SMOKE] query domain=www.google.com blocked=false ts=2026-02-22T20:54:49.966
+[VPN_SMOKE] query domain=www.google.com blocked=false ts=2026-02-22T20:54:49.940
+[VPN_SMOKE] query domain=cdn.shopify.com blocked=false ts=2026-02-22T20:54:49.908
+[VPN_SMOKE] query domain=cdn.shopify.com blocked=false ts=2026-02-22T20:54:49.876
+[VPN_SMOKE] query domain=xample.com blocked=false ts=2026-02-22T20:54:49.740
+[VPN_SMOKE] query domain=xample.com blocked=false ts=2026-02-22T20:54:49.607
+[VPN_SMOKE] query domain=dns.google blocked=false ts=2026-02-22T20:54:49.584
+[VPN_SMOKE] query domain=dns.google blocked=false ts=2026-02-22T20:54:49.557
+[VPN_SMOKE] query domain=chrome.cloudflare-dns.com blocked=false ts=2026-02-22T20:54:49.533
+[VPN_SMOKE] query domain=chrome.cloudflare-dns.com blocked=false ts=2026-02-22T20:54:49.415
+[VPN_SMOKE] status supported=true permission=true running=true processed=27 blocked=0 allowed=27 privateDns=false mode=off
+[VPN_SMOKE] telemetry running=true intercepted=27 blocked=0 allowed=27
+[VPN_SMOKE] cache categories=0 domains=1 sampleDomains=[reddit.com]
+[VPN_SMOKE] query domain=www.google.com blocked=false ts=2026-02-22T20:54:49.966
+[VPN_SMOKE] query domain=www.google.com blocked=false ts=2026-02-22T20:54:49.940
+[VPN_SMOKE] query domain=cdn.shopify.com blocked=false ts=2026-02-22T20:54:49.908
+[VPN_SMOKE] query domain=cdn.shopify.com blocked=false ts=2026-02-22T20:54:49.876
+[VPN_SMOKE] query domain=xample.com blocked=false ts=2026-02-22T20:54:49.740
+[VPN_SMOKE] query domain=xample.com blocked=false ts=2026-02-22T20:54:49.607
+[VPN_SMOKE] query domain=dns.google blocked=false ts=2026-02-22T20:54:49.584
+[VPN_SMOKE] query domain=dns.google blocked=false ts=2026-02-22T20:54:49.557
+[VPN_SMOKE] query domain=chrome.cloudflare-dns.com blocked=false ts=2026-02-22T20:54:49.533
+[VPN_SMOKE] query domain=chrome.cloudflare-dns.com blocked=false ts=2026-02-22T20:54:49.415
+[VPN_SMOKE] status supported=true permission=true running=true processed=28 blocked=0 allowed=28 privateDns=false mode=off
+[VPN_SMOKE] telemetry running=true intercepted=28 blocked=0 allowed=28
+[VPN_SMOKE] cache categories=0 domains=1 sampleDomains=[reddit.com]
+[VPN_SMOKE] query domain=firebaselogging-pa.googleapis.com blocked=false ts=2026-02-22T20:55:03.284
+[VPN_SMOKE] query domain=www.google.com blocked=false ts=2026-02-22T20:54:49.966
+[VPN_SMOKE] query domain=www.google.com blocked=false ts=2026-02-22T20:54:49.940
+[VPN_SMOKE] query domain=cdn.shopify.com blocked=false ts=2026-02-22T20:54:49.908
+[VPN_SMOKE] query domain=cdn.shopify.com blocked=false ts=2026-02-22T20:54:49.876
+[VPN_SMOKE] query domain=xample.com blocked=false ts=2026-02-22T20:54:49.740
+[VPN_SMOKE] query domain=xample.com blocked=false ts=2026-02-22T20:54:49.607
+[VPN_SMOKE] query domain=dns.google blocked=false ts=2026-02-22T20:54:49.584
+[VPN_SMOKE] query domain=dns.google blocked=false ts=2026-02-22T20:54:49.557
+[VPN_SMOKE] query domain=chrome.cloudflare-dns.com blocked=false ts=2026-02-22T20:54:49.533
+[VPN_SMOKE] status supported=true permission=true running=true processed=28 blocked=0 allowed=28 privateDns=false mode=off
+[VPN_SMOKE] telemetry running=true intercepted=28 blocked=0 allowed=28
+[VPN_SMOKE] cache categories=0 domains=1 sampleDomains=[reddit.com]
+[VPN_SMOKE] query domain=firebaselogging-pa.googleapis.com blocked=false ts=2026-02-22T20:55:03.284
+[VPN_SMOKE] query domain=www.google.com blocked=false ts=2026-02-22T20:54:49.966
+[VPN_SMOKE] query domain=www.google.com blocked=false ts=2026-02-22T20:54:49.940
+[VPN_SMOKE] query domain=cdn.shopify.com blocked=false ts=2026-02-22T20:54:49.908
+[VPN_SMOKE] query domain=cdn.shopify.com blocked=false ts=2026-02-22T20:54:49.876
+[VPN_SMOKE] query domain=xample.com blocked=false ts=2026-02-22T20:54:49.740
+[VPN_SMOKE] query domain=xample.com blocked=false ts=2026-02-22T20:54:49.607
+[VPN_SMOKE] query domain=dns.google blocked=false ts=2026-02-22T20:54:49.584
+[VPN_SMOKE] query domain=dns.google blocked=false ts=2026-02-22T20:54:49.557
+[VPN_SMOKE] query domain=chrome.cloudflare-dns.com blocked=false ts=2026-02-22T20:54:49.533
+[VPN_SMOKE] status supported=true permission=true running=true processed=28 blocked=0 allowed=28 privateDns=false mode=off
+[VPN_SMOKE] telemetry running=true intercepted=28 blocked=0 allowed=28
+[VPN_SMOKE] cache categories=0 domains=1 sampleDomains=[reddit.com]
+[VPN_SMOKE] query domain=firebaselogging-pa.googleapis.com blocked=false ts=2026-02-22T20:55:03.284
+[VPN_SMOKE] query domain=www.google.com blocked=false ts=2026-02-22T20:54:49.966
+[VPN_SMOKE] query domain=www.google.com blocked=false ts=2026-02-22T20:54:49.940
+[VPN_SMOKE] query domain=cdn.shopify.com blocked=false ts=2026-02-22T20:54:49.908
+[VPN_SMOKE] query domain=cdn.shopify.com blocked=false ts=2026-02-22T20:54:49.876
+[VPN_SMOKE] query domain=xample.com blocked=false ts=2026-02-22T20:54:49.740
+[VPN_SMOKE] query domain=xample.com blocked=false ts=2026-02-22T20:54:49.607
+[VPN_SMOKE] query domain=dns.google blocked=false ts=2026-02-22T20:54:49.584
+[VPN_SMOKE] query domain=dns.google blocked=false ts=2026-02-22T20:54:49.557
+[VPN_SMOKE] query domain=chrome.cloudflare-dns.com blocked=false ts=2026-02-22T20:54:49.533
+[VPN_SMOKE] status supported=true permission=true running=true processed=28 blocked=0 allowed=28 privateDns=false mode=off
+[VPN_SMOKE] telemetry running=true intercepted=28 blocked=0 allowed=28
+[VPN_SMOKE] cache categories=0 domains=1 sampleDomains=[reddit.com]
+[VPN_SMOKE] query domain=firebaselogging-pa.googleapis.com blocked=false ts=2026-02-22T20:55:03.284
+[VPN_SMOKE] query domain=www.google.com blocked=false ts=2026-02-22T20:54:49.966
+[VPN_SMOKE] query domain=www.google.com blocked=false ts=2026-02-22T20:54:49.940
+[VPN_SMOKE] query domain=cdn.shopify.com blocked=false ts=2026-02-22T20:54:49.908
+[VPN_SMOKE] query domain=cdn.shopify.com blocked=false ts=2026-02-22T20:54:49.876
+[VPN_SMOKE] query domain=xample.com blocked=false ts=2026-02-22T20:54:49.740
+[VPN_SMOKE] query domain=xample.com blocked=false ts=2026-02-22T20:54:49.607
+[VPN_SMOKE] query domain=dns.google blocked=false ts=2026-02-22T20:54:49.584
+[VPN_SMOKE] query domain=dns.google blocked=false ts=2026-02-22T20:54:49.557
+[VPN_SMOKE] query domain=chrome.cloudflare-dns.com blocked=false ts=2026-02-22T20:54:49.533
+[VPN_SMOKE] status supported=true permission=true running=true processed=28 blocked=0 allowed=28 privateDns=false mode=off
+[VPN_SMOKE] telemetry running=true intercepted=28 blocked=0 allowed=28
+[VPN_SMOKE] cache categories=0 domains=1 sampleDomains=[reddit.com]
+[VPN_SMOKE] query domain=firebaselogging-pa.googleapis.com blocked=false ts=2026-02-22T20:55:03.284
+[VPN_SMOKE] query domain=www.google.com blocked=false ts=2026-02-22T20:54:49.966
+[VPN_SMOKE] query domain=www.google.com blocked=false ts=2026-02-22T20:54:49.940
+[VPN_SMOKE] query domain=cdn.shopify.com blocked=false ts=2026-02-22T20:54:49.908
+[VPN_SMOKE] query domain=cdn.shopify.com blocked=false ts=2026-02-22T20:54:49.876
+[VPN_SMOKE] query domain=xample.com blocked=false ts=2026-02-22T20:54:49.740
+[VPN_SMOKE] query domain=xample.com blocked=false ts=2026-02-22T20:54:49.607
+[VPN_SMOKE] query domain=dns.google blocked=false ts=2026-02-22T20:54:49.584
+[VPN_SMOKE] query domain=dns.google blocked=false ts=2026-02-22T20:54:49.557
+[VPN_SMOKE] query domain=chrome.cloudflare-dns.com blocked=false ts=2026-02-22T20:54:49.533
+[VPN_SMOKE] status supported=true permission=true running=true processed=28 blocked=0 allowed=28 privateDns=false mode=off
+[VPN_SMOKE] telemetry running=true intercepted=28 blocked=0 allowed=28
+[VPN_SMOKE] cache categories=0 domains=1 sampleDomains=[reddit.com]
+[VPN_SMOKE] query domain=firebaselogging-pa.googleapis.com blocked=false ts=2026-02-22T20:55:03.284
+[VPN_SMOKE] query domain=www.google.com blocked=false ts=2026-02-22T20:54:49.966
+[VPN_SMOKE] query domain=www.google.com blocked=false ts=2026-02-22T20:54:49.940
+[VPN_SMOKE] query domain=cdn.shopify.com blocked=false ts=2026-02-22T20:54:49.908
+[VPN_SMOKE] query domain=cdn.shopify.com blocked=false ts=2026-02-22T20:54:49.876
+[VPN_SMOKE] query domain=xample.com blocked=false ts=2026-02-22T20:54:49.740
+[VPN_SMOKE] query domain=xample.com blocked=false ts=2026-02-22T20:54:49.607
+[VPN_SMOKE] query domain=dns.google blocked=false ts=2026-02-22T20:54:49.584
+[VPN_SMOKE] query domain=dns.google blocked=false ts=2026-02-22T20:54:49.557
+[VPN_SMOKE] query domain=chrome.cloudflare-dns.com blocked=false ts=2026-02-22T20:54:49.533
+[VPN_SMOKE] status supported=true permission=true running=true processed=28 blocked=0 allowed=28 privateDns=false mode=off
+[VPN_SMOKE] telemetry running=true intercepted=28 blocked=0 allowed=28
+[VPN_SMOKE] cache categories=0 domains=1 sampleDomains=[reddit.com]
+[VPN_SMOKE] query domain=firebaselogging-pa.googleapis.com blocked=false ts=2026-02-22T20:55:03.284
+[VPN_SMOKE] query domain=www.google.com blocked=false ts=2026-02-22T20:54:49.966
+[VPN_SMOKE] query domain=www.google.com blocked=false ts=2026-02-22T20:54:49.940
+[VPN_SMOKE] query domain=cdn.shopify.com blocked=false ts=2026-02-22T20:54:49.908
+[VPN_SMOKE] query domain=cdn.shopify.com blocked=false ts=2026-02-22T20:54:49.876
+[VPN_SMOKE] query domain=xample.com blocked=false ts=2026-02-22T20:54:49.740
+[VPN_SMOKE] query domain=xample.com blocked=false ts=2026-02-22T20:54:49.607
+[VPN_SMOKE] query domain=dns.google blocked=false ts=2026-02-22T20:54:49.584
+[VPN_SMOKE] query domain=dns.google blocked=false ts=2026-02-22T20:54:49.557
+[VPN_SMOKE] query domain=chrome.cloudflare-dns.com blocked=false ts=2026-02-22T20:54:49.533
+[VPN_SMOKE] status supported=true permission=true running=true processed=28 blocked=0 allowed=28 privateDns=false mode=off
+[VPN_SMOKE] telemetry running=true intercepted=28 blocked=0 allowed=28
+[VPN_SMOKE] cache categories=0 domains=1 sampleDomains=[reddit.com]
+[VPN_SMOKE] query domain=firebaselogging-pa.googleapis.com blocked=false ts=2026-02-22T20:55:03.284
+[VPN_SMOKE] query domain=www.google.com blocked=false ts=2026-02-22T20:54:49.966
+[VPN_SMOKE] query domain=www.google.com blocked=false ts=2026-02-22T20:54:49.940
+[VPN_SMOKE] query domain=cdn.shopify.com blocked=false ts=2026-02-22T20:54:49.908
+[VPN_SMOKE] query domain=cdn.shopify.com blocked=false ts=2026-02-22T20:54:49.876
+[VPN_SMOKE] query domain=xample.com blocked=false ts=2026-02-22T20:54:49.740
+[VPN_SMOKE] query domain=xample.com blocked=false ts=2026-02-22T20:54:49.607
+[VPN_SMOKE] query domain=dns.google blocked=false ts=2026-02-22T20:54:49.584
+[VPN_SMOKE] query domain=dns.google blocked=false ts=2026-02-22T20:54:49.557
+[VPN_SMOKE] query domain=chrome.cloudflare-dns.com blocked=false ts=2026-02-22T20:54:49.533
+[VPN_SMOKE] status supported=true permission=true running=true processed=28 blocked=0 allowed=28 privateDns=false mode=off
+[VPN_SMOKE] telemetry running=true intercepted=28 blocked=0 allowed=28
+[VPN_SMOKE] cache categories=0 domains=1 sampleDomains=[reddit.com]
+[VPN_SMOKE] query domain=firebaselogging-pa.googleapis.com blocked=false ts=2026-02-22T20:55:03.284
+[VPN_SMOKE] query domain=www.google.com blocked=false ts=2026-02-22T20:54:49.966
+[VPN_SMOKE] query domain=www.google.com blocked=false ts=2026-02-22T20:54:49.940
+[VPN_SMOKE] query domain=cdn.shopify.com blocked=false ts=2026-02-22T20:54:49.908
+[VPN_SMOKE] query domain=cdn.shopify.com blocked=false ts=2026-02-22T20:54:49.876
+[VPN_SMOKE] query domain=xample.com blocked=false ts=2026-02-22T20:54:49.740
+[VPN_SMOKE] query domain=xample.com blocked=false ts=2026-02-22T20:54:49.607
+[VPN_SMOKE] query domain=dns.google blocked=false ts=2026-02-22T20:54:49.584
+[VPN_SMOKE] query domain=dns.google blocked=false ts=2026-02-22T20:54:49.557
+[VPN_SMOKE] query domain=chrome.cloudflare-dns.com blocked=false ts=2026-02-22T20:54:49.533
+[VPN_SMOKE] status supported=true permission=true running=true processed=28 blocked=0 allowed=28 privateDns=false mode=off
+[VPN_SMOKE] telemetry running=true intercepted=28 blocked=0 allowed=28
+[VPN_SMOKE] cache categories=0 domains=1 sampleDomains=[reddit.com]
+[VPN_SMOKE] query domain=firebaselogging-pa.googleapis.com blocked=false ts=2026-02-22T20:55:03.284
+[VPN_SMOKE] query domain=www.google.com blocked=false ts=2026-02-22T20:54:49.966
+[VPN_SMOKE] query domain=www.google.com blocked=false ts=2026-02-22T20:54:49.940
+[VPN_SMOKE] query domain=cdn.shopify.com blocked=false ts=2026-02-22T20:54:49.908
+[VPN_SMOKE] query domain=cdn.shopify.com blocked=false ts=2026-02-22T20:54:49.876
+[VPN_SMOKE] query domain=xample.com blocked=false ts=2026-02-22T20:54:49.740
+[VPN_SMOKE] query domain=xample.com blocked=false ts=2026-02-22T20:54:49.607
+[VPN_SMOKE] query domain=dns.google blocked=false ts=2026-02-22T20:54:49.584
+[VPN_SMOKE] query domain=dns.google blocked=false ts=2026-02-22T20:54:49.557
+[VPN_SMOKE] query domain=chrome.cloudflare-dns.com blocked=false ts=2026-02-22T20:54:49.533
+[VPN_SMOKE] status supported=true permission=true running=true processed=30 blocked=0 allowed=30 privateDns=false mode=off
+[VPN_SMOKE] telemetry running=true intercepted=30 blocked=0 allowed=30
+[VPN_SMOKE] cache categories=0 domains=1 sampleDomains=[reddit.com]
+[VPN_SMOKE] query domain=graph.facebook.com blocked=false ts=2026-02-22T20:55:23.506
+[VPN_SMOKE] query domain=graph.facebook.com blocked=false ts=2026-02-22T20:55:23.455
+[VPN_SMOKE] query domain=firebaselogging-pa.googleapis.com blocked=false ts=2026-02-22T20:55:03.284
+[VPN_SMOKE] query domain=www.google.com blocked=false ts=2026-02-22T20:54:49.966
+[VPN_SMOKE] query domain=www.google.com blocked=false ts=2026-02-22T20:54:49.940
+[VPN_SMOKE] query domain=cdn.shopify.com blocked=false ts=2026-02-22T20:54:49.908
+[VPN_SMOKE] query domain=cdn.shopify.com blocked=false ts=2026-02-22T20:54:49.876
+[VPN_SMOKE] query domain=xample.com blocked=false ts=2026-02-22T20:54:49.740
+[VPN_SMOKE] query domain=xample.com blocked=false ts=2026-02-22T20:54:49.607
+[VPN_SMOKE] query domain=dns.google blocked=false ts=2026-02-22T20:54:49.584
+[VPN_SMOKE] status supported=true permission=true running=true processed=30 blocked=0 allowed=30 privateDns=false mode=off
+[VPN_SMOKE] telemetry running=true intercepted=30 blocked=0 allowed=30
+[VPN_SMOKE] cache categories=0 domains=1 sampleDomains=[reddit.com]
+[VPN_SMOKE] query domain=graph.facebook.com blocked=false ts=2026-02-22T20:55:23.506
+[VPN_SMOKE] query domain=graph.facebook.com blocked=false ts=2026-02-22T20:55:23.455
+[VPN_SMOKE] query domain=firebaselogging-pa.googleapis.com blocked=false ts=2026-02-22T20:55:03.284
+[VPN_SMOKE] query domain=www.google.com blocked=false ts=2026-02-22T20:54:49.966
+[VPN_SMOKE] query domain=www.google.com blocked=false ts=2026-02-22T20:54:49.940
+[VPN_SMOKE] query domain=cdn.shopify.com blocked=false ts=2026-02-22T20:54:49.908
+[VPN_SMOKE] query domain=cdn.shopify.com blocked=false ts=2026-02-22T20:54:49.876
+[VPN_SMOKE] query domain=xample.com blocked=false ts=2026-02-22T20:54:49.740
+[VPN_SMOKE] query domain=xample.com blocked=false ts=2026-02-22T20:54:49.607
+[VPN_SMOKE] query domain=dns.google blocked=false ts=2026-02-22T20:54:49.584
+[VPN_SMOKE] status supported=true permission=true running=true processed=30 blocked=0 allowed=30 privateDns=false mode=off
+[VPN_SMOKE] telemetry running=true intercepted=30 blocked=0 allowed=30
+[VPN_SMOKE] cache categories=0 domains=1 sampleDomains=[reddit.com]
+[VPN_SMOKE] query domain=graph.facebook.com blocked=false ts=2026-02-22T20:55:23.506
+[VPN_SMOKE] query domain=graph.facebook.com blocked=false ts=2026-02-22T20:55:23.455
+[VPN_SMOKE] query domain=firebaselogging-pa.googleapis.com blocked=false ts=2026-02-22T20:55:03.284
+[VPN_SMOKE] query domain=www.google.com blocked=false ts=2026-02-22T20:54:49.966
+[VPN_SMOKE] query domain=www.google.com blocked=false ts=2026-02-22T20:54:49.940
+[VPN_SMOKE] query domain=cdn.shopify.com blocked=false ts=2026-02-22T20:54:49.908
+[VPN_SMOKE] query domain=cdn.shopify.com blocked=false ts=2026-02-22T20:54:49.876
+[VPN_SMOKE] query domain=xample.com blocked=false ts=2026-02-22T20:54:49.740
+[VPN_SMOKE] query domain=xample.com blocked=false ts=2026-02-22T20:54:49.607
+[VPN_SMOKE] query domain=dns.google blocked=false ts=2026-02-22T20:54:49.584
+[VPN_SMOKE] status supported=true permission=true running=true processed=30 blocked=0 allowed=30 privateDns=false mode=off
+[VPN_SMOKE] telemetry running=true intercepted=30 blocked=0 allowed=30
+[VPN_SMOKE] cache categories=0 domains=1 sampleDomains=[reddit.com]
+[VPN_SMOKE] query domain=graph.facebook.com blocked=false ts=2026-02-22T20:55:23.506
+[VPN_SMOKE] query domain=graph.facebook.com blocked=false ts=2026-02-22T20:55:23.455
+[VPN_SMOKE] query domain=firebaselogging-pa.googleapis.com blocked=false ts=2026-02-22T20:55:03.284
+[VPN_SMOKE] query domain=www.google.com blocked=false ts=2026-02-22T20:54:49.966
+[VPN_SMOKE] query domain=www.google.com blocked=false ts=2026-02-22T20:54:49.940
+[VPN_SMOKE] query domain=cdn.shopify.com blocked=false ts=2026-02-22T20:54:49.908
+[VPN_SMOKE] query domain=cdn.shopify.com blocked=false ts=2026-02-22T20:54:49.876
+[VPN_SMOKE] query domain=xample.com blocked=false ts=2026-02-22T20:54:49.740
+[VPN_SMOKE] query domain=xample.com blocked=false ts=2026-02-22T20:54:49.607
+[VPN_SMOKE] query domain=dns.google blocked=false ts=2026-02-22T20:54:49.584
+[VPN_SMOKE] status supported=true permission=true running=true processed=30 blocked=0 allowed=30 privateDns=false mode=off
+[VPN_SMOKE] telemetry running=true intercepted=30 blocked=0 allowed=30
+[VPN_SMOKE] cache categories=0 domains=1 sampleDomains=[reddit.com]
+[VPN_SMOKE] query domain=graph.facebook.com blocked=false ts=2026-02-22T20:55:23.506
+[VPN_SMOKE] query domain=graph.facebook.com blocked=false ts=2026-02-22T20:55:23.455
+[VPN_SMOKE] query domain=firebaselogging-pa.googleapis.com blocked=false ts=2026-02-22T20:55:03.284
+[VPN_SMOKE] query domain=www.google.com blocked=false ts=2026-02-22T20:54:49.966
+[VPN_SMOKE] query domain=www.google.com blocked=false ts=2026-02-22T20:54:49.940
+[VPN_SMOKE] query domain=cdn.shopify.com blocked=false ts=2026-02-22T20:54:49.908
+[VPN_SMOKE] query domain=cdn.shopify.com blocked=false ts=2026-02-22T20:54:49.876
+[VPN_SMOKE] query domain=xample.com blocked=false ts=2026-02-22T20:54:49.740
+[VPN_SMOKE] query domain=xample.com blocked=false ts=2026-02-22T20:54:49.607
+[VPN_SMOKE] query domain=dns.google blocked=false ts=2026-02-22T20:54:49.584
+[VPN_SMOKE] status supported=true permission=true running=true processed=30 blocked=0 allowed=30 privateDns=false mode=off
+[VPN_SMOKE] telemetry running=true intercepted=30 blocked=0 allowed=30
+[VPN_SMOKE] cache categories=0 domains=1 sampleDomains=[reddit.com]
+[VPN_SMOKE] query domain=graph.facebook.com blocked=false ts=2026-02-22T20:55:23.506
+[VPN_SMOKE] query domain=graph.facebook.com blocked=false ts=2026-02-22T20:55:23.455
+[VPN_SMOKE] query domain=firebaselogging-pa.googleapis.com blocked=false ts=2026-02-22T20:55:03.284
+[VPN_SMOKE] query domain=www.google.com blocked=false ts=2026-02-22T20:54:49.966
+[VPN_SMOKE] query domain=www.google.com blocked=false ts=2026-02-22T20:54:49.940
+[VPN_SMOKE] query domain=cdn.shopify.com blocked=false ts=2026-02-22T20:54:49.908
+[VPN_SMOKE] query domain=cdn.shopify.com blocked=false ts=2026-02-22T20:54:49.876
+[VPN_SMOKE] query domain=xample.com blocked=false ts=2026-02-22T20:54:49.740
+[VPN_SMOKE] query domain=xample.com blocked=false ts=2026-02-22T20:54:49.607
+[VPN_SMOKE] query domain=dns.google blocked=false ts=2026-02-22T20:54:49.584
+[VPN_SMOKE] status supported=true permission=true running=true processed=30 blocked=0 allowed=30 privateDns=false mode=off
+[VPN_SMOKE] telemetry running=true intercepted=30 blocked=0 allowed=30
+[VPN_SMOKE] cache categories=0 domains=1 sampleDomains=[reddit.com]
+[VPN_SMOKE] query domain=graph.facebook.com blocked=false ts=2026-02-22T20:55:23.506
+[VPN_SMOKE] query domain=graph.facebook.com blocked=false ts=2026-02-22T20:55:23.455
+[VPN_SMOKE] query domain=firebaselogging-pa.googleapis.com blocked=false ts=2026-02-22T20:55:03.284
+[VPN_SMOKE] query domain=www.google.com blocked=false ts=2026-02-22T20:54:49.966
+[VPN_SMOKE] query domain=www.google.com blocked=false ts=2026-02-22T20:54:49.940
+[VPN_SMOKE] query domain=cdn.shopify.com blocked=false ts=2026-02-22T20:54:49.908
+[VPN_SMOKE] query domain=cdn.shopify.com blocked=false ts=2026-02-22T20:54:49.876
+[VPN_SMOKE] query domain=xample.com blocked=false ts=2026-02-22T20:54:49.740
+[VPN_SMOKE] query domain=xample.com blocked=false ts=2026-02-22T20:54:49.607
+[VPN_SMOKE] query domain=dns.google blocked=false ts=2026-02-22T20:54:49.584
+[VPN_SMOKE] status supported=true permission=true running=true processed=30 blocked=0 allowed=30 privateDns=false mode=off
+[VPN_SMOKE] telemetry running=true intercepted=30 blocked=0 allowed=30
+[VPN_SMOKE] cache categories=0 domains=1 sampleDomains=[reddit.com]
+[VPN_SMOKE] query domain=graph.facebook.com blocked=false ts=2026-02-22T20:55:23.506
+[VPN_SMOKE] query domain=graph.facebook.com blocked=false ts=2026-02-22T20:55:23.455
+[VPN_SMOKE] query domain=firebaselogging-pa.googleapis.com blocked=false ts=2026-02-22T20:55:03.284
+[VPN_SMOKE] query domain=www.google.com blocked=false ts=2026-02-22T20:54:49.966
+[VPN_SMOKE] query domain=www.google.com blocked=false ts=2026-02-22T20:54:49.940
+[VPN_SMOKE] query domain=cdn.shopify.com blocked=false ts=2026-02-22T20:54:49.908
+[VPN_SMOKE] query domain=cdn.shopify.com blocked=false ts=2026-02-22T20:54:49.876
+[VPN_SMOKE] query domain=xample.com blocked=false ts=2026-02-22T20:54:49.740
+[VPN_SMOKE] query domain=xample.com blocked=false ts=2026-02-22T20:54:49.607
+[VPN_SMOKE] query domain=dns.google blocked=false ts=2026-02-22T20:54:49.584
+[VPN_SMOKE] status supported=true permission=true running=true processed=30 blocked=0 allowed=30 privateDns=false mode=off
+[VPN_SMOKE] telemetry running=true intercepted=30 blocked=0 allowed=30
+[VPN_SMOKE] cache categories=0 domains=1 sampleDomains=[reddit.com]
+[VPN_SMOKE] query domain=graph.facebook.com blocked=false ts=2026-02-22T20:55:23.506
+[VPN_SMOKE] query domain=graph.facebook.com blocked=false ts=2026-02-22T20:55:23.455
+[VPN_SMOKE] query domain=firebaselogging-pa.googleapis.com blocked=false ts=2026-02-22T20:55:03.284
+[VPN_SMOKE] query domain=www.google.com blocked=false ts=2026-02-22T20:54:49.966
+[VPN_SMOKE] query domain=www.google.com blocked=false ts=2026-02-22T20:54:49.940
+[VPN_SMOKE] query domain=cdn.shopify.com blocked=false ts=2026-02-22T20:54:49.908
+[VPN_SMOKE] query domain=cdn.shopify.com blocked=false ts=2026-02-22T20:54:49.876
+[VPN_SMOKE] query domain=xample.com blocked=false ts=2026-02-22T20:54:49.740
+[VPN_SMOKE] query domain=xample.com blocked=false ts=2026-02-22T20:54:49.607
+[VPN_SMOKE] query domain=dns.google blocked=false ts=2026-02-22T20:54:49.584
+[VPN_SMOKE] status supported=true permission=true running=true processed=30 blocked=0 allowed=30 privateDns=false mode=off
+[VPN_SMOKE] telemetry running=true intercepted=30 blocked=0 allowed=30
+[VPN_SMOKE] cache categories=0 domains=1 sampleDomains=[reddit.com]
+[VPN_SMOKE] query domain=graph.facebook.com blocked=false ts=2026-02-22T20:55:23.506
+[VPN_SMOKE] query domain=graph.facebook.com blocked=false ts=2026-02-22T20:55:23.455
+[VPN_SMOKE] query domain=firebaselogging-pa.googleapis.com blocked=false ts=2026-02-22T20:55:03.284
+[VPN_SMOKE] query domain=www.google.com blocked=false ts=2026-02-22T20:54:49.966
+[VPN_SMOKE] query domain=www.google.com blocked=false ts=2026-02-22T20:54:49.940
+[VPN_SMOKE] query domain=cdn.shopify.com blocked=false ts=2026-02-22T20:54:49.908
+[VPN_SMOKE] query domain=cdn.shopify.com blocked=false ts=2026-02-22T20:54:49.876
+[VPN_SMOKE] query domain=xample.com blocked=false ts=2026-02-22T20:54:49.740
+[VPN_SMOKE] query domain=xample.com blocked=false ts=2026-02-22T20:54:49.607
+[VPN_SMOKE] query domain=dns.google blocked=false ts=2026-02-22T20:54:49.584
+[VPN_SMOKE] status supported=true permission=true running=true processed=30 blocked=0 allowed=30 privateDns=false mode=off
+[VPN_SMOKE] telemetry running=true intercepted=30 blocked=0 allowed=30
+[VPN_SMOKE] cache categories=0 domains=1 sampleDomains=[reddit.com]
+[VPN_SMOKE] query domain=graph.facebook.com blocked=false ts=2026-02-22T20:55:23.506
+[VPN_SMOKE] query domain=graph.facebook.com blocked=false ts=2026-02-22T20:55:23.455
+[VPN_SMOKE] query domain=firebaselogging-pa.googleapis.com blocked=false ts=2026-02-22T20:55:03.284
+[VPN_SMOKE] query domain=www.google.com blocked=false ts=2026-02-22T20:54:49.966
+[VPN_SMOKE] query domain=www.google.com blocked=false ts=2026-02-22T20:54:49.940
+[VPN_SMOKE] query domain=cdn.shopify.com blocked=false ts=2026-02-22T20:54:49.908
+[VPN_SMOKE] query domain=cdn.shopify.com blocked=false ts=2026-02-22T20:54:49.876
+[VPN_SMOKE] query domain=xample.com blocked=false ts=2026-02-22T20:54:49.740
+[VPN_SMOKE] query domain=xample.com blocked=false ts=2026-02-22T20:54:49.607
+[VPN_SMOKE] query domain=dns.google blocked=false ts=2026-02-22T20:54:49.584
+[VPN_SMOKE] status supported=true permission=true running=true processed=30 blocked=0 allowed=30 privateDns=false mode=off
+[VPN_SMOKE] telemetry running=true intercepted=30 blocked=0 allowed=30
+[VPN_SMOKE] cache categories=0 domains=1 sampleDomains=[reddit.com]
+[VPN_SMOKE] query domain=graph.facebook.com blocked=false ts=2026-02-22T20:55:23.506
+[VPN_SMOKE] query domain=graph.facebook.com blocked=false ts=2026-02-22T20:55:23.455
+[VPN_SMOKE] query domain=firebaselogging-pa.googleapis.com blocked=false ts=2026-02-22T20:55:03.284
+[VPN_SMOKE] query domain=www.google.com blocked=false ts=2026-02-22T20:54:49.966
+[VPN_SMOKE] query domain=www.google.com blocked=false ts=2026-02-22T20:54:49.940
+[VPN_SMOKE] query domain=cdn.shopify.com blocked=false ts=2026-02-22T20:54:49.908
+[VPN_SMOKE] query domain=cdn.shopify.com blocked=false ts=2026-02-22T20:54:49.876
+[VPN_SMOKE] query domain=xample.com blocked=false ts=2026-02-22T20:54:49.740
+[VPN_SMOKE] query domain=xample.com blocked=false ts=2026-02-22T20:54:49.607
+[VPN_SMOKE] query domain=dns.google blocked=false ts=2026-02-22T20:54:49.584
+[VPN_SMOKE] status supported=true permission=true running=true processed=30 blocked=0 allowed=30 privateDns=false mode=off
+[VPN_SMOKE] telemetry running=true intercepted=30 blocked=0 allowed=30
+[VPN_SMOKE] cache categories=0 domains=1 sampleDomains=[reddit.com]
+[VPN_SMOKE] query domain=graph.facebook.com blocked=false ts=2026-02-22T20:55:23.506
+[VPN_SMOKE] query domain=graph.facebook.com blocked=false ts=2026-02-22T20:55:23.455
+[VPN_SMOKE] query domain=firebaselogging-pa.googleapis.com blocked=false ts=2026-02-22T20:55:03.284
+[VPN_SMOKE] query domain=www.google.com blocked=false ts=2026-02-22T20:54:49.966
+[VPN_SMOKE] query domain=www.google.com blocked=false ts=2026-02-22T20:54:49.940
+[VPN_SMOKE] query domain=cdn.shopify.com blocked=false ts=2026-02-22T20:54:49.908
+[VPN_SMOKE] query domain=cdn.shopify.com blocked=false ts=2026-02-22T20:54:49.876
+[VPN_SMOKE] query domain=xample.com blocked=false ts=2026-02-22T20:54:49.740
+[VPN_SMOKE] query domain=xample.com blocked=false ts=2026-02-22T20:54:49.607
+[VPN_SMOKE] query domain=dns.google blocked=false ts=2026-02-22T20:54:49.584
+[VPN_SMOKE] status supported=true permission=true running=true processed=30 blocked=0 allowed=30 privateDns=false mode=off
+[VPN_SMOKE] telemetry running=true intercepted=30 blocked=0 allowed=30
+[VPN_SMOKE] cache categories=0 domains=1 sampleDomains=[reddit.com]
+[VPN_SMOKE] query domain=graph.facebook.com blocked=false ts=2026-02-22T20:55:23.506
+[VPN_SMOKE] query domain=graph.facebook.com blocked=false ts=2026-02-22T20:55:23.455
+[VPN_SMOKE] query domain=firebaselogging-pa.googleapis.com blocked=false ts=2026-02-22T20:55:03.284
+[VPN_SMOKE] query domain=www.google.com blocked=false ts=2026-02-22T20:54:49.966
+[VPN_SMOKE] query domain=www.google.com blocked=false ts=2026-02-22T20:54:49.940
+[VPN_SMOKE] query domain=cdn.shopify.com blocked=false ts=2026-02-22T20:54:49.908
+[VPN_SMOKE] query domain=cdn.shopify.com blocked=false ts=2026-02-22T20:54:49.876
+[VPN_SMOKE] query domain=xample.com blocked=false ts=2026-02-22T20:54:49.740
+[VPN_SMOKE] query domain=xample.com blocked=false ts=2026-02-22T20:54:49.607
+[VPN_SMOKE] query domain=dns.google blocked=false ts=2026-02-22T20:54:49.584
+[VPN_SMOKE] status supported=true permission=true running=true processed=30 blocked=0 allowed=30 privateDns=false mode=off
+[VPN_SMOKE] telemetry running=true intercepted=30 blocked=0 allowed=30
+[VPN_SMOKE] cache categories=0 domains=1 sampleDomains=[reddit.com]
+[VPN_SMOKE] query domain=graph.facebook.com blocked=false ts=2026-02-22T20:55:23.506
+[VPN_SMOKE] query domain=graph.facebook.com blocked=false ts=2026-02-22T20:55:23.455
+[VPN_SMOKE] query domain=firebaselogging-pa.googleapis.com blocked=false ts=2026-02-22T20:55:03.284
+[VPN_SMOKE] query domain=www.google.com blocked=false ts=2026-02-22T20:54:49.966
+[VPN_SMOKE] query domain=www.google.com blocked=false ts=2026-02-22T20:54:49.940
+[VPN_SMOKE] query domain=cdn.shopify.com blocked=false ts=2026-02-22T20:54:49.908
+[VPN_SMOKE] query domain=cdn.shopify.com blocked=false ts=2026-02-22T20:54:49.876
+[VPN_SMOKE] query domain=xample.com blocked=false ts=2026-02-22T20:54:49.740
+[VPN_SMOKE] query domain=xample.com blocked=false ts=2026-02-22T20:54:49.607
+[VPN_SMOKE] query domain=dns.google blocked=false ts=2026-02-22T20:54:49.584
+01:22 +1: (tearDownAll)
+01:24 +1: All tests passed!

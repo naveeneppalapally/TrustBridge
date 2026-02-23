@@ -52,14 +52,6 @@ Future<void> main() async {
     options: DefaultFirebaseOptions.currentPlatform,
   );
   await AppModeService().primeCache();
-  try {
-    await BlocklistWorkmanagerService.initialize();
-    await BlocklistWorkmanagerService.registerWeeklySync(
-      List<BlocklistCategory>.from(BlocklistCategory.values),
-    );
-  } catch (error) {
-    debugPrint('[BlocklistWork] Initialization skipped: $error');
-  }
   if (!kDebugMode) {
     await _initCrashlytics();
   }
@@ -68,7 +60,21 @@ Future<void> main() async {
   runApp(const MyApp());
   WidgetsBinding.instance.addPostFrameCallback((_) {
     unawaited(NotificationService().initialize());
+    // Defer background scheduler registration until after first frame to
+    // minimize startup jank and reduce ANR risk on lower-memory devices.
+    unawaited(_initBlocklistWorkmanager());
   });
+}
+
+Future<void> _initBlocklistWorkmanager() async {
+  try {
+    await BlocklistWorkmanagerService.initialize();
+    await BlocklistWorkmanagerService.registerWeeklySync(
+      List<BlocklistCategory>.from(BlocklistCategory.values),
+    );
+  } catch (error) {
+    debugPrint('[BlocklistWork] Initialization skipped: $error');
+  }
 }
 
 Future<void> _initCrashlytics() async {
@@ -189,6 +195,27 @@ class _MyAppState extends State<MyApp> {
         theme: AppTheme.light(),
         darkTheme: AppTheme.dark(),
         themeMode: ThemeMode.system,
+        builder: (context, child) {
+          final media = MediaQuery.of(context);
+          final shortestSide = media.size.shortestSide;
+          final baseScale = shortestSide >= 720
+              ? 1.10
+              : shortestSide >= 600
+                  ? 1.06
+                  : shortestSide <= 360
+                      ? 0.93
+                      : 1.0;
+          final userScale = media.textScaler.scale(14) / 14;
+          final normalizedUserScale = userScale.clamp(0.90, 1.10);
+          final clampedScale =
+              (baseScale * normalizedUserScale).clamp(0.90, 1.12);
+          return MediaQuery(
+            data: media.copyWith(
+              textScaler: TextScaler.linear(clampedScale),
+            ),
+            child: child ?? const SizedBox.shrink(),
+          );
+        },
         home: const _ModeRootScreen(),
         onGenerateRoute: _onGenerateRoute,
       ),
