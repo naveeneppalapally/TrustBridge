@@ -4,6 +4,7 @@ import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:firebase_auth/firebase_auth.dart';
 import 'package:workmanager/workmanager.dart';
 
+import 'notification_service.dart';
 import 'pairing_service.dart';
 import 'vpn_service.dart';
 
@@ -74,7 +75,8 @@ class RemoteCommandService {
       deviceId: deviceId,
       command: commandClearPairingAndStopProtection,
       extraData: <String, dynamic>{
-        if (childId != null && childId.trim().isNotEmpty) 'childId': childId.trim(),
+        if (childId != null && childId.trim().isNotEmpty)
+          'childId': childId.trim(),
         if (reason != null && reason.trim().isNotEmpty) 'reason': reason.trim(),
       },
     );
@@ -206,6 +208,17 @@ class RemoteCommandService {
       await _pairingService.clearLocalPairing();
     } catch (_) {
       return false;
+    }
+
+    try {
+      await NotificationService().showLocalNotification(
+        title: 'Protection turned off',
+        body:
+            'This phone is no longer paired. Ask your parent to reconnect setup.',
+        route: '/child/setup',
+      );
+    } catch (_) {
+      // Best-effort user visibility.
     }
 
     return true;

@@ -16,6 +16,7 @@ class VpnBootReceiver : BroadcastReceiver() {
         if (
             action != Intent.ACTION_BOOT_COMPLETED &&
             action != Intent.ACTION_LOCKED_BOOT_COMPLETED &&
+            action != Intent.ACTION_USER_UNLOCKED &&
             action != "android.intent.action.QUICKBOOT_POWERON"
         ) {
             return

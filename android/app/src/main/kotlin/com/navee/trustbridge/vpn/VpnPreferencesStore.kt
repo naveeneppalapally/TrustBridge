@@ -1,6 +1,7 @@
 package com.navee.trustbridge.vpn
 
 import android.content.Context
+import android.os.Build
 import org.json.JSONArray
 
 internal data class PersistedVpnConfig(
@@ -22,10 +23,24 @@ internal class VpnPreferencesStore(context: Context) {
         private const val DEFAULT_UPSTREAM_DNS = "1.1.1.1"
     }
 
-    private val prefs = context.applicationContext.getSharedPreferences(
+    private val appContext = context.applicationContext
+    private val deviceProtectedContext = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.N) {
+        appContext.createDeviceProtectedStorageContext()
+    } else {
+        appContext
+    }
+    private val prefs = deviceProtectedContext.getSharedPreferences(
         PREFS_NAME,
         Context.MODE_PRIVATE
     )
+    private val legacyPrefs = appContext.getSharedPreferences(
+        PREFS_NAME,
+        Context.MODE_PRIVATE
+    )
+
+    init {
+        migrateLegacyPrefsIfNeeded()
+    }
 
     fun loadConfig(): PersistedVpnConfig {
         return PersistedVpnConfig(
@@ -63,6 +78,27 @@ internal class VpnPreferencesStore(context: Context) {
         prefs.edit()
             .putBoolean(KEY_ENABLED, enabled)
             .apply()
+    }
+
+    private fun migrateLegacyPrefsIfNeeded() {
+        if (deviceProtectedContext == appContext) {
+            return
+        }
+        if (prefs.all.isNotEmpty() || legacyPrefs.all.isEmpty()) {
+            return
+        }
+
+        val editor = prefs.edit()
+        legacyPrefs.all.forEach { (key, value) ->
+            when (value) {
+                is Boolean -> editor.putBoolean(key, value)
+                is String -> editor.putString(key, value)
+                is Int -> editor.putInt(key, value)
+                is Long -> editor.putLong(key, value)
+                is Float -> editor.putFloat(key, value)
+            }
+        }
+        editor.apply()
     }
 
     private fun encodeStringList(values: List<String>): String {

@@ -17,6 +17,7 @@ import '../../services/firestore_service.dart';
 import '../../services/heartbeat_service.dart';
 import '../../services/notification_service.dart';
 import '../../services/pairing_service.dart';
+import '../../services/remote_command_service.dart';
 import '../../services/vpn_service.dart';
 import '../../widgets/child/blocked_apps_list.dart';
 import '../../widgets/child/mode_display_card.dart';
@@ -105,6 +106,16 @@ class _ChildStatusScreenState extends State<ChildStatusScreen>
     return _pairingService!;
   }
 
+  RemoteCommandService? _remoteCommandService;
+  RemoteCommandService get _resolvedRemoteCommandService {
+    _remoteCommandService ??= RemoteCommandService(
+      firestore: _firestore,
+      pairingService: _resolvedPairingService,
+      vpnService: _vpnService,
+    );
+    return _remoteCommandService!;
+  }
+
   ChildUsageUploadService? _usageUploadService;
   ChildUsageUploadService get _resolvedUsageUploadService {
     _usageUploadService ??= ChildUsageUploadService(firestore: _firestore);
@@ -120,6 +131,7 @@ class _ChildStatusScreenState extends State<ChildStatusScreen>
   bool _recoveringPairing = false;
   bool _handledMissingChildProfile = false;
   Timer? _heartbeatTimer;
+  Timer? _remoteCommandTimer;
   Timer? _protectionRetryTimer;
   Timer? _protectionBoundaryTimer;
   Timer? _scheduleWarningTimer;
@@ -157,6 +169,7 @@ class _ChildStatusScreenState extends State<ChildStatusScreen>
       if (child != null) {
         unawaited(_ensureProtectionApplied(child, forceRecheck: true));
       }
+      unawaited(_processPendingRemoteCommands());
     }
   }
 
@@ -180,6 +193,7 @@ class _ChildStatusScreenState extends State<ChildStatusScreen>
         });
       }
       _startHeartbeatLoop();
+      _startRemoteCommandLoop();
       unawaited(_syncChildDeviceNotificationToken());
       _ensureAccessRequestSubscription();
       return;
@@ -205,6 +219,7 @@ class _ChildStatusScreenState extends State<ChildStatusScreen>
       _loadingContext = false;
     });
     _startHeartbeatLoop();
+    _startRemoteCommandLoop();
     unawaited(_syncChildDeviceNotificationToken());
     _ensureAccessRequestSubscription();
   }
@@ -293,6 +308,8 @@ class _ChildStatusScreenState extends State<ChildStatusScreen>
   void dispose() {
     WidgetsBinding.instance.removeObserver(this);
     _heartbeatTimer?.cancel();
+    _remoteCommandTimer?.cancel();
+    _remoteCommandTimer = null;
     _protectionRetryTimer?.cancel();
     _protectionRetryTimer = null;
     _protectionBoundaryTimer?.cancel();
@@ -330,6 +347,25 @@ class _ChildStatusScreenState extends State<ChildStatusScreen>
       unawaited(
         _resolvedUsageUploadService.uploadIfNeeded(childId: childId),
       );
+    }
+  }
+
+  void _startRemoteCommandLoop() {
+    if (_remoteCommandTimer != null) {
+      return;
+    }
+    unawaited(_processPendingRemoteCommands());
+    _remoteCommandTimer = Timer.periodic(
+      const Duration(seconds: 20),
+      (_) => unawaited(_processPendingRemoteCommands()),
+    );
+  }
+
+  Future<void> _processPendingRemoteCommands() async {
+    try {
+      await _resolvedRemoteCommandService.processPendingCommands();
+    } catch (_) {
+      // Best-effort command processing while child screen is active.
     }
   }
 
@@ -915,6 +951,19 @@ class _ChildStatusScreenState extends State<ChildStatusScreen>
           return const Center(child: CircularProgressIndicator());
         }
         if (snapshot.hasError) {
+          final error = snapshot.error;
+          final isPermissionError = error is FirebaseException &&
+              (error.code == 'permission-denied' ||
+                  error.code == 'unauthenticated');
+          if (isPermissionError) {
+            unawaited(_handleMissingChildProfile());
+            unawaited(_attemptPairingRecovery());
+            return _buildMissingState(
+              context,
+              message:
+                  'This phone is no longer paired. Ask your parent to reconnect setup.',
+            );
+          }
           return _buildMissingState(
             context,
             message:
@@ -1013,6 +1062,17 @@ class _ChildStatusScreenState extends State<ChildStatusScreen>
       await _resolvedPairingService.clearLocalPairing();
     } catch (_) {
       // Best-effort cleanup.
+    }
+
+    try {
+      await NotificationService().showLocalNotification(
+        title: 'Protection turned off',
+        body:
+            'This phone is no longer paired. Ask your parent to reconnect setup.',
+        route: '/child/setup',
+      );
+    } catch (_) {
+      // Best-effort user visibility.
     }
   }
 
