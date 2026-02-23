@@ -2,6 +2,7 @@ package com.navee.trustbridge.vpn
 
 import android.content.Context
 import android.database.sqlite.SQLiteDatabase
+import android.database.sqlite.SQLiteException
 import android.util.Log
 
 /**
@@ -30,20 +31,25 @@ internal class LocalBlocklistDbReader(context: Context) {
         val db = openDatabaseOrNull() ?: return null
         val candidates = candidateDomains(normalized)
         for (candidate in candidates) {
-            val cursor = db.query(
-                "blocked_domains",
-                arrayOf("category"),
-                "domain = ?",
-                arrayOf(candidate),
-                null,
-                null,
-                null,
-                "1"
-            )
-            cursor.use { c ->
-                if (c.moveToFirst()) {
-                    return c.getString(0)?.trim()?.lowercase()
+            try {
+                val cursor = db.query(
+                    "blocked_domains",
+                    arrayOf("category"),
+                    "domain = ?",
+                    arrayOf(candidate),
+                    null,
+                    null,
+                    null,
+                    "1"
+                )
+                cursor.use { c ->
+                    if (c.moveToFirst()) {
+                        return c.getString(0)?.trim()?.lowercase()
+                    }
                 }
+            } catch (error: SQLiteException) {
+                Log.w(TAG, "Blocklist query skipped: blocked_domains table unavailable", error)
+                return null
             }
         }
         return null
@@ -73,12 +79,17 @@ internal class LocalBlocklistDbReader(context: Context) {
 
         val placeholders = mapped.joinToString(",") { "?" }
         val args = mapped.toTypedArray()
-        val cursor = db.rawQuery(
-            "SELECT COUNT(*) FROM blocked_domains WHERE category IN ($placeholders)",
-            args
-        )
-        cursor.use { c ->
-            return if (c.moveToFirst()) c.getInt(0) else 0
+        try {
+            val cursor = db.rawQuery(
+                "SELECT COUNT(*) FROM blocked_domains WHERE category IN ($placeholders)",
+                args
+            )
+            cursor.use { c ->
+                return if (c.moveToFirst()) c.getInt(0) else 0
+            }
+        } catch (error: SQLiteException) {
+            Log.w(TAG, "Blocklist count skipped: blocked_domains table unavailable", error)
+            return 0
         }
     }
 

@@ -32,13 +32,21 @@ class DnsVpnService : VpnService() {
         private const val DEFAULT_UPSTREAM_DNS = "1.1.1.1"
         private const val NOTIFICATION_ID = 1001
         private const val CHANNEL_ID = "dns_vpn_channel"
+        private const val RECOVERY_NOTIFICATION_ID = 1002
+        private const val RECOVERY_CHANNEL_ID = "dns_vpn_recovery_channel"
         private const val MAX_RECONNECT_ATTEMPTS = 3
         private const val MAX_BOOT_RESTORE_RETRY_ATTEMPTS = 4
+        private const val MAX_TRANSIENT_START_RETRY_ATTEMPTS = 3
         private val BOOT_RESTORE_RETRY_DELAYS_MS = longArrayOf(
             15_000L,
             30_000L,
             60_000L,
             120_000L
+        )
+        private val TRANSIENT_START_RETRY_DELAYS_MS = longArrayOf(
+            5_000L,
+            15_000L,
+            30_000L
         )
 
         const val ACTION_START = "com.navee.trustbridge.vpn.START"
@@ -53,6 +61,7 @@ class DnsVpnService : VpnService() {
         const val EXTRA_UPSTREAM_DNS = "upstreamDns"
         const val EXTRA_BOOT_RESTORE = "bootRestore"
         const val EXTRA_BOOT_RESTORE_ATTEMPT = "bootRestoreAttempt"
+        const val EXTRA_TRANSIENT_RETRY_ATTEMPT = "transientRetryAttempt"
 
         @Volatile
         var isRunning: Boolean = false
@@ -164,6 +173,8 @@ class DnsVpnService : VpnService() {
     private var activeBootRestoreStart: Boolean = false
     @Volatile
     private var activeBootRestoreAttempt: Int = 0
+    @Volatile
+    private var activeTransientRetryAttempt: Int = 0
     private var lastAppliedCategories: List<String> = emptyList()
     private var lastAppliedDomains: List<String> = emptyList()
     private var lastAppliedAllowedDomains: List<String> = emptyList()
@@ -205,6 +216,8 @@ class DnsVpnService : VpnService() {
                     intent?.getBooleanExtra(EXTRA_BOOT_RESTORE, false) == true
                 activeBootRestoreAttempt =
                     intent?.getIntExtra(EXTRA_BOOT_RESTORE_ATTEMPT, 0) ?: 0
+                activeTransientRetryAttempt =
+                    intent?.getIntExtra(EXTRA_TRANSIENT_RETRY_ATTEMPT, 0) ?: 0
                 vpnPreferencesStore.setEnabled(true)
                 reconnectScheduledFromRevoke = false
                 ensureForegroundStarted()
@@ -241,6 +254,8 @@ class DnsVpnService : VpnService() {
                     intent?.getBooleanExtra(EXTRA_BOOT_RESTORE, false) == true
                 activeBootRestoreAttempt =
                     intent?.getIntExtra(EXTRA_BOOT_RESTORE_ATTEMPT, 0) ?: 0
+                activeTransientRetryAttempt =
+                    intent?.getIntExtra(EXTRA_TRANSIENT_RETRY_ATTEMPT, 0) ?: 0
                 vpnPreferencesStore.setEnabled(true)
                 reconnectScheduledFromRevoke = false
                 ensureForegroundStarted()
@@ -298,7 +313,9 @@ class DnsVpnService : VpnService() {
             ACTION_STOP -> {
                 activeBootRestoreStart = false
                 activeBootRestoreAttempt = 0
+                activeTransientRetryAttempt = 0
                 vpnPreferencesStore.setEnabled(false)
+                dismissProtectionAttentionNotification()
                 stopVpn(stopService = true, markDisabled = true)
                 START_NOT_STICKY
             }
@@ -332,15 +349,27 @@ class DnsVpnService : VpnService() {
             vpnInterface = builder.establish()
             if (vpnInterface == null) {
                 val hasPersistedPermission = VpnService.prepare(this) == null
+                val bootRestore = activeBootRestoreStart
                 Log.e(
                     TAG,
                     "Failed to establish VPN interface " +
-                        "(bootRestore=$activeBootRestoreStart " +
+                        "(bootRestore=$bootRestore " +
                         "attempt=$activeBootRestoreAttempt " +
+                        "transientAttempt=$activeTransientRetryAttempt " +
                         "permissionPersisted=$hasPersistedPermission)"
                 )
-                if (activeBootRestoreStart && hasPersistedPermission) {
-                    scheduleBootRestoreRetry()
+                var retryScheduled = false
+                if (hasPersistedPermission) {
+                    retryScheduled = if (bootRestore) {
+                        scheduleBootRestoreRetry()
+                    } else {
+                        scheduleTransientStartRetry()
+                    }
+                }
+                if (!retryScheduled) {
+                    showProtectionAttentionNotification(
+                        "Protection is off. Open TrustBridge and tap Restore Protection."
+                    )
                 }
                 stopVpn(stopService = true, markDisabled = false)
                 return
@@ -365,6 +394,8 @@ class DnsVpnService : VpnService() {
             vpnPreferencesStore.setEnabled(true)
             reconnectAttemptCount = 0
             activeBootRestoreAttempt = 0
+            activeTransientRetryAttempt = 0
+            dismissProtectionAttentionNotification()
             startedAtEpochMs = System.currentTimeMillis()
             queriesProcessed = 0
             queriesBlocked = 0
@@ -381,30 +412,92 @@ class DnsVpnService : VpnService() {
             Log.d(TAG, "DNS VPN started (upstream=$lastAppliedUpstreamDns, privateDns=$privateDnsMode)")
         } catch (error: Exception) {
             Log.e(TAG, "Failed to start VPN", error)
+            showProtectionAttentionNotification(
+                "Protection is off. Open TrustBridge and tap Restore Protection."
+            )
             stopVpn(stopService = true, markDisabled = false)
         }
     }
 
-    private fun scheduleBootRestoreRetry() {
+    private fun scheduleBootRestoreRetry(): Boolean {
         val nextAttempt = activeBootRestoreAttempt + 1
         if (nextAttempt > MAX_BOOT_RESTORE_RETRY_ATTEMPTS) {
             Log.w(TAG, "Boot restore retries exhausted")
-            return
+            showProtectionAttentionNotification(
+                "Protection did not restart after reboot. Open TrustBridge to restore."
+            )
+            return false
         }
 
         val config = vpnPreferencesStore.loadConfig()
         if (!config.enabled) {
             Log.d(TAG, "Boot restore retry skipped: VPN no longer enabled")
-            return
+            return false
         }
 
         val delayMs = BOOT_RESTORE_RETRY_DELAYS_MS.getOrElse(nextAttempt - 1) {
             BOOT_RESTORE_RETRY_DELAYS_MS.last()
         }
+        Log.w(
+            TAG,
+            "Scheduling boot restore retry attempt=$nextAttempt in ${delayMs}ms"
+        )
+        return scheduleStartRetry(
+            requestCode = 2000 + nextAttempt,
+            delayMs = delayMs,
+            config = config,
+            bootRestore = true,
+            bootRestoreAttempt = nextAttempt,
+            transientRetryAttempt = 0
+        )
+    }
+
+    private fun scheduleTransientStartRetry(): Boolean {
+        val nextAttempt = activeTransientRetryAttempt + 1
+        if (nextAttempt > MAX_TRANSIENT_START_RETRY_ATTEMPTS) {
+            Log.w(TAG, "Transient VPN start retries exhausted")
+            showProtectionAttentionNotification(
+                "Protection could not start. Open TrustBridge and tap Restore Protection."
+            )
+            return false
+        }
+
+        val config = vpnPreferencesStore.loadConfig()
+        if (!config.enabled) {
+            Log.d(TAG, "Transient retry skipped: VPN no longer enabled")
+            return false
+        }
+
+        val delayMs = TRANSIENT_START_RETRY_DELAYS_MS.getOrElse(nextAttempt - 1) {
+            TRANSIENT_START_RETRY_DELAYS_MS.last()
+        }
+        Log.w(
+            TAG,
+            "Scheduling transient VPN start retry attempt=$nextAttempt in ${delayMs}ms"
+        )
+        return scheduleStartRetry(
+            requestCode = 3000 + nextAttempt,
+            delayMs = delayMs,
+            config = config,
+            bootRestore = false,
+            bootRestoreAttempt = 0,
+            transientRetryAttempt = nextAttempt
+        )
+    }
+
+    private fun scheduleStartRetry(
+        requestCode: Int,
+        delayMs: Long,
+        config: PersistedVpnConfig,
+        bootRestore: Boolean,
+        bootRestoreAttempt: Int,
+        transientRetryAttempt: Int
+    ): Boolean {
         val retryIntent = Intent(this, DnsVpnService::class.java).apply {
             action = ACTION_START
-            putExtra(EXTRA_BOOT_RESTORE, true)
-            putExtra(EXTRA_BOOT_RESTORE_ATTEMPT, nextAttempt)
+            putExtra(EXTRA_BOOT_RESTORE, bootRestore)
+            putExtra(EXTRA_BOOT_RESTORE_ATTEMPT, bootRestoreAttempt)
+            putExtra(EXTRA_TRANSIENT_RETRY_ATTEMPT, transientRetryAttempt)
             putStringArrayListExtra(
                 EXTRA_BLOCKED_CATEGORIES,
                 ArrayList(config.blockedCategories)
@@ -422,29 +515,44 @@ class DnsVpnService : VpnService() {
 
         val pendingIntent = PendingIntent.getService(
             this,
-            2000 + nextAttempt,
+            requestCode,
             retryIntent,
             PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE
         )
         val alarmManager = getSystemService(AlarmManager::class.java)
         if (alarmManager == null) {
-            Log.w(TAG, "Boot restore retry scheduling skipped: AlarmManager unavailable")
-            return
+            Log.w(TAG, "Retry scheduling skipped: AlarmManager unavailable")
+            return false
         }
 
         val triggerAtMs = System.currentTimeMillis() + delayMs
-        Log.w(
-            TAG,
-            "Scheduling boot restore retry attempt=$nextAttempt in ${delayMs}ms"
-        )
-        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.M) {
-            alarmManager.setExactAndAllowWhileIdle(
-                AlarmManager.RTC_WAKEUP,
-                triggerAtMs,
-                pendingIntent
-            )
-        } else {
-            alarmManager.setExact(AlarmManager.RTC_WAKEUP, triggerAtMs, pendingIntent)
+        return try {
+            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.M) {
+                try {
+                    alarmManager.setExactAndAllowWhileIdle(
+                        AlarmManager.RTC_WAKEUP,
+                        triggerAtMs,
+                        pendingIntent
+                    )
+                } catch (error: SecurityException) {
+                    Log.w(
+                        TAG,
+                        "Exact alarm denied for VPN retry; falling back to inexact alarm",
+                        error
+                    )
+                    alarmManager.setAndAllowWhileIdle(
+                        AlarmManager.RTC_WAKEUP,
+                        triggerAtMs,
+                        pendingIntent
+                    )
+                }
+            } else {
+                alarmManager.set(AlarmManager.RTC_WAKEUP, triggerAtMs, pendingIntent)
+            }
+            true
+        } catch (error: Exception) {
+            Log.e(TAG, "Unable to schedule VPN retry", error)
+            false
         }
     }
 
@@ -720,6 +828,7 @@ class DnsVpnService : VpnService() {
     }
 
     private fun createNotification(): Notification {
+        val manager = getSystemService(NotificationManager::class.java)
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
             val channel = NotificationChannel(
                 CHANNEL_ID,
@@ -729,8 +838,6 @@ class DnsVpnService : VpnService() {
                 description = "TrustBridge protection is active"
                 setShowBadge(false)
             }
-
-            val manager = getSystemService(NotificationManager::class.java)
             manager.createNotificationChannel(channel)
         }
 
@@ -752,6 +859,47 @@ class DnsVpnService : VpnService() {
             .build()
     }
 
+    private fun showProtectionAttentionNotification(message: String) {
+        val manager = getSystemService(NotificationManager::class.java)
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
+            val recoveryChannel = NotificationChannel(
+                RECOVERY_CHANNEL_ID,
+                "Protection Alerts",
+                NotificationManager.IMPORTANCE_HIGH
+            ).apply {
+                description = "Alerts when TrustBridge protection needs attention"
+                setShowBadge(true)
+            }
+            manager.createNotificationChannel(recoveryChannel)
+        }
+
+        val openAppIntent = Intent(this, MainActivity::class.java).apply {
+            flags = Intent.FLAG_ACTIVITY_NEW_TASK or Intent.FLAG_ACTIVITY_CLEAR_TOP
+        }
+        val pendingIntent = PendingIntent.getActivity(
+            this,
+            1,
+            openAppIntent,
+            PendingIntent.FLAG_IMMUTABLE or PendingIntent.FLAG_UPDATE_CURRENT
+        )
+
+        val notification = NotificationCompat.Builder(this, RECOVERY_CHANNEL_ID)
+            .setSmallIcon(R.mipmap.ic_launcher)
+            .setContentTitle("TrustBridge protection is off")
+            .setContentText(message)
+            .setStyle(NotificationCompat.BigTextStyle().bigText(message))
+            .setContentIntent(pendingIntent)
+            .setAutoCancel(true)
+            .setPriority(NotificationCompat.PRIORITY_HIGH)
+            .build()
+        manager.notify(RECOVERY_NOTIFICATION_ID, notification)
+    }
+
+    private fun dismissProtectionAttentionNotification() {
+        val manager = getSystemService(NotificationManager::class.java)
+        manager.cancel(RECOVERY_NOTIFICATION_ID)
+    }
+
     override fun onRevoke() {
         super.onRevoke()
         val config = vpnPreferencesStore.loadConfig()
@@ -761,6 +909,9 @@ class DnsVpnService : VpnService() {
         if (!shouldReconnect || reconnectScheduledFromRevoke) {
             Log.d(TAG, "VPN permission revoked")
             logBypassEvent("vpn_disabled")
+            showProtectionAttentionNotification(
+                "Protection was turned off. Open TrustBridge to restore VPN permission."
+            )
             stopVpn(stopService = true, markDisabled = true)
             return
         }
@@ -768,6 +919,9 @@ class DnsVpnService : VpnService() {
         if (reconnectAttemptCount >= MAX_RECONNECT_ATTEMPTS) {
             Log.w(TAG, "Reconnect attempts exhausted after revoke")
             logBypassEvent("vpn_disabled")
+            showProtectionAttentionNotification(
+                "Protection could not reconnect. Open TrustBridge to restore."
+            )
             stopVpn(stopService = true, markDisabled = true)
             return
         }
