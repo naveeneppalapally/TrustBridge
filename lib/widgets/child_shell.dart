@@ -1,3 +1,4 @@
+import 'package:firebase_core/firebase_core.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/scheduler.dart';
 import 'package:shared_preferences/shared_preferences.dart';
@@ -150,13 +151,9 @@ class _ChildShellState extends State<ChildShell> {
 
   @override
   Widget build(BuildContext context) {
+    final statusPage = _buildStatusPage();
     final pages = <Widget>[
-      ChildStatusScreen(
-        child: widget.child,
-        authService: widget.authService,
-        firestoreService: widget.firestoreService,
-        parentIdOverride: widget.parentIdOverride,
-      ),
+      statusPage,
       ChildRequestsScreen(
         child: widget.child,
         authService: widget.authService,
@@ -203,6 +200,33 @@ class _ChildShellState extends State<ChildShell> {
         ],
       ),
     );
+  }
+
+  Widget _buildStatusPage() {
+    final providedFirestore = widget.firestoreService?.firestore;
+    if (_hasFirebaseApp()) {
+      return child_mode.ChildStatusScreen(
+        firestore: providedFirestore,
+        parentId: widget.parentIdOverride,
+        childId: widget.child.id,
+      );
+    }
+
+    // Test fallback: some widget tests don't initialize Firebase.
+    return ChildStatusScreen(
+      child: widget.child,
+      authService: widget.authService,
+      firestoreService: widget.firestoreService,
+      parentIdOverride: widget.parentIdOverride,
+    );
+  }
+
+  bool _hasFirebaseApp() {
+    try {
+      return Firebase.apps.isNotEmpty;
+    } catch (_) {
+      return false;
+    }
   }
 }
 

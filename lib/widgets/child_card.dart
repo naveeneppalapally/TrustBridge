@@ -21,6 +21,7 @@ class ChildCard extends StatelessWidget {
     this.deviceName,
     this.usageMinutesOverride,
     this.usageLimitMinutesOverride,
+    this.onlineOverride,
     this.deviceHealthStatusLabel,
     this.deviceHealthStatusColor,
   });
@@ -33,6 +34,7 @@ class ChildCard extends StatelessWidget {
   final String? deviceName;
   final int? usageMinutesOverride;
   final int? usageLimitMinutesOverride;
+  final bool? onlineOverride;
   final String? deviceHealthStatusLabel;
   final Color? deviceHealthStatusColor;
 
@@ -42,7 +44,7 @@ class ChildCard extends StatelessWidget {
   }
 
   bool _isOnline() {
-    return child.deviceIds.isNotEmpty;
+    return onlineOverride ?? child.deviceIds.isNotEmpty;
   }
 
   ChildModeState _activeModeState() {
@@ -115,12 +117,11 @@ class ChildCard extends StatelessWidget {
     if (override != null && override >= 0) {
       return override;
     }
+    return 0;
+  }
 
-    final limit = _dailyLimitMinutes();
-    if (_isPausedNow()) {
-      return (limit * 0.35).round();
-    }
-    return _isOnline() ? (limit * 0.58).round() : (limit * 0.42).round();
+  bool _hasUsageTelemetry() {
+    return usageMinutesOverride != null && usageMinutesOverride! >= 0;
   }
 
   String _formatDuration(int totalMinutes) {
@@ -175,7 +176,7 @@ class ChildCard extends StatelessWidget {
     final modeMeta = _modeMeta(mode);
     final usageMinutes = _usageMinutes();
     final usageLimitMinutes = _dailyLimitMinutes();
-    final usageRatio = usageLimitMinutes == 0
+    final usageRatio = !_hasUsageTelemetry() || usageLimitMinutes == 0
         ? 0.0
         : (usageMinutes / usageLimitMinutes).clamp(0.0, 1.0);
     final isDark = Theme.of(context).brightness == Brightness.dark;
@@ -241,6 +242,7 @@ class ChildCard extends StatelessWidget {
                   const SizedBox(width: 12),
                   Expanded(
                     child: Column(
+                      mainAxisSize: MainAxisSize.min,
                       crossAxisAlignment: CrossAxisAlignment.start,
                       children: [
                         Text(
@@ -264,7 +266,7 @@ class ChildCard extends StatelessWidget {
                             borderRadius: BorderRadius.circular(999),
                           ),
                           child: Text(
-                            '● ${modeMeta.label}',
+                            modeMeta.label,
                             style: TextStyle(
                               color: modeMeta.color,
                               fontSize: 11,
@@ -307,6 +309,7 @@ class ChildCard extends StatelessWidget {
                   ),
                   const SizedBox(width: 8),
                   Column(
+                    mainAxisSize: MainAxisSize.min,
                     crossAxisAlignment: CrossAxisAlignment.end,
                     children: [
                       Container(
@@ -355,15 +358,26 @@ class ChildCard extends StatelessWidget {
               const SizedBox(height: 4),
               Row(
                 children: [
-                  Text(
-                    '${_formatDuration(usageMinutes)} / ${_formatDuration(usageLimitMinutes)}',
-                    style: Theme.of(context).textTheme.bodyMedium?.copyWith(
-                          fontWeight: FontWeight.w700,
-                        ),
-                  ),
+                  if (_hasUsageTelemetry())
+                    Text(
+                      '${_formatDuration(usageMinutes)} / ${_formatDuration(usageLimitMinutes)}',
+                      style: Theme.of(context).textTheme.bodyMedium?.copyWith(
+                            fontWeight: FontWeight.w700,
+                          ),
+                    )
+                  else
+                    Text(
+                      'No usage data yet',
+                      style: Theme.of(context).textTheme.bodyMedium?.copyWith(
+                            fontWeight: FontWeight.w700,
+                            color: Colors.grey.shade600,
+                          ),
+                    ),
                   const Spacer(),
                   Text(
-                    '${(usageRatio * 100).toStringAsFixed(0)}%',
+                    _hasUsageTelemetry()
+                        ? '${(usageRatio * 100).toStringAsFixed(0)}%'
+                        : '--',
                     style: Theme.of(context).textTheme.bodySmall?.copyWith(
                           color: Colors.grey.shade600,
                           fontWeight: FontWeight.w700,

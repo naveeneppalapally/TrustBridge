@@ -1,3 +1,5 @@
+import 'dart:async';
+
 import 'package:flutter/material.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
 
@@ -29,6 +31,11 @@ class _ChildProtectionPermissionScreenState
   bool _needsRetry = false;
   _SetupStep _step = _SetupStep.protectionPermission;
 
+  static const Duration _vpnPermissionTimeout = Duration(seconds: 30);
+  static const Duration _vpnStartTimeout = Duration(seconds: 20);
+  static const Duration _deviceAdminTimeout = Duration(seconds: 30);
+  static const Duration _backgroundOpTimeout = Duration(seconds: 8);
+
   Future<void> _requestProtectionPermission() async {
     if (_isRequesting) {
       return;
@@ -38,7 +45,9 @@ class _ChildProtectionPermissionScreenState
     });
 
     try {
-      final granted = await _vpnService.requestPermission();
+      final granted = await _vpnService
+          .requestPermission()
+          .timeout(_vpnPermissionTimeout, onTimeout: () => false);
       if (!granted) {
         if (!mounted) {
           return;
@@ -50,7 +59,9 @@ class _ChildProtectionPermissionScreenState
         return;
       }
 
-      final started = await _vpnService.startVpn();
+      final started = await _vpnService
+          .startVpn()
+          .timeout(_vpnStartTimeout, onTimeout: () => false);
       if (!mounted) {
         return;
       }
@@ -86,33 +97,96 @@ class _ChildProtectionPermissionScreenState
       _isRequesting = true;
     });
 
-    final granted = await _deviceAdminService.requestDeviceAdmin();
-    await _saveDeviceAdminState(granted);
-    await _startBypassMonitoring();
-    if (!mounted) {
-      return;
+    var granted = false;
+    try {
+      final requestFuture = _deviceAdminService
+          .requestDeviceAdmin()
+          .timeout(_deviceAdminTimeout, onTimeout: () async {
+        // Some OEM flows do not return immediately via onActivityResult.
+        return _deviceAdminService.isDeviceAdminActive();
+      });
+      final fallbackFuture =
+          Future<bool>.delayed(const Duration(seconds: 10)).then(
+        (_) => _deviceAdminService.isDeviceAdminActive(),
+      );
+      granted = await Future.any<bool>(<Future<bool>>[
+        requestFuture,
+        fallbackFuture,
+      ]);
+      if (!granted) {
+        granted = await _deviceAdminService.isDeviceAdminActive();
+      }
+    } catch (_) {
+      granted = await _deviceAdminService.isDeviceAdminActive();
     }
-    Navigator.of(context)
-        .pushNamedAndRemoveUntil('/child/status', (route) => false);
+
+    await _finishSetup(deviceAdminActive: granted);
   }
 
   Future<void> _continueWithoutDeviceAdmin() async {
-    await _saveDeviceAdminState(false);
-    await _startBypassMonitoring();
+    if (_isRequesting) {
+      return;
+    }
+    setState(() {
+      _isRequesting = true;
+    });
+    await _finishSetup(deviceAdminActive: false);
+  }
+
+  Future<void> _finishSetup({required bool deviceAdminActive}) async {
+    try {
+      await _saveDeviceAdminState(deviceAdminActive).timeout(_backgroundOpTimeout);
+    } catch (error) {
+      debugPrint('[ChildSetup] saveDeviceAdminState skipped: $error');
+    }
+
     if (!mounted) {
       return;
     }
+
     Navigator.of(context)
         .pushNamedAndRemoveUntil('/child/status', (route) => false);
+
+    // Monitoring setup is best-effort and must not block child onboarding.
+    unawaited(_startBypassMonitoringBestEffort());
   }
 
-  Future<void> _startBypassMonitoring() async {
-    await _bypassDetectionService.startMonitoring();
-    await _bypassDetectionService.startPrivateDnsMonitoring();
-    await HeartbeatService.initialize();
-    await RemoteCommandService.initialize();
-    await HeartbeatService.sendHeartbeat();
-    await RemoteCommandService().processPendingCommands();
+  Future<void> _startBypassMonitoringBestEffort() async {
+    await _runBestEffort(
+      label: 'bypass.startMonitoring',
+      operation: _bypassDetectionService.startMonitoring,
+    );
+    await _runBestEffort(
+      label: 'bypass.startPrivateDnsMonitoring',
+      operation: _bypassDetectionService.startPrivateDnsMonitoring,
+    );
+    await _runBestEffort(
+      label: 'heartbeat.initialize',
+      operation: HeartbeatService.initialize,
+    );
+    await _runBestEffort(
+      label: 'remote.initialize',
+      operation: RemoteCommandService.initialize,
+    );
+    await _runBestEffort(
+      label: 'heartbeat.sendHeartbeat',
+      operation: HeartbeatService.sendHeartbeat,
+    );
+    await _runBestEffort(
+      label: 'remote.processPendingCommands',
+      operation: RemoteCommandService().processPendingCommands,
+    );
+  }
+
+  Future<void> _runBestEffort({
+    required String label,
+    required Future<void> Function() operation,
+  }) async {
+    try {
+      await operation().timeout(_backgroundOpTimeout);
+    } catch (error) {
+      debugPrint('[ChildSetup] $label skipped: $error');
+    }
   }
 
   Future<void> _saveDeviceAdminState(bool active) async {

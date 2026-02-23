@@ -7,18 +7,22 @@ import 'package:trustbridge_app/services/vpn_service.dart';
 void main() {
   group('RemoteCommandService', () {
     late FakeFirebaseFirestore firestore;
+    late _FakePairingService pairingService;
+    late _FakeVpnService vpnService;
     late RemoteCommandService service;
 
     setUp(() {
       firestore = FakeFirebaseFirestore();
+      pairingService = _FakePairingService(
+        childId: 'child-1',
+        parentId: 'parent-1',
+        deviceId: 'device-1',
+      );
+      vpnService = _FakeVpnService(shouldRestartSucceed: true);
       service = RemoteCommandService(
         firestore: firestore,
-        pairingService: _FakePairingService(
-          childId: 'child-1',
-          parentId: 'parent-1',
-          deviceId: 'device-1',
-        ),
-        vpnService: _FakeVpnService(shouldRestartSucceed: true),
+        pairingService: pairingService,
+        vpnService: vpnService,
       );
     });
 
@@ -59,6 +63,33 @@ void main() {
       expect(updated.data()?['attempts'], 1);
       expect(updated.data()?['executedAt'], isNotNull);
     });
+
+    test('processPendingCommands clears pairing and stops protection', () async {
+      final commandRef = firestore
+          .collection('devices')
+          .doc('device-1')
+          .collection('pendingCommands')
+          .doc('command-clear');
+
+      await commandRef.set(<String, dynamic>{
+        'commandId': 'command-clear',
+        'command': RemoteCommandService.commandClearPairingAndStopProtection,
+        'childId': 'child-1',
+        'reason': 'childProfileDeleted',
+        'status': 'pending',
+        'attempts': 0,
+      });
+
+      await service.processPendingCommands();
+
+      final updated = await commandRef.get();
+      expect(updated.data()?['status'], 'executed');
+      expect(updated.data()?['attempts'], 1);
+      expect(pairingService.clearLocalPairingCalls, 1);
+      expect(vpnService.stopVpnCalls, 1);
+      expect(vpnService.updateFilterRulesCalls, 1);
+      expect(vpnService.restartVpnCalls, 0);
+    });
   });
 }
 
@@ -72,6 +103,7 @@ class _FakePairingService extends PairingService {
   final String childId;
   final String parentId;
   final String deviceId;
+  int clearLocalPairingCalls = 0;
 
   @override
   Future<String> getOrCreateDeviceId() async => deviceId;
@@ -81,20 +113,30 @@ class _FakePairingService extends PairingService {
 
   @override
   Future<String?> getPairedParentId() async => parentId;
+
+  @override
+  Future<void> clearLocalPairing() async {
+    clearLocalPairingCalls += 1;
+  }
 }
 
 class _FakeVpnService implements VpnServiceBase {
   _FakeVpnService({required this.shouldRestartSucceed});
 
   final bool shouldRestartSucceed;
+  int restartVpnCalls = 0;
+  int stopVpnCalls = 0;
+  int updateFilterRulesCalls = 0;
 
   @override
   Future<bool> restartVpn({
     List<String> blockedCategories = const <String>[],
     List<String> blockedDomains = const <String>[],
     String? upstreamDns,
-  }) async =>
-      shouldRestartSucceed;
+  }) async {
+    restartVpnCalls += 1;
+    return shouldRestartSucceed;
+  }
 
   @override
   Future<VpnStatus> getStatus() async => const VpnStatus(
@@ -154,13 +196,18 @@ class _FakeVpnService implements VpnServiceBase {
       true;
 
   @override
-  Future<bool> stopVpn() async => true;
+  Future<bool> stopVpn() async {
+    stopVpnCalls += 1;
+    return true;
+  }
 
   @override
   Future<bool> updateFilterRules({
     required List<String> blockedCategories,
     required List<String> blockedDomains,
     List<String> temporaryAllowedDomains = const <String>[],
-  }) async =>
-      true;
+  }) async {
+    updateFilterRulesCalls += 1;
+    return true;
+  }
 }

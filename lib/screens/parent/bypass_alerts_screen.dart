@@ -174,11 +174,12 @@ class _BypassAlertsScreenState extends State<BypassAlertsScreen> {
           }
 
           if (snapshot.hasError) {
+            final errorText = _friendlyLoadError(snapshot.error);
             return Center(
               child: Padding(
                 padding: const EdgeInsets.all(24),
                 child: Text(
-                  'Could not load alerts.\n${snapshot.error}',
+                  errorText,
                   textAlign: TextAlign.center,
                 ),
               ),
@@ -283,6 +284,18 @@ class _BypassAlertsScreenState extends State<BypassAlertsScreen> {
         },
       ),
     );
+  }
+
+  String _friendlyLoadError(Object? error) {
+    final raw = error?.toString() ?? 'Unknown error';
+    final lower = raw.toLowerCase();
+    if (lower.contains('permission-denied') ||
+        lower.contains('permission denied') ||
+        lower.contains('cloud_permission')) {
+      return 'Could not load alerts.\n\nPermission is not granted for this account yet. '
+          'Re-login, then deploy latest Firestore rules.';
+    }
+    return 'Could not load alerts.\n$raw';
   }
 
   Widget _buildFilterChip({

@@ -229,5 +229,33 @@ void main() {
       expect(telemetry.activeUpstreamDns, 'abc123.dns.nextdns.io');
       expect(telemetry.isRunning, isTrue);
     });
+
+    test('blocked-domain callback forwards native method events', () async {
+      BlockedDomainEvent? captured;
+      service.setBlockedDomainListener((event) {
+        captured = event;
+      });
+
+      const codec = StandardMethodCodec();
+      final payload = codec.encodeMethodCall(
+        const MethodCall(
+          'onBlockedDomain',
+          <String, Object>{
+            'domain': 'instagram.com',
+            'modeName': 'Bedtime Mode',
+            'remainingLabel': 'in 20m',
+          },
+        ),
+      );
+
+      await TestDefaultBinaryMessengerBinding.instance.defaultBinaryMessenger
+          .handlePlatformMessage(channelName, payload, (_) {});
+      await Future<void>.delayed(Duration.zero);
+
+      expect(captured, isNotNull);
+      expect(captured!.domain, 'instagram.com');
+      expect(captured!.modeName, 'Bedtime Mode');
+      expect(captured!.remainingLabel, 'in 20m');
+    });
   });
 }

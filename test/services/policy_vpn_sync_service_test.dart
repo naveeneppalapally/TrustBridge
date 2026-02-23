@@ -190,7 +190,7 @@ void main() {
       expect(syncService.lastSyncResult, isNull);
     });
 
-    test('syncNow skips VPN update when VPN is not running', () async {
+    test('syncNow still pushes rules when VPN is not running', () async {
       fakeVpn.vpnRunning = false;
       fakeFirestore.children = <ChildProfile>[];
 
@@ -198,7 +198,9 @@ void main() {
 
       expect(result.success, isTrue);
       expect(result.childrenSynced, 0);
-      expect(fakeVpn.updateCalls, 0);
+      // Bug 3 fix: rules are now persisted even when VPN is off, so they
+      // are available immediately when the VPN starts later.
+      expect(fakeVpn.updateCalls, 1);
     });
 
     test('syncNow merges categories and domains from all children', () async {

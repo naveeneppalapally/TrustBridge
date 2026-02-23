@@ -401,6 +401,24 @@ class _VpnProtectionScreenState extends State<VpnProtectionScreen> {
                             : l10n.notAvailableLabel,
               ),
             ),
+            if ((_status.isRunning || canEnable) && !_ignoringBatteryOptimizations) ...[
+              const SizedBox(height: 10),
+              Container(
+                padding: const EdgeInsets.all(12),
+                decoration: BoxDecoration(
+                  color: Colors.orange.shade50,
+                  borderRadius: BorderRadius.circular(12),
+                  border: Border.all(color: Colors.orange.shade200),
+                ),
+                child: Text(
+                  'Battery optimization is still active. On some phones (including Vivo), Android may stop TrustBridge in the background unless you set Battery to Unrestricted.',
+                  style: Theme.of(context).textTheme.bodySmall?.copyWith(
+                        color: Colors.orange.shade900,
+                        fontWeight: FontWeight.w600,
+                      ),
+                ),
+              ),
+            ],
             const SizedBox(height: 10),
             OutlinedButton.icon(
               key: const Key('vpn_sync_rules_button'),
@@ -1428,12 +1446,105 @@ class _VpnProtectionScreenState extends State<VpnProtectionScreen> {
           return;
         }
         _showMessage('VPN protection enabled.');
+        await _ensureBatteryOptimizationExemptionPrompt();
+        if (!mounted) {
+          return;
+        }
       }
     } finally {
       await _refreshStatus();
       if (mounted) {
         setState(() => _isBusy = false);
       }
+    }
+  }
+
+  Future<void> _ensureBatteryOptimizationExemptionPrompt() async {
+    if (!Platform.isAndroid) {
+      return;
+    }
+
+    bool ignoringBatteryOptimizations;
+    try {
+      ignoringBatteryOptimizations =
+          await _resolvedVpnService.isIgnoringBatteryOptimizations();
+    } catch (_) {
+      return;
+    }
+
+    if (!mounted) {
+      return;
+    }
+
+    if (ignoringBatteryOptimizations) {
+      setState(() {
+        _ignoringBatteryOptimizations = true;
+      });
+      return;
+    }
+
+    setState(() {
+      _ignoringBatteryOptimizations = false;
+    });
+
+    final shouldOpenSettings = await showDialog<bool>(
+          context: context,
+          builder: (dialogContext) => AlertDialog(
+            title: const Text('Improve protection reliability'),
+            content: const Text(
+              'Battery optimization is still active for TrustBridge. '
+              'On many phones, Android may stop the VPN in the background after some time. '
+              'Open Battery settings now and set TrustBridge to Unrestricted / Don\'t optimize.',
+            ),
+            actions: [
+              TextButton(
+                onPressed: () => Navigator.of(dialogContext).pop(false),
+                child: const Text('Later'),
+              ),
+              ElevatedButton(
+                onPressed: () => Navigator.of(dialogContext).pop(true),
+                child: const Text('Open Settings'),
+              ),
+            ],
+          ),
+        ) ??
+        false;
+
+    if (!mounted) {
+      return;
+    }
+
+    if (!shouldOpenSettings) {
+      _showMessage(
+        'Battery optimization is still active. TrustBridge may stop in the background until Battery is set to Unrestricted.',
+        isError: true,
+      );
+      return;
+    }
+
+    final opened = await _resolvedVpnService.openBatteryOptimizationSettings();
+    if (!mounted) {
+      return;
+    }
+    if (!opened) {
+      _showMessage(
+        'Unable to open battery settings. Open Settings > Apps > TrustBridge > Battery and set it to Unrestricted.',
+        isError: true,
+      );
+      return;
+    }
+
+    await Future<void>.delayed(const Duration(milliseconds: 700));
+    await _refreshStatus();
+    if (!mounted) {
+      return;
+    }
+
+    if (!_ignoringBatteryOptimizations) {
+      _showMessage(
+        'Protection is enabled, but battery optimization is still active. Set TrustBridge to Unrestricted for stable background protection.',
+        isError: true,
+      );
     }
   }
 

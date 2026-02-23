@@ -6,12 +6,14 @@ import java.net.DatagramSocket
 import java.net.InetAddress
 import java.nio.ByteBuffer
 import java.util.ArrayDeque
+import java.util.LinkedHashMap
 import kotlin.math.min
 
 class DnsPacketHandler(
     private val filterEngine: DnsFilterEngine,
     private val upstreamDns: String = "1.1.1.1",
-    private val protectSocket: ((DatagramSocket) -> Unit)? = null
+    private val protectSocket: ((DatagramSocket) -> Unit)? = null,
+    private val onBlockedDomain: ((String) -> Unit)? = null
 ) {
     companion object {
         private const val TAG = "DnsPacketHandler"
@@ -19,6 +21,8 @@ class DnsPacketHandler(
         private const val FALLBACK_DNS = "8.8.8.8"
         private const val TIMEOUT_MS = 5_000
         private const val MAX_QUERY_LOG_ENTRIES = 250
+        private const val BLOCKED_DEDUP_WINDOW_MS = 1_000L
+        private const val MAX_BLOCKED_DEDUP_ENTRIES = 512
     }
 
     private val upstreamSocket: DatagramSocket = DatagramSocket().apply {
@@ -42,6 +46,7 @@ class DnsPacketHandler(
     private var fallbackQueries: Long = 0
 
     private val recentQueries = ArrayDeque<QueryLogEntry>()
+    private val recentBlockedDomains = LinkedHashMap<String, Long>()
 
     data class PacketStats(
         val processedQueries: Long,
@@ -96,24 +101,28 @@ class DnsPacketHandler(
             }
 
             val dnsQuery = packet.copyOfRange(dnsOffset, dnsOffset + dnsLength)
-            val domain = parseDomainName(dnsQuery)
-            val isBlocked = filterEngine.shouldBlock(domain)
+            val parsedDomain = parseDomainName(dnsQuery)
+            val normalizedDomain = normalizeDomainForLog(parsedDomain)
+            val isBlocked = filterEngine.shouldBlock(parsedDomain)
 
             if (isBlocked) {
-                incrementBlockedQuery()
+                incrementBlockedQuery(normalizedDomain)
             } else {
                 incrementAllowedQuery()
             }
             appendQueryLog(
-                domain = if (domain.isBlank()) "<unknown>" else domain,
+                domain = normalizedDomain,
                 blocked = isBlocked
             )
 
             val dnsResponse = if (isBlocked) {
-                Log.d(TAG, "BLOCKED domain=$domain")
+                Log.d(TAG, "BLOCKED domain=$normalizedDomain")
+                if (normalizedDomain != "<unknown>") {
+                    onBlockedDomain?.invoke(normalizedDomain)
+                }
                 createBlockedResponse(dnsQuery)
             } else {
-                Log.d(TAG, "ALLOWED domain=$domain")
+                Log.d(TAG, "ALLOWED domain=$normalizedDomain")
                 forwardToUpstreamDns(dnsQuery)
             }
 
@@ -199,18 +208,35 @@ class DnsPacketHandler(
         }
 
         val questionEnd = findQuestionEndOffset(query) ?: return query
-        val responseHeaderAndQuestion = query.copyOfRange(0, questionEnd)
 
-        // Set response flags (QR=1, preserve opcode/RD, set NXDOMAIN RCODE=3).
-        responseHeaderAndQuestion[2] =
-            (responseHeaderAndQuestion[2].toInt() or 0x80).toByte()
-        responseHeaderAndQuestion[3] =
-            ((responseHeaderAndQuestion[3].toInt() and 0xF0) or 0x03).toByte()
+        // Build a response with an A-record pointing to 0.0.0.0.
+        // This is more effective than NXDOMAIN because apps/browsers that
+        // receive NXDOMAIN often silently retry via DoH. A positive response
+        // with a null-routed IP causes a clean connection failure with no retry.
+        val header = query.copyOfRange(0, questionEnd)
 
-        // ANCOUNT = 0 (NXDOMAIN with no answers)
-        responseHeaderAndQuestion[6] = 0x00
-        responseHeaderAndQuestion[7] = 0x00
-        return responseHeaderAndQuestion
+        // Set response flags: QR=1, AA=1, RCODE=0 (no error)
+        header[2] = (header[2].toInt() or 0x84).toByte() // QR=1 + AA=1
+        header[3] = (header[3].toInt() and 0xF0.toInt()).toByte() // RCODE=0
+
+        // ANCOUNT = 1
+        header[6] = 0x00
+        header[7] = 0x01
+
+        // Append answer section: name-pointer + type A + class IN + TTL + rdlength + 0.0.0.0
+        val answer = byteArrayOf(
+            0xC0.toByte(), 0x0C,       // name pointer to question
+            0x00, 0x01,                 // type A
+            0x00, 0x01,                 // class IN
+            0x00, 0x00, 0x00, 0x3C,     // TTL = 60 seconds
+            0x00, 0x04,                 // RDLENGTH = 4
+            0x00, 0x00, 0x00, 0x00      // RDATA = 0.0.0.0
+        )
+
+        val result = ByteArray(header.size + answer.size)
+        System.arraycopy(header, 0, result, 0, header.size)
+        System.arraycopy(answer, 0, result, header.size, answer.size)
+        return result
     }
 
     private fun forwardToUpstreamDns(query: ByteArray): ByteArray {
@@ -335,9 +361,21 @@ class DnsPacketHandler(
     }
 
     @Synchronized
-    private fun incrementBlockedQuery() {
+    private fun incrementBlockedQuery(domain: String) {
         processedQueries += 1
-        blockedQueries += 1
+        val now = System.currentTimeMillis()
+        val lastBlockedAt = recentBlockedDomains[domain]
+        if (lastBlockedAt == null || now - lastBlockedAt >= BLOCKED_DEDUP_WINDOW_MS) {
+            blockedQueries += 1
+        }
+        recentBlockedDomains[domain] = now
+        if (recentBlockedDomains.size > MAX_BLOCKED_DEDUP_ENTRIES) {
+            val iterator = recentBlockedDomains.entries.iterator()
+            if (iterator.hasNext()) {
+                iterator.next()
+                iterator.remove()
+            }
+        }
     }
 
     @Synchronized
@@ -368,5 +406,10 @@ class DnsPacketHandler(
     @Synchronized
     private fun incrementFallbackQuery() {
         fallbackQueries += 1
+    }
+
+    private fun normalizeDomainForLog(rawDomain: String): String {
+        val normalized = rawDomain.trim().lowercase()
+        return if (normalized.isEmpty()) "<unknown>" else normalized
     }
 }

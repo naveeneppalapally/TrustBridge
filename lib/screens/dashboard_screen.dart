@@ -1,5 +1,6 @@
 import 'dart:async';
 
+import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:trustbridge_app/l10n/app_localizations.dart';
 import 'package:trustbridge_app/l10n/app_localizations_en.dart';
 import 'package:flutter/material.dart';
@@ -56,6 +57,21 @@ class _DashboardScreenState extends State<DashboardScreen>
   final Map<String, _ChildDeviceHealth> _deviceHealthByChildId =
       <String, _ChildDeviceHealth>{};
   final Set<String> _offline24hAlertedDeviceIds = <String>{};
+  Timer? _deviceHealthRefreshTimer;
+  List<ChildProfile> _latestChildrenForHealth = const <ChildProfile>[];
+  String? _latestParentIdForHealth;
+  bool _isRefreshingDeviceHealth = false;
+  StreamSubscription<Map<String, DeviceStatusSnapshot>>?
+      _deviceHeartbeatSubscription;
+  String _heartbeatSubscriptionFingerprint = '';
+  Map<String, DeviceStatusSnapshot> _latestDeviceStatusByDeviceId =
+      const <String, DeviceStatusSnapshot>{};
+  String _usageSubscriptionFingerprint = '';
+  final Map<String, StreamSubscription<DocumentSnapshot<Map<String, dynamic>>>>
+      _usageReportSubscriptionsByChildId =
+      <String, StreamSubscription<DocumentSnapshot<Map<String, dynamic>>>>{};
+  final Map<String, _ChildUsageSnapshot> _latestUsageByChildId =
+      <String, _ChildUsageSnapshot>{};
 
   @override
   void initState() {
@@ -70,11 +86,21 @@ class _DashboardScreenState extends State<DashboardScreen>
         _fabVisible = true;
       });
     });
+    _deviceHealthRefreshTimer = Timer.periodic(
+      const Duration(minutes: 1),
+      (_) => unawaited(_refreshDeviceHealthFromLatestState()),
+    );
   }
 
   @override
   void dispose() {
     WidgetsBinding.instance.removeObserver(this);
+    _deviceHealthRefreshTimer?.cancel();
+    _deviceHeartbeatSubscription?.cancel();
+    for (final subscription in _usageReportSubscriptionsByChildId.values) {
+      subscription.cancel();
+    }
+    _usageReportSubscriptionsByChildId.clear();
     unawaited(_stopDashboardLoadTrace());
     super.dispose();
   }
@@ -332,15 +358,14 @@ class _DashboardScreenState extends State<DashboardScreen>
     }
 
     final willResume = _isPausedNow(child);
-    final updatedChild = willResume
-        ? child.copyWith(clearPausedUntil: true)
-        : child.copyWith(
-            pausedUntil: DateTime.now().add(const Duration(hours: 1)));
+    final pausedUntil =
+        willResume ? null : DateTime.now().add(const Duration(hours: 1));
 
     try {
-      await _resolvedFirestoreService.updateChild(
+      await _resolvedFirestoreService.setChildPause(
         parentId: parentId,
-        child: updatedChild,
+        childId: child.id,
+        pausedUntil: pausedUntil,
       );
       if (!mounted) {
         return;
@@ -437,22 +462,162 @@ class _DashboardScreenState extends State<DashboardScreen>
     );
   }
 
-  String _formatDurationLabel(Duration duration) {
-    final hours = duration.inHours;
-    final minutes = duration.inMinutes.remainder(60);
-    if (hours > 0) {
-      return '${hours}h ${minutes}m';
-    }
-    return '${minutes}m';
-  }
-
   double _screenTimeProgress(List<ChildProfile> children) {
-    final targetMinutes = children.length * 120;
-    if (targetMinutes == 0) {
+    if (children.isEmpty) {
       return 0;
     }
-    final estimatedMinutes = children.length * 65;
-    return (estimatedMinutes / targetMinutes).clamp(0.0, 1.0);
+
+    var totalDailyScreenTimeMinutes = 0;
+    var totalDailyLimitMinutes = 0;
+    for (final child in children) {
+      final usage = _latestUsageByChildId[child.id];
+      final estimatedDailyMs = usage?.estimatedDailyScreenTimeMs ?? 0;
+      totalDailyScreenTimeMinutes +=
+          estimatedDailyMs ~/ Duration.millisecondsPerMinute;
+      totalDailyLimitMinutes += _dailyUsageLimitMinutes(child);
+    }
+
+    if (totalDailyLimitMinutes <= 0) {
+      return 0;
+    }
+    return (totalDailyScreenTimeMinutes / totalDailyLimitMinutes)
+        .clamp(0.0, 1.0);
+  }
+
+  String _screenTimeLabel(List<ChildProfile> children) {
+    var totalEstimatedDailyMs = 0;
+    for (final child in children) {
+      totalEstimatedDailyMs +=
+          _latestUsageByChildId[child.id]?.estimatedDailyScreenTimeMs ?? 0;
+    }
+    if (totalEstimatedDailyMs <= 0) {
+      return '--';
+    }
+    return _formatDurationCompact(
+        Duration(milliseconds: totalEstimatedDailyMs));
+  }
+
+  String _blockedAttemptsLabel(List<ChildProfile> children) {
+    return '${_blockedAttemptsCount(children)}';
+  }
+
+  int _blockedAttemptsCount(List<ChildProfile> children) {
+    if (children.isEmpty) {
+      return 0;
+    }
+    var totalBlocked = 0;
+    for (final child in children) {
+      for (final deviceId in child.deviceIds) {
+        totalBlocked +=
+            _latestDeviceStatusByDeviceId[deviceId]?.queriesBlocked ?? 0;
+      }
+    }
+    return totalBlocked;
+  }
+
+  int _dailyUsageLimitMinutes(ChildProfile child) {
+    switch (child.ageBand) {
+      case AgeBand.young:
+        return 120;
+      case AgeBand.middle:
+        return 150;
+      case AgeBand.teen:
+        return 180;
+    }
+  }
+
+  int? _usageMinutesForChildCard(String childId) {
+    final usage = _latestUsageByChildId[childId];
+    if (usage == null || !usage.hasData) {
+      return null;
+    }
+    return usage.estimatedDailyScreenTimeMs ~/ Duration.millisecondsPerMinute;
+  }
+
+  String _formatDurationCompact(Duration duration) {
+    final totalMinutes = duration.inMinutes;
+    final hours = totalMinutes ~/ 60;
+    final minutes = totalMinutes % 60;
+    if (hours <= 0) {
+      return '${minutes}m';
+    }
+    if (minutes == 0) {
+      return '${hours}h';
+    }
+    return '${hours}h ${minutes}m';
+  }
+
+  void _ensureUsageReportSubscriptions(List<ChildProfile> children) {
+    final childIds = children
+        .map((child) => child.id.trim())
+        .where((id) => id.isNotEmpty)
+        .toSet()
+        .toList(growable: false)
+      ..sort();
+
+    final nextFingerprint = childIds.join('|');
+    if (nextFingerprint == _usageSubscriptionFingerprint) {
+      return;
+    }
+    _usageSubscriptionFingerprint = nextFingerprint;
+
+    final nextChildIdSet = childIds.toSet();
+    final staleChildIds = _usageReportSubscriptionsByChildId.keys
+        .where((childId) => !nextChildIdSet.contains(childId))
+        .toList(growable: false);
+
+    for (final childId in staleChildIds) {
+      _usageReportSubscriptionsByChildId.remove(childId)?.cancel();
+      _latestUsageByChildId.remove(childId);
+    }
+
+    for (final childId in childIds) {
+      if (_usageReportSubscriptionsByChildId.containsKey(childId)) {
+        continue;
+      }
+      final subscription = _resolvedFirestoreService.firestore
+          .collection('children')
+          .doc(childId)
+          .collection('usage_reports')
+          .doc('latest')
+          .snapshots()
+          .listen((snapshot) {
+        if (!mounted) {
+          return;
+        }
+        if (!snapshot.exists) {
+          if (_latestUsageByChildId.remove(childId) != null) {
+            setState(() {});
+          }
+          return;
+        }
+        final data = snapshot.data();
+        if (data == null || data.isEmpty) {
+          if (_latestUsageByChildId.remove(childId) != null) {
+            setState(() {});
+          }
+          return;
+        }
+
+        final usage = _ChildUsageSnapshot.fromMap(data);
+        final existing = _latestUsageByChildId[childId];
+        if (existing == usage) {
+          return;
+        }
+        _latestUsageByChildId[childId] = usage;
+        setState(() {});
+      }, onError: (Object error, StackTrace stackTrace) {
+        // Usage report access can be absent or temporarily denied; the dashboard
+        // should still load live presence and VPN telemetry without crashing.
+        if (!mounted) {
+          return;
+        }
+        if (_latestUsageByChildId.remove(childId) != null) {
+          setState(() {});
+        }
+      });
+      _usageReportSubscriptionsByChildId[childId] = subscription;
+    }
   }
 
   Map<String, dynamic> _asMap(Object? rawValue) {
@@ -491,58 +656,146 @@ class _DashboardScreenState extends State<DashboardScreen>
     required List<ChildProfile> children,
     required String parentId,
   }) async {
-    final nextState = <String, _ChildDeviceHealth>{};
-    for (final child in children) {
-      Duration? mostRecentHeartbeatAge;
-      String? mostRecentDeviceId;
-
-      for (final deviceId in child.deviceIds) {
-        Duration? age;
-        try {
-          age = await HeartbeatService.timeSinceLastSeen(deviceId);
-        } catch (_) {
-          // Heartbeat lookup is best-effort and may be unavailable in tests.
-          continue;
-        }
-        if (age == null) {
-          continue;
-        }
-        if (mostRecentHeartbeatAge == null || age < mostRecentHeartbeatAge) {
-          mostRecentHeartbeatAge = age;
-          mostRecentDeviceId = deviceId;
-        }
-      }
-
-      if (mostRecentHeartbeatAge == null || mostRecentDeviceId == null) {
-        continue;
-      }
-
-      if (mostRecentHeartbeatAge > const Duration(hours: 24)) {
-        nextState[child.id] = const _ChildDeviceHealth.critical();
-        if (_offline24hAlertedDeviceIds.add(mostRecentDeviceId)) {
-          try {
-            await _resolvedFirestoreService.logDeviceOffline24hAlert(
-              parentId: parentId,
-              childId: child.id,
-              childNickname: child.nickname,
-              deviceId: mostRecentDeviceId,
-            );
-          } catch (_) {
-            // Best effort alerting.
-          }
-        }
-      } else if (mostRecentHeartbeatAge > const Duration(minutes: 30)) {
-        nextState[child.id] = const _ChildDeviceHealth.warning();
-      }
-    }
-
-    if (!mounted) {
+    if (_isRefreshingDeviceHealth) {
       return;
     }
-    setState(() {
-      _deviceHealthByChildId
-        ..clear()
-        ..addAll(nextState);
+    _isRefreshingDeviceHealth = true;
+    final nextState = <String, _ChildDeviceHealth>{};
+    try {
+      final now = DateTime.now();
+      for (final child in children) {
+        Duration? mostRecentHeartbeatAge;
+        String? mostRecentDeviceId;
+
+        for (final deviceId in child.deviceIds) {
+          Duration? age;
+          final cachedLastSeen =
+              _latestDeviceStatusByDeviceId[deviceId]?.lastSeen;
+          if (cachedLastSeen != null) {
+            age = now.difference(cachedLastSeen);
+          } else {
+            try {
+              age = await HeartbeatService.timeSinceLastSeen(deviceId);
+            } catch (_) {
+              // Heartbeat lookup is best-effort and may be unavailable in tests.
+              continue;
+            }
+          }
+          if (age == null) {
+            continue;
+          }
+          if (mostRecentHeartbeatAge == null || age < mostRecentHeartbeatAge) {
+            mostRecentHeartbeatAge = age;
+            mostRecentDeviceId = deviceId;
+          }
+        }
+
+        if (mostRecentHeartbeatAge == null || mostRecentDeviceId == null) {
+          // No heartbeat received yet (device just paired). Show a
+          // non-alarming pending/connecting state instead of offline.
+          nextState[child.id] = child.deviceIds.isNotEmpty
+              ? const _ChildDeviceHealth.pending()
+              : const _ChildDeviceHealth.offline();
+          continue;
+        }
+
+        if (mostRecentHeartbeatAge > const Duration(hours: 24)) {
+          nextState[child.id] = const _ChildDeviceHealth.critical();
+          if (_offline24hAlertedDeviceIds.add(mostRecentDeviceId)) {
+            try {
+              await _resolvedFirestoreService.logDeviceOffline24hAlert(
+                parentId: parentId,
+                childId: child.id,
+                childNickname: child.nickname,
+                deviceId: mostRecentDeviceId,
+              );
+            } catch (_) {
+              // Best effort alerting.
+            }
+          }
+        } else if (mostRecentHeartbeatAge > const Duration(minutes: 30)) {
+          nextState[child.id] = const _ChildDeviceHealth.warning();
+        } else {
+          nextState[child.id] = const _ChildDeviceHealth.online();
+        }
+      }
+
+      if (!mounted) {
+        return;
+      }
+      setState(() {
+        _deviceHealthByChildId
+          ..clear()
+          ..addAll(nextState);
+      });
+    } finally {
+      _isRefreshingDeviceHealth = false;
+    }
+  }
+
+  Future<void> _refreshDeviceHealthFromLatestState() async {
+    final parentId = _latestParentIdForHealth;
+    if (parentId == null || parentId.trim().isEmpty) {
+      return;
+    }
+    if (_latestChildrenForHealth.isEmpty) {
+      return;
+    }
+    await _refreshDeviceHealth(
+      children: _latestChildrenForHealth,
+      parentId: parentId,
+    );
+  }
+
+  void _ensureHeartbeatSubscription({
+    required List<ChildProfile> children,
+    required String parentId,
+  }) {
+    final allDeviceIds = children
+        .expand((child) => child.deviceIds)
+        .map((id) => id.trim())
+        .where((id) => id.isNotEmpty)
+        .toSet()
+        .toList(growable: false)
+      ..sort();
+
+    final nextFingerprint = allDeviceIds.join('|');
+    if (nextFingerprint == _heartbeatSubscriptionFingerprint) {
+      return;
+    }
+    _heartbeatSubscriptionFingerprint = nextFingerprint;
+
+    _deviceHeartbeatSubscription?.cancel();
+    _deviceHeartbeatSubscription = null;
+    _latestDeviceStatusByDeviceId = const <String, DeviceStatusSnapshot>{};
+
+    if (allDeviceIds.isEmpty) {
+      return;
+    }
+
+    _deviceHeartbeatSubscription = _resolvedFirestoreService
+        .watchDeviceStatuses(allDeviceIds)
+        .listen((statusMap) {
+      _latestDeviceStatusByDeviceId = statusMap;
+      unawaited(
+        _refreshDeviceHealth(
+          children: _latestChildrenForHealth,
+          parentId: parentId,
+        ),
+      );
+    }, onError: (Object error, StackTrace stackTrace) {
+      // Presence data is best-effort. Permission gaps or transient backend
+      // failures should not crash the dashboard.
+      _latestDeviceStatusByDeviceId = const <String, DeviceStatusSnapshot>{};
+      if (!mounted) {
+        return;
+      }
+      unawaited(
+        _refreshDeviceHealth(
+          children: _latestChildrenForHealth,
+          parentId: parentId,
+        ),
+      );
     });
   }
 
@@ -632,6 +885,13 @@ class _DashboardScreenState extends State<DashboardScreen>
               }
 
               final children = snapshot.data ?? const <ChildProfile>[];
+              _latestChildrenForHealth = children;
+              _latestParentIdForHealth = parentId;
+              _ensureHeartbeatSubscription(
+                children: children,
+                parentId: parentId,
+              );
+              _ensureUsageReportSubscriptions(children);
               final healthFingerprint = _childrenHealthFingerprint(children);
               if (healthFingerprint != _lastHealthFingerprint) {
                 _lastHealthFingerprint = healthFingerprint;
@@ -647,11 +907,8 @@ class _DashboardScreenState extends State<DashboardScreen>
                   );
                 });
               }
-              final screenTimeLabel = children.isEmpty
-                  ? '--'
-                  : _formatDurationLabel(
-                      Duration(minutes: children.length * 65),
-                    );
+              final screenTimeLabel = _screenTimeLabel(children);
+              final blockedAttemptsLabel = _blockedAttemptsLabel(children);
               final allChildrenPaused =
                   children.isNotEmpty && children.every(_isPausedNow);
 
@@ -697,7 +954,7 @@ class _DashboardScreenState extends State<DashboardScreen>
                           isDark: isDark,
                           shieldActive: shieldActive,
                           totalScreenTime: screenTimeLabel,
-                          activeThreats: 'None',
+                          blockedAttempts: blockedAttemptsLabel,
                           progress: _screenTimeProgress(children),
                         ),
                       ),
@@ -764,7 +1021,7 @@ class _DashboardScreenState extends State<DashboardScreen>
                         isDark: isDark,
                         shieldActive: shieldActive,
                         totalScreenTime: screenTimeLabel,
-                        activeThreats: 'None',
+                        blockedAttempts: blockedAttemptsLabel,
                         progress: _screenTimeProgress(children),
                       ),
                     ),
@@ -819,9 +1076,13 @@ class _DashboardScreenState extends State<DashboardScreen>
                             delegate: SliverChildBuilderDelegate(
                               (context, index) {
                                 final child = children[index];
-                                final health = _deviceHealthByChildId[child.id];
+                                final health =
+                                    _deviceHealthByChildId[child.id] ??
+                                        const _ChildDeviceHealth.offline();
                                 return ChildCard(
                                   child: child,
+                                  usageMinutesOverride:
+                                      _usageMinutesForChildCard(child.id),
                                   onTap: () {
                                     Navigator.of(context).push(
                                       SpringAnimation.slidePageRoute(
@@ -836,8 +1097,9 @@ class _DashboardScreenState extends State<DashboardScreen>
                                   onResumeInternet: () =>
                                       _toggleChildPause(child),
                                   onLocate: () => _openLocateStub(child),
-                                  deviceHealthStatusLabel: health?.label,
-                                  deviceHealthStatusColor: health?.color,
+                                  onlineOverride: health.online,
+                                  deviceHealthStatusLabel: health.label,
+                                  deviceHealthStatusColor: health.color,
                                 );
                               },
                               childCount: children.length,
@@ -847,11 +1109,15 @@ class _DashboardScreenState extends State<DashboardScreen>
                             delegate: SliverChildBuilderDelegate(
                               (context, index) {
                                 final child = children[index];
-                                final health = _deviceHealthByChildId[child.id];
+                                final health =
+                                    _deviceHealthByChildId[child.id] ??
+                                        const _ChildDeviceHealth.offline();
                                 return Padding(
                                   padding: const EdgeInsets.only(bottom: 14),
                                   child: ChildCard(
                                     child: child,
+                                    usageMinutesOverride:
+                                        _usageMinutesForChildCard(child.id),
                                     onTap: () {
                                       Navigator.of(context).push(
                                         SpringAnimation.slidePageRoute(
@@ -866,8 +1132,9 @@ class _DashboardScreenState extends State<DashboardScreen>
                                     onResumeInternet: () =>
                                         _toggleChildPause(child),
                                     onLocate: () => _openLocateStub(child),
-                                    deviceHealthStatusLabel: health?.label,
-                                    deviceHealthStatusColor: health?.color,
+                                    onlineOverride: health.online,
+                                    deviceHealthStatusLabel: health.label,
+                                    deviceHealthStatusColor: health.color,
                                   ),
                                 );
                               },
@@ -1081,7 +1348,7 @@ class _TrustSummaryCard extends StatelessWidget {
     required this.isDark,
     required this.shieldActive,
     required this.totalScreenTime,
-    required this.activeThreats,
+    required this.blockedAttempts,
     required this.progress,
   });
 
@@ -1089,7 +1356,7 @@ class _TrustSummaryCard extends StatelessWidget {
   final bool isDark;
   final bool shieldActive;
   final String totalScreenTime;
-  final String activeThreats;
+  final String blockedAttempts;
   final double progress;
 
   @override
@@ -1158,6 +1425,7 @@ class _TrustSummaryCard extends StatelessWidget {
               Expanded(
                 child: _TrustMetricTile(
                   label: 'TOTAL SCREEN TIME',
+                  valueKey: const Key('dashboard_metric_total_screen_time_value'),
                   value: totalScreenTime,
                   trailingLabel: 'Today',
                   valueColor: Theme.of(context).textTheme.titleLarge?.color ??
@@ -1173,10 +1441,11 @@ class _TrustSummaryCard extends StatelessWidget {
               const SizedBox(width: 12),
               Expanded(
                 child: _TrustMetricTile(
-                  label: 'ACTIVE THREATS',
-                  value: activeThreats,
-                  trailingLabel: 'Privacy scan complete',
-                  valueColor: activeThreats == 'None'
+                  label: 'BLOCKED ATTEMPTS',
+                  valueKey: const Key('dashboard_metric_blocked_attempts_value'),
+                  value: blockedAttempts,
+                  trailingLabel: 'From child VPN telemetry',
+                  valueColor: blockedAttempts == '0'
                       ? const Color(0xFF00A86B)
                       : Theme.of(context).colorScheme.error,
                   progress: 0,
@@ -1195,6 +1464,7 @@ class _TrustSummaryCard extends StatelessWidget {
 class _TrustMetricTile extends StatelessWidget {
   const _TrustMetricTile({
     required this.label,
+    this.valueKey,
     required this.value,
     required this.trailingLabel,
     required this.valueColor,
@@ -1204,6 +1474,7 @@ class _TrustMetricTile extends StatelessWidget {
   });
 
   final String label;
+  final Key? valueKey;
   final String value;
   final String trailingLabel;
   final Color valueColor;
@@ -1236,6 +1507,7 @@ class _TrustMetricTile extends StatelessWidget {
           const SizedBox(height: 8),
           Text(
             value,
+            key: valueKey,
             style: Theme.of(context).textTheme.titleLarge?.copyWith(
                   fontWeight: FontWeight.w800,
                   color: valueColor,
@@ -1357,20 +1629,106 @@ AppLocalizations _l10n(BuildContext context) {
   return AppLocalizations.of(context) ?? AppLocalizationsEn();
 }
 
+class _ChildUsageSnapshot {
+  const _ChildUsageSnapshot({
+    required this.totalScreenTimeMs,
+    required this.averageDailyScreenTimeMs,
+    this.uploadedAt,
+  });
+
+  final int totalScreenTimeMs;
+  final int averageDailyScreenTimeMs;
+  final DateTime? uploadedAt;
+
+  bool get hasData => totalScreenTimeMs > 0 || averageDailyScreenTimeMs > 0;
+
+  int get estimatedDailyScreenTimeMs {
+    if (averageDailyScreenTimeMs > 0) {
+      return averageDailyScreenTimeMs;
+    }
+    if (totalScreenTimeMs > 0) {
+      return totalScreenTimeMs ~/ 7;
+    }
+    return 0;
+  }
+
+  factory _ChildUsageSnapshot.fromMap(Map<String, dynamic> data) {
+    return _ChildUsageSnapshot(
+      totalScreenTimeMs: _toInt(data['totalScreenTimeMs']),
+      averageDailyScreenTimeMs: _toInt(data['averageDailyScreenTimeMs']),
+      uploadedAt: _toDateTime(data['uploadedAt']),
+    );
+  }
+
+  static int _toInt(Object? rawValue) {
+    if (rawValue is int) {
+      return rawValue;
+    }
+    if (rawValue is num) {
+      return rawValue.toInt();
+    }
+    return 0;
+  }
+
+  static DateTime? _toDateTime(Object? rawValue) {
+    if (rawValue is Timestamp) {
+      return rawValue.toDate();
+    }
+    if (rawValue is DateTime) {
+      return rawValue;
+    }
+    return null;
+  }
+
+  @override
+  bool operator ==(Object other) {
+    if (identical(this, other)) {
+      return true;
+    }
+    return other is _ChildUsageSnapshot &&
+        other.totalScreenTimeMs == totalScreenTimeMs &&
+        other.averageDailyScreenTimeMs == averageDailyScreenTimeMs &&
+        other.uploadedAt == uploadedAt;
+  }
+
+  @override
+  int get hashCode =>
+      Object.hash(totalScreenTimeMs, averageDailyScreenTimeMs, uploadedAt);
+}
+
 class _ChildDeviceHealth {
   const _ChildDeviceHealth({
+    required this.online,
     required this.label,
     required this.color,
   });
 
+  const _ChildDeviceHealth.online()
+      : online = true,
+        label = null,
+        color = const Color(0xFF22C55E);
+
+  const _ChildDeviceHealth.pending()
+      : online = false,
+        label = 'Connecting\u2026',
+        color = const Color(0xFF3B82F6);
+
+  const _ChildDeviceHealth.offline()
+      : online = false,
+        label = null,
+        color = Colors.grey;
+
   const _ChildDeviceHealth.warning()
-      : label = 'Not seen recently',
+      : online = false,
+        label = 'Not seen recently',
         color = Colors.orange;
 
   const _ChildDeviceHealth.critical()
-      : label = 'May be offline or removed',
+      : online = false,
+        label = 'May be offline or removed',
         color = Colors.red;
 
-  final String label;
+  final bool online;
+  final String? label;
   final Color color;
 }

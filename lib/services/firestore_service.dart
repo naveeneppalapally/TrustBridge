@@ -8,6 +8,73 @@ import 'package:trustbridge_app/services/crashlytics_service.dart';
 import 'package:trustbridge_app/services/nextdns_api_service.dart';
 import 'package:trustbridge_app/services/performance_service.dart';
 
+class DeviceStatusSnapshot {
+  const DeviceStatusSnapshot({
+    required this.deviceId,
+    this.lastSeen,
+    this.vpnActive = false,
+    this.queriesProcessed = 0,
+    this.queriesBlocked = 0,
+    this.queriesAllowed = 0,
+    this.updatedAt,
+  });
+
+  final String deviceId;
+  final DateTime? lastSeen;
+  final bool vpnActive;
+  final int queriesProcessed;
+  final int queriesBlocked;
+  final int queriesAllowed;
+  final DateTime? updatedAt;
+
+  factory DeviceStatusSnapshot.fromFirestore(
+    DocumentSnapshot<Map<String, dynamic>> snapshot,
+  ) {
+    final data = snapshot.data() ?? const <String, dynamic>{};
+    final lastSeen = _readDateTime(data['lastSeen']) ??
+        _readEpochDateTime(data['lastSeenEpochMs']);
+    return DeviceStatusSnapshot(
+      deviceId: snapshot.id,
+      lastSeen: lastSeen,
+      vpnActive: data['vpnActive'] == true,
+      queriesProcessed: _readInt(data['queriesProcessed']),
+      queriesBlocked: _readInt(data['queriesBlocked']),
+      queriesAllowed: _readInt(data['queriesAllowed']),
+      updatedAt: _readDateTime(data['updatedAt']),
+    );
+  }
+
+  static int _readInt(Object? rawValue) {
+    if (rawValue is int) {
+      return rawValue;
+    }
+    if (rawValue is num) {
+      return rawValue.toInt();
+    }
+    return 0;
+  }
+
+  static DateTime? _readDateTime(Object? rawValue) {
+    if (rawValue is Timestamp) {
+      return rawValue.toDate();
+    }
+    if (rawValue is DateTime) {
+      return rawValue;
+    }
+    return null;
+  }
+
+  static DateTime? _readEpochDateTime(Object? rawValue) {
+    if (rawValue is int && rawValue > 0) {
+      return DateTime.fromMillisecondsSinceEpoch(rawValue);
+    }
+    if (rawValue is num && rawValue.toInt() > 0) {
+      return DateTime.fromMillisecondsSinceEpoch(rawValue.toInt());
+    }
+    return null;
+  }
+}
+
 class FirestoreService {
   FirestoreService({
     FirebaseFirestore? firestore,
@@ -17,6 +84,9 @@ class FirestoreService {
 
   final FirebaseFirestore _firestore;
   final NextDnsApiService _nextDnsApiService;
+
+  /// Public accessor for the underlying Firestore instance.
+  FirebaseFirestore get firestore => _firestore;
   final CrashlyticsService _crashlyticsService = CrashlyticsService();
   final PerformanceService _performanceService = PerformanceService();
 
@@ -199,8 +269,52 @@ class FirestoreService {
     await _firestore.collection('notification_queue').add({
       'parentId': parentId.trim(),
       'title': title.trim(),
-      'body': body.trim(),
+      'body': _truncateNotificationBody(body),
       'route': route.trim(),
+      'sentAt': FieldValue.serverTimestamp(),
+      'processed': false,
+    });
+  }
+
+  /// Queue a child push notification payload for backend processing.
+  Future<void> queueChildNotification({
+    required String parentId,
+    required String childId,
+    required String title,
+    required String body,
+    String route = '/child/status',
+    String eventType = 'access_request_response',
+  }) async {
+    if (parentId.trim().isEmpty) {
+      throw ArgumentError.value(parentId, 'parentId', 'Parent ID is required.');
+    }
+    if (childId.trim().isEmpty) {
+      throw ArgumentError.value(childId, 'childId', 'Child ID is required.');
+    }
+    if (title.trim().isEmpty) {
+      throw ArgumentError.value(title, 'title', 'Title is required.');
+    }
+    if (body.trim().isEmpty) {
+      throw ArgumentError.value(body, 'body', 'Body is required.');
+    }
+    if (route.trim().isEmpty) {
+      throw ArgumentError.value(route, 'route', 'Route is required.');
+    }
+    if (eventType.trim().isEmpty) {
+      throw ArgumentError.value(
+        eventType,
+        'eventType',
+        'Event type is required.',
+      );
+    }
+
+    await _firestore.collection('notification_queue').add({
+      'parentId': parentId.trim(),
+      'childId': childId.trim(),
+      'title': title.trim(),
+      'body': _truncateNotificationBody(body),
+      'route': route.trim(),
+      'eventType': eventType.trim(),
       'sentAt': FieldValue.serverTimestamp(),
       'processed': false,
     });
@@ -1089,6 +1203,58 @@ class FirestoreService {
     return ChildProfile.fromFirestore(snapshot);
   }
 
+  /// Streams latest heartbeat timestamps for a set of device IDs.
+  ///
+  /// Firestore `whereIn` supports at most 10 IDs; extra IDs are ignored and
+  /// should be handled separately by callers.
+  Stream<Map<String, DeviceStatusSnapshot>> watchDeviceStatuses(
+    List<String> deviceIds,
+  ) {
+    final uniqueDeviceIds = deviceIds
+        .map((id) => id.trim())
+        .where((id) => id.isNotEmpty)
+        .toSet()
+        .toList(growable: false);
+
+    if (uniqueDeviceIds.isEmpty) {
+      return Stream<Map<String, DeviceStatusSnapshot>>.value(
+        const <String, DeviceStatusSnapshot>{},
+      );
+    }
+
+    final queryIds = uniqueDeviceIds.length > 10
+        ? uniqueDeviceIds.take(10).toList(growable: false)
+        : uniqueDeviceIds;
+
+    return _firestore
+        .collection('devices')
+        .where(FieldPath.documentId, whereIn: queryIds)
+        .snapshots()
+        .map((snapshot) {
+      final statusByDeviceId = <String, DeviceStatusSnapshot>{};
+      for (final doc in snapshot.docs) {
+        statusByDeviceId[doc.id] = DeviceStatusSnapshot.fromFirestore(doc);
+      }
+      return statusByDeviceId;
+    });
+  }
+
+  /// Streams latest heartbeat timestamps for a set of device IDs.
+  ///
+  /// Firestore `whereIn` supports at most 10 IDs; extra IDs are ignored and
+  /// should be handled separately by callers.
+  Stream<Map<String, DateTime?>> watchDeviceHeartbeats(
+    List<String> deviceIds,
+  ) {
+    return watchDeviceStatuses(deviceIds).map((statusByDeviceId) {
+      final heartbeatByDeviceId = <String, DateTime?>{};
+      for (final entry in statusByDeviceId.entries) {
+        heartbeatByDeviceId[entry.key] = entry.value.lastSeen;
+      }
+      return heartbeatByDeviceId;
+    });
+  }
+
   Future<void> setChildNextDnsProfileId({
     required String parentId,
     required String childId,
@@ -1429,7 +1595,68 @@ class FirestoreService {
       throw ArgumentError.value(childId, 'childId', 'Child ID is required.');
     }
 
-    await _firestore.collection('children').doc(childId).delete();
+    final childRef = _firestore.collection('children').doc(childId);
+
+    final childSnapshot = await childRef.get();
+    if (!childSnapshot.exists) {
+      return;
+    }
+
+    final childData = childSnapshot.data() ?? const <String, dynamic>{};
+    final ownerId = (childData['parentId'] as String?)?.trim();
+    if (ownerId != null && ownerId.isNotEmpty && ownerId != parentId.trim()) {
+      throw StateError('Child profile does not belong to the provided parent.');
+    }
+
+    final deviceIds = <String>{};
+    final rawDeviceIds = childData['deviceIds'];
+    if (rawDeviceIds is List) {
+      for (final raw in rawDeviceIds) {
+        final deviceId = raw?.toString().trim() ?? '';
+        if (deviceId.isNotEmpty) {
+          deviceIds.add(deviceId);
+        }
+      }
+    }
+
+    try {
+      final childDevices = await childRef.collection('devices').get();
+      for (final doc in childDevices.docs) {
+        final deviceId = doc.id.trim();
+        if (deviceId.isNotEmpty) {
+          deviceIds.add(deviceId);
+        }
+      }
+    } catch (_) {
+      // Best-effort discovery. Device IDs from child document may still exist.
+    }
+
+    if (deviceIds.isNotEmpty) {
+      final batch = _firestore.batch();
+      final now = FieldValue.serverTimestamp();
+      for (final deviceId in deviceIds) {
+        final commandRef = _firestore
+            .collection('devices')
+            .doc(deviceId)
+            .collection('pendingCommands')
+            .doc();
+        batch.set(commandRef, <String, dynamic>{
+          'commandId': commandRef.id,
+          'parentId': parentId.trim(),
+          'command': 'clearPairingAndStopProtection',
+          'childId': childId.trim(),
+          'reason': 'childProfileDeleted',
+          'status': 'pending',
+          'attempts': 0,
+          'sentAt': now,
+        });
+      }
+      batch.delete(childRef);
+      await batch.commit();
+      return;
+    }
+
+    await childRef.delete();
   }
 
   Future<void> pauseAllChildren(
@@ -1489,6 +1716,70 @@ class FirestoreService {
       });
     }
     await batch.commit();
+  }
+
+  /// Applies or clears pause for a single child profile.
+  Future<void> setChildPause({
+    required String parentId,
+    required String childId,
+    DateTime? pausedUntil,
+  }) async {
+    if (parentId.trim().isEmpty) {
+      throw ArgumentError.value(parentId, 'parentId', 'Parent ID is required.');
+    }
+    if (childId.trim().isEmpty) {
+      throw ArgumentError.value(childId, 'childId', 'Child ID is required.');
+    }
+
+    final childDoc = await _loadOwnedChildDoc(
+      parentId: parentId,
+      childId: childId,
+    );
+    await childDoc.reference.update(<String, dynamic>{
+      'pausedUntil':
+          pausedUntil == null ? null : Timestamp.fromDate(pausedUntil),
+      'updatedAt': Timestamp.fromDate(DateTime.now()),
+    });
+  }
+
+  /// Persists or clears manual quick-mode override for a child.
+  ///
+  /// Supported modes are currently `homework`, `bedtime`, and `free`.
+  Future<void> setChildManualMode({
+    required String parentId,
+    required String childId,
+    String? mode,
+    DateTime? expiresAt,
+  }) async {
+    if (parentId.trim().isEmpty) {
+      throw ArgumentError.value(parentId, 'parentId', 'Parent ID is required.');
+    }
+    if (childId.trim().isEmpty) {
+      throw ArgumentError.value(childId, 'childId', 'Child ID is required.');
+    }
+
+    final childDoc = await _loadOwnedChildDoc(
+      parentId: parentId,
+      childId: childId,
+    );
+    final normalizedMode = mode?.trim().toLowerCase();
+
+    if (normalizedMode == null || normalizedMode.isEmpty) {
+      await childDoc.reference.update(<String, dynamic>{
+        'manualMode': null,
+        'updatedAt': Timestamp.fromDate(DateTime.now()),
+      });
+      return;
+    }
+
+    await childDoc.reference.update(<String, dynamic>{
+      'manualMode': <String, dynamic>{
+        'mode': normalizedMode,
+        'setAt': Timestamp.fromDate(DateTime.now()),
+        'expiresAt': expiresAt == null ? null : Timestamp.fromDate(expiresAt),
+      },
+      'updatedAt': Timestamp.fromDate(DateTime.now()),
+    });
   }
 
   /// Submit a new access request from child profile.
@@ -1643,7 +1934,14 @@ class FirestoreService {
       if (!requestSnapshot.exists) {
         throw StateError('Access request not found.');
       }
+      final requestData = requestSnapshot.data();
       final existingRequest = AccessRequest.fromFirestore(requestSnapshot);
+      final rawChildId = requestData == null
+          ? ''
+          : (requestData['childId']?.toString().trim() ?? '');
+      final childNotificationTargetId = existingRequest.childId.trim().isNotEmpty
+          ? existingRequest.childId.trim()
+          : rawChildId;
 
       DateTime? expiresAt;
       if (status == RequestStatus.approved) {
@@ -1672,6 +1970,25 @@ class FirestoreService {
         'respondedAt': Timestamp.fromDate(DateTime.now()),
         if (expiresAt != null) 'expiresAt': Timestamp.fromDate(expiresAt),
       });
+
+      if (childNotificationTargetId.isNotEmpty) {
+        final childNotificationBody = _buildChildResponseNotificationBody(
+          request: existingRequest,
+          status: status,
+          parentReply: trimmedReply,
+          expiresAt: expiresAt,
+        );
+        await queueChildNotification(
+          parentId: parentId,
+          childId: childNotificationTargetId,
+          title: status == RequestStatus.approved
+              ? 'Request approved'
+              : 'Request denied',
+          body: childNotificationBody,
+          route: '/child/status',
+        );
+      }
+
       await _syncNextDnsAccessLifecycle(
         parentId: parentId,
         request: existingRequest,
@@ -1751,6 +2068,41 @@ class FirestoreService {
       );
       rethrow;
     }
+  }
+
+  String _buildChildResponseNotificationBody({
+    required AccessRequest request,
+    required RequestStatus status,
+    String? parentReply,
+    DateTime? expiresAt,
+  }) {
+    final appOrSite = request.appOrSite.trim();
+    final target = appOrSite.isEmpty ? 'your request' : appOrSite;
+    final reply = parentReply?.trim();
+
+    if (status == RequestStatus.approved) {
+      final base = expiresAt == null
+          ? '$target was approved.'
+          : '$target was approved for ${request.duration.label}.';
+      if (reply == null || reply.isEmpty) {
+        return _truncateNotificationBody(base);
+      }
+      return _truncateNotificationBody('$base Parent message: $reply');
+    }
+
+    final base = '$target was not approved.';
+    if (reply == null || reply.isEmpty) {
+      return _truncateNotificationBody(base);
+    }
+    return _truncateNotificationBody('$base Parent message: $reply');
+  }
+
+  String _truncateNotificationBody(String body) {
+    final trimmed = body.trim();
+    if (trimmed.length <= 280) {
+      return trimmed;
+    }
+    return '${trimmed.substring(0, 277)}...';
   }
 
   /// Stream all requests (pending + history) for parent.

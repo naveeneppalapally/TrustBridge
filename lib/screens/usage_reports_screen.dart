@@ -1,6 +1,7 @@
 import 'package:fl_chart/fl_chart.dart';
 import 'package:flutter/material.dart';
 
+import '../models/child_profile.dart';
 import '../services/auth_service.dart';
 import '../services/app_usage_service.dart';
 import '../services/firestore_service.dart';
@@ -35,6 +36,7 @@ class _UsageReportsScreenState extends State<UsageReportsScreen> {
   FirestoreService? _firestoreService;
   NextDnsApiService? _nextDnsApiService;
   UsageReportData? _report;
+  List<ChildProfile> _children = const <ChildProfile>[];
   int? _nextDnsBlockedToday;
   List<NextDnsDomainStat> _nextDnsTopBlockedDomains = const [];
   bool _nextDnsConfigured = false;
@@ -89,13 +91,27 @@ class _UsageReportsScreenState extends State<UsageReportsScreen> {
       _error = null;
     });
     try {
-      final report = await _resolvedAppUsageService.getUsageReport(pastDays: 7);
+      final parentId = _parentId;
+      List<ChildProfile> children = const <ChildProfile>[];
+      if (parentId != null && parentId.trim().isNotEmpty) {
+        children = await _resolvedFirestoreService.getChildrenOnce(parentId);
+      }
+      UsageReportData? report = await _loadAggregatedChildUsageReport(children);
+      if (report == null) {
+        final localReport = await _resolvedAppUsageService.getUsageReport(
+          pastDays: 7,
+        );
+        if (localReport.hasData) {
+          report = localReport;
+        }
+      }
       final analytics = await _loadNextDnsAnalytics();
       if (!mounted) {
         return;
       }
       setState(() {
         _report = report;
+        _children = children;
         _nextDnsConfigured = analytics.configured;
         _nextDnsBlockedToday = analytics.blockedToday;
         _nextDnsTopBlockedDomains = analytics.topBlockedDomains;
@@ -149,14 +165,13 @@ class _UsageReportsScreenState extends State<UsageReportsScreen> {
     }
 
     final report = _report;
-    if (report == null) {
-      return const Center(child: Text('No report data available.'));
-    }
-    if (!report.permissionGranted) {
+    if (report == null || !report.hasData) {
       return ListView(
         padding: const EdgeInsets.fromLTRB(16, 12, 16, 24),
         children: [
-          _buildPermissionMissingStateCard(),
+          _buildChildSummaryFallbackCard(),
+          const SizedBox(height: 14),
+          _buildChildUsagePendingCard(),
           const SizedBox(height: 14),
           _buildNextDnsAnalyticsCard(),
         ],
@@ -179,7 +194,8 @@ class _UsageReportsScreenState extends State<UsageReportsScreen> {
     );
   }
 
-  Widget _buildPermissionMissingStateCard() {
+  Widget _buildChildUsagePendingCard() {
+    final hasChildren = _children.isNotEmpty;
     return Card(
       child: Padding(
         padding: const EdgeInsets.all(20),
@@ -188,31 +204,280 @@ class _UsageReportsScreenState extends State<UsageReportsScreen> {
           children: [
             const Icon(Icons.bar_chart_outlined, size: 48),
             const SizedBox(height: 12),
-            const Text(
-              'Usage access required',
-              style: TextStyle(fontSize: 18, fontWeight: FontWeight.w700),
+            Text(
+              hasChildren
+                  ? 'Waiting for child usage data'
+                  : 'No child devices paired',
+              style: const TextStyle(
+                fontSize: 18,
+                fontWeight: FontWeight.w700,
+              ),
             ),
             const SizedBox(height: 8),
-            const Text(
-              'TrustBridge needs Usage Access to show real screen time.',
+            Text(
+              hasChildren
+                  ? 'Open TrustBridge on the child phone and grant Usage Access there. '
+                      'Reports update automatically after the next heartbeat.'
+                  : 'Add and pair a child device to start receiving reports.',
               textAlign: TextAlign.center,
-            ),
-            const SizedBox(height: 16),
-            FilledButton(
-              onPressed: () async {
-                await _resolvedAppUsageService.openUsageAccessSettings();
-              },
-              child: const Text('Grant Access'),
             ),
             const SizedBox(height: 8),
             TextButton(
               onPressed: _load,
-              child: const Text('I enabled it, refresh'),
+              child: const Text('Refresh'),
             ),
           ],
         ),
       ),
     );
+  }
+
+  Widget _buildChildSummaryFallbackCard() {
+    if (_children.isEmpty) {
+      return const SizedBox.shrink();
+    }
+
+    return Card(
+      child: Padding(
+        padding: const EdgeInsets.all(16),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            const Text(
+              'Child summary',
+              style: TextStyle(fontSize: 16, fontWeight: FontWeight.w700),
+            ),
+            const SizedBox(height: 6),
+            const Text(
+              'Quick snapshot from child profiles and protection policy.',
+            ),
+            const SizedBox(height: 12),
+            ..._children.map((child) {
+              final categories = child.policy.blockedCategories.length;
+              final domains = child.policy.blockedDomains.length;
+              return Padding(
+                padding: const EdgeInsets.only(bottom: 8),
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Row(
+                      children: [
+                        Expanded(
+                          child: Text(
+                            child.nickname,
+                            style:
+                                const TextStyle(fontWeight: FontWeight.w600),
+                          ),
+                        ),
+                        Text('$categories cats • $domains domains'),
+                      ],
+                    ),
+                    const SizedBox(height: 4),
+                    _ChildRemoteUsageRow(
+                      childId: child.id,
+                      firestoreService: _resolvedFirestoreService,
+                    ),
+                  ],
+                ),
+              );
+            }),
+          ],
+        ),
+      ),
+    );
+  }
+
+  Future<UsageReportData?> _loadAggregatedChildUsageReport(
+    List<ChildProfile> children,
+  ) async {
+    if (children.isEmpty) {
+      return null;
+    }
+
+    final snapshots = await Future.wait(
+      children.map(
+        (child) => _resolvedFirestoreService.firestore
+            .collection('children')
+            .doc(child.id)
+            .collection('usage_reports')
+            .doc('latest')
+            .get(),
+      ),
+    );
+
+    var totalScreenTimeMs = 0;
+    var averageDailyScreenTimeMs = 0;
+    var hasAnyData = false;
+    final categoryTotalsMs = <String, int>{};
+    final trendTotalsMs = List<int>.filled(7, 0);
+    final trendLabels = List<String>.from(const <String>[
+      'M',
+      'T',
+      'W',
+      'T',
+      'F',
+      'S',
+      'S',
+    ]);
+    final appTotals = <String, _AggregatedAppUsage>{};
+
+    for (final snapshot in snapshots) {
+      if (!snapshot.exists) {
+        continue;
+      }
+      final data = snapshot.data();
+      if (data == null || data.isEmpty) {
+        continue;
+      }
+
+      final reportTotalMs = _toInt(data['totalScreenTimeMs']);
+      final reportAverageMs = _toInt(data['averageDailyScreenTimeMs']);
+      totalScreenTimeMs += reportTotalMs;
+      averageDailyScreenTimeMs += reportAverageMs;
+      if (reportTotalMs > 0 || reportAverageMs > 0) {
+        hasAnyData = true;
+      }
+
+      for (final slice in _parseMapList(data['categorySlices'])) {
+        final label = (slice['label'] as String?)?.trim();
+        if (label == null || label.isEmpty) {
+          continue;
+        }
+        final durationMs = _toInt(slice['durationMs']);
+        if (durationMs <= 0) {
+          continue;
+        }
+        categoryTotalsMs[label] = (categoryTotalsMs[label] ?? 0) + durationMs;
+        hasAnyData = true;
+      }
+
+      final trend = _parseMapList(data['dailyTrend']);
+      for (var index = 0; index < trend.length && index < trendTotalsMs.length; index++) {
+        final point = trend[index];
+        final durationMs = _toInt(point['durationMs']);
+        trendTotalsMs[index] += durationMs;
+        final label = (point['label'] as String?)?.trim();
+        if (label != null && label.isNotEmpty) {
+          trendLabels[index] = label;
+        }
+        if (durationMs > 0) {
+          hasAnyData = true;
+        }
+      }
+
+      for (final app in _parseMapList(data['topApps'])) {
+        final packageName = (app['packageName'] as String?)?.trim() ?? '';
+        final appName = (app['appName'] as String?)?.trim() ?? packageName;
+        final category = (app['category'] as String?)?.trim() ?? 'Other';
+        final durationMs = _toInt(app['durationMs']);
+        if (durationMs <= 0) {
+          continue;
+        }
+
+        final aggregateKey = packageName.isNotEmpty
+            ? packageName
+            : appName.toLowerCase();
+        final existing = appTotals[aggregateKey];
+        if (existing == null) {
+          appTotals[aggregateKey] = _AggregatedAppUsage(
+            packageName: packageName,
+            appName: appName.isEmpty ? 'App' : appName,
+            category: category.isEmpty ? 'Other' : category,
+            durationMs: durationMs,
+          );
+        } else {
+          appTotals[aggregateKey] = existing.copyWith(
+            durationMs: existing.durationMs + durationMs,
+          );
+        }
+        hasAnyData = true;
+      }
+    }
+
+    if (!hasAnyData) {
+      return null;
+    }
+
+    if (averageDailyScreenTimeMs <= 0 && totalScreenTimeMs > 0) {
+      averageDailyScreenTimeMs = totalScreenTimeMs ~/ 7;
+    }
+
+    final categorySlices = categoryTotalsMs.entries
+        .map(
+          (entry) => UsageCategorySlice(
+            label: entry.key,
+            duration: Duration(milliseconds: entry.value),
+          ),
+        )
+        .toList(growable: false)
+      ..sort((a, b) => b.duration.compareTo(a.duration));
+
+    final topAppsRaw = appTotals.values.toList(growable: false)
+      ..sort((a, b) => b.durationMs.compareTo(a.durationMs));
+    final topAppsTopFive = topAppsRaw.take(5).toList(growable: false);
+    final maxAppDurationMs =
+        topAppsTopFive.isEmpty ? 1 : topAppsTopFive.first.durationMs;
+    final topApps = topAppsTopFive
+        .map(
+          (entry) => AppUsageSummary(
+            packageName: entry.packageName,
+            appName: entry.appName,
+            category: entry.category,
+            duration: Duration(milliseconds: entry.durationMs),
+            progress: (entry.durationMs / maxAppDurationMs).clamp(0.0, 1.0),
+          ),
+        )
+        .toList(growable: false);
+
+    final trend = <DailyUsagePoint>[];
+    for (var index = 0; index < trendTotalsMs.length; index++) {
+      trend.add(
+        DailyUsagePoint(
+          label: trendLabels[index],
+          duration: Duration(milliseconds: trendTotalsMs[index]),
+        ),
+      );
+    }
+
+    return UsageReportData(
+      permissionGranted: true,
+      totalScreenTime: Duration(milliseconds: totalScreenTimeMs),
+      averageDailyScreenTime: Duration(milliseconds: averageDailyScreenTimeMs),
+      categorySlices: categorySlices,
+      dailyTrend: trend,
+      topApps: topApps,
+    );
+  }
+
+  List<Map<String, dynamic>> _parseMapList(Object? rawValue) {
+    if (rawValue is! List) {
+      return const <Map<String, dynamic>>[];
+    }
+    final parsed = <Map<String, dynamic>>[];
+    for (final item in rawValue) {
+      if (item is Map<String, dynamic>) {
+        parsed.add(item);
+        continue;
+      }
+      if (item is Map) {
+        parsed.add(
+          item.map(
+            (key, value) => MapEntry(key.toString(), value),
+          ),
+        );
+      }
+    }
+    return parsed;
+  }
+
+  int _toInt(Object? rawValue) {
+    if (rawValue is int) {
+      return rawValue;
+    }
+    if (rawValue is num) {
+      return rawValue.toInt();
+    }
+    return 0;
   }
 
   Widget _buildLoadingState() {
@@ -373,6 +638,34 @@ class _NextDnsUsageAnalytics {
   final bool configured;
   final int? blockedToday;
   final List<NextDnsDomainStat> topBlockedDomains;
+}
+
+class _AggregatedAppUsage {
+  const _AggregatedAppUsage({
+    required this.packageName,
+    required this.appName,
+    required this.category,
+    required this.durationMs,
+  });
+
+  final String packageName;
+  final String appName;
+  final String category;
+  final int durationMs;
+
+  _AggregatedAppUsage copyWith({
+    String? packageName,
+    String? appName,
+    String? category,
+    int? durationMs,
+  }) {
+    return _AggregatedAppUsage(
+      packageName: packageName ?? this.packageName,
+      appName: appName ?? this.appName,
+      category: category ?? this.category,
+      durationMs: durationMs ?? this.durationMs,
+    );
+  }
 }
 
 class _HeroStatsCard extends StatelessWidget {
@@ -753,4 +1046,96 @@ String _formatDuration(Duration duration) {
     return '${hours}h';
   }
   return '${hours}h ${minutes}m';
+}
+
+/// Reads the latest usage report uploaded by the child device from Firestore
+/// and displays total screen time + top apps inline.
+class _ChildRemoteUsageRow extends StatelessWidget {
+  const _ChildRemoteUsageRow({
+    required this.childId,
+    required this.firestoreService,
+  });
+
+  final String childId;
+  final FirestoreService firestoreService;
+
+  @override
+  Widget build(BuildContext context) {
+    return FutureBuilder<Map<String, dynamic>?>(
+      future: _fetchLatestUsage(),
+      builder: (context, snapshot) {
+        if (snapshot.connectionState == ConnectionState.waiting) {
+          return Text(
+            'Loading screen time…',
+            style: TextStyle(
+              fontSize: 12,
+              color: Colors.grey[500],
+              fontStyle: FontStyle.italic,
+            ),
+          );
+        }
+        final data = snapshot.data;
+        if (data == null) {
+          return Text(
+            'No screen time data yet',
+            style: TextStyle(
+              fontSize: 12,
+              color: Colors.grey[500],
+            ),
+          );
+        }
+
+        final totalMs = data['totalScreenTimeMs'] as int? ?? 0;
+        final totalDuration = Duration(milliseconds: totalMs);
+        final topApps = data['topApps'] as List<dynamic>? ?? const [];
+
+        final topAppLabels = topApps
+            .take(3)
+            .map((app) {
+              if (app is Map) {
+                final name = app['appName'] ?? app['packageName'] ?? '?';
+                final appMs = app['durationMs'] as int? ?? 0;
+                return '$name (${_formatDuration(Duration(milliseconds: appMs))})';
+              }
+              return '';
+            })
+            .where((label) => label.isNotEmpty)
+            .join(', ');
+
+        return Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Text(
+              '📱 Screen time (7d): ${_formatDuration(totalDuration)}',
+              style: const TextStyle(fontSize: 12, fontWeight: FontWeight.w600),
+            ),
+            if (topAppLabels.isNotEmpty) ...[
+              const SizedBox(height: 2),
+              Text(
+                'Top: $topAppLabels',
+                style: TextStyle(fontSize: 11, color: Colors.grey[600]),
+              ),
+            ],
+          ],
+        );
+      },
+    );
+  }
+
+  Future<Map<String, dynamic>?> _fetchLatestUsage() async {
+    try {
+      final doc = await firestoreService.firestore
+          .collection('children')
+          .doc(childId)
+          .collection('usage_reports')
+          .doc('latest')
+          .get();
+      if (doc.exists) {
+        return doc.data();
+      }
+      return null;
+    } catch (_) {
+      return null;
+    }
+  }
 }

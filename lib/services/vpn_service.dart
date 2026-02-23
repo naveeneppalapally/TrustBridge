@@ -19,6 +19,8 @@ class VpnStatus {
     this.startedAt,
     this.lastRuleUpdateAt,
     this.upstreamDns,
+    this.privateDnsActive = false,
+    this.privateDnsMode,
   });
 
   const VpnStatus.unsupported()
@@ -34,7 +36,9 @@ class VpnStatus {
         blockedDomainCount = 0,
         startedAt = null,
         lastRuleUpdateAt = null,
-        upstreamDns = null;
+        upstreamDns = null,
+        privateDnsActive = false,
+        privateDnsMode = null;
 
   final bool supported;
   final bool permissionGranted;
@@ -49,6 +53,8 @@ class VpnStatus {
   final DateTime? startedAt;
   final DateTime? lastRuleUpdateAt;
   final String? upstreamDns;
+  final bool privateDnsActive;
+  final String? privateDnsMode;
 
   double get blockedRate {
     if (queriesProcessed <= 0) {
@@ -75,6 +81,8 @@ class VpnStatus {
       startedAt: _toDateTime(map['startedAtEpochMs']),
       lastRuleUpdateAt: _toDateTime(map['lastRuleUpdateEpochMs']),
       upstreamDns: _toNullableString(map['upstreamDns']),
+      privateDnsActive: map['privateDnsActive'] == true,
+      privateDnsMode: _toNullableString(map['privateDnsMode']),
     );
   }
 

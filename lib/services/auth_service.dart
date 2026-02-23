@@ -18,7 +18,8 @@ class AuthService {
 
   final FirebaseAuth _auth;
   final FirestoreService _firestoreService;
-  static const Duration _authRequestTimeout = Duration(seconds: 20);
+  static const Duration _authRequestTimeout = Duration(seconds: 60);
+  static const Duration _networkRetryDelay = Duration(seconds: 2);
 
   String? _verificationId;
   int? _resendToken;
@@ -41,79 +42,103 @@ class AuthService {
     }
     _lastErrorMessage = null;
 
-    final completer = Completer<bool>();
+    Future<bool> attemptSend({required bool allowRetry}) async {
+      final completer = Completer<bool>();
+      final verificationIdBefore = _verificationId;
 
-    try {
-      await _auth.verifyPhoneNumber(
-        phoneNumber: normalizedPhone,
-        timeout: timeout,
-        forceResendingToken: _resendToken,
-        verificationCompleted: (PhoneAuthCredential credential) async {
-          _log('Auto verification callback received');
-          try {
-            final userCredential = await _auth.signInWithCredential(credential);
-            final user = userCredential.user;
-            if (user != null &&
-                (userCredential.additionalUserInfo?.isNewUser ?? false)) {
-              await _ensureParentProfileSafely(user);
+      try {
+        await _auth.verifyPhoneNumber(
+          phoneNumber: normalizedPhone,
+          timeout: timeout,
+          forceResendingToken: _resendToken,
+          verificationCompleted: (PhoneAuthCredential credential) async {
+            _log('Auto verification callback received');
+            try {
+              final userCredential = await _auth.signInWithCredential(credential);
+              final user = userCredential.user;
+              if (user != null &&
+                  (userCredential.additionalUserInfo?.isNewUser ?? false)) {
+                await _ensureParentProfileSafely(user);
+              }
+              if (!completer.isCompleted) {
+                completer.complete(true);
+              }
+            } catch (error, stackTrace) {
+              _lastErrorMessage = _extractErrorCode(error);
+              _log(
+                'Auto verification sign-in failed',
+                error: error,
+                stackTrace: stackTrace,
+              );
+              if (!completer.isCompleted) {
+                completer.complete(false);
+              }
             }
-            if (!completer.isCompleted) {
-              completer.complete(true);
-            }
-          } catch (error, stackTrace) {
-            _lastErrorMessage = _extractErrorCode(error);
+          },
+          verificationFailed: (FirebaseAuthException exception) {
+            _lastErrorMessage = exception.code;
             _log(
-              'Auto verification sign-in failed',
-              error: error,
-              stackTrace: stackTrace,
+              'Phone verification failed: ${exception.code}',
+              error: exception,
+              stackTrace: exception.stackTrace,
             );
             if (!completer.isCompleted) {
               completer.complete(false);
             }
-          }
-        },
-        verificationFailed: (FirebaseAuthException exception) {
-          _lastErrorMessage = exception.code;
-          _log(
-            'Phone verification failed: ${exception.code}',
-            error: exception,
-            stackTrace: exception.stackTrace,
-          );
-          if (!completer.isCompleted) {
-            completer.complete(false);
-          }
-        },
-        codeSent: (String verificationId, int? resendToken) {
-          _verificationId = verificationId;
-          _resendToken = resendToken;
-          _log('OTP code sent successfully');
-          if (!completer.isCompleted) {
-            completer.complete(true);
-          }
-        },
-        codeAutoRetrievalTimeout: (String verificationId) {
-          _verificationId = verificationId;
-          _log('Code auto-retrieval timeout reached');
+          },
+          codeSent: (String verificationId, int? resendToken) {
+            _verificationId = verificationId;
+            _resendToken = resendToken;
+            _log('OTP code sent successfully');
+            if (!completer.isCompleted) {
+              completer.complete(true);
+            }
+          },
+          codeAutoRetrievalTimeout: (String verificationId) {
+            _verificationId = verificationId;
+            _log('Code auto-retrieval timeout reached');
+          },
+        );
+      } catch (error, stackTrace) {
+        _lastErrorMessage = _extractErrorCode(error);
+        _log(
+          'Exception while sending OTP',
+          error: error,
+          stackTrace: stackTrace,
+        );
+        return false;
+      }
+
+      final success = await completer.future.timeout(
+        timeout + const Duration(seconds: 5),
+        onTimeout: () {
+          _lastErrorMessage = 'otp-send-timeout';
+          _log('OTP send flow timed out before callback completion');
+          return false;
         },
       );
-    } catch (error, stackTrace) {
-      _lastErrorMessage = _extractErrorCode(error);
+
+      if (success) {
+        return true;
+      }
+
+      final codeSentDuringAttempt = _verificationId != null &&
+          _verificationId != verificationIdBefore;
+      if (!allowRetry ||
+          codeSentDuringAttempt ||
+          !_isTransientNetworkErrorCode(_lastErrorMessage)) {
+        return false;
+      }
+
       _log(
-        'Exception while sending OTP',
-        error: error,
-        stackTrace: stackTrace,
+        'Retrying OTP request after transient network failure '
+        '(code=$_lastErrorMessage)',
       );
-      return false;
+      await Future<void>.delayed(_networkRetryDelay);
+      return attemptSend(allowRetry: false);
     }
 
-    return completer.future.timeout(
-      timeout + const Duration(seconds: 5),
-      onTimeout: () {
-        _lastErrorMessage = 'otp-send-timeout';
-        _log('OTP send flow timed out before callback completion');
-        return false;
-      },
-    );
+    return attemptSend(allowRetry: true);
   }
 
   Future<User?> verifyOTP(String otp) async {
@@ -125,33 +150,28 @@ class AuthService {
     }
     _lastErrorMessage = null;
 
-    try {
-      final credential = PhoneAuthProvider.credential(
-        verificationId: _verificationId!,
-        smsCode: sanitizedOtp,
-      );
+    return _runAuthOperationWithRetry<User?>(
+      operationName: 'OTP verification',
+      action: () async {
+        final credential = PhoneAuthProvider.credential(
+          verificationId: _verificationId!,
+          smsCode: sanitizedOtp,
+        );
 
-      final userCredential = await _auth
-          .signInWithCredential(credential)
-          .timeout(_authRequestTimeout);
-      final user = userCredential.user;
+        final userCredential = await _auth
+            .signInWithCredential(credential)
+            .timeout(_authRequestTimeout);
+        final user = userCredential.user;
 
-      if (user != null &&
-          (userCredential.additionalUserInfo?.isNewUser ?? false)) {
-        unawaited(_ensureParentProfileSafely(user));
-      }
+        if (user != null &&
+            (userCredential.additionalUserInfo?.isNewUser ?? false)) {
+          unawaited(_ensureParentProfileSafely(user));
+        }
 
-      _log('OTP verification succeeded');
-      return user;
-    } catch (error, stackTrace) {
-      _lastErrorMessage = _extractErrorCode(error);
-      _log(
-        'OTP verification failed',
-        error: error,
-        stackTrace: stackTrace,
-      );
-      return null;
-    }
+        _log('OTP verification succeeded');
+        return user;
+      },
+    );
   }
 
   Future<void> signOut() async {
@@ -164,26 +184,22 @@ class AuthService {
     required String password,
   }) async {
     _lastErrorMessage = null;
-    try {
-      final credential = await _auth.signInWithEmailAndPassword(
-        email: email.trim(),
-        password: password,
-      ).timeout(_authRequestTimeout);
-      final user = credential.user;
-      if (user != null && (credential.additionalUserInfo?.isNewUser ?? false)) {
-        unawaited(_ensureParentProfileSafely(user));
-      }
-      _log('Email sign-in succeeded');
-      return user;
-    } catch (error, stackTrace) {
-      _lastErrorMessage = _extractErrorCode(error);
-      _log(
-        'Email sign-in failed',
-        error: error,
-        stackTrace: stackTrace,
-      );
-      return null;
-    }
+    return _runAuthOperationWithRetry<User?>(
+      operationName: 'Email sign-in',
+      action: () async {
+        final credential = await _auth.signInWithEmailAndPassword(
+          email: email.trim(),
+          password: password,
+        ).timeout(_authRequestTimeout);
+        final user = credential.user;
+        if (user != null &&
+            (credential.additionalUserInfo?.isNewUser ?? false)) {
+          unawaited(_ensureParentProfileSafely(user));
+        }
+        _log('Email sign-in succeeded');
+        return user;
+      },
+    );
   }
 
   Future<User?> signUpWithEmail({
@@ -191,26 +207,21 @@ class AuthService {
     required String password,
   }) async {
     _lastErrorMessage = null;
-    try {
-      final credential = await _auth.createUserWithEmailAndPassword(
-        email: email.trim(),
-        password: password,
-      ).timeout(_authRequestTimeout);
-      final user = credential.user;
-      if (user != null) {
-        unawaited(_ensureParentProfileSafely(user));
-      }
-      _log('Email sign-up succeeded');
-      return user;
-    } catch (error, stackTrace) {
-      _lastErrorMessage = _extractErrorCode(error);
-      _log(
-        'Email sign-up failed',
-        error: error,
-        stackTrace: stackTrace,
-      );
-      return null;
-    }
+    return _runAuthOperationWithRetry<User?>(
+      operationName: 'Email sign-up',
+      action: () async {
+        final credential = await _auth.createUserWithEmailAndPassword(
+          email: email.trim(),
+          password: password,
+        ).timeout(_authRequestTimeout);
+        final user = credential.user;
+        if (user != null) {
+          unawaited(_ensureParentProfileSafely(user));
+        }
+        _log('Email sign-up succeeded');
+        return user;
+      },
+    );
   }
 
   Future<void> changePassword({
@@ -299,6 +310,49 @@ class AuthService {
       return error.code;
     }
     return error.toString();
+  }
+
+  bool _isTransientNetworkErrorCode(String? code) {
+    if (code == null || code.isEmpty) {
+      return false;
+    }
+    return code == 'network-request-failed' ||
+        code == 'network-timeout' ||
+        code == 'timeout' ||
+        code == 'unknown';
+  }
+
+  Future<T?> _runAuthOperationWithRetry<T>({
+    required String operationName,
+    required Future<T> Function() action,
+  }) async {
+    Future<T?> attempt({required bool allowRetry}) async {
+      try {
+        return await action();
+      } catch (error, stackTrace) {
+        _lastErrorMessage = _extractErrorCode(error);
+        final errorCode = _lastErrorMessage;
+
+        if (allowRetry && _isTransientNetworkErrorCode(errorCode)) {
+          _log(
+            '$operationName transient failure; retrying (code=$errorCode)',
+            error: error,
+            stackTrace: stackTrace,
+          );
+          await Future<void>.delayed(_networkRetryDelay);
+          return attempt(allowRetry: false);
+        }
+
+        _log(
+          '$operationName failed',
+          error: error,
+          stackTrace: stackTrace,
+        );
+        return null;
+      }
+    }
+
+    return attempt(allowRetry: true);
   }
 
   void _log(

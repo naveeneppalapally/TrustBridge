@@ -6,6 +6,34 @@ import android.util.Log
 class DnsFilterEngine(private val context: Context) {
     companion object {
         private const val TAG = "DnsFilterEngine"
+        private const val BLOCK_ALL_CATEGORY_TOKEN = "__block_all__"
+        private val ENCRYPTED_DNS_RESOLVER_DOMAINS = setOf(
+            // Google / Chrome Secure DNS
+            "dns.google",
+            "dns.google.com",
+            "chrome.cloudflare-dns.com",
+            // Cloudflare
+            "cloudflare-dns.com",
+            "one.one.one.one",
+            "security.cloudflare-dns.com",
+            "family.cloudflare-dns.com",
+            // Quad9
+            "dns.quad9.net",
+            "dns9.quad9.net",
+            // OpenDNS / Cisco Umbrella
+            "doh.opendns.com",
+            "doh.umbrella.com",
+            // NextDNS
+            "dns.nextdns.io",
+            // AdGuard
+            "dns.adguard-dns.com",
+            "unfiltered.adguard-dns.com",
+            "family.adguard-dns.com",
+            "dns-family.adguard.com",
+            // Mullvad / common public resolvers
+            "doh.mullvad.net",
+            "dns.sb"
+        )
         private val SOCIAL_MEDIA_DOMAINS = setOf(
             "instagram.com",
             "cdninstagram.com",
@@ -71,19 +99,40 @@ class DnsFilterEngine(private val context: Context) {
         }
 
         val normalizedDomain = normalizeDomain(domain)
-        if (findMatchingAllowRule(normalizedDomain) != null) {
+        Log.d(
+            TAG,
+            "shouldBlock($normalizedDomain) cats=$blockedCategories customDomains=${blockedDomains.size} allowed=${temporaryAllowedDomains.size}"
+        )
+
+        val allowRule = findMatchingAllowRule(normalizedDomain)
+        if (allowRule != null) {
+            Log.d(TAG, "ALLOWED by temp-allow rule: $allowRule")
             return false
         }
-        if (findMatchingRule(normalizedDomain) != null) {
+        if (blockedCategories.contains(BLOCK_ALL_CATEGORY_TOKEN)) {
+            Log.d(TAG, "BLOCKED by block-all mode token")
+            return true
+        }
+        val encryptedDnsRule = findMatchingEncryptedDnsResolverRule(normalizedDomain)
+        if (encryptedDnsRule != null && hasActiveProtectionRules()) {
+            Log.d(TAG, "BLOCKED by anti-bypass encrypted-DNS resolver rule: $encryptedDnsRule")
+            return true
+        }
+        val domainRule = findMatchingRule(normalizedDomain)
+        if (domainRule != null) {
+            Log.d(TAG, "BLOCKED by custom domain rule: $domainRule")
             return true
         }
         if (isInstantSocialBlock(normalizedDomain)) {
+            Log.d(TAG, "BLOCKED by instant social-media list")
             return true
         }
         val dbCategory = localBlocklistDb.getCategory(normalizedDomain)
         if (dbCategory != null && isDbCategoryEnabled(dbCategory)) {
+            Log.d(TAG, "BLOCKED by blocklist DB category=$dbCategory")
             return true
         }
+        Log.d(TAG, "ALLOWED (no matching rule) domain=$normalizedDomain")
         return false
     }
 
@@ -123,6 +172,12 @@ class DnsFilterEngine(private val context: Context) {
 
     @Synchronized
     fun blockedCategoryCount(): Int = blockedCategories.size
+
+    @Synchronized
+    fun effectiveBlockedDomainCount(): Int {
+        val dbCount = localBlocklistDb.countDomainsForEnabledCategories(blockedCategories)
+        return blockedDomains.size + dbCount
+    }
 
     @Synchronized
     fun clearAllRules() {
@@ -239,6 +294,28 @@ class DnsFilterEngine(private val context: Context) {
             }
         }
         return null
+    }
+
+    private fun findMatchingEncryptedDnsResolverRule(normalizedDomain: String): String? {
+        if (ENCRYPTED_DNS_RESOLVER_DOMAINS.contains(normalizedDomain)) {
+            return normalizedDomain
+        }
+        for (resolver in ENCRYPTED_DNS_RESOLVER_DOMAINS) {
+            if (normalizedDomain.endsWith(".$resolver")) {
+                return resolver
+            }
+        }
+        return null
+    }
+
+    private fun hasActiveProtectionRules(): Boolean {
+        if (blockedCategories.isNotEmpty()) {
+            return true
+        }
+        if (blockedDomains.isNotEmpty()) {
+            return true
+        }
+        return false
     }
 
     private fun isInstantSocialBlock(normalizedDomain: String): Boolean {

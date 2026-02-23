@@ -74,6 +74,25 @@ function accessRequestData(parentId = PARENT_ID) {
   };
 }
 
+async function seedChildWithDevice({
+  childId = 'child-1',
+  parentId = PARENT_ID,
+  deviceId = 'device-1',
+} = {}) {
+  await testEnv.withSecurityRulesDisabled(async (context) => {
+    const firestore = context.firestore();
+    await firestore.doc(`children/${childId}`).set(childDocData(parentId));
+    await firestore
+      .doc(`children/${childId}/devices/${deviceId}`)
+      .set({
+        parentId,
+        model: 'Pixel',
+        osVersion: 'Android 14',
+        pairedAt: new Date(),
+      });
+  });
+}
+
 before(async () => {
   const rules = fs.readFileSync(
     path.resolve(__dirname, '../../firestore.rules'),
@@ -267,6 +286,163 @@ describe('parents/{parentId}/access_requests/{requestId}', () => {
   });
 });
 
+describe('children/{childId}/devices/{deviceId}', () => {
+  test('parent can write child device metadata while signed in as parent account', async () => {
+    await testEnv.withSecurityRulesDisabled(async (context) => {
+      await context.firestore().doc('children/child-1').set(childDocData());
+    });
+
+    await assertSucceeds(
+      testDoc('children/child-1/devices/device-parent-owned', PARENT_ID).set({
+        parentId: PARENT_ID,
+        model: 'Pixel 8',
+        osVersion: 'Android 14',
+        fcmToken: 'fcm-token-1',
+        pairedAt: new Date(),
+      }),
+    );
+  });
+
+  test('non-owner cannot write child device metadata', async () => {
+    await testEnv.withSecurityRulesDisabled(async (context) => {
+      await context.firestore().doc('children/child-1').set(childDocData());
+    });
+
+    await assertFails(
+      testDoc('children/child-1/devices/device-parent-owned', OTHER_ID).set({
+        parentId: PARENT_ID,
+        model: 'Pixel 8',
+      }),
+    );
+  });
+});
+
+describe('children/{childId}/policy/{policyDocId}', () => {
+  test('parent can read and update policy subcollection docs for owned child', async () => {
+    await testEnv.withSecurityRulesDisabled(async (context) => {
+      const firestore = context.firestore();
+      await firestore.doc('children/child-1').set(childDocData());
+      await firestore.doc('children/child-1/policy/effective').set({
+        blockedCategories: ['social'],
+        blockedDomains: ['example.com'],
+        updatedAt: new Date(),
+      });
+    });
+
+    await assertSucceeds(
+      testDoc('children/child-1/policy/effective', PARENT_ID).get(),
+    );
+
+    await assertSucceeds(
+      testDoc('children/child-1/policy/effective', PARENT_ID).set({
+        blockedCategories: ['social', 'gaming'],
+        updatedAt: new Date(),
+      }, {merge: true}),
+    );
+  });
+
+  test('non-owner cannot read child policy subcollection docs', async () => {
+    await testEnv.withSecurityRulesDisabled(async (context) => {
+      const firestore = context.firestore();
+      await firestore.doc('children/child-1').set(childDocData());
+      await firestore.doc('children/child-1/policy/effective').set({
+        blockedCategories: ['social'],
+      });
+    });
+
+    await assertFails(
+      testDoc('children/child-1/policy/effective', OTHER_ID).get(),
+    );
+  });
+});
+
+describe('devices/{deviceId}', () => {
+  test('parent can write heartbeat doc for registered child device', async () => {
+    await seedChildWithDevice({
+      childId: 'child-1',
+      parentId: PARENT_ID,
+      deviceId: 'device-1',
+    });
+
+    await assertSucceeds(
+      testDoc('devices/device-1', PARENT_ID).set({
+        deviceId: 'device-1',
+        parentId: PARENT_ID,
+        childId: 'child-1',
+        lastSeen: new Date(),
+        lastSeenEpochMs: Date.now(),
+        vpnActive: true,
+        updatedAt: new Date(),
+      }),
+    );
+  });
+
+  test('heartbeat doc write is denied for unregistered device id', async () => {
+    await testEnv.withSecurityRulesDisabled(async (context) => {
+      await context.firestore().doc('children/child-1').set(childDocData());
+    });
+
+    await assertFails(
+      testDoc('devices/unregistered-device', PARENT_ID).set({
+        deviceId: 'unregistered-device',
+        parentId: PARENT_ID,
+        childId: 'child-1',
+        lastSeen: new Date(),
+        lastSeenEpochMs: Date.now(),
+      }),
+    );
+  });
+
+  test('parent-owned device can update pending command execution state', async () => {
+    await seedChildWithDevice({
+      childId: 'child-1',
+      parentId: PARENT_ID,
+      deviceId: 'device-1',
+    });
+
+    await testEnv.withSecurityRulesDisabled(async (context) => {
+      const firestore = context.firestore();
+      await firestore.doc('devices/device-1').set({
+        deviceId: 'device-1',
+        parentId: PARENT_ID,
+        childId: 'child-1',
+      });
+      await firestore.doc('devices/device-1/pendingCommands/cmd-1').set({
+        commandId: 'cmd-1',
+        parentId: PARENT_ID,
+        command: 'restartVpn',
+        status: 'pending',
+        attempts: 0,
+        sentAt: new Date(),
+      });
+    });
+
+    await assertSucceeds(
+      testDoc('devices/device-1/pendingCommands/cmd-1', PARENT_ID).update({
+        status: 'executed',
+        attempts: 1,
+        executedAt: new Date(),
+        updatedAt: new Date(),
+      }),
+    );
+  });
+
+  test('parent can enqueue child cleanup command', async () => {
+    await assertSucceeds(
+      testDoc('devices/device-1/pendingCommands/cmd-cleanup', PARENT_ID).set({
+        commandId: 'cmd-cleanup',
+        parentId: PARENT_ID,
+        command: 'clearPairingAndStopProtection',
+        childId: 'child-1',
+        reason: 'childProfileDeleted',
+        status: 'pending',
+        attempts: 0,
+        sentAt: new Date(),
+      }),
+    );
+  });
+});
+
 describe('notification_queue', () => {
   test('authenticated owner can enqueue notification', async () => {
     await assertSucceeds(
@@ -305,6 +481,28 @@ describe('notification_queue', () => {
         title: 'Access request',
         body: 'Aarav requested instagram.com for 30 min',
         route: '/parent-requests',
+        processed: false,
+        sentAt: new Date(),
+      }),
+    );
+  });
+
+  test('parent can enqueue child-targeted notification for registered device', async () => {
+    await seedChildWithDevice({
+      childId: 'child-1',
+      parentId: PARENT_ID,
+      deviceId: 'device-1',
+    });
+
+    await assertSucceeds(
+      testDoc('notification_queue/doc-child', PARENT_ID).set({
+        parentId: PARENT_ID,
+        childId: 'child-1',
+        deviceId: 'device-1',
+        title: 'Decision',
+        body: 'Request approved',
+        route: '/child/status',
+        eventType: 'access_request_response',
         processed: false,
         sentAt: new Date(),
       }),

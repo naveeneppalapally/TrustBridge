@@ -109,12 +109,16 @@ class _RequestAccessScreenState extends State<RequestAccessScreen> {
     if ((_childNickname == null || _childNickname!.isEmpty) &&
         _childId != null &&
         _childId!.isNotEmpty) {
-      final childDoc =
-          await _firestore.collection('children').doc(_childId).get();
-      if (childDoc.exists) {
-        final profile = ChildProfile.fromFirestore(childDoc);
-        _childNickname = profile.nickname;
-        _parentId ??= (childDoc.data()?['parentId'] as String?)?.trim();
+      try {
+        final childDoc =
+            await _firestore.collection('children').doc(_childId).get();
+        if (childDoc.exists) {
+          final profile = ChildProfile.fromFirestore(childDoc);
+          _childNickname = profile.nickname;
+          _parentId ??= (childDoc.data()?['parentId'] as String?)?.trim();
+        }
+      } catch (error) {
+        _error = ChildFriendlyErrors.sanitise(error.toString());
       }
     }
 
@@ -159,6 +163,9 @@ class _RequestAccessScreenState extends State<RequestAccessScreen> {
       }
 
       final requestId = const Uuid().v4();
+      final selectedDuration = _durations
+          .firstWhere((item) => item.minutes == _selectedDurationMinutes);
+      final trimmedReason = _noteController.text.trim();
       await _firestore
           .collection('parents')
           .doc(_parentId)
@@ -168,14 +175,27 @@ class _RequestAccessScreenState extends State<RequestAccessScreen> {
         'childId': _childId,
         'parentId': _parentId,
         'childNickname': _childNickname ?? 'Child',
-        'requestedApp': requestedApp,
         'appOrSite': requestedApp,
-        'requestedDuration': _selectedDurationMinutes,
+        'durationLabel': selectedDuration.label,
         'durationMinutes': _selectedDurationMinutes,
-        'note': _noteController.text.trim(),
+        'reason': trimmedReason.isEmpty ? null : trimmedReason,
         'status': 'pending',
-        'createdAt': FieldValue.serverTimestamp(),
         'requestedAt': FieldValue.serverTimestamp(),
+        'parentReply': null,
+        'respondedAt': null,
+        'expiresAt': null,
+      });
+
+      await _firestore.collection('notification_queue').add({
+        'parentId': _parentId,
+        'childId': _childId,
+        'title': '${_childNickname ?? 'Your child'} wants access',
+        'body':
+            '${_childNickname ?? 'Your child'} requested $requestedApp for ${selectedDuration.label}.',
+        'route': '/parent-requests',
+        'eventType': 'access_request',
+        'processed': false,
+        'sentAt': FieldValue.serverTimestamp(),
       });
 
       if (!mounted) {
@@ -185,13 +205,13 @@ class _RequestAccessScreenState extends State<RequestAccessScreen> {
         _sending = false;
         _sent = true;
       });
-    } catch (_) {
+    } catch (error) {
       if (!mounted) {
         return;
       }
       setState(() {
         _sending = false;
-        _error = ChildFriendlyErrors.sanitise('network error');
+        _error = ChildFriendlyErrors.sanitise(error.toString());
       });
     }
   }

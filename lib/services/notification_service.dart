@@ -117,11 +117,21 @@ class NotificationService {
 
   Stream<String> get onTokenRefresh => _fcm.onTokenRefresh;
 
-  Future<bool> showLocalTestNotification({
-    String title = 'TrustBridge Test Notification',
-    String body = 'Tap to open Access Requests.',
-    String route = '/parent-requests',
+  Future<bool> showLocalNotification({
+    required String title,
+    required String body,
+    required String route,
   }) async {
+    if (title.trim().isEmpty) {
+      return false;
+    }
+    if (body.trim().isEmpty) {
+      return false;
+    }
+    if (route.trim().isEmpty) {
+      return false;
+    }
+
     try {
       if (!_isInitialized) {
         await initialize();
@@ -129,8 +139,8 @@ class NotificationService {
 
       await _localNotifications.show(
         DateTime.now().millisecondsSinceEpoch ~/ 1000,
-        title,
-        body,
+        title.trim(),
+        body.trim(),
         const NotificationDetails(
           android: AndroidNotificationDetails(
             'trustbridge_requests',
@@ -141,16 +151,28 @@ class NotificationService {
             icon: '@mipmap/ic_launcher',
           ),
         ),
-        payload: route,
+        payload: route.trim(),
       );
       return true;
     } on MissingPluginException catch (error) {
-      debugPrint('[FCM] Local test notification unavailable: $error');
+      debugPrint('[FCM] Local notification unavailable: $error');
       return false;
     } catch (error) {
-      debugPrint('[FCM] Local test notification failed: $error');
+      debugPrint('[FCM] Local notification failed: $error');
       return false;
     }
+  }
+
+  Future<bool> showLocalTestNotification({
+    String title = 'TrustBridge Test Notification',
+    String body = 'Tap to open Access Requests.',
+    String route = '/parent-requests',
+  }) async {
+    return showLocalNotification(
+      title: title,
+      body: body,
+      route: route,
+    );
   }
 
   void _onForegroundMessage(RemoteMessage message) {
@@ -209,6 +231,9 @@ class NotificationService {
     final typeValue = data['type'];
     if (typeValue == 'access_request') {
       return '/parent-requests';
+    }
+    if (typeValue == 'access_request_response') {
+      return '/child/status';
     }
     return null;
   }

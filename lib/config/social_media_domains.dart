@@ -9,6 +9,13 @@ class SocialMediaDomains {
       'cdninstagram.com',
       'i.instagram.com',
       'graph.instagram.com',
+      'scontent.cdninstagram.com',
+      'edge-chat.instagram.com',
+      'z-p42-instagram.c10r.facebook.com',
+      'www.instagram.com',
+      'b.i.instagram.com',
+      'static.cdninstagram.com',
+      'scontent-del1-1.cdninstagram.com',
     ],
     'tiktok': <String>[
       'tiktok.com',

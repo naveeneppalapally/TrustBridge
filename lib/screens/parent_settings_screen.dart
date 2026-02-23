@@ -1,3 +1,5 @@
+import 'dart:async';
+
 import 'package:flutter/material.dart';
 import 'package:firebase_core/firebase_core.dart';
 import 'package:trustbridge_app/l10n/app_localizations.dart';
@@ -52,6 +54,7 @@ class _ParentSettingsScreenState extends State<ParentSettingsScreen> {
   bool _hasChanges = false;
   bool _isSaving = false;
   bool _isSyncingBlocklists = false;
+  bool _didAutoPrimeBlocklists = false;
   int _blocklistStatusRefreshToken = 0;
 
   AuthService get _resolvedAuthService {
@@ -581,6 +584,7 @@ class _ParentSettingsScreenState extends State<ParentSettingsScreen> {
       future: _resolvedBlocklistSyncService.getStatus(),
       builder: (context, snapshot) {
         final statuses = snapshot.data ?? const <BlocklistSyncStatus>[];
+        _autoPrimeBlocklistsIfNeeded(statuses);
         return BlocklistStatusCard(
           statuses: statuses,
           isSyncing: _isSyncingBlocklists,
@@ -710,6 +714,57 @@ class _ParentSettingsScreenState extends State<ParentSettingsScreen> {
       ScaffoldMessenger.of(context).showSnackBar(
         SnackBar(content: Text('Blocklist sync failed: $error')),
       );
+    }
+  }
+
+  void _autoPrimeBlocklistsIfNeeded(List<BlocklistSyncStatus> statuses) {
+    if (!_canUseBlocklistSync ||
+        _didAutoPrimeBlocklists ||
+        _isSyncingBlocklists ||
+        statuses.isEmpty) {
+      return;
+    }
+
+    final shouldPrime = statuses.every(
+      (status) => status.domainCount == 0 && status.lastSynced == null,
+    );
+    if (!shouldPrime) {
+      return;
+    }
+
+    _didAutoPrimeBlocklists = true;
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (!mounted) {
+        return;
+      }
+      unawaited(_primeBlocklistsInBackground());
+    });
+  }
+
+  Future<void> _primeBlocklistsInBackground() async {
+    setState(() {
+      _isSyncingBlocklists = true;
+    });
+
+    try {
+      await _resolvedBlocklistSyncService.syncAll(
+        _enabledBlocklistCategories(),
+        forceRefresh: false,
+      );
+      if (!mounted) {
+        return;
+      }
+      setState(() {
+        _blocklistStatusRefreshToken += 1;
+      });
+    } catch (_) {
+      // Startup prime is best-effort.
+    } finally {
+      if (mounted) {
+        setState(() {
+          _isSyncingBlocklists = false;
+        });
+      }
     }
   }
 

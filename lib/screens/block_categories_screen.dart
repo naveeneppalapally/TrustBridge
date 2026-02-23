@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 import 'package:trustbridge_app/config/feature_gates.dart';
 import 'package:trustbridge_app/models/child_profile.dart';
 import 'package:trustbridge_app/models/content_categories.dart';
@@ -475,6 +476,12 @@ class _BlockCategoriesScreenState extends State<BlockCategoriesScreen> {
         parentId: parentId,
         child: updatedChild,
       );
+
+      if (!mounted) {
+        return;
+      }
+
+      // VPN sync is best-effort – don't let it block the save.
       await _syncVpnRulesIfRunning(updatedPolicy);
 
       if (!mounted) {
@@ -491,22 +498,25 @@ class _BlockCategoriesScreenState extends State<BlockCategoriesScreen> {
       if (!mounted) {
         return;
       }
-      setState(() {
-        _isLoading = false;
-      });
       showDialog<void>(
         context: context,
-        builder: (context) => AlertDialog(
+        builder: (dialogContext) => AlertDialog(
           title: const Text('Save Failed'),
           content: Text('Failed to update categories: $error'),
           actions: [
             TextButton(
-              onPressed: () => Navigator.of(context).pop(),
+              onPressed: () => Navigator.of(dialogContext).pop(),
               child: const Text('OK'),
             ),
           ],
         ),
       );
+    } finally {
+      if (mounted) {
+        setState(() {
+          _isLoading = false;
+        });
+      }
     }
   }
 
@@ -573,17 +583,18 @@ class _BlockCategoriesScreenState extends State<BlockCategoriesScreen> {
 
   Future<void> _syncVpnRulesIfRunning(Policy updatedPolicy) async {
     try {
-      final status = await _resolvedVpnService.getStatus();
-      if (!status.supported || !status.isRunning) {
-        return;
-      }
-
+      // Always push rules to the native layer so they are persisted and
+      // available when the VPN starts, even if it isn't running right now.
+      // On the parent device the VPN channel may not be registered, so we
+      // catch MissingPluginException and all other platform errors.
       await _resolvedVpnService.updateFilterRules(
         blockedCategories: updatedPolicy.blockedCategories,
         blockedDomains: updatedPolicy.blockedDomains,
       );
+    } on MissingPluginException {
+      // Parent device – VPN channel not registered. Ignore.
     } catch (_) {
-      // Saving policy should still succeed if runtime VPN sync is unavailable.
+      // Non-fatal: saving policy should succeed even if VPN sync fails.
     }
   }
 
