@@ -9,10 +9,12 @@ import 'package:intl/intl.dart';
 
 import '../../config/category_ids.dart';
 import '../../config/social_media_domains.dart';
+import '../../config/service_definitions.dart';
 import '../../models/access_request.dart';
 import '../../models/blocklist_source.dart';
 import '../../models/child_profile.dart';
 import '../../models/schedule.dart';
+import '../../services/app_usage_service.dart';
 import '../../services/blocklist_sync_service.dart';
 import '../../services/child_usage_upload_service.dart';
 import '../../services/firestore_service.dart';
@@ -21,6 +23,7 @@ import '../../services/notification_service.dart';
 import '../../services/pairing_service.dart';
 import '../../services/remote_command_service.dart';
 import '../../services/vpn_service.dart';
+import 'blocked_overlay_screen.dart';
 import '../../widgets/child/blocked_apps_list.dart';
 import '../../widgets/child/mode_display_card.dart';
 import 'request_access_screen.dart';
@@ -136,18 +139,23 @@ class _ChildStatusScreenState extends State<ChildStatusScreen>
   Timer? _protectionRetryTimer;
   Timer? _protectionBoundaryTimer;
   Timer? _scheduleWarningTimer;
+  Timer? _blockedPackageGuardTimer;
   StreamSubscription<QuerySnapshot<Map<String, dynamic>>>?
       _accessRequestsSubscription;
   StreamSubscription<DocumentSnapshot<Map<String, dynamic>>>?
       _childProfileSubscription;
   StreamSubscription<QuerySnapshot<Map<String, dynamic>>>?
       _policyEventsSubscription;
+  StreamSubscription<DocumentSnapshot<Map<String, dynamic>>>?
+      _effectivePolicySubscription;
   StreamSubscription<String>? _childTokenRefreshSubscription;
   String? _accessRequestsSubscriptionKey;
   String? _childProfileSubscriptionKey;
   String? _policyEventsSubscriptionKey;
+  String? _effectivePolicySubscriptionKey;
   final Queue<_PolicyEventSnapshot> _pendingPolicyEvents =
       Queue<_PolicyEventSnapshot>();
+  _EffectivePolicySnapshot? _lastEffectivePolicySnapshot;
   final Set<String> _processedPolicyEventIds = <String>{};
   int? _policyEventEpochFloorMs;
   bool _isApplyingProtectionRules = false;
@@ -161,6 +169,9 @@ class _ChildStatusScreenState extends State<ChildStatusScreen>
   Set<String> _activeApprovedExceptionDomains = const <String>{};
   DateTime? _nextApprovedExceptionExpiry;
   DateTime? _lastWarnedScheduleStartAt;
+  Set<String> _effectiveBlockedPackages = const <String>{};
+  final AppUsageService _appUsageService = AppUsageService();
+  bool _showingBlockedPackageOverlay = false;
 
   @override
   void initState() {
@@ -211,6 +222,8 @@ class _ChildStatusScreenState extends State<ChildStatusScreen>
       _ensureAccessRequestSubscription();
       _ensureChildProfileSubscription();
       _ensurePolicyEventSubscription();
+      _ensureEffectivePolicySubscription();
+      _startBlockedPackageGuardLoop();
       return;
     }
     final parentId = await _resolvedPairingService.getPairedParentId();
@@ -239,6 +252,8 @@ class _ChildStatusScreenState extends State<ChildStatusScreen>
     _ensureAccessRequestSubscription();
     _ensureChildProfileSubscription();
     _ensurePolicyEventSubscription();
+    _ensureEffectivePolicySubscription();
+    _startBlockedPackageGuardLoop();
   }
 
   Future<void> _ensureChildAuthAndPrimeHeartbeat({
@@ -337,12 +352,16 @@ class _ChildStatusScreenState extends State<ChildStatusScreen>
     _protectionBoundaryTimer = null;
     _scheduleWarningTimer?.cancel();
     _scheduleWarningTimer = null;
+    _blockedPackageGuardTimer?.cancel();
+    _blockedPackageGuardTimer = null;
     _accessRequestsSubscription?.cancel();
     _accessRequestsSubscription = null;
     _childProfileSubscription?.cancel();
     _childProfileSubscription = null;
     _policyEventsSubscription?.cancel();
     _policyEventsSubscription = null;
+    _effectivePolicySubscription?.cancel();
+    _effectivePolicySubscription = null;
     _childTokenRefreshSubscription?.cancel();
     _childTokenRefreshSubscription = null;
     _pendingProtectionApplies.clear();
@@ -357,7 +376,7 @@ class _ChildStatusScreenState extends State<ChildStatusScreen>
     }
     unawaited(_sendHeartbeatOnce());
     _heartbeatTimer = Timer.periodic(
-      const Duration(minutes: 5),
+      const Duration(seconds: 45),
       (_) => unawaited(_sendHeartbeatOnce()),
     );
   }
@@ -394,6 +413,94 @@ class _ChildStatusScreenState extends State<ChildStatusScreen>
       await _resolvedRemoteCommandService.processPendingCommands();
     } catch (_) {
       // Best-effort command processing while child screen is active.
+    }
+  }
+
+  void _startBlockedPackageGuardLoop() {
+    if (_blockedPackageGuardTimer != null) {
+      return;
+    }
+    _blockedPackageGuardTimer = Timer.periodic(
+      const Duration(seconds: 3),
+      (_) => unawaited(_checkBlockedForegroundPackage()),
+    );
+    unawaited(_checkBlockedForegroundPackage());
+  }
+
+  Future<void> _checkBlockedForegroundPackage() async {
+    if (!mounted || _showingBlockedPackageOverlay) {
+      return;
+    }
+    if (_effectiveBlockedPackages.isEmpty) {
+      return;
+    }
+    if (WidgetsBinding.instance.lifecycleState != AppLifecycleState.resumed) {
+      return;
+    }
+
+    final foregroundPackage =
+        await _appUsageService.getCurrentForegroundPackage();
+    if (foregroundPackage == null || foregroundPackage.isEmpty) {
+      return;
+    }
+    if (foregroundPackage == 'com.navee.trustbridge' ||
+        foregroundPackage.startsWith('com.navee.trustbridge.')) {
+      return;
+    }
+    if (!_effectiveBlockedPackages.contains(foregroundPackage)) {
+      return;
+    }
+
+    var appName = 'Blocked app';
+    for (final service in ServiceDefinitions.all) {
+      final packages = service.androidPackages
+          .map((pkg) => pkg.trim().toLowerCase())
+          .toSet();
+      if (packages.contains(foregroundPackage)) {
+        appName = service.displayName;
+        break;
+      }
+    }
+    await _showBlockedPackageOverlay(
+      appName: appName,
+      packageName: foregroundPackage,
+    );
+  }
+
+  Future<void> _showBlockedPackageOverlay({
+    required String appName,
+    required String packageName,
+  }) async {
+    if (!mounted || _showingBlockedPackageOverlay) {
+      return;
+    }
+    _showingBlockedPackageOverlay = true;
+    try {
+      await NotificationService().showLocalNotification(
+        title: '$appName is blocked right now',
+        body: '$packageName is restricted by your parent controls.',
+        route: '/child/status',
+      );
+
+      if (!mounted ||
+          WidgetsBinding.instance.lifecycleState != AppLifecycleState.resumed) {
+        return;
+      }
+
+      await Navigator.of(context).push(
+        MaterialPageRoute<void>(
+          fullscreenDialog: true,
+          builder: (_) => BlockedOverlayScreen(
+            appName: appName,
+            modeName: 'Protection Mode',
+            untilLabel: 'later',
+          ),
+        ),
+      );
+    } catch (_) {
+      // Best-effort guard UX.
+    } finally {
+      _showingBlockedPackageOverlay = false;
     }
   }
 
@@ -548,13 +655,18 @@ class _ChildStatusScreenState extends State<ChildStatusScreen>
       }
       final child = ChildProfile.fromFirestore(doc);
       _lastKnownChild = child;
-      unawaited(_drainPendingPolicyEvents());
-      unawaited(
-        _ensureProtectionApplied(
-          child,
-          manualMode: manualMode,
-        ),
-      );
+      final effectiveSnapshot = _lastEffectivePolicySnapshot;
+      if (effectiveSnapshot != null) {
+        unawaited(_applyEffectivePolicySnapshot(child, effectiveSnapshot));
+      } else {
+        unawaited(_drainPendingPolicyEvents());
+        unawaited(
+          _ensureProtectionApplied(
+            child,
+            manualMode: manualMode,
+          ),
+        );
+      }
     }, onError: (Object error) {
       final isPermissionError = error is FirebaseException &&
           (error.code == 'permission-denied' ||
@@ -618,6 +730,11 @@ class _ChildStatusScreenState extends State<ChildStatusScreen>
         if (floor != null && event.eventEpochMs < floor) {
           continue;
         }
+        final effectiveSnapshot = _lastEffectivePolicySnapshot;
+        if (effectiveSnapshot != null &&
+            event.eventEpochMs <= effectiveSnapshot.version) {
+          continue;
+        }
         debugPrint(
           '[ChildStatus] policy_event doc=${change.doc.id} '
           'epochMs=${event.eventEpochMs} '
@@ -644,6 +761,127 @@ class _ChildStatusScreenState extends State<ChildStatusScreen>
     _policyEventsSubscriptionKey = nextKey;
   }
 
+  void _ensureEffectivePolicySubscription() {
+    final childId = _childId?.trim();
+    if (childId == null || childId.isEmpty) {
+      _effectivePolicySubscription?.cancel();
+      _effectivePolicySubscription = null;
+      _effectivePolicySubscriptionKey = null;
+      _lastEffectivePolicySnapshot = null;
+      return;
+    }
+
+    if (_effectivePolicySubscriptionKey == childId &&
+        _effectivePolicySubscription != null) {
+      return;
+    }
+
+    _effectivePolicySubscription?.cancel();
+    _effectivePolicySubscription = _firestore
+        .collection('children')
+        .doc(childId)
+        .collection('effective_policy')
+        .doc('current')
+        .snapshots()
+        .listen((doc) {
+      if (!doc.exists) {
+        return;
+      }
+      final snapshot = _effectivePolicyFromRaw(doc.data());
+      if (snapshot == null) {
+        return;
+      }
+      final previous = _lastEffectivePolicySnapshot;
+      if (previous != null && snapshot.version <= previous.version) {
+        return;
+      }
+      _lastEffectivePolicySnapshot = snapshot;
+      final baseChild = _lastKnownChild;
+      if (baseChild == null) {
+        return;
+      }
+      unawaited(_applyEffectivePolicySnapshot(baseChild, snapshot));
+    }, onError: (Object error) {
+      debugPrint('[ChildStatus] effective_policy listener error: $error');
+    });
+    _effectivePolicySubscriptionKey = childId;
+  }
+
+  _EffectivePolicySnapshot? _effectivePolicyFromRaw(Map<String, dynamic>? raw) {
+    if (raw == null || raw.isEmpty) {
+      return null;
+    }
+    final version = _readInt(raw['version']);
+    final blockedCategories = normalizeCategoryIds(
+      _readStringList(raw['blockedCategories']),
+    );
+    final blockedServices = _readStringList(raw['blockedServices']);
+    final blockedDomains = _readStringList(raw['blockedDomains']);
+    final resolvedDomains = _readStringList(
+      raw['blockedDomainsResolved'] ?? raw['resolvedDomains'],
+    );
+    final manualMode = _manualModeFromRaw(raw['manualMode']);
+    final pausedUntil = _parseNullableDateTime(raw['pausedUntil']);
+    final sourceUpdatedAt = _parseNullableDateTime(raw['sourceUpdatedAt']);
+    if (version <= 0 && blockedCategories.isEmpty && resolvedDomains.isEmpty) {
+      return null;
+    }
+    return _EffectivePolicySnapshot(
+      version: version <= 0
+          ? DateTime.now().millisecondsSinceEpoch
+          : version,
+      blockedCategories: blockedCategories,
+      blockedServices: blockedServices,
+      blockedDomains: blockedDomains,
+      blockedDomainsResolved: resolvedDomains,
+      manualMode: manualMode,
+      pausedUntil: pausedUntil,
+      sourceUpdatedAt: sourceUpdatedAt,
+    );
+  }
+
+  Future<void> _applyEffectivePolicySnapshot(
+    ChildProfile baseChild,
+    _EffectivePolicySnapshot snapshot,
+  ) async {
+    final nextChild = baseChild.copyWith(
+      policy: baseChild.policy.copyWith(
+        blockedCategories: snapshot.blockedCategories,
+        blockedServices: snapshot.blockedServices,
+        blockedDomains: snapshot.blockedDomains,
+      ),
+      pausedUntil: snapshot.pausedUntil,
+    );
+    _lastKnownChild = nextChild;
+    _lastManualModeOverride = snapshot.manualMode;
+    final effectiveServices = ServiceDefinitions.resolveEffectiveServices(
+      blockedCategories: snapshot.blockedCategories,
+      blockedServices: snapshot.blockedServices,
+    ).toList()
+      ..sort();
+    final effectivePackages = ServiceDefinitions.resolvePackages(
+      blockedCategories: snapshot.blockedCategories,
+      blockedServices: snapshot.blockedServices,
+    ).toList()
+      ..sort();
+    _effectiveBlockedPackages = effectivePackages.toSet();
+    _enqueueProtectionApply(
+      _QueuedProtectionApply(
+        child: nextChild,
+        manualMode: snapshot.manualMode,
+        categories: snapshot.blockedCategories.toList()..sort(),
+        services: effectiveServices,
+        domains: snapshot.blockedDomainsResolved.toList()..sort(),
+        policySignature:
+            'effective:${snapshot.version}:${snapshot.blockedCategories.join('|')}:${effectiveServices.join('|')}:${snapshot.blockedDomainsResolved.join('|')}',
+        policyVersion: snapshot.version,
+        blockedPackages: effectivePackages,
+        forceRecheck: true,
+      ),
+    );
+    await _drainProtectionApplyQueue();
+  }
+
   _PolicyEventSnapshot? _policyEventFromRaw(Map<String, dynamic>? rawData) {
     if (rawData == null) {
       return null;
@@ -651,12 +889,14 @@ class _ChildStatusScreenState extends State<ChildStatusScreen>
     final categories = normalizeCategoryIds(
       _readStringList(rawData['blockedCategories']),
     );
+    final services = _readStringList(rawData['blockedServices']);
     final domains = _readStringList(rawData['blockedDomains']);
     final manualMode = _manualModeFromRaw(rawData['manualMode']);
     final pausedUntil = _parseNullableDateTime(rawData['pausedUntil']);
     final eventEpochMs = _readInt(rawData['eventEpochMs']);
     return _PolicyEventSnapshot(
       blockedCategories: categories,
+      blockedServices: services,
       blockedDomains: domains,
       manualMode: manualMode,
       pausedUntil: pausedUntil,
@@ -675,6 +915,7 @@ class _ChildStatusScreenState extends State<ChildStatusScreen>
     final nextChild = baseChild.copyWith(
       policy: baseChild.policy.copyWith(
         blockedCategories: event.blockedCategories,
+        blockedServices: event.blockedServices,
         blockedDomains: event.blockedDomains,
       ),
       pausedUntil: event.pausedUntil,
@@ -684,6 +925,7 @@ class _ChildStatusScreenState extends State<ChildStatusScreen>
     await _ensureProtectionApplied(
       nextChild,
       manualMode: event.manualMode,
+      policyVersion: event.eventEpochMs,
       forceRecheck: true,
     );
   }
@@ -702,6 +944,7 @@ class _ChildStatusScreenState extends State<ChildStatusScreen>
       final nextChild = current.copyWith(
         policy: current.policy.copyWith(
           blockedCategories: event.blockedCategories,
+          blockedServices: event.blockedServices,
           blockedDomains: event.blockedDomains,
         ),
         pausedUntil: event.pausedUntil,
@@ -711,6 +954,7 @@ class _ChildStatusScreenState extends State<ChildStatusScreen>
       await _ensureProtectionApplied(
         nextChild,
         manualMode: event.manualMode,
+        policyVersion: event.eventEpochMs,
         forceRecheck: true,
       );
       current = nextChild;
@@ -772,6 +1016,7 @@ class _ChildStatusScreenState extends State<ChildStatusScreen>
   Future<void> _ensureProtectionApplied(
     ChildProfile child, {
     _ManualModeOverride? manualMode,
+    int? policyVersion,
     bool forceRecheck = false,
   }) async {
     final now = DateTime.now();
@@ -782,8 +1027,11 @@ class _ChildStatusScreenState extends State<ChildStatusScreen>
       manualMode: resolvedManualMode,
     );
     final categories = effectiveRules.categories.toList()..sort();
+    final services = effectiveRules.services.toList()..sort();
     final domains = effectiveRules.domains.toList()..sort();
-    final policySignature = '${categories.join('|')}::${domains.join('|')}';
+    _effectiveBlockedPackages = effectiveRules.blockedPackages.toSet();
+    final policySignature =
+        '${categories.join('|')}::${services.join('|')}::${domains.join('|')}';
     _scheduleNextProtectionRecheck(
       child: child,
       manualMode: resolvedManualMode,
@@ -804,8 +1052,11 @@ class _ChildStatusScreenState extends State<ChildStatusScreen>
         child: child,
         manualMode: resolvedManualMode,
         categories: categories,
+        services: services,
         domains: domains,
         policySignature: policySignature,
+        policyVersion: policyVersion ?? _lastEffectivePolicySnapshot?.version,
+        blockedPackages: effectiveRules.blockedPackages.toList()..sort(),
         forceRecheck: forceRecheck,
       ),
     );
@@ -871,7 +1122,8 @@ class _ChildStatusScreenState extends State<ChildStatusScreen>
       }
       debugPrint(
         '[ChildStatus] applying rules force=${next.forceRecheck} '
-        'cats=${next.categories.length} domains=${next.domains.length} '
+        'cats=${next.categories.length} services=${next.services.length} '
+        'domains=${next.domains.length} '
         'allowed=${temporaryAllowedDomains.length}',
       );
 
@@ -881,12 +1133,13 @@ class _ChildStatusScreenState extends State<ChildStatusScreen>
 
       // Auto-start VPN if protection rules exist but VPN isn't running.
       final hasRules = next.categories.isNotEmpty || next.domains.isNotEmpty;
-      final vpnRunning = await _vpnService.isVpnRunning();
+      var vpnRunning = await _vpnService.isVpnRunning();
       if (hasRules && !vpnRunning) {
         await _vpnService.startVpn(
           blockedCategories: next.categories,
           blockedDomains: next.domains,
         );
+        vpnRunning = await _vpnService.isVpnRunning();
       }
 
       final applied = await _replaceVpnRules(
@@ -896,6 +1149,38 @@ class _ChildStatusScreenState extends State<ChildStatusScreen>
       );
       if (!applied) {
         debugPrint('[ChildStatus] updateFilterRules returned false');
+        await _writePolicyApplyAck(
+          next: next,
+          applyStatus: 'failed',
+          vpnRunning: vpnRunning,
+          error: 'updateFilterRules returned false',
+          cacheSnapshot: null,
+        );
+        _scheduleProtectionRetry();
+        return false;
+      }
+      final cacheSnapshot = await _vpnService.getRuleCacheSnapshot(
+        sampleLimit: 25,
+      );
+      final cacheMatches = _ruleCacheMatchesExpected(
+        cacheSnapshot: cacheSnapshot,
+        expectedCategories: next.categories,
+        expectedDomains: next.domains,
+      );
+      if (!cacheMatches) {
+        debugPrint(
+          '[ChildStatus] rule cache mismatch '
+          'expected(cats=${next.categories.length}, domains=${next.domains.length}) '
+          'actual(cats=${cacheSnapshot.categoryCount}, domains=${cacheSnapshot.domainCount})',
+        );
+        await _writePolicyApplyAck(
+          next: next,
+          applyStatus: 'mismatch',
+          vpnRunning: vpnRunning,
+          error:
+              'Rule cache mismatch expected(${next.categories.length}/${next.domains.length}) actual(${cacheSnapshot.categoryCount}/${cacheSnapshot.domainCount})',
+          cacheSnapshot: cacheSnapshot,
+        );
         _scheduleProtectionRetry();
         return false;
       }
@@ -908,11 +1193,25 @@ class _ChildStatusScreenState extends State<ChildStatusScreen>
         );
       }
       _lastAppliedPolicySignature = signature;
+      await _writePolicyApplyAck(
+        next: next,
+        applyStatus: 'applied',
+        vpnRunning: vpnRunning,
+        error: null,
+        cacheSnapshot: cacheSnapshot,
+      );
       _schedulePolicyApplyHeartbeat();
       return true;
     } catch (error, stackTrace) {
       debugPrint(
         '[ChildStatus] Failed to apply protection rules: $error\n$stackTrace',
+      );
+      await _writePolicyApplyAck(
+        next: next,
+        applyStatus: 'error',
+        vpnRunning: await _vpnService.isVpnRunning(),
+        error: error.toString(),
+        cacheSnapshot: null,
       );
       _scheduleProtectionRetry();
       // Keep child UI functional even if sync fails.
@@ -939,6 +1238,86 @@ class _ChildStatusScreenState extends State<ChildStatusScreen>
       blockedDomains: blockedDomains,
       temporaryAllowedDomains: temporaryAllowedDomains,
     );
+  }
+
+  bool _ruleCacheMatchesExpected({
+    required RuleCacheSnapshot cacheSnapshot,
+    required List<String> expectedCategories,
+    required List<String> expectedDomains,
+  }) {
+    final expectedCategoryCount = expectedCategories.length;
+    final expectedDomainCount = expectedDomains.length;
+    return cacheSnapshot.categoryCount == expectedCategoryCount &&
+        cacheSnapshot.domainCount == expectedDomainCount;
+  }
+
+  Future<void> _writePolicyApplyAck({
+    required _QueuedProtectionApply next,
+    required String applyStatus,
+    required bool vpnRunning,
+    required String? error,
+    required RuleCacheSnapshot? cacheSnapshot,
+  }) async {
+    final childId = _childId?.trim();
+    if (childId == null || childId.isEmpty) {
+      return;
+    }
+    final deviceId = await _resolveDeviceId();
+    if (deviceId == null || deviceId.isEmpty) {
+      return;
+    }
+    final parentId = _parentId?.trim();
+    final appliedVersion =
+        next.policyVersion ??
+        _lastEffectivePolicySnapshot?.version ??
+        DateTime.now().millisecondsSinceEpoch;
+
+    final ruleCounts = <String, dynamic>{
+      'categoriesExpected': next.categories.length,
+      'domainsExpected': next.domains.length,
+      'servicesExpected': next.services.length,
+      'packagesExpected': next.blockedPackages.length,
+      if (cacheSnapshot != null) 'categoriesCached': cacheSnapshot.categoryCount,
+      if (cacheSnapshot != null) 'domainsCached': cacheSnapshot.domainCount,
+    };
+
+    try {
+      await _firestore
+          .collection('children')
+          .doc(childId)
+          .collection('policy_apply_acks')
+          .doc(deviceId)
+          .set(
+        <String, dynamic>{
+          'parentId': parentId,
+          'childId': childId,
+          'deviceId': deviceId,
+          'appliedVersion': appliedVersion,
+          'appliedAt': FieldValue.serverTimestamp(),
+          'vpnRunning': vpnRunning,
+          'ruleCounts': ruleCounts,
+          'applyStatus': applyStatus,
+          'error': error,
+          'updatedAt': FieldValue.serverTimestamp(),
+        },
+        SetOptions(merge: true),
+      );
+    } catch (ackError) {
+      debugPrint('[ChildStatus] policy_apply_acks write failed: $ackError');
+    }
+  }
+
+  Future<String?> _resolveDeviceId() async {
+    try {
+      final deviceId = await _resolvedPairingService.getOrCreateDeviceId();
+      final normalized = deviceId.trim();
+      if (normalized.isEmpty) {
+        return null;
+      }
+      return normalized;
+    } catch (_) {
+      return null;
+    }
   }
 
   void _scheduleProtectionRetry() {
@@ -984,9 +1363,13 @@ class _ChildStatusScreenState extends State<ChildStatusScreen>
     required DateTime now,
     required _ManualModeOverride? manualMode,
   }) {
-    final categories =
-        normalizeCategoryIds(child.policy.blockedCategories).toSet();
-    final domains = child.policy.blockedDomains
+    final categories = normalizeCategoryIds(child.policy.blockedCategories).toSet();
+    final explicitServices = child.policy.blockedServices
+        .map((serviceId) => serviceId.trim().toLowerCase())
+        .where((serviceId) => serviceId.isNotEmpty)
+        .where(ServiceDefinitions.byId.containsKey)
+        .toSet();
+    final customDomains = child.policy.blockedDomains
         .map((domain) => domain.trim().toLowerCase())
         .where((domain) => domain.isNotEmpty)
         .toSet();
@@ -995,54 +1378,60 @@ class _ChildStatusScreenState extends State<ChildStatusScreen>
         child.pausedUntil != null && child.pausedUntil!.isAfter(now);
     if (pauseActive) {
       categories.add(_blockAllCategory);
-      _augmentDomainsFromCategories(
-        categories: categories,
-        domains: domains,
-      );
-      return _EffectiveProtectionRules(
-          categories: categories, domains: domains);
-    }
-
-    final activeManualMode = _activeManualMode(manualMode, now);
-    if (activeManualMode != null) {
-      switch (activeManualMode.mode) {
-        case 'bedtime':
-          categories.add(_blockAllCategory);
-          break;
-        case 'homework':
-          categories.addAll(_distractingCategories);
-          break;
-        case 'free':
-          // Explicit free mode keeps only baseline policy blocks.
-          break;
-      }
-      _augmentDomainsFromCategories(
-        categories: categories,
-        domains: domains,
-      );
-      return _EffectiveProtectionRules(
-          categories: categories, domains: domains);
-    }
-
-    final activeSchedule = _activeSchedule(child.policy.schedules, now);
-    if (activeSchedule != null) {
-      switch (activeSchedule.action) {
-        case ScheduleAction.blockAll:
-          categories.add(_blockAllCategory);
-          break;
-        case ScheduleAction.blockDistracting:
-          categories.addAll(_distractingCategories);
-          break;
-        case ScheduleAction.allowAll:
-          break;
+    } else {
+      final activeManualMode = _activeManualMode(manualMode, now);
+      if (activeManualMode != null) {
+        switch (activeManualMode.mode) {
+          case 'bedtime':
+            categories.add(_blockAllCategory);
+            break;
+          case 'homework':
+            categories.addAll(_distractingCategories);
+            break;
+          case 'free':
+            // Explicit free mode keeps only baseline policy blocks.
+            break;
+        }
+      } else {
+        final activeSchedule = _activeSchedule(child.policy.schedules, now);
+        if (activeSchedule != null) {
+          switch (activeSchedule.action) {
+            case ScheduleAction.blockAll:
+              categories.add(_blockAllCategory);
+              break;
+            case ScheduleAction.blockDistracting:
+              categories.addAll(_distractingCategories);
+              break;
+            case ScheduleAction.allowAll:
+              break;
+          }
+        }
       }
     }
 
+    final effectiveServices = ServiceDefinitions.resolveEffectiveServices(
+      blockedCategories: categories,
+      blockedServices: explicitServices,
+    );
+    final domains = ServiceDefinitions.resolveDomains(
+      blockedCategories: categories,
+      blockedServices: effectiveServices,
+      customBlockedDomains: customDomains,
+    );
     _augmentDomainsFromCategories(
       categories: categories,
       domains: domains,
     );
-    return _EffectiveProtectionRules(categories: categories, domains: domains);
+    final blockedPackages = ServiceDefinitions.resolvePackages(
+      blockedCategories: categories,
+      blockedServices: effectiveServices,
+    );
+    return _EffectiveProtectionRules(
+      categories: categories,
+      services: effectiveServices,
+      domains: domains,
+      blockedPackages: blockedPackages,
+    );
   }
 
   void _augmentDomainsFromCategories({
@@ -1390,14 +1779,19 @@ class _ChildStatusScreenState extends State<ChildStatusScreen>
     _isApplyingProtectionRules = false;
     _policyEventsSubscription?.cancel();
     _policyEventsSubscription = null;
+    _effectivePolicySubscription?.cancel();
+    _effectivePolicySubscription = null;
     _childProfileSubscription?.cancel();
     _childProfileSubscription = null;
     _childProfileSubscriptionKey = null;
     _policyEventsSubscriptionKey = null;
+    _effectivePolicySubscriptionKey = null;
     _pendingPolicyEvents.clear();
     _processedPolicyEventIds.clear();
     _lastAppliedPolicySignature = null;
     _lastPolicyApplyHeartbeatAt = null;
+    _lastEffectivePolicySnapshot = null;
+    _effectiveBlockedPackages = const <String>{};
     _activeApprovedExceptionDomains = const <String>{};
     _nextApprovedExceptionExpiry = null;
 
@@ -2076,11 +2470,15 @@ class _ChildStatusScreenState extends State<ChildStatusScreen>
 class _EffectiveProtectionRules {
   const _EffectiveProtectionRules({
     required this.categories,
+    required this.services,
     required this.domains,
+    required this.blockedPackages,
   });
 
   final Set<String> categories;
+  final Set<String> services;
   final Set<String> domains;
+  final Set<String> blockedPackages;
 }
 
 class _QueuedProtectionApply {
@@ -2088,22 +2486,29 @@ class _QueuedProtectionApply {
     required this.child,
     required this.manualMode,
     required this.categories,
+    required this.services,
     required this.domains,
     required this.policySignature,
+    required this.policyVersion,
+    required this.blockedPackages,
     required this.forceRecheck,
   });
 
   final ChildProfile child;
   final _ManualModeOverride? manualMode;
   final List<String> categories;
+  final List<String> services;
   final List<String> domains;
   final String policySignature;
+  final int? policyVersion;
+  final List<String> blockedPackages;
   final bool forceRecheck;
 }
 
 class _PolicyEventSnapshot {
   const _PolicyEventSnapshot({
     required this.blockedCategories,
+    required this.blockedServices,
     required this.blockedDomains,
     required this.manualMode,
     required this.pausedUntil,
@@ -2111,10 +2516,33 @@ class _PolicyEventSnapshot {
   });
 
   final List<String> blockedCategories;
+  final List<String> blockedServices;
   final List<String> blockedDomains;
   final _ManualModeOverride? manualMode;
   final DateTime? pausedUntil;
   final int eventEpochMs;
+}
+
+class _EffectivePolicySnapshot {
+  const _EffectivePolicySnapshot({
+    required this.version,
+    required this.blockedCategories,
+    required this.blockedServices,
+    required this.blockedDomains,
+    required this.blockedDomainsResolved,
+    required this.manualMode,
+    required this.pausedUntil,
+    required this.sourceUpdatedAt,
+  });
+
+  final int version;
+  final List<String> blockedCategories;
+  final List<String> blockedServices;
+  final List<String> blockedDomains;
+  final List<String> blockedDomainsResolved;
+  final _ManualModeOverride? manualMode;
+  final DateTime? pausedUntil;
+  final DateTime? sourceUpdatedAt;
 }
 
 class _ManualModeOverride {

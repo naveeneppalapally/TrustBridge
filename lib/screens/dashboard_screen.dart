@@ -42,6 +42,9 @@ class DashboardScreen extends StatefulWidget {
 
 class _DashboardScreenState extends State<DashboardScreen>
     with WidgetsBindingObserver {
+  static const Duration _deviceOnlineWindow = Duration(minutes: 2);
+  static const Duration _deviceWarningWindow = Duration(minutes: 10);
+  static const Duration _deviceCriticalWindow = Duration(hours: 24);
   AuthService? _authService;
   FirestoreService? _firestoreService;
   Stream<List<ChildProfile>>? _childrenStream;
@@ -87,7 +90,7 @@ class _DashboardScreenState extends State<DashboardScreen>
       });
     });
     _deviceHealthRefreshTimer = Timer.periodic(
-      const Duration(minutes: 1),
+      const Duration(seconds: 20),
       (_) => unawaited(_refreshDeviceHealthFromLatestState()),
     );
   }
@@ -699,7 +702,7 @@ class _DashboardScreenState extends State<DashboardScreen>
           continue;
         }
 
-        if (mostRecentHeartbeatAge > const Duration(hours: 24)) {
+        if (mostRecentHeartbeatAge > _deviceCriticalWindow) {
           nextState[child.id] = const _ChildDeviceHealth.critical();
           if (_offline24hAlertedDeviceIds.add(mostRecentDeviceId)) {
             try {
@@ -713,8 +716,10 @@ class _DashboardScreenState extends State<DashboardScreen>
               // Best effort alerting.
             }
           }
-        } else if (mostRecentHeartbeatAge > const Duration(minutes: 30)) {
+        } else if (mostRecentHeartbeatAge > _deviceWarningWindow) {
           nextState[child.id] = const _ChildDeviceHealth.warning();
+        } else if (mostRecentHeartbeatAge > _deviceOnlineWindow) {
+          nextState[child.id] = const _ChildDeviceHealth.offline();
         } else {
           nextState[child.id] = const _ChildDeviceHealth.online();
         }

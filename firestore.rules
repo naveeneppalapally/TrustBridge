@@ -347,11 +347,14 @@ service cloud.firestore {
               'parentId',
               'childId',
               'blockedCategories',
+              'blockedServices',
               'blockedDomains',
+              'blockedDomainsResolved',
               'manualMode',
               'pausedUntil',
               'sourceUpdatedAt',
               'eventEpochMs',
+              'version',
               'createdAt'
             ]
           ) &&
@@ -362,15 +365,126 @@ service cloud.firestore {
           request.resource.data.childId == childId &&
           ('blockedCategories' in request.resource.data) &&
           request.resource.data.blockedCategories is list &&
+          ('blockedServices' in request.resource.data) &&
+          request.resource.data.blockedServices is list &&
           ('blockedDomains' in request.resource.data) &&
           request.resource.data.blockedDomains is list &&
+          ('blockedDomainsResolved' in request.resource.data) &&
+          request.resource.data.blockedDomainsResolved is list &&
           isOptionalManualMode(request.resource.data, 'manualMode') &&
           isOptionalTimestamp(request.resource.data, 'pausedUntil') &&
           isRequiredTimestamp(request.resource.data, 'sourceUpdatedAt') &&
           isRequiredInt(request.resource.data, 'eventEpochMs', 0, 4102444800000) &&
+          isRequiredInt(request.resource.data, 'version', 0, 4102444800000) &&
           isRequiredTimestamp(request.resource.data, 'createdAt');
 
         allow update, delete: if false;
+      }
+
+      // Canonical derived policy snapshot used as child apply source-of-truth.
+      match /effective_policy/{policyId} {
+        allow read: if isChildParent(childId) || isChildDevice(childId);
+
+        allow create, update: if isChildParent(childId) &&
+          hasOnlyKeys(
+            request.resource.data,
+            [
+              'parentId',
+              'childId',
+              'version',
+              'blockedCategories',
+              'blockedServices',
+              'blockedDomains',
+              'blockedDomainsResolved',
+              'manualMode',
+              'pausedUntil',
+              'sourceUpdatedAt',
+              'updatedAt'
+            ]
+          ) &&
+          isRequiredString(request.resource.data, 'parentId', 128) &&
+          request.resource.data.parentId ==
+            get(/databases/$(database)/documents/children/$(childId)).data.parentId &&
+          isRequiredString(request.resource.data, 'childId', 128) &&
+          request.resource.data.childId == childId &&
+          isRequiredInt(request.resource.data, 'version', 0, 4102444800000) &&
+          ('blockedCategories' in request.resource.data) &&
+          request.resource.data.blockedCategories is list &&
+          ('blockedServices' in request.resource.data) &&
+          request.resource.data.blockedServices is list &&
+          ('blockedDomains' in request.resource.data) &&
+          request.resource.data.blockedDomains is list &&
+          ('blockedDomainsResolved' in request.resource.data) &&
+          request.resource.data.blockedDomainsResolved is list &&
+          isOptionalManualMode(request.resource.data, 'manualMode') &&
+          isOptionalTimestamp(request.resource.data, 'pausedUntil') &&
+          isRequiredTimestamp(request.resource.data, 'sourceUpdatedAt') &&
+          isOptionalTimestamp(request.resource.data, 'updatedAt');
+
+        allow delete: if false;
+      }
+
+      // Child acknowledgement of policy application result per device.
+      match /policy_apply_acks/{deviceId} {
+        allow read: if isChildParent(childId) || isChildDevice(childId);
+
+        allow create, update: if (
+            isChildParent(childId) ||
+            (
+              isAuthed() &&
+              isRegisteredChildDevice(childId, deviceId) &&
+              isRequiredString(request.resource.data, 'parentId', 128) &&
+              childParentMatches(childId, request.resource.data.parentId)
+            )
+          ) &&
+          hasOnlyKeys(
+            request.resource.data,
+            [
+              'parentId',
+              'childId',
+              'deviceId',
+              'appliedVersion',
+              'appliedAt',
+              'vpnRunning',
+              'ruleCounts',
+              'applyStatus',
+              'error',
+              'updatedAt'
+            ]
+          ) &&
+          isRequiredString(request.resource.data, 'childId', 128) &&
+          request.resource.data.childId == childId &&
+          isRequiredString(request.resource.data, 'deviceId', 128) &&
+          request.resource.data.deviceId == deviceId &&
+          isRequiredInt(request.resource.data, 'appliedVersion', 0, 4102444800000) &&
+          isOptionalTimestamp(request.resource.data, 'appliedAt') &&
+          isOptionalBool(request.resource.data, 'vpnRunning') &&
+          (
+            !('ruleCounts' in request.resource.data) ||
+            (
+              request.resource.data.ruleCounts is map &&
+              request.resource.data.ruleCounts.keys().hasOnly([
+                'categoriesExpected',
+                'domainsExpected',
+                'servicesExpected',
+                'packagesExpected',
+                'categoriesCached',
+                'domainsCached'
+              ]) &&
+              isOptionalInt(request.resource.data.ruleCounts, 'categoriesExpected', 0, 1000000) &&
+              isOptionalInt(request.resource.data.ruleCounts, 'domainsExpected', 0, 1000000) &&
+              isOptionalInt(request.resource.data.ruleCounts, 'servicesExpected', 0, 1000000) &&
+              isOptionalInt(request.resource.data.ruleCounts, 'packagesExpected', 0, 1000000) &&
+              isOptionalInt(request.resource.data.ruleCounts, 'categoriesCached', 0, 1000000) &&
+              isOptionalInt(request.resource.data.ruleCounts, 'domainsCached', 0, 1000000)
+            )
+          ) &&
+          isRequiredString(request.resource.data, 'applyStatus', 32) &&
+          request.resource.data.applyStatus in ['applied', 'failed', 'mismatch', 'error'] &&
+          isOptionalString(request.resource.data, 'error', 500) &&
+          isOptionalTimestamp(request.resource.data, 'updatedAt');
+
+        allow delete: if false;
       }
 
       // Child-uploaded usage snapshots rendered in parent reports.
