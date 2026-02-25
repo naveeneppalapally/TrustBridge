@@ -64,7 +64,8 @@ void main() {
       );
       await tester.pumpAndSettle();
 
-      expect(find.textContaining('not linked to a NextDNS profile'), findsNothing);
+      expect(
+          find.textContaining('not linked to a NextDNS profile'), findsNothing);
       expect(find.text('Service Blocking'), findsOneWidget);
       expect(find.text('Category Blocking'), findsOneWidget);
       await tester.drag(find.byType(ListView), const Offset(0, -700));

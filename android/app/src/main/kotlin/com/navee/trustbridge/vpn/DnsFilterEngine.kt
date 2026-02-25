@@ -34,6 +34,20 @@ class DnsFilterEngine(private val context: Context) {
             "doh.mullvad.net",
             "dns.sb"
         )
+        private val CONTROL_PLANE_ALLOWED_DOMAINS = setOf(
+            // Firestore / Auth / Installations
+            "firestore.googleapis.com",
+            "identitytoolkit.googleapis.com",
+            "securetoken.googleapis.com",
+            "firebaseinstallations.googleapis.com",
+            // FCM transport and registration
+            "mtalk.google.com",
+            "fcmregistrations.googleapis.com",
+            // Crashlytics / telemetry (non-user browsing traffic)
+            "firebase-settings.crashlytics.com",
+            "crashlyticsreports-pa.googleapis.com",
+            "firebaselogging-pa.googleapis.com"
+        )
         private val SOCIAL_MEDIA_DOMAINS = setOf(
             "instagram.com",
             "cdninstagram.com",
@@ -107,6 +121,12 @@ class DnsFilterEngine(private val context: Context) {
             TAG,
             "shouldBlock($normalizedDomain) cats=$blockedCategories customDomains=${blockedDomains.size} allowed=${temporaryAllowedDomains.size}"
         )
+
+        val controlPlaneAllowRule = findMatchingControlPlaneAllowRule(normalizedDomain)
+        if (controlPlaneAllowRule != null) {
+            Log.d(TAG, "ALLOWED by control-plane rule: $controlPlaneAllowRule")
+            return false
+        }
 
         val allowRule = findMatchingAllowRule(normalizedDomain)
         if (allowRule != null) {
@@ -302,6 +322,18 @@ class DnsFilterEngine(private val context: Context) {
             return normalizedDomain
         }
         for (allowed in temporaryAllowedDomains) {
+            if (normalizedDomain.endsWith(".$allowed")) {
+                return allowed
+            }
+        }
+        return null
+    }
+
+    private fun findMatchingControlPlaneAllowRule(normalizedDomain: String): String? {
+        if (CONTROL_PLANE_ALLOWED_DOMAINS.contains(normalizedDomain)) {
+            return normalizedDomain
+        }
+        for (allowed in CONTROL_PLANE_ALLOWED_DOMAINS) {
             if (normalizedDomain.endsWith(".$allowed")) {
                 return allowed
             }

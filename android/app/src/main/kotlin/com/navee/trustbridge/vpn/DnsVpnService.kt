@@ -1,10 +1,14 @@
 package com.navee.trustbridge.vpn
 
 import android.app.AlarmManager
+import android.app.AppOpsManager
 import android.app.Notification
 import android.app.NotificationChannel
 import android.app.NotificationManager
 import android.app.PendingIntent
+import android.app.usage.UsageEvents
+import android.app.usage.UsageStatsManager
+import android.content.Context
 import android.content.Intent
 import android.net.ConnectivityManager
 import android.net.Network
@@ -13,11 +17,14 @@ import android.net.NetworkRequest
 import android.net.VpnService
 import android.os.Build
 import android.os.ParcelFileDescriptor
+import android.os.Process
 import android.provider.Settings
 import android.util.Log
 import androidx.core.app.NotificationCompat
 import com.navee.trustbridge.MainActivity
 import com.navee.trustbridge.R
+import com.google.firebase.firestore.FirebaseFirestore
+import com.google.firebase.firestore.ListenerRegistration
 import java.io.FileInputStream
 import java.io.FileOutputStream
 import kotlin.concurrent.thread
@@ -27,8 +34,6 @@ class DnsVpnService : VpnService() {
         private const val TAG = "DnsVpnService"
         private const val VPN_ADDRESS = "10.0.0.1"
         private const val INTERCEPT_DNS = "45.90.28.0"
-        private const val FALLBACK_DNS_PRIMARY = "1.1.1.1"
-        private const val FALLBACK_DNS_SECONDARY = "8.8.8.8"
         private const val DEFAULT_UPSTREAM_DNS = "1.1.1.1"
         private const val NOTIFICATION_ID = 1001
         private const val CHANNEL_ID = "dns_vpn_channel"
@@ -50,6 +55,8 @@ class DnsVpnService : VpnService() {
             15_000L,
             30_000L
         )
+        private const val APP_GUARD_POLL_INTERVAL_MS = 1_200L
+        private const val APP_GUARD_COOLDOWN_MS = 1_500L
 
         const val ACTION_START = "com.navee.trustbridge.vpn.START"
         const val ACTION_STOP = "com.navee.trustbridge.vpn.STOP"
@@ -64,6 +71,57 @@ class DnsVpnService : VpnService() {
         const val EXTRA_BOOT_RESTORE = "bootRestore"
         const val EXTRA_BOOT_RESTORE_ATTEMPT = "bootRestoreAttempt"
         const val EXTRA_TRANSIENT_RETRY_ATTEMPT = "transientRetryAttempt"
+
+        private val APP_BLOCK_RULES = listOf(
+            AppBlockRule(
+                categories = setOf("social", "social-networks"),
+                domainMarkers = setOf(
+                    "instagram.com",
+                    "tiktok.com",
+                    "facebook.com",
+                    "snapchat.com",
+                    "twitter.com",
+                    "x.com"
+                ),
+                packages = setOf(
+                    "com.instagram.android",
+                    "com.zhiliaoapp.musically",
+                    "com.facebook.katana",
+                    "com.facebook.lite",
+                    "com.snapchat.android",
+                    "com.twitter.android",
+                    "com.xcorp.android"
+                )
+            ),
+            AppBlockRule(
+                categories = setOf("streaming"),
+                domainMarkers = setOf("youtube.com", "m.youtube.com", "youtubei.googleapis.com"),
+                packages = setOf(
+                    "com.google.android.youtube",
+                    "com.google.android.apps.youtube.music"
+                )
+            ),
+            AppBlockRule(
+                categories = setOf("forums"),
+                domainMarkers = setOf("reddit.com", "redd.it"),
+                packages = setOf("com.reddit.frontpage")
+            ),
+            AppBlockRule(
+                categories = setOf("games"),
+                domainMarkers = setOf("roblox.com"),
+                packages = setOf("com.roblox.client")
+            ),
+            AppBlockRule(
+                categories = setOf("chat"),
+                domainMarkers = setOf("whatsapp.com", "telegram.org", "discord.com"),
+                packages = setOf(
+                    "com.whatsapp",
+                    "com.whatsapp.w4b",
+                    "org.telegram.messenger",
+                    "com.discord"
+                )
+            )
+        )
 
         @Volatile
         var isRunning: Boolean = false
@@ -184,12 +242,26 @@ class DnsVpnService : VpnService() {
     private var lastAppliedCategories: List<String> = emptyList()
     private var lastAppliedDomains: List<String> = emptyList()
     private var lastAppliedAllowedDomains: List<String> = emptyList()
+    private var lastAppliedBlockedPackages: List<String> = emptyList()
     private var lastAppliedUpstreamDns: String = DEFAULT_UPSTREAM_DNS
 
     @Volatile
     private var serviceRunning: Boolean = false
     @Volatile
     private var foregroundActive: Boolean = false
+    @Volatile
+    private var appGuardRunning: Boolean = false
+    private var appGuardThread: Thread? = null
+    @Volatile
+    private var lastAppGuardActionEpochMs: Long = 0L
+    @Volatile
+    private var appGuardPermissionWarningLogged: Boolean = false
+    @Volatile
+    private var appGuardPermissionAlertShown: Boolean = false
+    private var effectivePolicyListener: ListenerRegistration? = null
+    private var effectivePolicyChildId: String? = null
+    @Volatile
+    private var lastEffectivePolicyVersion: Long = 0L
 
     override fun onCreate() {
         super.onCreate()
@@ -204,6 +276,9 @@ class DnsVpnService : VpnService() {
         }
         if (persisted.temporaryAllowedDomains.isNotEmpty()) {
             lastAppliedAllowedDomains = persisted.temporaryAllowedDomains
+        }
+        if (persisted.blockedPackages.isNotEmpty()) {
+            lastAppliedBlockedPackages = persisted.blockedPackages
         }
         filterEngine = DnsFilterEngine(this)
         blockedCategoryCount = filterEngine.blockedCategoryCount()
@@ -253,6 +328,7 @@ class DnsVpnService : VpnService() {
                     intent?.getStringArrayListExtra(EXTRA_TEMP_ALLOWED_DOMAINS)?.toList()
                         ?: emptyList()
                 applyFilterRules(categories, domains, allowedDomains)
+                startEffectivePolicyListenerIfConfigured()
                 scheduleWatchdogPing()
                 START_STICKY
             }
@@ -354,8 +430,6 @@ class DnsVpnService : VpnService() {
                 // generic packet forwarding is implemented.
                 .addRoute(INTERCEPT_DNS, 32)
                 .addDnsServer(INTERCEPT_DNS)
-                .addDnsServer(FALLBACK_DNS_PRIMARY)
-                .addDnsServer(FALLBACK_DNS_SECONDARY)
 
             setInitialUnderlyingNetwork(builder)
 
@@ -427,6 +501,8 @@ class DnsVpnService : VpnService() {
             registerNetworkCallback()
             detectPrivateDns()
             startPacketProcessing()
+            startBlockedAppGuardLoop()
+            startEffectivePolicyListenerIfConfigured()
             Log.d(TAG, "DNS VPN started (upstream=$lastAppliedUpstreamDns, privateDns=$privateDnsMode)")
         } catch (error: Exception) {
             Log.e(TAG, "Failed to start VPN", error)
@@ -793,6 +869,8 @@ class DnsVpnService : VpnService() {
             cancelWatchdogPing()
         }
         unregisterNetworkCallback()
+        stopBlockedAppGuardLoop()
+        stopEffectivePolicyListener()
 
         try {
             packetHandler?.close()
@@ -824,6 +902,258 @@ class DnsVpnService : VpnService() {
         if (stopService) {
             stopSelf()
         }
+    }
+
+    private fun startBlockedAppGuardLoop() {
+        if (appGuardRunning) {
+            return
+        }
+        appGuardRunning = true
+        appGuardThread = thread(name = "dns-vpn-app-guard") {
+            while (appGuardRunning) {
+                try {
+                    enforceBlockedForegroundAppIfNeeded()
+                } catch (_: Exception) {
+                    // App-guard is best-effort and must never crash VPN service.
+                }
+
+                try {
+                    Thread.sleep(APP_GUARD_POLL_INTERVAL_MS)
+                } catch (_: InterruptedException) {
+                    break
+                }
+            }
+        }
+    }
+
+    private fun stopBlockedAppGuardLoop() {
+        appGuardRunning = false
+        appGuardThread?.interrupt()
+        appGuardThread = null
+    }
+
+    private fun startEffectivePolicyListenerIfConfigured() {
+        if (!serviceRunning) {
+            return
+        }
+        val config = vpnPreferencesStore.loadConfig()
+        val childId = config.childId?.trim().orEmpty()
+        if (childId.isEmpty()) {
+            stopEffectivePolicyListener()
+            return
+        }
+        if (effectivePolicyListener != null && effectivePolicyChildId == childId) {
+            return
+        }
+
+        stopEffectivePolicyListener()
+        effectivePolicyChildId = childId
+        val configuredParentId = config.parentId?.trim().orEmpty()
+        effectivePolicyListener = FirebaseFirestore.getInstance()
+            .collection("children")
+            .document(childId)
+            .collection("effective_policy")
+            .document("current")
+            .addSnapshotListener { snapshot, error ->
+                if (error != null) {
+                    Log.w(TAG, "effective_policy listener error", error)
+                    return@addSnapshotListener
+                }
+                val data = snapshot?.data ?: return@addSnapshotListener
+                if (!serviceRunning) {
+                    return@addSnapshotListener
+                }
+
+                val snapshotParentId = (data["parentId"] as? String)?.trim().orEmpty()
+                if (configuredParentId.isNotEmpty() &&
+                    snapshotParentId.isNotEmpty() &&
+                    snapshotParentId != configuredParentId
+                ) {
+                    return@addSnapshotListener
+                }
+
+                val incomingVersion = parsePolicyVersion(data["version"])
+                if (incomingVersion != null &&
+                    incomingVersion > 0L &&
+                    incomingVersion <= lastEffectivePolicyVersion
+                ) {
+                    return@addSnapshotListener
+                }
+
+                val categories = parsePolicyStringList(data["blockedCategories"])
+                    .map(::normalizeCategoryToken)
+                    .filter { it.isNotEmpty() }
+                    .distinct()
+                val resolvedDomains = parsePolicyStringList(data["blockedDomainsResolved"])
+                val fallbackDomains = parsePolicyStringList(data["blockedDomains"])
+                val domains = (if (resolvedDomains.isNotEmpty()) {
+                    resolvedDomains
+                } else {
+                    fallbackDomains
+                }).map(::normalizeDomainToken)
+                    .filter { it.isNotEmpty() }
+                    .distinct()
+
+                if (incomingVersion != null && incomingVersion > 0L) {
+                    lastEffectivePolicyVersion = incomingVersion
+                }
+
+                if (categories == lastAppliedCategories && domains == lastAppliedDomains) {
+                    return@addSnapshotListener
+                }
+
+                Log.d(
+                    TAG,
+                    "Applying effective_policy from listener " +
+                        "childId=$childId version=${incomingVersion ?: 0L} " +
+                        "cats=${categories.size} domains=${domains.size}"
+                )
+                applyFilterRules(
+                    categories = categories,
+                    domains = domains,
+                    temporaryAllowedDomains = lastAppliedAllowedDomains
+                )
+            }
+        Log.d(TAG, "Started effective_policy listener childId=$childId")
+    }
+
+    private fun stopEffectivePolicyListener() {
+        effectivePolicyListener?.remove()
+        effectivePolicyListener = null
+        effectivePolicyChildId = null
+        lastEffectivePolicyVersion = 0L
+    }
+
+    private fun parsePolicyStringList(raw: Any?): List<String> {
+        if (raw !is List<*>) {
+            return emptyList()
+        }
+        return raw.mapNotNull { item ->
+            (item as? String)?.trim()?.lowercase()?.takeIf { it.isNotEmpty() }
+        }
+    }
+
+    private fun parsePolicyVersion(raw: Any?): Long? {
+        return when (raw) {
+            is Long -> raw
+            is Int -> raw.toLong()
+            is Double -> raw.toLong()
+            is String -> raw.toLongOrNull()
+            else -> null
+        }
+    }
+
+    private fun enforceBlockedForegroundAppIfNeeded() {
+        if (!serviceRunning) {
+            return
+        }
+        if (lastAppliedBlockedPackages.isEmpty()) {
+            return
+        }
+        if (!hasUsageStatsPermissionForGuard()) {
+            if (!appGuardPermissionWarningLogged) {
+                appGuardPermissionWarningLogged = true
+                Log.w(TAG, "Usage access missing; app-level blocking guard is inactive.")
+            }
+            if (!appGuardPermissionAlertShown) {
+                appGuardPermissionAlertShown = true
+                showProtectionAttentionNotification(
+                    "App blocking needs Usage Access. Open TrustBridge on this phone and enable Usage Access."
+                )
+            }
+            return
+        }
+        if (appGuardPermissionWarningLogged || appGuardPermissionAlertShown) {
+            appGuardPermissionWarningLogged = false
+            appGuardPermissionAlertShown = false
+        }
+
+        val foregroundPackage = currentForegroundPackageFromUsageStats() ?: return
+        val normalizedForeground = foregroundPackage.trim().lowercase()
+        if (normalizedForeground.isEmpty()) {
+            return
+        }
+        if (normalizedForeground == packageName ||
+            normalizedForeground.startsWith("$packageName.") ||
+            normalizedForeground == "com.android.systemui"
+        ) {
+            return
+        }
+        if (!lastAppliedBlockedPackages.contains(normalizedForeground)) {
+            return
+        }
+
+        val now = System.currentTimeMillis()
+        if (now - lastAppGuardActionEpochMs < APP_GUARD_COOLDOWN_MS) {
+            return
+        }
+        lastAppGuardActionEpochMs = now
+        Log.w(TAG, "Blocked foreground app detected package=$normalizedForeground")
+        showProtectionAttentionNotification(
+            "Blocked app detected. Open TrustBridge to review active limits."
+        )
+        try {
+            val homeIntent = Intent(Intent.ACTION_MAIN).apply {
+                addCategory(Intent.CATEGORY_HOME)
+                addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
+            }
+            startActivity(homeIntent)
+        } catch (error: Exception) {
+            Log.w(TAG, "Failed to move blocked app to home screen", error)
+        }
+    }
+
+    private fun hasUsageStatsPermissionForGuard(): Boolean {
+        return try {
+            val appOpsManager = getSystemService(Context.APP_OPS_SERVICE) as? AppOpsManager
+                ?: return false
+            val mode = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) {
+                appOpsManager.unsafeCheckOpNoThrow(
+                    AppOpsManager.OPSTR_GET_USAGE_STATS,
+                    Process.myUid(),
+                    packageName
+                )
+            } else {
+                @Suppress("DEPRECATION")
+                appOpsManager.checkOpNoThrow(
+                    AppOpsManager.OPSTR_GET_USAGE_STATS,
+                    Process.myUid(),
+                    packageName
+                )
+            }
+            mode == AppOpsManager.MODE_ALLOWED
+        } catch (_: Exception) {
+            false
+        }
+    }
+
+    private fun currentForegroundPackageFromUsageStats(): String? {
+        val usageStatsManager = getSystemService(UsageStatsManager::class.java) ?: return null
+        val endTime = System.currentTimeMillis()
+        val startTime = endTime - 120_000L
+        val usageEvents = usageStatsManager.queryEvents(startTime, endTime)
+        val event = UsageEvents.Event()
+        var latestPackage: String? = null
+        var latestTimestamp = 0L
+
+        while (usageEvents.hasNextEvent()) {
+            usageEvents.getNextEvent(event)
+            val isForegroundEvent = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) {
+                event.eventType == UsageEvents.Event.ACTIVITY_RESUMED ||
+                    event.eventType == UsageEvents.Event.MOVE_TO_FOREGROUND
+            } else {
+                event.eventType == UsageEvents.Event.MOVE_TO_FOREGROUND
+            }
+            if (!isForegroundEvent) {
+                continue
+            }
+            val packageName = event.packageName ?: continue
+            if (event.timeStamp >= latestTimestamp) {
+                latestTimestamp = event.timeStamp
+                latestPackage = packageName
+            }
+        }
+        return latestPackage
     }
 
     private fun setInitialUnderlyingNetwork(builder: Builder) {
@@ -934,14 +1264,21 @@ class DnsVpnService : VpnService() {
             .map(::normalizeDomainToken)
             .filter { it.isNotEmpty() }
             .distinct()
+        val normalizedBlockedPackages = deriveBlockedPackages(
+            categories = normalizedCategories.toSet(),
+            domains = normalizedDomains.toSet(),
+            allowedDomains = normalizedAllowedDomains.toSet()
+        )
 
         lastAppliedCategories = normalizedCategories
         lastAppliedDomains = normalizedDomains
         lastAppliedAllowedDomains = normalizedAllowedDomains
+        lastAppliedBlockedPackages = normalizedBlockedPackages
         vpnPreferencesStore.saveRules(
             categories = normalizedCategories,
             domains = normalizedDomains,
             temporaryAllowedDomains = normalizedAllowedDomains,
+            blockedPackages = normalizedBlockedPackages,
             upstreamDns = lastAppliedUpstreamDns
         )
         filterEngine.updateFilterRules(
@@ -974,6 +1311,63 @@ class DnsVpnService : VpnService() {
         return normalized
     }
 
+    private fun deriveBlockedPackages(
+        categories: Set<String>,
+        domains: Set<String>,
+        allowedDomains: Set<String>
+    ): List<String> {
+        val normalizedCategories = categories
+            .map(::normalizeCategoryToken)
+            .toSet()
+        val normalizedDomains = domains
+            .map(::normalizeDomainToken)
+            .filter { it.isNotEmpty() }
+            .toSet()
+        val normalizedAllowedDomains = allowedDomains
+            .map(::normalizeDomainToken)
+            .filter { it.isNotEmpty() }
+            .toSet()
+
+        val blockedPackages = linkedSetOf<String>()
+        for (rule in APP_BLOCK_RULES) {
+            val categoryHit = rule.categories.any { normalizedCategories.contains(it) }
+            val domainHit = rule.domainMarkers.any { marker ->
+                matchesDomainRule(marker, normalizedDomains)
+            }
+            if (!categoryHit && !domainHit) {
+                continue
+            }
+
+            val explicitlyAllowed = rule.domainMarkers.any { marker ->
+                matchesDomainRule(marker, normalizedAllowedDomains)
+            }
+            if (explicitlyAllowed) {
+                continue
+            }
+            blockedPackages.addAll(rule.packages)
+        }
+        return blockedPackages.toList().sorted()
+    }
+
+    private fun matchesDomainRule(marker: String, domainSet: Set<String>): Boolean {
+        if (domainSet.isEmpty()) {
+            return false
+        }
+        val normalizedMarker = normalizeDomainToken(marker)
+        if (normalizedMarker.isEmpty()) {
+            return false
+        }
+        if (domainSet.contains(normalizedMarker)) {
+            return true
+        }
+        for (candidate in domainSet) {
+            if (candidate.endsWith(".$normalizedMarker")) {
+                return true
+            }
+        }
+        return false
+    }
+
     private fun currentModeNameForBlockedEvent(): String {
         if (lastAppliedCategories.contains("__block_all__")) {
             return "Pause Mode"
@@ -1000,6 +1394,7 @@ class DnsVpnService : VpnService() {
             categories = lastAppliedCategories,
             domains = lastAppliedDomains,
             temporaryAllowedDomains = lastAppliedAllowedDomains,
+            blockedPackages = lastAppliedBlockedPackages,
             upstreamDns = lastAppliedUpstreamDns
         )
         lastRuleUpdateEpochMs = System.currentTimeMillis()
@@ -1249,4 +1644,10 @@ class DnsVpnService : VpnService() {
             "Protection is off. Open TrustBridge and tap Restore Protection."
         )
     }
+
+    private data class AppBlockRule(
+        val categories: Set<String>,
+        val domainMarkers: Set<String>,
+        val packages: Set<String>
+    )
 }

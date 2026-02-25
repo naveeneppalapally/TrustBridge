@@ -108,7 +108,8 @@ void main() {
     );
   });
 
-  group('Bug 4 – Usage reports screen shows child summary without '
+  group(
+      'Bug 4 – Usage reports screen shows child summary without '
       'parent permission', () {
     // The UsageReportsScreen already handles this correctly: when
     // report.permissionGranted is false, it shows _buildChildSummaryFallbackCard

@@ -411,7 +411,8 @@ void main() {
 
       await _scrollUntilVisibleInSheet(
         tester,
-        find.byKey(const Key('request_duration_option_request-5_untilScheduleEnds')),
+        find.byKey(
+            const Key('request_duration_option_request-5_untilScheduleEnds')),
       );
       await tester.tap(find.byKey(
           const Key('request_duration_option_request-5_untilScheduleEnds')));

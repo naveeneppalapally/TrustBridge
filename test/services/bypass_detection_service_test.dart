@@ -90,7 +90,9 @@ void main() {
       await service.runPrivateDnsCheckOnce();
 
       expect(
-        loggedEvents.where((e) => e['type'] == 'private_dns_changed').isNotEmpty,
+        loggedEvents
+            .where((e) => e['type'] == 'private_dns_changed')
+            .isNotEmpty,
         isTrue,
       );
     });
@@ -182,8 +184,11 @@ class _FakeVpnService implements VpnServiceBase {
 
   @override
   Future<bool> restartVpn({
-    List<String> blockedCategories = const [],
-    List<String> blockedDomains = const [],
+    List<String> blockedCategories = const <String>[],
+    List<String> blockedDomains = const <String>[],
+    List<String> temporaryAllowedDomains = const <String>[],
+    String? parentId,
+    String? childId,
     String? upstreamDns,
   }) async =>
       true;
@@ -193,8 +198,11 @@ class _FakeVpnService implements VpnServiceBase {
 
   @override
   Future<bool> startVpn({
-    List<String> blockedCategories = const [],
-    List<String> blockedDomains = const [],
+    List<String> blockedCategories = const <String>[],
+    List<String> blockedDomains = const <String>[],
+    List<String> temporaryAllowedDomains = const <String>[],
+    String? parentId,
+    String? childId,
     String? upstreamDns,
   }) async =>
       true;
@@ -207,6 +215,8 @@ class _FakeVpnService implements VpnServiceBase {
     required List<String> blockedCategories,
     required List<String> blockedDomains,
     List<String> temporaryAllowedDomains = const [],
+    String? parentId,
+    String? childId,
   }) async =>
       true;
 }

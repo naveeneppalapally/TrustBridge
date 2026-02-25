@@ -446,6 +446,7 @@ service cloud.firestore {
               'appliedVersion',
               'appliedAt',
               'vpnRunning',
+              'usageAccessGranted',
               'ruleCounts',
               'applyStatus',
               'error',
@@ -459,6 +460,7 @@ service cloud.firestore {
           isRequiredInt(request.resource.data, 'appliedVersion', 0, 4102444800000) &&
           isOptionalTimestamp(request.resource.data, 'appliedAt') &&
           isOptionalBool(request.resource.data, 'vpnRunning') &&
+          isOptionalBool(request.resource.data, 'usageAccessGranted') &&
           (
             !('ruleCounts' in request.resource.data) ||
             (
