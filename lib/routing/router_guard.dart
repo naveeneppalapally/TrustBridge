@@ -14,7 +14,12 @@ String? resolveModeRedirect({
   }
 
   if (mode == AppMode.child) {
-    return normalized.startsWith('/child') ? null : '/child/status';
+    // Allow parent login from child mode so child setup can bootstrap an
+    // authenticated Firebase session before pairing.
+    if (normalized.startsWith('/child') || normalized == '/parent/login') {
+      return null;
+    }
+    return '/child/status';
   }
 
   if (mode == AppMode.parent) {

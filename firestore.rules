@@ -336,6 +336,43 @@ service cloud.firestore {
         allow create, update, delete: if isChildParent(childId);
       }
 
+      // Append-only policy events to preserve each distinct state change.
+      match /policy_events/{eventId} {
+        allow read: if isChildParent(childId) || isChildDevice(childId);
+
+        allow create: if isChildParent(childId) &&
+          hasOnlyKeys(
+            request.resource.data,
+            [
+              'parentId',
+              'childId',
+              'blockedCategories',
+              'blockedDomains',
+              'manualMode',
+              'pausedUntil',
+              'sourceUpdatedAt',
+              'eventEpochMs',
+              'createdAt'
+            ]
+          ) &&
+          isRequiredString(request.resource.data, 'parentId', 128) &&
+          request.resource.data.parentId ==
+            get(/databases/$(database)/documents/children/$(childId)).data.parentId &&
+          isRequiredString(request.resource.data, 'childId', 128) &&
+          request.resource.data.childId == childId &&
+          ('blockedCategories' in request.resource.data) &&
+          request.resource.data.blockedCategories is list &&
+          ('blockedDomains' in request.resource.data) &&
+          request.resource.data.blockedDomains is list &&
+          isOptionalManualMode(request.resource.data, 'manualMode') &&
+          isOptionalTimestamp(request.resource.data, 'pausedUntil') &&
+          isRequiredTimestamp(request.resource.data, 'sourceUpdatedAt') &&
+          isRequiredInt(request.resource.data, 'eventEpochMs', 0, 4102444800000) &&
+          isRequiredTimestamp(request.resource.data, 'createdAt');
+
+        allow update, delete: if false;
+      }
+
       // Child-uploaded usage snapshots rendered in parent reports.
       match /usage_reports/{reportId} {
         allow read: if isChildParent(childId) || isChildDevice(childId);

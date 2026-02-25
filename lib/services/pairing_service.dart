@@ -283,14 +283,30 @@ class PairingService {
 
   /// Returns persisted device ID or creates one on first run.
   Future<String> getOrCreateDeviceId() async {
+    User? authUser;
     String? authUid;
+    var isAnonymousSession = false;
     try {
-      authUid = FirebaseAuth.instance.currentUser?.uid.trim();
+      authUser = FirebaseAuth.instance.currentUser;
+      authUid = authUser?.uid.trim();
+      isAnonymousSession = authUser?.isAnonymous == true;
     } catch (_) {
+      authUser = null;
       authUid = null;
+      isAnonymousSession = false;
     }
 
     final existing = (await _secureStorage.read(key: _deviceIdKey))?.trim();
+
+    // For anonymous bootstrap sessions, keep deviceId aligned to auth uid so
+    // Firestore rules can authorize child-device document writes.
+    if (isAnonymousSession && authUid != null && authUid.isNotEmpty) {
+      if (existing == null || existing.isEmpty || existing != authUid) {
+        await _secureStorage.write(key: _deviceIdKey, value: authUid);
+      }
+      return authUid;
+    }
+
     if (existing != null && existing.isNotEmpty) {
       if (_isLegacyAuthBoundDeviceId(
         existingDeviceId: existing,

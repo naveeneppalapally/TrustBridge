@@ -1,5 +1,6 @@
 import 'child_profile.dart';
 import 'schedule.dart';
+import '../config/category_ids.dart';
 
 class Policy {
   final List<String> blockedCategories;
@@ -81,7 +82,7 @@ class Policy {
     }
 
     return Policy(
-      blockedCategories: _stringList(map['blockedCategories']),
+      blockedCategories: _categoryList(map['blockedCategories']),
       blockedDomains: _stringList(map['blockedDomains']),
       schedules: parsedSchedules,
       safeSearchEnabled: _boolValue(map['safeSearchEnabled']),
@@ -90,7 +91,7 @@ class Policy {
 
   Map<String, dynamic> toMap() {
     return {
-      'blockedCategories': blockedCategories,
+      'blockedCategories': normalizeCategoryIds(blockedCategories),
       'blockedDomains': blockedDomains,
       'schedules': schedules.map((s) => s.toMap()).toList(),
       'safeSearchEnabled': safeSearchEnabled,
@@ -130,6 +131,10 @@ class Policy {
           .toList(growable: false);
     }
     return const <String>[];
+  }
+
+  static List<String> _categoryList(Object? value) {
+    return normalizeCategoryIds(_stringList(value));
   }
 
   static Map<String, dynamic> _asMap(Object? value) {

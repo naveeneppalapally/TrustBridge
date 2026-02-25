@@ -30,7 +30,7 @@ void main() {
       );
 
       expect(find.text('Test Child'), findsOneWidget);
-      expect(find.text('Quick Actions'), findsOneWidget);
+      expect(find.text('Mode Remote'), findsOneWidget);
     });
 
     testWidgets('Back button navigation works', (tester) async {

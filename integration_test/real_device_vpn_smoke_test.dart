@@ -25,6 +25,14 @@ const int _watchSeconds = int.fromEnvironment(
   'TB_WATCH_SECONDS',
   defaultValue: 30,
 );
+const int _holdSeconds = int.fromEnvironment(
+  'TB_HOLD_SECONDS',
+  defaultValue: 0,
+);
+const int _timeoutMinutes = int.fromEnvironment(
+  'TB_TIMEOUT_MINUTES',
+  defaultValue: 6,
+);
 const String _parentEmail = String.fromEnvironment(
   'TB_PARENT_EMAIL',
   defaultValue: '',
@@ -64,6 +72,9 @@ void main() {
         case 'start_and_watch':
           await _startBlocking(vpn, _blockedDomain.trim(), watchSeconds: _watchSeconds);
           break;
+        case 'start_hold':
+          await _startHold(vpn, _blockedDomain.trim(), holdSeconds: _holdSeconds);
+          break;
         case 'stop':
           await _stopVpn(vpn);
           break;
@@ -86,7 +97,8 @@ void main() {
           fail('Unsupported TB_ROLE value: $role');
       }
     },
-    timeout: const Timeout(Duration(minutes: 6)),
+    timeout: const Timeout(Duration(minutes: _timeoutMinutes)),
+    semanticsEnabled: false,
   );
 }
 
@@ -106,6 +118,7 @@ Future<void> _printPairingStatus() async {
 }
 
 Future<void> _signInPairStartWatch(VpnService vpn) async {
+  final total = Stopwatch()..start();
   final email = _parentEmail.trim();
   final password = _parentPassword.trim();
   final pairingCode = _pairingCode.trim();
@@ -118,25 +131,33 @@ Future<void> _signInPairStartWatch(VpnService vpn) async {
 
   final auth = FirebaseAuth.instance;
   await auth.signOut();
+  final signInWatch = Stopwatch()..start();
   final credential = await auth.signInWithEmailAndPassword(
     email: email,
     password: password,
   );
+  signInWatch.stop();
   final uid = credential.user?.uid;
   print('[VPN_SMOKE] signed_in uid=$uid');
+  print('[VPN_SMOKE_TIMING] signInMs=${signInWatch.elapsedMilliseconds}');
 
   final pairing = PairingService();
   final deviceId = await pairing.getOrCreateDeviceId();
+  final pairWatch = Stopwatch()..start();
   final result = await pairing.validateAndPair(pairingCode, deviceId);
+  pairWatch.stop();
   print(
     '[VPN_SMOKE] pair result success=${result.success} error=${result.error} '
     'childId=${result.childId} parentId=${result.parentId} deviceId=$deviceId',
   );
+  print('[VPN_SMOKE_TIMING] pairMs=${pairWatch.elapsedMilliseconds}');
   if (!result.success) {
     fail('Pairing failed: ${result.error}');
   }
 
   await _startBlocking(vpn, _blockedDomain.trim(), watchSeconds: 0);
+  total.stop();
+  print('[VPN_SMOKE_TIMING] totalUntilBlockingMs=${total.elapsedMilliseconds}');
 
   final endAt = DateTime.now().add(const Duration(seconds: _watchSeconds));
   while (DateTime.now().isBefore(endAt)) {
@@ -182,6 +203,8 @@ Future<void> _startBlocking(
   String domain, {
   int watchSeconds = 0,
 }) async {
+  final total = Stopwatch()..start();
+  final permissionWatch = Stopwatch()..start();
   final normalizedDomain = domain.trim().toLowerCase();
   if (normalizedDomain.isEmpty) {
     fail('TB_BLOCKED_DOMAIN is required for start_blocking role.');
@@ -206,6 +229,7 @@ Future<void> _startBlocking(
       }
     }
   }
+  permissionWatch.stop();
 
   if (!permissionGranted) {
     fail(
@@ -214,22 +238,36 @@ Future<void> _startBlocking(
     );
   }
 
+  final startWatch = Stopwatch()..start();
   final started = await vpn.startVpn(
     blockedDomains: <String>[normalizedDomain],
   );
+  startWatch.stop();
   print('[VPN_SMOKE] startVpn returned=$started domain=$normalizedDomain');
   if (!started) {
     fail('startVpn returned false.');
   }
 
+  final updateWatch = Stopwatch()..start();
   final updated = await vpn.updateFilterRules(
     blockedCategories: const <String>[],
     blockedDomains: <String>[normalizedDomain],
   );
+  updateWatch.stop();
   print('[VPN_SMOKE] updateFilterRules returned=$updated');
 
+  final firstStatusWatch = Stopwatch()..start();
   await Future<void>.delayed(const Duration(seconds: 2));
   await _printStatus(vpn);
+  firstStatusWatch.stop();
+  total.stop();
+  print(
+    '[VPN_SMOKE_TIMING_BLOCK] permissionMs=${permissionWatch.elapsedMilliseconds} '
+    'startVpnMs=${startWatch.elapsedMilliseconds} '
+    'updateRulesMs=${updateWatch.elapsedMilliseconds} '
+    'firstStatusMs=${firstStatusWatch.elapsedMilliseconds} '
+    'totalBlockFlowMs=${total.elapsedMilliseconds}',
+  );
 
   if (watchSeconds > 0) {
     final endAt = DateTime.now().add(Duration(seconds: watchSeconds));
@@ -245,6 +283,22 @@ Future<void> _stopVpn(VpnService vpn) async {
   print('[VPN_SMOKE] stopVpn returned=$stopped');
   await Future<void>.delayed(const Duration(seconds: 1));
   await _printStatus(vpn);
+}
+
+Future<void> _startHold(
+  VpnService vpn,
+  String domain, {
+  required int holdSeconds,
+}) async {
+  await _startBlocking(vpn, domain, watchSeconds: 0);
+  if (holdSeconds <= 0) {
+    return;
+  }
+
+  final endAt = DateTime.now().add(Duration(seconds: holdSeconds));
+  while (DateTime.now().isBefore(endAt)) {
+    await Future<void>.delayed(const Duration(seconds: 10));
+  }
 }
 
 Future<void> _clearLogs(VpnService vpn) async {

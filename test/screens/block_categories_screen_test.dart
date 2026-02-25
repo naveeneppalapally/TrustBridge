@@ -76,7 +76,7 @@ void main() {
       expect(find.text('Category Blocking'), findsOneWidget);
       expect(find.byKey(const Key('block_categories_search')), findsOneWidget);
       expect(find.text('APP CATEGORIES'), findsOneWidget);
-      expect(find.text('Social Networks'), findsOneWidget);
+      expect(find.text('Adult Content'), findsOneWidget);
     });
 
     testWidgets('shows custom blocked sites section with add button',

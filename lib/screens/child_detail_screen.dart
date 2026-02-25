@@ -1,5 +1,3 @@
-import 'dart:math' as math;
-
 import 'package:flutter/material.dart';
 import 'package:intl/intl.dart';
 import 'package:trustbridge_app/models/child_profile.dart';
@@ -61,8 +59,8 @@ class _ChildDetailScreenState extends State<ChildDetailScreen> {
         ? const Color(0xFF0F172A)
         : const Color(0xFFF2F6FB);
 
-    final timerData = _timerDataForActiveSchedule();
     final quickMode = _currentQuickMode;
+    final timerData = _timerDataForMode(quickMode);
     final modeColor = _quickModeColor(quickMode);
 
     return Scaffold(
@@ -75,7 +73,7 @@ class _ChildDetailScreenState extends State<ChildDetailScreen> {
             const SizedBox(height: 14),
             _buildStatusCard(context, quickMode, modeColor),
             const SizedBox(height: 14),
-            _buildTimerCard(context, modeColor, timerData),
+            _buildTimerCard(context, quickMode, modeColor, timerData),
             const SizedBox(height: 14),
             _buildQuickActionsGrid(context, quickMode),
             const SizedBox(height: 14),
@@ -192,7 +190,9 @@ class _ChildDetailScreenState extends State<ChildDetailScreen> {
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
                 Text(
-                  '${_quickModeLabel(mode)} Mode |',
+                  mode == _QuickMode.pauseAll
+                      ? 'Pause All Active'
+                      : '${_quickModeLabel(mode)} Mode',
                   style: Theme.of(context).textTheme.titleMedium?.copyWith(
                         fontWeight: FontWeight.w800,
                         color: const Color(0xFF0F172A),
@@ -231,69 +231,105 @@ class _ChildDetailScreenState extends State<ChildDetailScreen> {
 
   Widget _buildTimerCard(
     BuildContext context,
+    _QuickMode mode,
     Color modeColor,
     _ModeTimerData? timerData,
   ) {
-    final remaining =
-        timerData?.remaining ?? const Duration(hours: 1, minutes: 34);
-    final progress = timerData?.remainingProgress ?? 0.58;
+    final hasTimer = timerData != null && timerData.remaining > Duration.zero;
+    final remainingLabel =
+        hasTimer ? _formatDuration(timerData.remaining) : 'Until changed';
+    final progress = timerData?.remainingProgress ?? 0.0;
 
     return Card(
+      key: const Key('child_detail_timer_ring'),
       shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(20)),
       elevation: 0,
       child: Padding(
         padding: const EdgeInsets.all(18),
         child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
           children: [
-            SizedBox(
-              key: const Key('child_detail_timer_ring'),
-              width: 188,
-              height: 188,
-              child: TweenAnimationBuilder<double>(
-                tween: Tween<double>(begin: 0, end: progress),
-                duration: SpringAnimation.standardDuration,
-                curve: SpringAnimation.springCurve,
-                builder: (context, animatedProgress, child) {
-                  return CustomPaint(
-                    painter: _CircularTimerRingPainter(
-                      progress: animatedProgress,
-                      color: modeColor,
-                    ),
-                    child: child,
-                  );
-                },
-                child: Column(
-                  mainAxisAlignment: MainAxisAlignment.center,
-                  children: [
-                    Text(
-                      _formatDuration(remaining),
-                      style:
-                          Theme.of(context).textTheme.headlineSmall?.copyWith(
-                                fontWeight: FontWeight.w800,
-                                color: const Color(0xFF0F172A),
-                              ),
-                    ),
-                    const SizedBox(height: 6),
-                    Text(
-                      'REMAINING',
-                      style: Theme.of(context).textTheme.labelMedium?.copyWith(
-                            letterSpacing: 0.8,
-                            fontWeight: FontWeight.w700,
-                            color: Colors.grey[600],
-                          ),
-                    ),
-                  ],
+            Row(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Container(
+                  width: 44,
+                  height: 44,
+                  decoration: BoxDecoration(
+                    color: modeColor.withValues(alpha: 0.12),
+                    borderRadius: BorderRadius.circular(12),
+                  ),
+                  child: Icon(_quickModeIcon(mode), color: modeColor),
                 ),
+                const SizedBox(width: 12),
+                Expanded(
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Text(
+                        'Current Mode: ${_quickModeLabel(mode)}',
+                        style:
+                            Theme.of(context).textTheme.titleMedium?.copyWith(
+                                  fontWeight: FontWeight.w800,
+                                  color: const Color(0xFF0F172A),
+                                ),
+                      ),
+                      const SizedBox(height: 4),
+                      Text(
+                        _modeSubtitle(mode),
+                        style: Theme.of(context).textTheme.bodySmall?.copyWith(
+                              color: Colors.grey[700],
+                              height: 1.35,
+                            ),
+                      ),
+                    ],
+                  ),
+                ),
+              ],
+            ),
+            const SizedBox(height: 14),
+            Container(
+              padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
+              decoration: BoxDecoration(
+                color: modeColor.withValues(alpha: 0.08),
+                borderRadius: BorderRadius.circular(12),
+                border: Border.all(color: modeColor.withValues(alpha: 0.22)),
+              ),
+              child: Row(
+                children: [
+                  Icon(Icons.schedule_rounded, size: 18, color: modeColor),
+                  const SizedBox(width: 8),
+                  Expanded(
+                    child: Text(
+                      hasTimer ? 'Remaining: $remainingLabel' : remainingLabel,
+                      style: TextStyle(
+                        color: modeColor,
+                        fontWeight: FontWeight.w700,
+                      ),
+                    ),
+                  ),
+                ],
               ),
             ),
+            if (hasTimer) ...[
+              const SizedBox(height: 12),
+              ClipRRect(
+                borderRadius: BorderRadius.circular(999),
+                child: LinearProgressIndicator(
+                  minHeight: 8,
+                  value: progress.clamp(0.0, 1.0),
+                  backgroundColor: modeColor.withValues(alpha: 0.14),
+                  valueColor: AlwaysStoppedAnimation<Color>(modeColor),
+                ),
+              ),
+            ],
             const SizedBox(height: 12),
             Text(
-              _modeQuote(_currentQuickMode),
-              textAlign: TextAlign.center,
-              style: Theme.of(context).textTheme.bodyMedium?.copyWith(
-                    fontStyle: FontStyle.italic,
+              _modeQuote(mode),
+              style: Theme.of(context).textTheme.bodySmall?.copyWith(
                     color: Colors.grey[700],
-                    height: 1.4,
+                    fontStyle: FontStyle.italic,
+                    height: 1.35,
                   ),
             ),
           ],
@@ -307,10 +343,17 @@ class _ChildDetailScreenState extends State<ChildDetailScreen> {
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
         Text(
-          'Quick Actions',
+          'Mode Remote',
           style: Theme.of(context).textTheme.titleMedium?.copyWith(
                 fontWeight: FontWeight.w800,
                 color: const Color(0xFF0F172A),
+              ),
+        ),
+        const SizedBox(height: 4),
+        Text(
+          'One mode is active at a time. Tap any button to switch now.',
+          style: Theme.of(context).textTheme.bodySmall?.copyWith(
+                color: Colors.grey[700],
               ),
         ),
         const SizedBox(height: 12),
@@ -321,37 +364,45 @@ class _ChildDetailScreenState extends State<ChildDetailScreen> {
           mainAxisSpacing: 10,
           shrinkWrap: true,
           physics: const NeverScrollableScrollPhysics(),
-          childAspectRatio: 1.45,
+          childAspectRatio: 1.22,
           children: [
             _buildQuickActionTile(
               context,
+              id: 'pause',
               label: 'Pause All',
               icon: Icons.pause_circle_outline,
               color: const Color(0xFFEF4444),
-              selected: false,
+              subtitle: 'Block internet everywhere for a timer.',
+              selected: activeMode == _QuickMode.pauseAll,
               onTap: () async => _showPauseDurationPicker(context),
             ),
             _buildQuickActionTile(
               context,
+              id: 'homework',
               label: 'Homework',
               icon: Icons.menu_book_rounded,
               color: const Color(0xFF3B82F6),
+              subtitle: 'Block social, chat, streaming, and games.',
               selected: activeMode == _QuickMode.homework,
               onTap: () => _setQuickMode(context, _QuickMode.homework),
             ),
             _buildQuickActionTile(
               context,
+              id: 'bedtime',
               label: 'Bedtime',
               icon: Icons.nightlight_round,
               color: const Color(0xFF8B5CF6),
+              subtitle: 'Lock internet except approved access.',
               selected: activeMode == _QuickMode.bedtime,
               onTap: () => _setQuickMode(context, _QuickMode.bedtime),
             ),
             _buildQuickActionTile(
               context,
+              id: 'free_play',
               label: 'Free Play',
               icon: Icons.celebration_outlined,
               color: const Color(0xFF10B981),
+              subtitle: 'Use your normal app/category toggles.',
               selected: activeMode == _QuickMode.freePlay,
               onTap: () => _setQuickMode(context, _QuickMode.freePlay),
             ),
@@ -363,22 +414,24 @@ class _ChildDetailScreenState extends State<ChildDetailScreen> {
 
   Widget _buildQuickActionTile(
     BuildContext context, {
+    required String id,
     required String label,
     required IconData icon,
     required Color color,
+    required String subtitle,
     required bool selected,
     required VoidCallback onTap,
   }) {
-    final isPressed = _pressedQuickActions.contains(label);
+    final isPressed = _pressedQuickActions.contains(id);
 
     return InkWell(
       borderRadius: BorderRadius.circular(16),
       onHighlightChanged: (pressed) {
         setState(() {
           if (pressed) {
-            _pressedQuickActions.add(label);
+            _pressedQuickActions.add(id);
           } else {
-            _pressedQuickActions.remove(label);
+            _pressedQuickActions.remove(id);
           }
         });
       },
@@ -390,24 +443,61 @@ class _ChildDetailScreenState extends State<ChildDetailScreen> {
         child: Container(
           decoration: BoxDecoration(
             borderRadius: BorderRadius.circular(16),
-            color: selected ? color.withValues(alpha: 0.14) : Colors.white,
+            color: selected ? color.withValues(alpha: 0.18) : Colors.white,
             border: Border.all(
               color: selected ? color : const Color(0xFFD8E1EE),
-              width: selected ? 1.6 : 1,
+              width: selected ? 2 : 1,
             ),
           ),
           padding: const EdgeInsets.all(12),
           child: Column(
             crossAxisAlignment: CrossAxisAlignment.start,
-            mainAxisAlignment: MainAxisAlignment.center,
             children: [
-              Icon(icon, color: color, size: 24),
-              const SizedBox(height: 10),
+              Row(
+                children: [
+                  Icon(icon, color: color, size: 23),
+                  const Spacer(),
+                  if (selected)
+                    Container(
+                      width: 20,
+                      height: 20,
+                      decoration: BoxDecoration(
+                        color: color,
+                        borderRadius: BorderRadius.circular(999),
+                      ),
+                      child: const Icon(
+                        Icons.check,
+                        size: 14,
+                        color: Colors.white,
+                      ),
+                    ),
+                ],
+              ),
+              const SizedBox(height: 8),
               Text(
                 label,
                 style: Theme.of(context).textTheme.titleSmall?.copyWith(
                       fontWeight: FontWeight.w800,
-                      color: color,
+                      color: const Color(0xFF0F172A),
+                    ),
+              ),
+              const SizedBox(height: 4),
+              Text(
+                subtitle,
+                style: Theme.of(context).textTheme.bodySmall?.copyWith(
+                      color: Colors.grey[700],
+                      height: 1.25,
+                    ),
+                maxLines: 2,
+                overflow: TextOverflow.ellipsis,
+              ),
+              const Spacer(),
+              Text(
+                selected ? 'ACTIVE' : 'TAP TO ACTIVATE',
+                style: Theme.of(context).textTheme.labelSmall?.copyWith(
+                      letterSpacing: 0.5,
+                      fontWeight: FontWeight.w800,
+                      color: selected ? color : Colors.grey[600],
                     ),
               ),
             ],
@@ -706,6 +796,22 @@ class _ChildDetailScreenState extends State<ChildDetailScreen> {
       return _quickModeOverride!;
     }
 
+    final now = DateTime.now();
+    final pausedUntil = _child.pausedUntil;
+    if (pausedUntil != null && pausedUntil.isAfter(now)) {
+      return _QuickMode.pauseAll;
+    }
+
+    final manualMode = _activeManualModeValue(now);
+    switch (manualMode) {
+      case 'bedtime':
+        return _QuickMode.bedtime;
+      case 'homework':
+        return _QuickMode.homework;
+      case 'free':
+        return _QuickMode.freePlay;
+    }
+
     final active = _activeSchedule;
     if (active == null) {
       return _QuickMode.freePlay;
@@ -720,6 +826,29 @@ class _ChildDetailScreenState extends State<ChildDetailScreen> {
       case ScheduleType.custom:
         return _QuickMode.freePlay;
     }
+  }
+
+  String? _activeManualModeValue(DateTime now) {
+    final rawMode = _child.manualMode;
+    if (rawMode == null || rawMode.isEmpty) {
+      return null;
+    }
+    final mode = (rawMode['mode'] as String?)?.trim().toLowerCase();
+    if (mode == null || mode.isEmpty) {
+      return null;
+    }
+    final expiresAt = _asDateTime(rawMode['expiresAt']);
+    if (expiresAt != null && !expiresAt.isAfter(now)) {
+      return null;
+    }
+    return mode;
+  }
+
+  DateTime? _asDateTime(Object? rawValue) {
+    if (rawValue is DateTime) {
+      return rawValue;
+    }
+    return null;
   }
 
   Schedule? get _activeSchedule {
@@ -763,23 +892,60 @@ class _ChildDetailScreenState extends State<ChildDetailScreen> {
     }
   }
 
-  _ModeTimerData? _timerDataForActiveSchedule() {
+  _ModeTimerData? _timerDataForMode(_QuickMode mode) {
+    final now = DateTime.now();
+
+    if (mode == _QuickMode.pauseAll) {
+      final pausedUntil = _child.pausedUntil;
+      if (pausedUntil == null || !pausedUntil.isAfter(now)) {
+        return null;
+      }
+      final remaining = pausedUntil.difference(now);
+      final total =
+          remaining.inSeconds <= 0 ? const Duration(seconds: 1) : remaining;
+      return _ModeTimerData(remaining: remaining, total: total);
+    }
+
+    final rawManualMode = _child.manualMode;
+    final activeManualMode = _activeManualModeValue(now);
+    final manualExpiresAt = _asDateTime(rawManualMode?['expiresAt']);
+    final manualSetAt = _asDateTime(rawManualMode?['setAt']);
+    if (activeManualMode != null &&
+        activeManualMode == _manualModeNameForQuickMode(mode) &&
+        manualExpiresAt != null &&
+        manualExpiresAt.isAfter(now)) {
+      final remaining = manualExpiresAt.difference(now);
+      final totalStart = manualSetAt ?? now;
+      final computedTotal = manualExpiresAt.difference(totalStart);
+      final total = computedTotal.inSeconds <= 0 ? remaining : computedTotal;
+      return _ModeTimerData(remaining: remaining, total: total);
+    }
+
     final schedule = _activeSchedule;
     if (schedule == null) {
       return null;
     }
-
-    final now = DateTime.now();
     final window = _resolveScheduleWindow(schedule, now);
     final total = window.end.difference(window.start);
     if (total.inSeconds <= 0) {
       return null;
     }
-
     final remaining =
         window.end.isAfter(now) ? window.end.difference(now) : Duration.zero;
-
     return _ModeTimerData(remaining: remaining, total: total);
+  }
+
+  String _manualModeNameForQuickMode(_QuickMode mode) {
+    switch (mode) {
+      case _QuickMode.homework:
+        return 'homework';
+      case _QuickMode.bedtime:
+        return 'bedtime';
+      case _QuickMode.freePlay:
+        return 'free';
+      case _QuickMode.pauseAll:
+        return '';
+    }
   }
 
   ({DateTime start, DateTime end}) _resolveScheduleWindow(
@@ -836,6 +1002,10 @@ class _ChildDetailScreenState extends State<ChildDetailScreen> {
       _showMessage(context, 'Not logged in');
       return;
     }
+    if (mode == _QuickMode.pauseAll) {
+      await _showPauseDurationPicker(context);
+      return;
+    }
 
     final previousOverride = _quickModeOverride;
     setState(() {
@@ -843,6 +1013,13 @@ class _ChildDetailScreenState extends State<ChildDetailScreen> {
     });
 
     try {
+      // One active remote mode at a time: clear pause before switching mode.
+      await _resolvedFirestoreService.setChildPause(
+        parentId: parentId,
+        childId: _child.id,
+        pausedUntil: null,
+      );
+
       switch (mode) {
         case _QuickMode.homework:
           await _resolvedFirestoreService.setChildManualMode(
@@ -862,23 +1039,23 @@ class _ChildDetailScreenState extends State<ChildDetailScreen> {
           await _resolvedFirestoreService.setChildManualMode(
             parentId: parentId,
             childId: _child.id,
-            mode: null,
-          );
-          await _resolvedFirestoreService.setChildPause(
-            parentId: parentId,
-            childId: _child.id,
-            pausedUntil: null,
+            mode: 'free',
           );
           break;
+        case _QuickMode.pauseAll:
+          return;
       }
 
       final refreshed = await _resolvedFirestoreService.getChild(
         parentId: parentId,
         childId: _child.id,
       );
-      if (refreshed != null && mounted) {
+      if (mounted) {
         setState(() {
-          _child = refreshed;
+          if (refreshed != null) {
+            _child = refreshed;
+          }
+          _quickModeOverride = null;
         });
       }
 
@@ -1102,6 +1279,12 @@ class _ChildDetailScreenState extends State<ChildDetailScreen> {
     final pausedUntil = DateTime.now().add(duration);
 
     try {
+      // Pause is treated as a dedicated quick mode, so clear manual override.
+      await _resolvedFirestoreService.setChildManualMode(
+        parentId: parentId,
+        childId: _child.id,
+        mode: null,
+      );
       await _resolvedFirestoreService.setChildPause(
         parentId: parentId,
         childId: _child.id,
@@ -1117,6 +1300,7 @@ class _ChildDetailScreenState extends State<ChildDetailScreen> {
       if (refreshed != null) {
         setState(() {
           _child = refreshed;
+          _quickModeOverride = null;
         });
       }
       _showMessage(
@@ -1290,6 +1474,8 @@ class _ChildDetailScreenState extends State<ChildDetailScreen> {
 
   Color _quickModeColor(_QuickMode mode) {
     switch (mode) {
+      case _QuickMode.pauseAll:
+        return const Color(0xFFEF4444);
       case _QuickMode.homework:
         return const Color(0xFF3B82F6);
       case _QuickMode.bedtime:
@@ -1299,8 +1485,23 @@ class _ChildDetailScreenState extends State<ChildDetailScreen> {
     }
   }
 
+  IconData _quickModeIcon(_QuickMode mode) {
+    switch (mode) {
+      case _QuickMode.pauseAll:
+        return Icons.pause_circle_outline;
+      case _QuickMode.homework:
+        return Icons.menu_book_rounded;
+      case _QuickMode.bedtime:
+        return Icons.nightlight_round;
+      case _QuickMode.freePlay:
+        return Icons.celebration_outlined;
+    }
+  }
+
   String _quickModeLabel(_QuickMode mode) {
     switch (mode) {
+      case _QuickMode.pauseAll:
+        return 'Pause All';
       case _QuickMode.homework:
         return 'Homework';
       case _QuickMode.bedtime:
@@ -1312,23 +1513,27 @@ class _ChildDetailScreenState extends State<ChildDetailScreen> {
 
   String _modeSubtitle(_QuickMode mode) {
     switch (mode) {
+      case _QuickMode.pauseAll:
+        return 'Internet is paused everywhere until the timer ends.';
       case _QuickMode.homework:
-        return 'Distraction apps are paused until study block ends.';
+        return 'Social, chat, streaming, and games are blocked.';
       case _QuickMode.bedtime:
-        return 'Only essential access is allowed during bedtime.';
+        return 'All internet is locked except approved access.';
       case _QuickMode.freePlay:
-        return 'Regular family policy is active now.';
+        return 'Quick overrides are off; app/category toggles decide access.';
     }
   }
 
   String _modeQuote(_QuickMode mode) {
     switch (mode) {
+      case _QuickMode.pauseAll:
+        return 'Switch to another mode anytime using the buttons below.';
       case _QuickMode.homework:
-        return '"Focus now, play later. You\'re building a strong habit."';
+        return 'Tap Bedtime for full lock, or Free Play to restore normal access.';
       case _QuickMode.bedtime:
-        return '"Great sleep tonight means better energy tomorrow."';
+        return 'Tap Free Play when bedtime is over.';
       case _QuickMode.freePlay:
-        return '"Balance helps you enjoy screen time and real life."';
+        return 'All quick modes are off. Turn on one button to enforce instantly.';
     }
   }
 
@@ -1390,50 +1595,6 @@ class _ModeTimerData {
   }
 }
 
-class _CircularTimerRingPainter extends CustomPainter {
-  const _CircularTimerRingPainter({
-    required this.progress,
-    required this.color,
-  });
-
-  final double progress;
-  final Color color;
-
-  @override
-  void paint(Canvas canvas, Size size) {
-    final center = Offset(size.width / 2, size.height / 2);
-    final radius = math.min(size.width, size.height) / 2 - 10;
-
-    final trackPaint = Paint()
-      ..color = color.withValues(alpha: 0.16)
-      ..style = PaintingStyle.stroke
-      ..strokeWidth = 14
-      ..strokeCap = StrokeCap.round;
-
-    final progressPaint = Paint()
-      ..color = color
-      ..style = PaintingStyle.stroke
-      ..strokeWidth = 14
-      ..strokeCap = StrokeCap.round;
-
-    canvas.drawCircle(center, radius, trackPaint);
-
-    final sweep = 2 * math.pi * progress.clamp(0.0, 1.0);
-    canvas.drawArc(
-      Rect.fromCircle(center: center, radius: radius),
-      -math.pi / 2,
-      sweep,
-      false,
-      progressPaint,
-    );
-  }
-
-  @override
-  bool shouldRepaint(covariant _CircularTimerRingPainter oldDelegate) {
-    return oldDelegate.progress != progress || oldDelegate.color != color;
-  }
-}
-
 class _ActivityRowData {
   const _ActivityRowData({
     required this.label,
@@ -1448,6 +1609,6 @@ class _ActivityRowData {
   final Color color;
 }
 
-enum _QuickMode { homework, bedtime, freePlay }
+enum _QuickMode { pauseAll, homework, bedtime, freePlay }
 
 enum _HeaderAction { edit, activity, policy, delete }

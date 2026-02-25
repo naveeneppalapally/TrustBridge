@@ -1,6 +1,8 @@
+import 'dart:async';
 import 'dart:developer' as developer;
 
 import 'package:cloud_firestore/cloud_firestore.dart';
+import 'package:trustbridge_app/config/category_ids.dart';
 import 'package:trustbridge_app/models/access_request.dart';
 import 'package:trustbridge_app/models/child_profile.dart';
 import 'package:trustbridge_app/models/support_ticket.dart';
@@ -32,7 +34,9 @@ class DeviceStatusSnapshot {
   ) {
     final data = snapshot.data() ?? const <String, dynamic>{};
     final lastSeen = _readDateTime(data['lastSeen']) ??
-        _readEpochDateTime(data['lastSeenEpochMs']);
+        _readEpochDateTime(data['lastSeenEpochMs']) ??
+        _readDateTime(data['pairedAt']) ??
+        _readDateTime(data['fcmTokenUpdatedAt']);
     return DeviceStatusSnapshot(
       deviceId: snapshot.id,
       lastSeen: lastSeen,
@@ -40,7 +44,9 @@ class DeviceStatusSnapshot {
       queriesProcessed: _readInt(data['queriesProcessed']),
       queriesBlocked: _readInt(data['queriesBlocked']),
       queriesAllowed: _readInt(data['queriesAllowed']),
-      updatedAt: _readDateTime(data['updatedAt']),
+      updatedAt: _readDateTime(data['updatedAt']) ??
+          _readDateTime(data['pairedAt']) ??
+          _readDateTime(data['fcmTokenUpdatedAt']),
     );
   }
 
@@ -84,6 +90,7 @@ class FirestoreService {
 
   final FirebaseFirestore _firestore;
   final NextDnsApiService _nextDnsApiService;
+  int _lastPolicyEventEpochMs = 0;
 
   /// Public accessor for the underlying Firestore instance.
   FirebaseFirestore get firestore => _firestore;
@@ -1208,8 +1215,10 @@ class FirestoreService {
   /// Firestore `whereIn` supports at most 10 IDs; extra IDs are ignored and
   /// should be handled separately by callers.
   Stream<Map<String, DeviceStatusSnapshot>> watchDeviceStatuses(
-    List<String> deviceIds,
-  ) {
+    List<String> deviceIds, {
+    String? parentId,
+    Map<String, String>? childIdByDeviceId,
+  }) {
     final uniqueDeviceIds = deviceIds
         .map((id) => id.trim())
         .where((id) => id.isNotEmpty)
@@ -1226,17 +1235,153 @@ class FirestoreService {
         ? uniqueDeviceIds.take(10).toList(growable: false)
         : uniqueDeviceIds;
 
-    return _firestore
-        .collection('devices')
-        .where(FieldPath.documentId, whereIn: queryIds)
-        .snapshots()
-        .map((snapshot) {
-      final statusByDeviceId = <String, DeviceStatusSnapshot>{};
-      for (final doc in snapshot.docs) {
-        statusByDeviceId[doc.id] = DeviceStatusSnapshot.fromFirestore(doc);
+    final normalizedParentId = parentId?.trim();
+    Query<Map<String, dynamic>> rootQuery = _firestore.collection('devices');
+    if (normalizedParentId != null && normalizedParentId.isNotEmpty) {
+      rootQuery = rootQuery.where('parentId', isEqualTo: normalizedParentId);
+    }
+    rootQuery = rootQuery.where(FieldPath.documentId, whereIn: queryIds);
+    final childDeviceQuery = _firestore
+        .collectionGroup('devices')
+        .where(FieldPath.documentId, whereIn: queryIds);
+
+    return Stream<Map<String, DeviceStatusSnapshot>>.multi((controller) {
+      var rootStatusByDeviceId = <String, DeviceStatusSnapshot>{};
+      var childStatusByDeviceId = <String, DeviceStatusSnapshot>{};
+
+      final normalizedChildDeviceMap = <String, String>{};
+      if (childIdByDeviceId != null) {
+        for (final entry in childIdByDeviceId.entries) {
+          final deviceId = entry.key.trim();
+          final childId = entry.value.trim();
+          if (deviceId.isEmpty ||
+              childId.isEmpty ||
+              !uniqueDeviceIds.contains(deviceId)) {
+            continue;
+          }
+          normalizedChildDeviceMap[deviceId] = childId;
+        }
       }
-      return statusByDeviceId;
+
+      void emitMerged() {
+        final merged = <String, DeviceStatusSnapshot>{
+          ...childStatusByDeviceId,
+        };
+        for (final entry in rootStatusByDeviceId.entries) {
+          final existing = merged[entry.key];
+          if (_isNewerStatusSnapshot(entry.value, existing)) {
+            merged[entry.key] = entry.value;
+          }
+        }
+        controller.add(merged);
+      }
+
+      final rootSub = rootQuery.snapshots().listen(
+        (snapshot) {
+          final next = <String, DeviceStatusSnapshot>{};
+          for (final doc in snapshot.docs) {
+            next[doc.id] = DeviceStatusSnapshot.fromFirestore(doc);
+          }
+          rootStatusByDeviceId = next;
+          emitMerged();
+        },
+        onError: (_, __) {
+          // Root query can be denied by stricter rulesets; child-device
+          // fallbacks still provide presence data.
+          rootStatusByDeviceId = <String, DeviceStatusSnapshot>{};
+          emitMerged();
+        },
+      );
+
+      StreamSubscription<QuerySnapshot<Map<String, dynamic>>>? childSub;
+      final childDocSubs =
+          <StreamSubscription<DocumentSnapshot<Map<String, dynamic>>>>[];
+
+      if (normalizedChildDeviceMap.isNotEmpty) {
+        for (final entry in normalizedChildDeviceMap.entries) {
+          final childId = entry.value;
+          final deviceId = entry.key;
+          final sub = _firestore
+              .collection('children')
+              .doc(childId)
+              .collection('devices')
+              .doc(deviceId)
+              .snapshots()
+              .listen(
+            (snapshot) {
+              final next = <String, DeviceStatusSnapshot>{
+                ...childStatusByDeviceId,
+              };
+              if (snapshot.exists) {
+                next[deviceId] = DeviceStatusSnapshot.fromFirestore(snapshot);
+              } else {
+                next.remove(deviceId);
+              }
+              childStatusByDeviceId = next;
+              emitMerged();
+            },
+            onError: (_, __) {
+              final next = <String, DeviceStatusSnapshot>{
+                ...childStatusByDeviceId,
+              };
+              next.remove(deviceId);
+              childStatusByDeviceId = next;
+              emitMerged();
+            },
+          );
+          childDocSubs.add(sub);
+        }
+      } else {
+        childSub = childDeviceQuery.snapshots().listen(
+          (snapshot) {
+            final next = <String, DeviceStatusSnapshot>{};
+            for (final doc in snapshot.docs) {
+              final candidate = DeviceStatusSnapshot.fromFirestore(doc);
+              final existing = next[doc.id];
+              if (_isNewerStatusSnapshot(candidate, existing)) {
+                next[doc.id] = candidate;
+              }
+            }
+            childStatusByDeviceId = next;
+            emitMerged();
+          },
+          onError: (_, __) {
+            // Child-device fallback is best effort; root stream can still drive
+            // status in environments where collectionGroup access is restricted.
+          },
+        );
+      }
+
+      controller.onCancel = () async {
+        await rootSub.cancel();
+        if (childSub != null) {
+          await childSub.cancel();
+        }
+        for (final sub in childDocSubs) {
+          await sub.cancel();
+        }
+      };
     });
+  }
+
+  bool _isNewerStatusSnapshot(
+    DeviceStatusSnapshot candidate,
+    DeviceStatusSnapshot? existing,
+  ) {
+    if (existing == null) {
+      return true;
+    }
+
+    final candidateSeen = candidate.lastSeen ?? candidate.updatedAt;
+    final existingSeen = existing.lastSeen ?? existing.updatedAt;
+
+    if (candidateSeen == null) {
+      return false;
+    }
+    if (existingSeen == null) {
+      return true;
+    }
+    return candidateSeen.isAfter(existingSeen);
   }
 
   /// Streams latest heartbeat timestamps for a set of device IDs.
@@ -1244,9 +1389,12 @@ class FirestoreService {
   /// Firestore `whereIn` supports at most 10 IDs; extra IDs are ignored and
   /// should be handled separately by callers.
   Stream<Map<String, DateTime?>> watchDeviceHeartbeats(
-    List<String> deviceIds,
-  ) {
-    return watchDeviceStatuses(deviceIds).map((statusByDeviceId) {
+    List<String> deviceIds, {
+    String? parentId,
+  }) {
+    return watchDeviceStatuses(deviceIds, parentId: parentId).map((
+      statusByDeviceId,
+    ) {
       final heartbeatByDeviceId = <String, DateTime?>{};
       for (final entry in statusByDeviceId.entries) {
         heartbeatByDeviceId[entry.key] = entry.value.lastSeen;
@@ -1566,7 +1714,17 @@ class FirestoreService {
       );
     }
 
-    final childRef = _firestore.collection('children').doc(child.id);
+    final childDoc = await _loadOwnedChildDoc(
+      parentId: parentId,
+      childId: child.id,
+    );
+    final childData = childDoc.data() ?? const <String, dynamic>{};
+    final existingManualMode = _dynamicMap(childData['manualMode']);
+    final normalizedPolicy = child.policy.copyWith(
+      blockedCategories: normalizeCategoryIds(child.policy.blockedCategories),
+    );
+    final updatedAt = DateTime.now();
+    final childRef = childDoc.reference;
     await childRef.update({
       'nickname': normalizedNickname,
       'ageBand': child.ageBand.value,
@@ -1576,12 +1734,21 @@ class FirestoreService {
         (deviceId, metadata) => MapEntry(deviceId, metadata.toMap()),
       ),
       'nextDnsControls': child.nextDnsControls,
-      'policy': child.policy.toMap(),
+      'policy': normalizedPolicy.toMap(),
       'pausedUntil': child.pausedUntil != null
           ? Timestamp.fromDate(child.pausedUntil!)
           : null,
-      'updatedAt': Timestamp.fromDate(DateTime.now()),
+      'updatedAt': Timestamp.fromDate(updatedAt),
     });
+    await _recordPolicyEventSnapshot(
+      parentId: parentId,
+      childId: child.id,
+      blockedCategories: normalizedPolicy.blockedCategories,
+      blockedDomains: normalizedPolicy.blockedDomains,
+      manualMode: existingManualMode.isEmpty ? null : existingManualMode,
+      pausedUntil: child.pausedUntil,
+      sourceUpdatedAt: updatedAt,
+    );
   }
 
   Future<void> deleteChild({
@@ -1735,11 +1902,26 @@ class FirestoreService {
       parentId: parentId,
       childId: childId,
     );
+    final childData = childDoc.data() ?? const <String, dynamic>{};
+    final policy = _dynamicMap(childData['policy']);
+    final manualMode = _dynamicMap(childData['manualMode']);
+    final blockedCategories = _dynamicStringList(policy['blockedCategories']);
+    final blockedDomains = _dynamicStringList(policy['blockedDomains']);
+    final updatedAt = DateTime.now();
     await childDoc.reference.update(<String, dynamic>{
       'pausedUntil':
           pausedUntil == null ? null : Timestamp.fromDate(pausedUntil),
-      'updatedAt': Timestamp.fromDate(DateTime.now()),
+      'updatedAt': Timestamp.fromDate(updatedAt),
     });
+    await _recordPolicyEventSnapshot(
+      parentId: parentId,
+      childId: childId,
+      blockedCategories: blockedCategories,
+      blockedDomains: blockedDomains,
+      manualMode: manualMode.isEmpty ? null : manualMode,
+      pausedUntil: pausedUntil,
+      sourceUpdatedAt: updatedAt,
+    );
   }
 
   /// Persists or clears manual quick-mode override for a child.
@@ -1762,24 +1944,49 @@ class FirestoreService {
       parentId: parentId,
       childId: childId,
     );
+    final childData = childDoc.data() ?? const <String, dynamic>{};
+    final policy = _dynamicMap(childData['policy']);
+    final blockedCategories = _dynamicStringList(policy['blockedCategories']);
+    final blockedDomains = _dynamicStringList(policy['blockedDomains']);
+    final pausedUntil = _dynamicDateTime(childData['pausedUntil']);
     final normalizedMode = mode?.trim().toLowerCase();
+    final updatedAt = DateTime.now();
 
     if (normalizedMode == null || normalizedMode.isEmpty) {
       await childDoc.reference.update(<String, dynamic>{
         'manualMode': null,
-        'updatedAt': Timestamp.fromDate(DateTime.now()),
+        'updatedAt': Timestamp.fromDate(updatedAt),
       });
+      await _recordPolicyEventSnapshot(
+        parentId: parentId,
+        childId: childId,
+        blockedCategories: blockedCategories,
+        blockedDomains: blockedDomains,
+        manualMode: null,
+        pausedUntil: pausedUntil,
+        sourceUpdatedAt: updatedAt,
+      );
       return;
     }
 
+    final manualModePayload = <String, dynamic>{
+      'mode': normalizedMode,
+      'setAt': Timestamp.fromDate(updatedAt),
+      'expiresAt': expiresAt == null ? null : Timestamp.fromDate(expiresAt),
+    };
     await childDoc.reference.update(<String, dynamic>{
-      'manualMode': <String, dynamic>{
-        'mode': normalizedMode,
-        'setAt': Timestamp.fromDate(DateTime.now()),
-        'expiresAt': expiresAt == null ? null : Timestamp.fromDate(expiresAt),
-      },
-      'updatedAt': Timestamp.fromDate(DateTime.now()),
+      'manualMode': manualModePayload,
+      'updatedAt': Timestamp.fromDate(updatedAt),
     });
+    await _recordPolicyEventSnapshot(
+      parentId: parentId,
+      childId: childId,
+      blockedCategories: blockedCategories,
+      blockedDomains: blockedDomains,
+      manualMode: manualModePayload,
+      pausedUntil: pausedUntil,
+      sourceUpdatedAt: updatedAt,
+    );
   }
 
   /// Submit a new access request from child profile.
@@ -1939,9 +2146,10 @@ class FirestoreService {
       final rawChildId = requestData == null
           ? ''
           : (requestData['childId']?.toString().trim() ?? '');
-      final childNotificationTargetId = existingRequest.childId.trim().isNotEmpty
-          ? existingRequest.childId.trim()
-          : rawChildId;
+      final childNotificationTargetId =
+          existingRequest.childId.trim().isNotEmpty
+              ? existingRequest.childId.trim()
+              : rawChildId;
 
       DateTime? expiresAt;
       if (status == RequestStatus.approved) {
@@ -2287,6 +2495,118 @@ class FirestoreService {
       return null;
     }
     return profileId;
+  }
+
+  Future<void> _recordPolicyEventSnapshot({
+    required String parentId,
+    required String childId,
+    required Iterable<String> blockedCategories,
+    required Iterable<String> blockedDomains,
+    required Map<String, dynamic>? manualMode,
+    required DateTime? pausedUntil,
+    required DateTime sourceUpdatedAt,
+  }) async {
+    final normalizedParentId = parentId.trim();
+    final normalizedChildId = childId.trim();
+    if (normalizedParentId.isEmpty || normalizedChildId.isEmpty) {
+      return;
+    }
+    try {
+      final normalizedCategories = _normalizeStringIterable(blockedCategories);
+      final canonicalCategories = normalizeCategoryIds(normalizedCategories);
+      final normalizedDomains = _normalizeStringIterable(blockedDomains);
+      final normalizedManualMode = _normalizeManualModeMap(manualMode);
+
+      await _firestore
+          .collection('children')
+          .doc(normalizedChildId)
+          .collection('policy_events')
+          .add(<String, dynamic>{
+        'parentId': normalizedParentId,
+        'childId': normalizedChildId,
+        'blockedCategories': canonicalCategories,
+        'blockedDomains': normalizedDomains,
+        'manualMode': normalizedManualMode,
+        'pausedUntil':
+            pausedUntil == null ? null : Timestamp.fromDate(pausedUntil),
+        'sourceUpdatedAt': Timestamp.fromDate(sourceUpdatedAt),
+        'eventEpochMs': _nextPolicyEventEpochMs(),
+        'createdAt': FieldValue.serverTimestamp(),
+      });
+    } catch (error, stackTrace) {
+      developer.log(
+        'Failed to append child policy event for $normalizedChildId',
+        name: 'FirestoreService',
+        error: error,
+        stackTrace: stackTrace,
+      );
+    }
+  }
+
+  List<String> _normalizeStringIterable(Iterable<String> values) {
+    return values
+        .map((value) => value.trim().toLowerCase())
+        .where((value) => value.isNotEmpty)
+        .toSet()
+        .toList()
+      ..sort();
+  }
+
+  Map<String, dynamic>? _normalizeManualModeMap(Map<String, dynamic>? rawMode) {
+    if (rawMode == null || rawMode.isEmpty) {
+      return null;
+    }
+    final normalizedMode = (rawMode['mode'] as String?)?.trim().toLowerCase();
+    if (normalizedMode == null || normalizedMode.isEmpty) {
+      return null;
+    }
+    final setAt = _dynamicDateTime(rawMode['setAt']);
+    final expiresAt = _dynamicDateTime(rawMode['expiresAt']);
+    return <String, dynamic>{
+      'mode': normalizedMode,
+      if (setAt != null) 'setAt': Timestamp.fromDate(setAt),
+      if (expiresAt != null) 'expiresAt': Timestamp.fromDate(expiresAt),
+    };
+  }
+
+  int _nextPolicyEventEpochMs() {
+    final now = DateTime.now().millisecondsSinceEpoch;
+    if (now <= _lastPolicyEventEpochMs) {
+      _lastPolicyEventEpochMs += 1;
+    } else {
+      _lastPolicyEventEpochMs = now;
+    }
+    return _lastPolicyEventEpochMs;
+  }
+
+  Map<String, dynamic> _dynamicMap(Object? raw) {
+    if (raw is Map<String, dynamic>) {
+      return raw;
+    }
+    if (raw is Map) {
+      return raw.map((key, value) => MapEntry(key.toString(), value));
+    }
+    return <String, dynamic>{};
+  }
+
+  Set<String> _dynamicStringList(Object? raw) {
+    if (raw is! List) {
+      return <String>{};
+    }
+    return raw
+        .map((value) => value.toString().trim())
+        .where((value) => value.isNotEmpty)
+        .toSet();
+  }
+
+  DateTime? _dynamicDateTime(Object? raw) {
+    if (raw is Timestamp) {
+      return raw.toDate();
+    }
+    if (raw is DateTime) {
+      return raw;
+    }
+    return null;
   }
 
   String? _normalizeExceptionDomain(String raw) {

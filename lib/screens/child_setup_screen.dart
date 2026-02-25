@@ -33,6 +33,23 @@ class _ChildSetupScreenState extends State<ChildSetupScreen> {
   String? _errorMessage;
   String? _lastAuthErrorCode;
 
+  Future<void> _openParentSignIn() async {
+    if (_isConnecting) {
+      return;
+    }
+    await Navigator.of(context).pushNamed(
+      '/parent/login',
+      arguments: const <String, dynamic>{
+        'redirectAfterLogin': '/child/setup',
+        'targetMode': 'child',
+      },
+    );
+    if (!mounted) {
+      return;
+    }
+    await _ensureAuthenticatedSession();
+  }
+
   @override
   void initState() {
     super.initState();
@@ -69,18 +86,34 @@ class _ChildSetupScreenState extends State<ChildSetupScreen> {
     });
 
     try {
-      final currentUser = FirebaseAuth.instance.currentUser;
+      var currentUser = FirebaseAuth.instance.currentUser;
       if (currentUser == null) {
-        if (!mounted) {
+        try {
+          final credential = await FirebaseAuth.instance.signInAnonymously();
+          currentUser = credential.user;
+        } on FirebaseAuthException catch (error) {
+          if (!mounted) {
+            return;
+          }
+          final code = error.code.trim().toLowerCase();
+          setState(() {
+            _isReady = false;
+            _lastAuthErrorCode = code;
+            _errorMessage = _friendlyAuthInitError(code);
+          });
+          return;
+        } catch (_) {
+          if (!mounted) {
+            return;
+          }
+          setState(() {
+            _isReady = false;
+            _lastAuthErrorCode = 'auth-init-failed';
+            _errorMessage =
+                'Could not start secure child setup. Check internet and retry.';
+          });
           return;
         }
-        setState(() {
-          _isReady = false;
-          _lastAuthErrorCode = 'missing-parent-session';
-          _errorMessage =
-              'Sign in with the parent account on this device before child setup.';
-        });
-        return;
       }
       if (!mounted) {
         return;
@@ -88,6 +121,7 @@ class _ChildSetupScreenState extends State<ChildSetupScreen> {
       setState(() {
         _isReady = true;
         _lastAuthErrorCode = null;
+        _errorMessage = null;
       });
     } on FirebaseAuthException catch (error) {
       if (!mounted) {
@@ -303,9 +337,23 @@ class _ChildSetupScreenState extends State<ChildSetupScreen> {
               ],
               if (!_isReady) ...[
                 const SizedBox(height: 10),
-                TextButton(
-                  onPressed: _isConnecting ? null : _ensureAuthenticatedSession,
-                  child: const Text('Retry'),
+                Wrap(
+                  alignment: WrapAlignment.center,
+                  spacing: 8,
+                  runSpacing: 6,
+                  children: [
+                    TextButton(
+                      onPressed:
+                          _isConnecting ? null : _ensureAuthenticatedSession,
+                      child: const Text('Retry'),
+                    ),
+                    if (_lastAuthErrorCode == 'missing-parent-session')
+                      FilledButton.tonalIcon(
+                        onPressed: _isConnecting ? null : _openParentSignIn,
+                        icon: const Icon(Icons.login),
+                        label: const Text('Sign In Parent Account'),
+                      ),
+                  ],
                 ),
               ],
             ],

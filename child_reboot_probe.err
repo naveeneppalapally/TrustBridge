@@ -1,0 +1,21 @@
+No tests were found.
+cmd: Can't find service: activity
+adb uninstall failed: ProcessException: Process exited abnormally with exit code 20:
+cmd: Can't find service: package
+  Command: C:\Users\katla\AppData\Local\Android\Sdk\platform-tools\adb.exe -s aae47d3e uninstall com.navee.trustbridge
+unhandled error during finalization of test:
+C:/Users/katla/Documents/TrustBridge/integration_test/real_device_vpn_smoke_test.dart
+PathNotFoundException: Deletion failed, path = 'C:\Users\katla\AppData\Local\Temp\flutter_tools.ad309e34\flutter_test_listener.fd917af' (OS Error: The system cannot find the path specified.
+, errno = 3)
+#0      _Directory._deleteSync (dart:io/directory_impl.dart:225:7)
+#1      FileSystemEntity.deleteSync (dart:io/file_system_entity.dart:425:7)
+#2      ForwardingFileSystemEntity.deleteSync (package:file/src/forwarding/forwarding_file_system_entity.dart:70:16)
+#3      ErrorHandlingDirectory.deleteSync.<anonymous closure> (package:flutter_tools/src/base/error_handling_io.dart:451:22)
+#4      _runSync (package:flutter_tools/src/base/error_handling_io.dart:552:14)
+#5      ErrorHandlingDirectory.deleteSync (package:flutter_tools/src/base/error_handling_io.dart:450:12)
+#6      FlutterPlatform._createListenerDart.<anonymous closure> (package:flutter_tools/src/test/flutter_platform.dart:787:15)
+#7      FlutterPlatform._startTest.finalize (package:flutter_tools/src/test/flutter_platform.dart:592:26)
+<asynchronous suspension>
+#8      FlutterPlatform._startTest (package:flutter_tools/src/test/flutter_platform.dart:763:7)
+<asynchronous suspension>
+

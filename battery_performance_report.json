@@ -1,0 +1,391 @@
+﻿{
+    "deviceId":  "aae47d3e",
+    "packageName":  "com.navee.trustbridge",
+    "uid":  10427,
+    "uidTag":  "u0a427",
+    "startedAtUtc":  "2026-02-24T02:54:13.1962167Z",
+    "endedAtUtc":  "2026-02-24T03:26:31.9318068Z",
+    "durationHours":  0.5385,
+    "idleMinutes":  30,
+    "baseline":  {
+                     "battery":  {
+                                     "raw":  "Current Battery Service state:\r\n  AC powered: false\r\n  USB powered: true\r\n  Wireless powered: false\r\n  Max charging current: 0\r\n  Max charging voltage: 4980736\r\n  Charge counter: 3637100\r\n  engine: 0\r\n  soc decimal: 0\r\n  board temp status: 0\r\n  low bat status: 0\r\n  reverse wl chg status: 0\r\n  reverse wl chg exception: 0\r\n  status: 2\r\n  health: 2\r\n  present: true\r\n  level: 83\r\n  scale: 100\r\n  voltage: 4153\r\n  temperature: 311\r\n  technology: Li-poly",
+                                     "level":  83,
+                                     "scale":  100,
+                                     "status":  2,
+                                     "chargeCounterUah":  3637100,
+                                     "usbPowered":  "true",
+                                     "acPowered":  "false",
+                                     "wirelessPowered":  "false"
+                                 },
+                     "process":  {
+                                     "pid":  "29456",
+                                     "cpuLine":  "",
+                                     "topLine":  "29456 u0_a427      10 -10  19G 271M 160M S 18.1   7.3   0:34.99 com.navee.trustbridge",
+                                     "memSummary":  "Native Heap    18317    18192       44     2625    19180    36492    17475    12667\r\n           Java Heap:    10216                          22076\r\n         Native Heap:    18192                          19180\r\n           TOTAL PSS:   293165            TOTAL RSS:   315108       TOTAL SWAP PSS:    62853",
+                                     "totalPssKb":  293165,
+                                     "totalRssKb":  315108
+                                 }
+                 },
+    "afterSweepBattery":  {
+                              "raw":  "Current Battery Service state:\r\n  AC powered: false\r\n  USB powered: true\r\n  Wireless powered: false\r\n  Max charging current: 0\r\n  Max charging voltage: 4980736\r\n  Charge counter: 3637100\r\n  engine: 0\r\n  soc decimal: 0\r\n  board temp status: 0\r\n  low bat status: 0\r\n  reverse wl chg status: 0\r\n  reverse wl chg exception: 0\r\n  status: 2\r\n  health: 2\r\n  present: true\r\n  level: 83\r\n  scale: 100\r\n  voltage: 4085\r\n  temperature: 316\r\n  technology: Li-poly",
+                              "level":  83,
+                              "scale":  100,
+                              "status":  2,
+                              "chargeCounterUah":  3637100,
+                              "usbPowered":  "true",
+                              "acPowered":  "false",
+                              "wirelessPowered":  "false"
+                          },
+    "final":  {
+                  "battery":  {
+                                  "raw":  "Current Battery Service state:\r\n  AC powered: false\r\n  USB powered: true\r\n  Wireless powered: false\r\n  Max charging current: 0\r\n  Max charging voltage: 4980736\r\n  Charge counter: 3637100\r\n  engine: 0\r\n  soc decimal: 0\r\n  board temp status: 0\r\n  low bat status: 0\r\n  reverse wl chg status: 0\r\n  reverse wl chg exception: 0\r\n  status: 2\r\n  health: 2\r\n  present: true\r\n  level: 83\r\n  scale: 100\r\n  voltage: 4161\r\n  temperature: 313\r\n  technology: Li-poly",
+                                  "level":  83,
+                                  "scale":  100,
+                                  "status":  2,
+                                  "chargeCounterUah":  3637100,
+                                  "usbPowered":  "true",
+                                  "acPowered":  "false",
+                                  "wirelessPowered":  "false"
+                              },
+                  "process":  {
+                                  "pid":  "29456",
+                                  "cpuLine":  "20% 29456/com.navee.trustbridge: 13% user + 6.4% kernel / faults: 9500 minor 7 major",
+                                  "topLine":  "29456 u0_a427      20   0  19G 119M  79M S 19.4   3.1   7:00.79 com.navee.trustbridge",
+                                  "memSummary":  "Native Heap    15889    15832        0    14198    16792    45836    26196    13343\r\n           Java Heap:    11824                          24188\r\n         Native Heap:    15832                          16792\r\n           TOTAL PSS:   217527            TOTAL RSS:   166200       TOTAL SWAP PSS:   130770",
+                                  "totalPssKb":  217527,
+                                  "totalRssKb":  166200
+                              }
+              },
+    "estimatedBatteryCapacityMah":  4382.05,
+    "appPowerMah":  null,
+    "appPercentPerHourEstimate":  null,
+    "targetPercentPerHour":  5,
+    "targetMet":  null,
+    "dnsLatency":  {
+                       "blockedAverageMs":  null,
+                       "allowedAverageMs":  null,
+                       "rows":  [
+                                    [
+                                        "",
+                                        "",
+                                        "",
+                                        "",
+                                        {
+                                            "domain":  "instagram.com",
+                                            "class":  "blocked",
+                                            "resolvedIp":  "127.0.0.1",
+                                            "domainConnectMs":  130,
+                                            "ipConnectMs":  95,
+                                            "dnsEstimateMs":  35,
+                                            "domainConnectOutput":  "",
+                                            "resolveOutputFirstLine":  "PING instagram.com (127.0.0.1) 56(84) bytes of data."
+                                        }
+                                    ],
+                                    [
+                                        "",
+                                        "",
+                                        "",
+                                        "",
+                                        {
+                                            "domain":  "www.instagram.com",
+                                            "class":  "blocked",
+                                            "resolvedIp":  "127.0.0.1",
+                                            "domainConnectMs":  100,
+                                            "ipConnectMs":  108,
+                                            "dnsEstimateMs":  0,
+                                            "domainConnectOutput":  "",
+                                            "resolveOutputFirstLine":  "PING www.instagram.com (127.0.0.1) 56(84) bytes of data."
+                                        }
+                                    ],
+                                    [
+                                        "",
+                                        "",
+                                        "",
+                                        "",
+                                        {
+                                            "domain":  "m.instagram.com",
+                                            "class":  "blocked",
+                                            "resolvedIp":  "127.0.0.1",
+                                            "domainConnectMs":  96,
+                                            "ipConnectMs":  93,
+                                            "dnsEstimateMs":  3,
+                                            "domainConnectOutput":  "",
+                                            "resolveOutputFirstLine":  "PING m.instagram.com (127.0.0.1) 56(84) bytes of data."
+                                        }
+                                    ],
+                                    [
+                                        "",
+                                        "",
+                                        "",
+                                        "",
+                                        {
+                                            "domain":  "help.instagram.com",
+                                            "class":  "blocked",
+                                            "resolvedIp":  "127.0.0.1",
+                                            "domainConnectMs":  114,
+                                            "ipConnectMs":  93,
+                                            "dnsEstimateMs":  21,
+                                            "domainConnectOutput":  "",
+                                            "resolveOutputFirstLine":  "PING help.instagram.com (127.0.0.1) 56(84) bytes of data."
+                                        }
+                                    ],
+                                    [
+                                        "",
+                                        "",
+                                        "",
+                                        "",
+                                        {
+                                            "domain":  "about.instagram.com",
+                                            "class":  "blocked",
+                                            "resolvedIp":  "127.0.0.1",
+                                            "domainConnectMs":  106,
+                                            "ipConnectMs":  93,
+                                            "dnsEstimateMs":  13,
+                                            "domainConnectOutput":  "",
+                                            "resolveOutputFirstLine":  "PING about.instagram.com (127.0.0.1) 56(84) bytes of data."
+                                        }
+                                    ],
+                                    [
+                                        "",
+                                        "",
+                                        "",
+                                        "",
+                                        {
+                                            "domain":  "api.instagram.com",
+                                            "class":  "blocked",
+                                            "resolvedIp":  "127.0.0.1",
+                                            "domainConnectMs":  104,
+                                            "ipConnectMs":  89,
+                                            "dnsEstimateMs":  15,
+                                            "domainConnectOutput":  "",
+                                            "resolveOutputFirstLine":  "PING api.instagram.com (127.0.0.1) 56(84) bytes of data."
+                                        }
+                                    ],
+                                    [
+                                        "",
+                                        "",
+                                        "",
+                                        "",
+                                        {
+                                            "domain":  "graph.instagram.com",
+                                            "class":  "blocked",
+                                            "resolvedIp":  "127.0.0.1",
+                                            "domainConnectMs":  106,
+                                            "ipConnectMs":  96,
+                                            "dnsEstimateMs":  10,
+                                            "domainConnectOutput":  "",
+                                            "resolveOutputFirstLine":  "PING graph.instagram.com (127.0.0.1) 56(84) bytes of data."
+                                        }
+                                    ],
+                                    [
+                                        "",
+                                        "",
+                                        "",
+                                        "",
+                                        {
+                                            "domain":  "i.instagram.com",
+                                            "class":  "blocked",
+                                            "resolvedIp":  "127.0.0.1",
+                                            "domainConnectMs":  98,
+                                            "ipConnectMs":  99,
+                                            "dnsEstimateMs":  0,
+                                            "domainConnectOutput":  "",
+                                            "resolveOutputFirstLine":  "PING i.instagram.com (127.0.0.1) 56(84) bytes of data."
+                                        }
+                                    ],
+                                    [
+                                        "",
+                                        "",
+                                        "",
+                                        "",
+                                        {
+                                            "domain":  "l.instagram.com",
+                                            "class":  "blocked",
+                                            "resolvedIp":  "127.0.0.1",
+                                            "domainConnectMs":  105,
+                                            "ipConnectMs":  88,
+                                            "dnsEstimateMs":  17,
+                                            "domainConnectOutput":  "",
+                                            "resolveOutputFirstLine":  "PING l.instagram.com (127.0.0.1) 56(84) bytes of data."
+                                        }
+                                    ],
+                                    [
+                                        "",
+                                        "",
+                                        "",
+                                        "",
+                                        {
+                                            "domain":  "business.instagram.com",
+                                            "class":  "blocked",
+                                            "resolvedIp":  "127.0.0.1",
+                                            "domainConnectMs":  128,
+                                            "ipConnectMs":  98,
+                                            "dnsEstimateMs":  30,
+                                            "domainConnectOutput":  "",
+                                            "resolveOutputFirstLine":  "PING business.instagram.com (127.0.0.1) 56(84) bytes of data."
+                                        }
+                                    ],
+                                    [
+                                        "",
+                                        "",
+                                        "",
+                                        "",
+                                        {
+                                            "domain":  "google.com",
+                                            "class":  "allowed",
+                                            "resolvedIp":  "142.251.222.110",
+                                            "domainConnectMs":  3090,
+                                            "ipConnectMs":  437,
+                                            "dnsEstimateMs":  2653,
+                                            "domainConnectOutput":  "",
+                                            "resolveOutputFirstLine":  "PING google.com (142.251.222.110) 56(84) bytes of data."
+                                        }
+                                    ],
+                                    [
+                                        "",
+                                        "",
+                                        "",
+                                        "",
+                                        {
+                                            "domain":  "wikipedia.org",
+                                            "class":  "allowed",
+                                            "resolvedIp":  "103.102.166.224",
+                                            "domainConnectMs":  289,
+                                            "ipConnectMs":  251,
+                                            "dnsEstimateMs":  38,
+                                            "domainConnectOutput":  "",
+                                            "resolveOutputFirstLine":  "PING wikipedia.org (103.102.166.224) 56(84) bytes of data."
+                                        }
+                                    ],
+                                    [
+                                        "",
+                                        "",
+                                        "",
+                                        "",
+                                        {
+                                            "domain":  "openai.com",
+                                            "class":  "allowed",
+                                            "resolvedIp":  "172.64.154.211",
+                                            "domainConnectMs":  204,
+                                            "ipConnectMs":  121,
+                                            "dnsEstimateMs":  83,
+                                            "domainConnectOutput":  "",
+                                            "resolveOutputFirstLine":  "PING openai.com (172.64.154.211) 56(84) bytes of data."
+                                        }
+                                    ],
+                                    [
+                                        "",
+                                        "",
+                                        "",
+                                        "",
+                                        {
+                                            "domain":  "microsoft.com",
+                                            "class":  "allowed",
+                                            "resolvedIp":  "13.107.213.68",
+                                            "domainConnectMs":  141,
+                                            "ipConnectMs":  433,
+                                            "dnsEstimateMs":  0,
+                                            "domainConnectOutput":  "",
+                                            "resolveOutputFirstLine":  "PING microsoft.com (13.107.213.68) 56(84) bytes of data."
+                                        }
+                                    ],
+                                    [
+                                        "",
+                                        "",
+                                        "",
+                                        "",
+                                        {
+                                            "domain":  "amazon.com",
+                                            "class":  "allowed",
+                                            "resolvedIp":  "98.87.170.74",
+                                            "domainConnectMs":  828,
+                                            "ipConnectMs":  665,
+                                            "dnsEstimateMs":  163,
+                                            "domainConnectOutput":  "",
+                                            "resolveOutputFirstLine":  "PING amazon.com (98.87.170.74) 56(84) bytes of data."
+                                        }
+                                    ],
+                                    [
+                                        "",
+                                        "",
+                                        "",
+                                        "",
+                                        {
+                                            "domain":  "bbc.com",
+                                            "class":  "allowed",
+                                            "resolvedIp":  "151.101.128.81",
+                                            "domainConnectMs":  215,
+                                            "ipConnectMs":  98,
+                                            "dnsEstimateMs":  117,
+                                            "domainConnectOutput":  "\u0015\u0003\u0003\u0000\u0002\u00022\u0015\u0003\u0003\u0000\u0002\u0001\u0000",
+                                            "resolveOutputFirstLine":  "PING bbc.com (151.101.128.81) 56(84) bytes of data."
+                                        }
+                                    ],
+                                    [
+                                        "",
+                                        "",
+                                        "",
+                                        "",
+                                        {
+                                            "domain":  "nytimes.com",
+                                            "class":  "allowed",
+                                            "resolvedIp":  "151.101.65.164",
+                                            "domainConnectMs":  186,
+                                            "ipConnectMs":  109,
+                                            "dnsEstimateMs":  77,
+                                            "domainConnectOutput":  "\u0015\u0003\u0003\u0000\u0002\u00022\u0015\u0003\u0003\u0000\u0002\u0001\u0000",
+                                            "resolveOutputFirstLine":  "PING nytimes.com (151.101.65.164) 56(84) bytes of data."
+                                        }
+                                    ],
+                                    [
+                                        "",
+                                        "",
+                                        "",
+                                        "",
+                                        {
+                                            "domain":  "stackoverflow.com",
+                                            "class":  "allowed",
+                                            "resolvedIp":  "198.252.206.1",
+                                            "domainConnectMs":  169,
+                                            "ipConnectMs":  144,
+                                            "dnsEstimateMs":  25,
+                                            "domainConnectOutput":  "",
+                                            "resolveOutputFirstLine":  "PING stackoverflow.com (198.252.206.1) 56(84) bytes of data."
+                                        }
+                                    ],
+                                    [
+                                        "",
+                                        "",
+                                        "",
+                                        "",
+                                        {
+                                            "domain":  "cloudflare.com",
+                                            "class":  "allowed",
+                                            "resolvedIp":  "104.16.132.229",
+                                            "domainConnectMs":  177,
+                                            "ipConnectMs":  130,
+                                            "dnsEstimateMs":  47,
+                                            "domainConnectOutput":  "",
+                                            "resolveOutputFirstLine":  "PING cloudflare.com (104.16.132.229) 56(84) bytes of data."
+                                        }
+                                    ],
+                                    [
+                                        "",
+                                        "",
+                                        "",
+                                        "",
+                                        {
+                                            "domain":  "github.com",
+                                            "class":  "allowed",
+                                            "resolvedIp":  "20.207.73.82",
+                                            "domainConnectMs":  232,
+                                            "ipConnectMs":  152,
+                                            "dnsEstimateMs":  80,
+                                            "domainConnectOutput":  "",
+                                            "resolveOutputFirstLine":  "PING github.com (20.207.73.82) 56(84) bytes of data."
+                                        }
+                                    ]
+                                ]
+                   }
+}

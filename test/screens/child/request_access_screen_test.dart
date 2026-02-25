@@ -46,10 +46,15 @@ void main() {
       );
       await tester.pumpAndSettle();
 
-      final sendButton = tester.widget<FilledButton>(
-        find.widgetWithText(FilledButton, 'Send request'),
-      );
-      expect(sendButton.onPressed, isNull);
+      await tester.tap(find.text('Send request'));
+      await tester.pumpAndSettle();
+
+      final docs = await firestore
+          .collection('parents')
+          .doc('parent-1')
+          .collection('access_requests')
+          .get();
+      expect(docs.docs, isEmpty);
     });
 
     testWidgets('on send creates Firestore access request document',
@@ -69,7 +74,7 @@ void main() {
       await tester.tap(find.text('Instagram'));
       await tester.pumpAndSettle();
 
-      await tester.tap(find.widgetWithText(FilledButton, 'Send request'));
+      await tester.tap(find.text('Send request'));
       await tester.pumpAndSettle();
 
       final docs = await firestore
@@ -101,7 +106,7 @@ void main() {
 
       await tester.tap(find.text('Instagram'));
       await tester.pumpAndSettle();
-      await tester.tap(find.widgetWithText(FilledButton, 'Send request'));
+      await tester.tap(find.text('Send request'));
       await tester.pumpAndSettle();
 
       expect(find.text('Request sent!'), findsOneWidget);

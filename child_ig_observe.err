@@ -1,0 +1,3 @@
+adb uninstall failed: ProcessException: Process exited abnormally with exit code 1:
+Failure [DELETE_FAILED_DEVICE_POLICY_MANAGER]
+  Command: C:\Users\katla\AppData\Local\Android\Sdk\platform-tools\adb.exe -s aae47d3e uninstall com.navee.trustbridge

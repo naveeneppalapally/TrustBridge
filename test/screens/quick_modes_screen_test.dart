@@ -43,34 +43,32 @@ void main() {
         ),
       );
 
+      await tester.pumpAndSettle();
       await tester.scrollUntilVisible(
-        find.widgetWithText(FilledButton, 'Apply Mode'),
+        find.text('Apply Mode'),
         300,
         scrollable: find.byType(Scrollable).first,
       );
       await tester.pumpAndSettle();
 
       expect(find.text('Apply Mode'), findsOneWidget);
-      final applyButton = tester.widget<FilledButton>(
-        find.widgetWithText(FilledButton, 'Apply Mode'),
-      );
-      expect(applyButton.onPressed, isNull);
+      await tester.tap(find.text('Apply Mode'));
+      await tester.pumpAndSettle();
+      expect(find.text('Apply Quick Mode?'), findsNothing);
 
       await tester.tap(find.text('Balanced'));
       await tester.pumpAndSettle();
 
+      expect(find.text('Preview Changes'), findsOneWidget);
       await tester.scrollUntilVisible(
-        find.widgetWithText(FilledButton, 'Apply Mode'),
+        find.text('Apply Mode'),
         300,
         scrollable: find.byType(Scrollable).first,
       );
       await tester.pumpAndSettle();
-
-      final enabledButton = tester.widget<FilledButton>(
-        find.widgetWithText(FilledButton, 'Apply Mode'),
-      );
-      expect(enabledButton.onPressed, isNotNull);
-      expect(find.text('Preview Changes'), findsOneWidget);
+      await tester.tap(find.text('Apply Mode'));
+      await tester.pumpAndSettle();
+      expect(find.text('Apply Quick Mode?'), findsOneWidget);
     });
 
     testWidgets('apply opens confirmation dialog', (tester) async {
@@ -87,13 +85,12 @@ void main() {
       await tester.pumpAndSettle();
 
       await tester.scrollUntilVisible(
-        find.widgetWithText(FilledButton, 'Apply Mode'),
+        find.text('Apply Mode'),
         300,
         scrollable: find.byType(Scrollable).first,
       );
       await tester.pumpAndSettle();
-
-      await tester.tap(find.widgetWithText(FilledButton, 'Apply Mode'));
+      await tester.tap(find.text('Apply Mode'));
       await tester.pumpAndSettle();
 
       expect(find.text('Apply Quick Mode?'), findsOneWidget);

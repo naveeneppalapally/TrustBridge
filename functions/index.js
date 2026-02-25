@@ -7,6 +7,52 @@ const {onSchedule} = require("firebase-functions/v2/scheduler");
 admin.initializeApp();
 
 const db = admin.firestore();
+const OFFLINE_LOSS_THRESHOLD_MS = 2 * 60 * 1000;
+const OFFLINE_LOSS_EVENT_TYPE = "device_offline_30m";
+const OFFLINE_LOSS_SWEEP_LIMIT = 200;
+const OFFLINE_LOSS_STATE_DOC_ID = "offline_loss";
+const OFFLINE_LOSS_MAX_LOOKBACK_MS = 7 * 24 * 60 * 60 * 1000;
+
+function asTrimmedString(value) {
+  return typeof value === "string" ? value.trim() : "";
+}
+
+function readEpochMs(value) {
+  if (typeof value === "number" && Number.isFinite(value) && value > 0) {
+    return Math.trunc(value);
+  }
+  if (value && typeof value.toDate === "function") {
+    const date = value.toDate();
+    if (date instanceof Date && !Number.isNaN(date.getTime())) {
+      return date.getTime();
+    }
+  }
+  if (value instanceof Date && !Number.isNaN(value.getTime())) {
+    return value.getTime();
+  }
+  return null;
+}
+
+function readStringSet(value) {
+  if (!Array.isArray(value)) {
+    return new Set();
+  }
+  const items = value
+      .map((entry) => asTrimmedString(entry))
+      .filter((entry) => entry.length > 0);
+  return new Set(items);
+}
+
+function uninstallAlertsEnabled(parentData) {
+  if (!parentData || typeof parentData !== "object") {
+    return true;
+  }
+  const prefs = parentData.alertPreferences;
+  if (!prefs || typeof prefs !== "object") {
+    return true;
+  }
+  return prefs.uninstallAttempt !== false;
+}
 
 exports.sendParentNotificationFromQueue = onDocumentCreated(
   {
@@ -233,12 +279,38 @@ exports.sendParentNotificationFromQueue = onDocumentCreated(
         messageId,
       });
     } catch (error) {
+      const errorCode =
+        error && error.code ? String(error.code) : "unknown";
+      if (errorCode === "messaging/registration-token-not-registered") {
+        try {
+          await parentDoc.ref.set(
+              {
+                fcmToken: admin.firestore.FieldValue.delete(),
+                fcmTokenUpdatedAt: admin.firestore.FieldValue.serverTimestamp(),
+              },
+              {merge: true},
+          );
+          logger.warn("Cleared stale parent FCM token after send failure.", {
+            queueId: event.params.queueId,
+            parentId,
+          });
+        } catch (clearError) {
+          logger.warn("Failed clearing stale parent token.", {
+            queueId: event.params.queueId,
+            parentId,
+            clearError,
+          });
+        }
+      }
+
       await queueRef.set(
           {
             processed: true,
-            status: "failed",
+            status:
+              errorCode === "messaging/registration-token-not-registered" ?
+                "failed_invalid_token" : "failed",
             processedAt: admin.firestore.FieldValue.serverTimestamp(),
-            errorCode: error && error.code ? String(error.code) : "unknown",
+            errorCode,
             errorMessage:
               error && error.message ?
                 String(error.message).slice(0, 500) :
@@ -251,6 +323,204 @@ exports.sendParentNotificationFromQueue = onDocumentCreated(
         parentId,
         error,
       });
+    }
+  },
+);
+
+exports.alertParentOnOfflineLoss = onSchedule(
+  {
+    schedule: "every 1 minutes",
+    region: "asia-south1",
+    timeZone: "Asia/Kolkata",
+    retryCount: 0,
+  },
+  async () => {
+    const sweepStartedAtMs = Date.now();
+    const cutoffMs = sweepStartedAtMs - OFFLINE_LOSS_THRESHOLD_MS;
+    const lowerBoundMs = sweepStartedAtMs - OFFLINE_LOSS_MAX_LOOKBACK_MS;
+    let scannedCount = 0;
+    let queuedCount = 0;
+    let alreadyAlertedCount = 0;
+    let skippedMissingLinkCount = 0;
+    let skippedDisabledPrefCount = 0;
+    let errorCount = 0;
+
+    try {
+      const staleSnapshot = await db
+          .collection("devices")
+          .where("lastSeenEpochMs", ">=", lowerBoundMs)
+          .where("lastSeenEpochMs", "<=", cutoffMs)
+          .orderBy("lastSeenEpochMs", "desc")
+          .limit(OFFLINE_LOSS_SWEEP_LIMIT)
+          .get();
+
+      for (const deviceDoc of staleSnapshot.docs) {
+        scannedCount += 1;
+        try {
+          const raw = deviceDoc.data() || {};
+          const deviceId = asTrimmedString(raw.deviceId) || deviceDoc.id;
+          const parentId = asTrimmedString(raw.parentId);
+          const childId = asTrimmedString(raw.childId);
+          const lastSeenEpochMs =
+            readEpochMs(raw.lastSeenEpochMs) || readEpochMs(raw.lastSeen);
+
+          if (!deviceId || !parentId || !childId || !lastSeenEpochMs) {
+            skippedMissingLinkCount += 1;
+            continue;
+          }
+
+          if (sweepStartedAtMs - lastSeenEpochMs < OFFLINE_LOSS_THRESHOLD_MS) {
+            continue;
+          }
+
+          const stateRef = deviceDoc.ref
+              .collection("server_state")
+              .doc(OFFLINE_LOSS_STATE_DOC_ID);
+
+          const txResult = await db.runTransaction(async (transaction) => {
+            const stateSnap = await transaction.get(stateRef);
+            const state = stateSnap.data() || {};
+            const alertedForLastSeenEpochMs =
+              readEpochMs(state.alertedForLastSeenEpochMs);
+            if (
+              state.active === true &&
+              alertedForLastSeenEpochMs === lastSeenEpochMs
+            ) {
+              return "already_alerted";
+            }
+
+            const childRef = db.collection("children").doc(childId);
+            const childSnap = await transaction.get(childRef);
+            if (!childSnap.exists) {
+              return "child_missing";
+            }
+            const childData = childSnap.data() || {};
+            const childParentId = asTrimmedString(childData.parentId);
+            if (!childParentId || childParentId !== parentId) {
+              return "child_mismatch";
+            }
+
+            const childDeviceIds = readStringSet(childData.deviceIds);
+            if (!childDeviceIds.has(deviceId)) {
+              return "device_unassigned";
+            }
+
+            const parentRef = db.collection("parents").doc(parentId);
+            const parentSnap = await transaction.get(parentRef);
+            if (!uninstallAlertsEnabled(parentSnap.data())) {
+              return "pref_disabled";
+            }
+
+            const childNickname = asTrimmedString(childData.nickname);
+            const childLabel = childNickname || "Your child";
+            const eventChildNickname = childNickname || "Child";
+            const offlineMinutes = Math.max(
+                1,
+                Math.floor((sweepStartedAtMs - lastSeenEpochMs) / 60000),
+            );
+
+            const bypassEventRef = db
+                .collection("bypass_events")
+                .doc(deviceId)
+                .collection("events")
+                .doc();
+            transaction.set(bypassEventRef, {
+              type: OFFLINE_LOSS_EVENT_TYPE,
+              timestamp: admin.firestore.FieldValue.serverTimestamp(),
+              timestampEpochMs: sweepStartedAtMs,
+              deviceId,
+              childId,
+              childNickname: eventChildNickname,
+              parentId,
+              read: false,
+            });
+
+            const queueRef = db.collection("notification_queue").doc();
+            transaction.set(queueRef, {
+              parentId,
+              childId,
+              deviceId,
+              title: "Protection may be off on your child's phone",
+              body:
+                `${childLabel} has not checked in for ${offlineMinutes}+ ` +
+                "minutes. Open TrustBridge to verify protection.",
+              route: "/parent/bypass-alerts",
+              eventType: OFFLINE_LOSS_EVENT_TYPE,
+              processed: false,
+              sentAt: admin.firestore.FieldValue.serverTimestamp(),
+            });
+
+            transaction.set(
+                stateRef,
+                {
+                  active: true,
+                  deviceId,
+                  parentId,
+                  childId,
+                  eventType: OFFLINE_LOSS_EVENT_TYPE,
+                  alertedForLastSeenEpochMs: lastSeenEpochMs,
+                  alertedAt: admin.firestore.FieldValue.serverTimestamp(),
+                  alertedAtEpochMs: sweepStartedAtMs,
+                },
+                {merge: true},
+            );
+            return "queued";
+          });
+
+          switch (txResult) {
+            case "queued":
+              queuedCount += 1;
+              break;
+            case "already_alerted":
+              alreadyAlertedCount += 1;
+              break;
+            case "pref_disabled":
+              skippedDisabledPrefCount += 1;
+              break;
+            case "child_missing":
+            case "child_mismatch":
+            case "device_unassigned":
+              skippedMissingLinkCount += 1;
+              break;
+            default:
+              break;
+          }
+        } catch (error) {
+          errorCount += 1;
+          logger.error("Offline-loss watchdog failed for device.", {
+            deviceDocId: deviceDoc.id,
+            error,
+          });
+        }
+      }
+
+      logger.info("Offline-loss watchdog sweep complete.", {
+        scannedCount,
+        queuedCount,
+        alreadyAlertedCount,
+        skippedMissingLinkCount,
+        skippedDisabledPrefCount,
+        errorCount,
+        thresholdMs: OFFLINE_LOSS_THRESHOLD_MS,
+        lookbackMs: OFFLINE_LOSS_MAX_LOOKBACK_MS,
+        sweepLimit: OFFLINE_LOSS_SWEEP_LIMIT,
+        durationMs: Date.now() - sweepStartedAtMs,
+      });
+    } catch (error) {
+      logger.error("Offline-loss watchdog sweep failed.", {
+        scannedCount,
+        queuedCount,
+        alreadyAlertedCount,
+        skippedMissingLinkCount,
+        skippedDisabledPrefCount,
+        errorCount,
+        thresholdMs: OFFLINE_LOSS_THRESHOLD_MS,
+        lookbackMs: OFFLINE_LOSS_MAX_LOOKBACK_MS,
+        sweepLimit: OFFLINE_LOSS_SWEEP_LIMIT,
+        durationMs: Date.now() - sweepStartedAtMs,
+        error,
+      });
+      throw error;
     }
   },
 );
