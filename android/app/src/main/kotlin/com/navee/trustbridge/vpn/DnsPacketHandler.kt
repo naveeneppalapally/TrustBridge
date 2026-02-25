@@ -4,6 +4,7 @@ import android.util.Log
 import java.net.DatagramPacket
 import java.net.DatagramSocket
 import java.net.InetAddress
+import java.net.SocketTimeoutException
 import java.nio.ByteBuffer
 import java.util.ArrayDeque
 import java.util.LinkedHashMap
@@ -19,15 +20,12 @@ class DnsPacketHandler(
         private const val TAG = "DnsPacketHandler"
         private const val DNS_PORT = 53
         private const val FALLBACK_DNS = "8.8.8.8"
-        private const val TIMEOUT_MS = 5_000
+        private const val PRIMARY_TIMEOUT_MS = 450
+        private const val FALLBACK_TIMEOUT_MS = 350
+        private const val RECEIVE_BUFFER_SIZE = 4096
         private const val MAX_QUERY_LOG_ENTRIES = 250
         private const val BLOCKED_DEDUP_WINDOW_MS = 1_000L
         private const val MAX_BLOCKED_DEDUP_ENTRIES = 512
-    }
-
-    private val upstreamSocket: DatagramSocket = DatagramSocket().apply {
-        soTimeout = TIMEOUT_MS
-        protectSocket?.invoke(this)
     }
 
     @Volatile
@@ -173,11 +171,7 @@ class DnsPacketHandler(
     }
 
     fun close() {
-        try {
-            upstreamSocket.close()
-        } catch (_: Exception) {
-            // ignore
-        }
+        // No shared socket to close. Per-query sockets are created on demand.
     }
 
     private fun parseDomainName(dnsQuery: ByteArray): String {
@@ -240,7 +234,11 @@ class DnsPacketHandler(
     }
 
     private fun forwardToUpstreamDns(query: ByteArray): ByteArray {
-        val primaryResponse = queryUpstream(upstreamDns, query)
+        val primaryResponse = queryUpstream(
+            host = upstreamDns,
+            query = query,
+            timeoutMs = PRIMARY_TIMEOUT_MS
+        )
         if (primaryResponse != null) {
             return primaryResponse
         }
@@ -250,7 +248,11 @@ class DnsPacketHandler(
         val useFallback = !upstreamDns.equals(FALLBACK_DNS, ignoreCase = true)
         if (useFallback) {
             incrementFallbackQuery()
-            val fallbackResponse = queryUpstream(FALLBACK_DNS, query)
+            val fallbackResponse = queryUpstream(
+                host = FALLBACK_DNS,
+                query = query,
+                timeoutMs = FALLBACK_TIMEOUT_MS
+            )
             if (fallbackResponse != null) {
                 Log.w(
                     TAG,
@@ -268,17 +270,53 @@ class DnsPacketHandler(
         return createBlockedResponse(query)
     }
 
-    private fun queryUpstream(host: String, query: ByteArray): ByteArray? {
+    private fun queryUpstream(host: String, query: ByteArray, timeoutMs: Int): ByteArray? {
+        if (timeoutMs <= 0) {
+            return null
+        }
         return try {
             val upstreamAddress = InetAddress.getByName(host)
-            val outboundPacket = DatagramPacket(query, query.size, upstreamAddress, DNS_PORT)
-            upstreamSocket.send(outboundPacket)
+            val expectedTransactionId = readUInt16(query, 0)
+            var matchedResponse: ByteArray? = null
+            DatagramSocket().use { socket ->
+                socket.soTimeout = timeoutMs
+                protectSocket?.invoke(socket)
 
-            val receiveBuffer = ByteArray(4096)
-            val inboundPacket = DatagramPacket(receiveBuffer, receiveBuffer.size)
-            upstreamSocket.receive(inboundPacket)
+                val outboundPacket =
+                    DatagramPacket(query, query.size, upstreamAddress, DNS_PORT)
+                socket.send(outboundPacket)
 
-            receiveBuffer.copyOf(inboundPacket.length)
+                val receiveBuffer = ByteArray(RECEIVE_BUFFER_SIZE)
+                val deadline = System.currentTimeMillis() + timeoutMs.toLong()
+                while (true) {
+                    val now = System.currentTimeMillis()
+                    if (now >= deadline) {
+                        break
+                    }
+
+                    val remainingMs = (deadline - now).coerceAtLeast(1L).toInt()
+                    socket.soTimeout = remainingMs
+                    val inboundPacket = DatagramPacket(receiveBuffer, receiveBuffer.size)
+                    try {
+                        socket.receive(inboundPacket)
+                    } catch (_: SocketTimeoutException) {
+                        break
+                    }
+
+                    if (inboundPacket.length < 2) {
+                        continue
+                    }
+                    val response = receiveBuffer.copyOf(inboundPacket.length)
+                    val responseTransactionId = readUInt16(response, 0)
+                    if (responseTransactionId != expectedTransactionId) {
+                        // Ignore stale/unrelated responses and keep waiting.
+                        continue
+                    }
+                    matchedResponse = response
+                    break
+                }
+            }
+            matchedResponse
         } catch (_: Exception) {
             null
         }

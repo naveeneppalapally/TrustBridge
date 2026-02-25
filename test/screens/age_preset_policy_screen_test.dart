@@ -55,10 +55,15 @@ void main() {
         ),
       );
 
-      await tester
-          .tap(find.widgetWithText(FilledButton, 'Apply Recommended Preset'));
+      await tester.scrollUntilVisible(
+        find.text('Apply Recommended Preset'),
+        300,
+        scrollable: find.byType(Scrollable).first,
+      );
       await tester.pumpAndSettle();
-      await tester.tap(find.widgetWithText(FilledButton, 'Apply'));
+      await tester.tap(find.text('Apply Recommended Preset'));
+      await tester.pumpAndSettle();
+      await tester.tap(find.text('Apply'));
       await tester.pumpAndSettle();
 
       final snapshot =

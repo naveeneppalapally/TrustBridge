@@ -1,4 +1,5 @@
 import 'dart:async';
+import 'dart:collection';
 
 import 'package:flutter/foundation.dart';
 import 'package:path/path.dart' as p;
@@ -83,6 +84,8 @@ class PolicyVpnSyncService extends ChangeNotifier {
   bool _isSyncing = false;
   String? _listeningParentId;
   DateTime? _nextExceptionRefreshAt;
+  final Queue<List<ChildProfile>> _pendingSyncChildren =
+      Queue<List<ChildProfile>>();
 
   SyncResult? get lastSyncResult => _lastSyncResult;
   bool get isSyncing => _isSyncing;
@@ -224,6 +227,7 @@ class PolicyVpnSyncService extends ChangeNotifier {
     _didReceiveInitialAccessRequestsSnapshot = false;
     _listeningParentId = null;
     _clearExceptionRefreshSchedule();
+    _pendingSyncChildren.clear();
   }
 
   Future<void> _onChildrenUpdated(List<ChildProfile> children) async {
@@ -330,12 +334,14 @@ class PolicyVpnSyncService extends ChangeNotifier {
   /// Merge all child policies and push to VPN engine.
   Future<SyncResult> _syncToVpn(List<ChildProfile> children) async {
     if (_isSyncing) {
+      _enqueuePendingSync(children);
       return _lastSyncResult ?? SyncResult.empty();
     }
 
     _isSyncing = true;
     notifyListeners();
 
+    SyncResult result;
     try {
       final vpnRunning = await _vpnService.isVpnRunning();
       if (!vpnRunning) {
@@ -358,12 +364,12 @@ class PolicyVpnSyncService extends ChangeNotifier {
       _scheduleExceptionRefresh(nextExceptionExpiry);
 
       if (children.isEmpty) {
-        final cleared = await _vpnService.updateFilterRules(
+        final cleared = await _replaceVpnRules(
           blockedCategories: const <String>[],
           blockedDomains: const <String>[],
           temporaryAllowedDomains: temporaryAllowedDomains,
         );
-        final result = SyncResult(
+        result = SyncResult(
           success: cleared,
           childrenSynced: 0,
           totalDomains: 0,
@@ -371,48 +377,86 @@ class PolicyVpnSyncService extends ChangeNotifier {
           error: cleared ? null : 'Failed to clear VPN rules',
           timestamp: DateTime.now(),
         );
-        _lastSyncResult = result;
-        _isSyncing = false;
-        notifyListeners();
-        return result;
+      } else {
+        final mergedCategories = <String>{};
+        final mergedDomains = <String>{};
+
+        for (final child in children) {
+          mergedCategories.addAll(child.policy.blockedCategories);
+          mergedDomains.addAll(child.policy.blockedDomains);
+        }
+
+        final categories = mergedCategories.toList()..sort();
+        final domains = mergedDomains.toList()..sort();
+
+        final updated = await _replaceVpnRules(
+          blockedCategories: categories,
+          blockedDomains: domains,
+          temporaryAllowedDomains: temporaryAllowedDomains,
+        );
+
+        result = SyncResult(
+          success: updated,
+          childrenSynced: children.length,
+          totalDomains: domains.length,
+          totalCategories: categories.length,
+          error: updated ? null : 'VPN updateFilterRules returned false',
+          timestamp: DateTime.now(),
+        );
       }
-
-      final mergedCategories = <String>{};
-      final mergedDomains = <String>{};
-
-      for (final child in children) {
-        mergedCategories.addAll(child.policy.blockedCategories);
-        mergedDomains.addAll(child.policy.blockedDomains);
-      }
-
-      final categories = mergedCategories.toList()..sort();
-      final domains = mergedDomains.toList()..sort();
-
-      final updated = await _vpnService.updateFilterRules(
-        blockedCategories: categories,
-        blockedDomains: domains,
-        temporaryAllowedDomains: temporaryAllowedDomains,
-      );
-
-      final result = SyncResult(
-        success: updated,
-        childrenSynced: children.length,
-        totalDomains: domains.length,
-        totalCategories: categories.length,
-        error: updated ? null : 'VPN updateFilterRules returned false',
-        timestamp: DateTime.now(),
-      );
-      _lastSyncResult = result;
-      _isSyncing = false;
-      notifyListeners();
-      return result;
     } catch (error) {
-      final result = SyncResult.error(error.toString());
-      _lastSyncResult = result;
-      _isSyncing = false;
-      notifyListeners();
-      return result;
+      result = SyncResult.error(error.toString());
     }
+
+    _lastSyncResult = result;
+    _isSyncing = false;
+    notifyListeners();
+    if (_pendingSyncChildren.isNotEmpty) {
+      final nextChildren = _pendingSyncChildren.removeFirst();
+      unawaited(_syncToVpn(nextChildren));
+    }
+    return result;
+  }
+
+  Future<bool> _replaceVpnRules({
+    required List<String> blockedCategories,
+    required List<String> blockedDomains,
+    required List<String> temporaryAllowedDomains,
+  }) async {
+    final cleared = await _vpnService.updateFilterRules(
+      blockedCategories: const <String>[],
+      blockedDomains: const <String>[],
+      temporaryAllowedDomains: const <String>[],
+    );
+    if (!cleared) {
+      return false;
+    }
+    return _vpnService.updateFilterRules(
+      blockedCategories: blockedCategories,
+      blockedDomains: blockedDomains,
+      temporaryAllowedDomains: temporaryAllowedDomains,
+    );
+  }
+
+  void _enqueuePendingSync(List<ChildProfile> children) {
+    final signature = _syncSignature(children);
+    if (_pendingSyncChildren.isNotEmpty) {
+      final lastSignature = _syncSignature(_pendingSyncChildren.last);
+      if (lastSignature == signature) {
+        return;
+      }
+    }
+    _pendingSyncChildren.addLast(List<ChildProfile>.from(children));
+  }
+
+  String _syncSignature(List<ChildProfile> children) {
+    final childSignatures = children.map((child) {
+      final categories = child.policy.blockedCategories.toList()..sort();
+      final domains = child.policy.blockedDomains.toList()..sort();
+      return '${child.id}:${categories.join(',')}:${domains.join(',')}';
+    }).toList()
+      ..sort();
+    return childSignatures.join('||');
   }
 
   @override

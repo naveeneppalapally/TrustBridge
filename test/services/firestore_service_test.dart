@@ -284,7 +284,7 @@ void main() {
       expect(snapshotB.data()!['pausedUntil'], isNull);
     });
 
-    test('updateChild on missing document throws FirebaseException', () async {
+    test('updateChild on missing document throws StateError', () async {
       final missingChild = ChildProfile(
         id: 'missing-child-id',
         nickname: 'Missing',
@@ -300,7 +300,7 @@ void main() {
           parentId: 'parentA',
           child: missingChild,
         ),
-        throwsA(isA<FirebaseException>()),
+        throwsA(isA<StateError>()),
       );
     });
   });

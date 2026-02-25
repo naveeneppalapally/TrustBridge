@@ -48,14 +48,32 @@ import 'package:trustbridge_app/widgets/parent_shell.dart';
 
 Future<void> main() async {
   WidgetsFlutterBinding.ensureInitialized();
-  await Firebase.initializeApp(
-    options: DefaultFirebaseOptions.currentPlatform,
-  );
-  await AppModeService().primeCache();
-  if (!kDebugMode) {
-    await _initCrashlytics();
+  try {
+    await Firebase.initializeApp(
+      options: DefaultFirebaseOptions.currentPlatform,
+    ).timeout(const Duration(seconds: 12));
+  } catch (error) {
+    debugPrint('[Startup] Firebase initialization timed out/skipped: $error');
   }
-  await _initPerformance();
+  try {
+    await AppModeService()
+        .primeCache()
+        .timeout(const Duration(seconds: 3));
+  } catch (error) {
+    debugPrint('[Startup] App mode cache prime timed out/skipped: $error');
+  }
+  if (!kDebugMode) {
+    try {
+      await _initCrashlytics().timeout(const Duration(seconds: 5));
+    } catch (error) {
+      debugPrint('[Startup] Crashlytics initialization skipped: $error');
+    }
+  }
+  try {
+    await _initPerformance().timeout(const Duration(seconds: 4));
+  } catch (error) {
+    debugPrint('[Startup] Performance initialization skipped: $error');
+  }
   NotificationService.navigatorKey = GlobalKey<NavigatorState>();
   runApp(const MyApp());
   WidgetsBinding.instance.addPostFrameCallback((_) {

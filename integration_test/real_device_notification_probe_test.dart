@@ -3,6 +3,7 @@
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:firebase_auth/firebase_auth.dart';
 import 'package:firebase_core/firebase_core.dart';
+import 'package:firebase_messaging/firebase_messaging.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:integration_test/integration_test.dart';
 import 'package:trustbridge_app/firebase_options.dart';
@@ -58,6 +59,12 @@ void main() {
       switch (role) {
         case 'parent_register':
           await _parentRegister();
+          break;
+        case 'parent_register_queue_probe':
+          await _parentRegisterQueueProbe();
+          break;
+        case 'parent_repair_token':
+          await _parentRepairToken();
           break;
         case 'parent_register_watch':
           await _parentRegister(watch: true);
@@ -142,7 +149,13 @@ Future<void> _parentRegister({bool watch = false}) async {
 
   final notifications = NotificationService();
   await notifications.initialize();
-  await notifications.requestPermission();
+  try {
+    await notifications
+        .requestPermission()
+        .timeout(const Duration(seconds: 15));
+  } catch (error) {
+    print('[NOTIF_PROBE] parent permission request skipped: $error');
+  }
   final token = (await notifications.getToken())?.trim() ?? '';
   print('[NOTIF_PROBE] parent uid=$parentId token_len=${token.length}');
   if (token.isEmpty) {
@@ -154,6 +167,90 @@ Future<void> _parentRegister({bool watch = false}) async {
   if (watch) {
     await _watchWindow('parent');
   }
+}
+
+Future<void> _parentRegisterQueueProbe() async {
+  final user = await _ensureParentAuthUser();
+  final parentId = user.uid.trim();
+  if (parentId.isEmpty) {
+    fail('Parent sign-in returned empty uid.');
+  }
+
+  final notifications = NotificationService();
+  await notifications.initialize();
+  try {
+    await notifications
+        .requestPermission()
+        .timeout(const Duration(seconds: 15));
+  } catch (error) {
+    print('[NOTIF_PROBE] parent permission request skipped: $error');
+  }
+  final token = (await notifications.getToken())?.trim() ?? '';
+  print('[NOTIF_PROBE] parent uid=$parentId token_len=${token.length}');
+  if (token.isEmpty) {
+    fail('Parent FCM token unavailable.');
+  }
+  await FirestoreService().saveFcmToken(parentId, token);
+  print('[NOTIF_PROBE] parent token saved');
+
+  final marker = DateTime.now().millisecondsSinceEpoch;
+  final queueRef = await FirebaseFirestore.instance.collection('notification_queue').add(
+    <String, dynamic>{
+      'parentId': parentId,
+      'title': 'TrustBridge live watch check',
+      'body': 'queue-probe-$marker',
+      'route': '/parent/bypass-alerts',
+      'eventType': 'device_offline_30m',
+      'processed': false,
+      'sentAt': FieldValue.serverTimestamp(),
+    },
+  );
+  print(
+    '[NOTIF_PROBE] queue_probe marker=queue-probe-$marker queueId=${queueRef.id}',
+  );
+
+  await _watchWindow('parent_queue_probe');
+}
+
+Future<void> _parentRepairToken() async {
+  final user = await _ensureParentAuthUser();
+  final parentId = user.uid.trim();
+  if (parentId.isEmpty) {
+    fail('Parent sign-in returned empty uid.');
+  }
+
+  final notifications = NotificationService();
+  await notifications.initialize();
+  try {
+    await notifications
+        .requestPermission()
+        .timeout(const Duration(seconds: 15));
+  } catch (error) {
+    print('[NOTIF_PROBE] parent permission request skipped: $error');
+  }
+
+  try {
+    await FirebaseMessaging.instance
+        .deleteToken()
+        .timeout(const Duration(seconds: 20));
+    print('[NOTIF_PROBE] parent token deleted');
+  } catch (error) {
+    print('[NOTIF_PROBE] parent token delete failed: $error');
+  }
+
+  await Future<void>.delayed(const Duration(seconds: 2));
+  final token = (await notifications
+              .getToken()
+              .timeout(const Duration(seconds: 45), onTimeout: () => null))
+          ?.trim() ??
+      '';
+  print('[NOTIF_PROBE] parent repaired token_len=${token.length}');
+  if (token.isEmpty) {
+    fail('Parent FCM token unavailable after token repair.');
+  }
+
+  await FirestoreService().saveFcmToken(parentId, token);
+  print('[NOTIF_PROBE] parent repaired token saved');
 }
 
 Future<void> _childRegister({bool watch = false}) async {

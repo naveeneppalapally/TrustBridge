@@ -103,11 +103,18 @@ class HeartbeatService {
       }
 
       final deviceId = await _pairingService.getOrCreateDeviceId();
+      await _ensureChildDeviceLink(
+        parentId: normalizedParentId,
+        childId: normalizedChildId,
+        deviceId: deviceId,
+      );
 
       DocumentSnapshot<Map<String, dynamic>> childSnapshot;
       try {
-        childSnapshot =
-            await _firestore.collection('children').doc(normalizedChildId).get();
+        childSnapshot = await _firestore
+            .collection('children')
+            .doc(normalizedChildId)
+            .get();
       } catch (error) {
         debugPrint('[Heartbeat] child lookup failed: $error');
         return;
@@ -140,13 +147,20 @@ class HeartbeatService {
             .where((id) => id.isNotEmpty)
             .toSet();
         if (!registeredDeviceIds.contains(deviceId)) {
-          debugPrint(
-            '[Heartbeat] Device is no longer assigned to child profile; '
-            'clearing local pairing/protection childId=$normalizedChildId '
-            'deviceId=$deviceId',
+          final repaired = await _ensureChildDeviceLink(
+            parentId: normalizedParentId,
+            childId: normalizedChildId,
+            deviceId: deviceId,
           );
-          await _clearStalePairingAndProtection();
-          return;
+          if (!repaired) {
+            debugPrint(
+              '[Heartbeat] Device is no longer assigned to child profile; '
+              'clearing local pairing/protection childId=$normalizedChildId '
+              'deviceId=$deviceId',
+            );
+            await _clearStalePairingAndProtection();
+            return;
+          }
         }
       }
 
@@ -157,60 +171,105 @@ class HeartbeatService {
       );
       final nowEpochMs = _nowProvider().millisecondsSinceEpoch;
 
-      // Keep child linkage healthy even if pairing was interrupted earlier.
-      await _firestore
-          .collection('children')
-          .doc(normalizedChildId)
-          .collection('devices')
-          .doc(deviceId)
-          .set(
-        <String, dynamic>{
-          'parentId': normalizedParentId,
-          // Keep this record compatible with Firestore rules for
-          // children/{childId}/devices/{deviceId}. Heartbeat telemetry lives
-          // in the root /devices collection.
-          'pairedAt': FieldValue.serverTimestamp(),
-        },
-        SetOptions(merge: true),
-      );
-
       try {
-        await _firestore.collection('children').doc(normalizedChildId).update(
+        await _firestore.collection('devices').doc(deviceId).set(
           <String, dynamic>{
-            'deviceIds': FieldValue.arrayUnion(<String>[deviceId]),
+            'deviceId': deviceId,
+            'parentId': normalizedParentId,
+            'childId': normalizedChildId,
+            'lastSeen': FieldValue.serverTimestamp(),
+            'lastSeenEpochMs': nowEpochMs,
+            'vpnActive': status.isRunning,
+            'queriesProcessed': status.queriesProcessed,
+            'queriesBlocked': status.queriesBlocked,
+            'queriesAllowed': status.queriesAllowed,
+            'upstreamFailureCount': status.upstreamFailureCount,
+            'fallbackQueryCount': status.fallbackQueryCount,
+            'blockedCategoryCount': status.blockedCategoryCount,
+            'blockedDomainCount': status.blockedDomainCount,
+            'vpnStatusUpdatedAt': FieldValue.serverTimestamp(),
+            'appVersion': buildName,
             'updatedAt': FieldValue.serverTimestamp(),
           },
+          SetOptions(merge: true),
         );
       } catch (error) {
-        // Non-fatal for heartbeat; device-level docs still carry online status.
-        debugPrint('[Heartbeat] child linkage refresh skipped: $error');
+        // Root heartbeat telemetry is best-effort. Child-level device linkage
+        // and local protection must remain active even if this write is denied.
+        debugPrint('[Heartbeat] root device heartbeat write skipped: $error');
       }
 
-      await _firestore.collection('devices').doc(deviceId).set(
-        <String, dynamic>{
-          'deviceId': deviceId,
-          'parentId': normalizedParentId,
-          'childId': normalizedChildId,
-          'lastSeen': FieldValue.serverTimestamp(),
-          'lastSeenEpochMs': nowEpochMs,
-          'vpnActive': status.isRunning,
-          'queriesProcessed': status.queriesProcessed,
-          'queriesBlocked': status.queriesBlocked,
-          'queriesAllowed': status.queriesAllowed,
-          'upstreamFailureCount': status.upstreamFailureCount,
-          'fallbackQueryCount': status.fallbackQueryCount,
-          'blockedCategoryCount': status.blockedCategoryCount,
-          'blockedDomainCount': status.blockedDomainCount,
-          'vpnStatusUpdatedAt': FieldValue.serverTimestamp(),
-          'appVersion': buildName,
-          'updatedAt': FieldValue.serverTimestamp(),
-        },
-        SetOptions(merge: true),
-      );
+      try {
+        await _firestore
+            .collection('children')
+            .doc(normalizedChildId)
+            .collection('devices')
+            .doc(deviceId)
+            .set(
+          <String, dynamic>{
+            'deviceId': deviceId,
+            'parentId': normalizedParentId,
+            'childId': normalizedChildId,
+            'lastSeen': FieldValue.serverTimestamp(),
+            'lastSeenEpochMs': nowEpochMs,
+            'vpnActive': status.isRunning,
+            'queriesProcessed': status.queriesProcessed,
+            'queriesBlocked': status.queriesBlocked,
+            'queriesAllowed': status.queriesAllowed,
+            'upstreamFailureCount': status.upstreamFailureCount,
+            'fallbackQueryCount': status.fallbackQueryCount,
+            'blockedCategoryCount': status.blockedCategoryCount,
+            'blockedDomainCount': status.blockedDomainCount,
+            'vpnStatusUpdatedAt': FieldValue.serverTimestamp(),
+            'appVersion': buildName,
+            'updatedAt': FieldValue.serverTimestamp(),
+          },
+          SetOptions(merge: true),
+        );
+      } catch (error) {
+        debugPrint('[Heartbeat] child device heartbeat write skipped: $error');
+      }
     } catch (error) {
       // Heartbeat failures are intentionally silent.
       debugPrint('[Heartbeat] send failed: $error');
     }
+  }
+
+  static Future<bool> _ensureChildDeviceLink({
+    required String parentId,
+    required String childId,
+    required String deviceId,
+  }) async {
+    try {
+      await _firestore
+          .collection('children')
+          .doc(childId)
+          .collection('devices')
+          .doc(deviceId)
+          .set(
+        <String, dynamic>{
+          'parentId': parentId,
+          'pairedAt': FieldValue.serverTimestamp(),
+        },
+        SetOptions(merge: true),
+      );
+    } catch (error) {
+      debugPrint('[Heartbeat] child device link write failed: $error');
+      return false;
+    }
+
+    try {
+      await _firestore.collection('children').doc(childId).update(
+        <String, dynamic>{
+          'deviceIds': FieldValue.arrayUnion(<String>[deviceId]),
+          'updatedAt': FieldValue.serverTimestamp(),
+        },
+      );
+    } catch (error) {
+      debugPrint('[Heartbeat] child deviceIds refresh skipped: $error');
+      // Device linkage doc is still present; continue with heartbeat flow.
+    }
+    return true;
   }
 
   static Future<void> _clearStalePairingAndProtection() async {

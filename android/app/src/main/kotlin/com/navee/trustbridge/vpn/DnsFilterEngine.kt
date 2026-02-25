@@ -64,6 +64,10 @@ class DnsFilterEngine(private val context: Context) {
             "googlevideo.com",
             "ytimg.com",
             "youtube-nocookie.com",
+            "youtubei.googleapis.com",
+            "youtube.googleapis.com",
+            "youtubeandroidplayer.googleapis.com",
+            "yt3.ggpht.com",
             "reddit.com",
             "redd.it",
             "redditmedia.com",
@@ -143,7 +147,7 @@ class DnsFilterEngine(private val context: Context) {
         allowedDomains: List<String> = emptyList()
     ) {
         val nextCategories = categories
-            .map { it.trim() }
+            .map(::normalizeCategoryToken)
             .filter { it.isNotEmpty() }
             .toSet()
 
@@ -270,6 +274,15 @@ class DnsFilterEngine(private val context: Context) {
             value = value.dropLast(1)
         }
         return value
+    }
+
+    private fun normalizeCategoryToken(category: String): String {
+        val normalized = category.trim().lowercase()
+        return when (normalized) {
+            "social" -> "social-networks"
+            "adult" -> "adult-content"
+            else -> normalized
+        }
     }
 
     private fun findMatchingRule(normalizedDomain: String): String? {

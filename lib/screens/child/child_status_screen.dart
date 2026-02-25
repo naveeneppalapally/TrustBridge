@@ -1,4 +1,5 @@
 import 'dart:async';
+import 'dart:collection';
 
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:firebase_auth/firebase_auth.dart';
@@ -6,6 +7,7 @@ import 'package:firebase_core/firebase_core.dart';
 import 'package:flutter/material.dart';
 import 'package:intl/intl.dart';
 
+import '../../config/category_ids.dart';
 import '../../config/social_media_domains.dart';
 import '../../models/access_request.dart';
 import '../../models/blocklist_source.dart';
@@ -44,7 +46,6 @@ class _ChildStatusScreenState extends State<ChildStatusScreen>
     with WidgetsBindingObserver {
   static const String _blockAllCategory = '__block_all__';
   static const Set<String> _distractingCategories = <String>{
-    'social',
     'social-networks',
     'chat',
     'streaming',
@@ -137,12 +138,24 @@ class _ChildStatusScreenState extends State<ChildStatusScreen>
   Timer? _scheduleWarningTimer;
   StreamSubscription<QuerySnapshot<Map<String, dynamic>>>?
       _accessRequestsSubscription;
+  StreamSubscription<DocumentSnapshot<Map<String, dynamic>>>?
+      _childProfileSubscription;
+  StreamSubscription<QuerySnapshot<Map<String, dynamic>>>?
+      _policyEventsSubscription;
   StreamSubscription<String>? _childTokenRefreshSubscription;
   String? _accessRequestsSubscriptionKey;
+  String? _childProfileSubscriptionKey;
+  String? _policyEventsSubscriptionKey;
+  final Queue<_PolicyEventSnapshot> _pendingPolicyEvents =
+      Queue<_PolicyEventSnapshot>();
+  final Set<String> _processedPolicyEventIds = <String>{};
+  int? _policyEventEpochFloorMs;
   bool _isApplyingProtectionRules = false;
-  bool _hasQueuedProtectionReapply = false;
+  final Queue<_QueuedProtectionApply> _pendingProtectionApplies =
+      Queue<_QueuedProtectionApply>();
   String? _lastAppliedPolicySignature;
   bool _protectionRetryScheduled = false;
+  DateTime? _lastPolicyApplyHeartbeatAt;
   ChildProfile? _lastKnownChild;
   _ManualModeOverride? _lastManualModeOverride;
   Set<String> _activeApprovedExceptionDomains = const <String>{};
@@ -196,6 +209,8 @@ class _ChildStatusScreenState extends State<ChildStatusScreen>
       _startRemoteCommandLoop();
       unawaited(_syncChildDeviceNotificationToken());
       _ensureAccessRequestSubscription();
+      _ensureChildProfileSubscription();
+      _ensurePolicyEventSubscription();
       return;
     }
     final parentId = await _resolvedPairingService.getPairedParentId();
@@ -222,6 +237,8 @@ class _ChildStatusScreenState extends State<ChildStatusScreen>
     _startRemoteCommandLoop();
     unawaited(_syncChildDeviceNotificationToken());
     _ensureAccessRequestSubscription();
+    _ensureChildProfileSubscription();
+    _ensurePolicyEventSubscription();
   }
 
   Future<void> _ensureChildAuthAndPrimeHeartbeat({
@@ -245,6 +262,10 @@ class _ChildStatusScreenState extends State<ChildStatusScreen>
     User? currentUser;
     try {
       currentUser = FirebaseAuth.instance.currentUser;
+      if (currentUser == null) {
+        final credential = await FirebaseAuth.instance.signInAnonymously();
+        currentUser = credential.user;
+      }
     } catch (_) {
       return;
     }
@@ -318,8 +339,15 @@ class _ChildStatusScreenState extends State<ChildStatusScreen>
     _scheduleWarningTimer = null;
     _accessRequestsSubscription?.cancel();
     _accessRequestsSubscription = null;
+    _childProfileSubscription?.cancel();
+    _childProfileSubscription = null;
+    _policyEventsSubscription?.cancel();
+    _policyEventsSubscription = null;
     _childTokenRefreshSubscription?.cancel();
     _childTokenRefreshSubscription = null;
+    _pendingProtectionApplies.clear();
+    _pendingPolicyEvents.clear();
+    _processedPolicyEventIds.clear();
     super.dispose();
   }
 
@@ -480,6 +508,237 @@ class _ChildStatusScreenState extends State<ChildStatusScreen>
     _accessRequestsSubscriptionKey = nextKey;
   }
 
+  void _ensureChildProfileSubscription() {
+    final childId = _childId?.trim();
+    if (childId == null || childId.isEmpty) {
+      _childProfileSubscription?.cancel();
+      _childProfileSubscription = null;
+      _childProfileSubscriptionKey = null;
+      return;
+    }
+
+    if (_childProfileSubscriptionKey == childId &&
+        _childProfileSubscription != null) {
+      return;
+    }
+
+    _childProfileSubscription?.cancel();
+    _childProfileSubscription = _firestore
+        .collection('children')
+        .doc(childId)
+        .snapshots()
+        .listen((doc) {
+      if (!doc.exists) {
+        unawaited(_handleMissingChildProfile());
+        unawaited(_attemptPairingRecovery());
+        return;
+      }
+      final rawData = doc.data() ?? const <String, dynamic>{};
+      _handledMissingChildProfile = false;
+      final manualMode = _manualModeFromRaw(rawData['manualMode']);
+      _lastManualModeOverride = manualMode;
+      final parentIdFromDoc = (rawData['parentId'] as String?)?.trim();
+      if ((_parentId == null || _parentId!.isEmpty) &&
+          parentIdFromDoc != null &&
+          parentIdFromDoc.isNotEmpty &&
+          mounted) {
+        setState(() {
+          _parentId = parentIdFromDoc;
+        });
+      }
+      final child = ChildProfile.fromFirestore(doc);
+      _lastKnownChild = child;
+      unawaited(_drainPendingPolicyEvents());
+      unawaited(
+        _ensureProtectionApplied(
+          child,
+          manualMode: manualMode,
+        ),
+      );
+    }, onError: (Object error) {
+      final isPermissionError = error is FirebaseException &&
+          (error.code == 'permission-denied' ||
+              error.code == 'unauthenticated');
+      if (isPermissionError) {
+        unawaited(_handleMissingChildProfile());
+        unawaited(_attemptPairingRecovery());
+      }
+    });
+    _childProfileSubscriptionKey = childId;
+  }
+
+  void _ensurePolicyEventSubscription() {
+    final childId = _childId?.trim();
+    if (childId == null || childId.isEmpty) {
+      _policyEventsSubscription?.cancel();
+      _policyEventsSubscription = null;
+      _policyEventsSubscriptionKey = null;
+      _policyEventEpochFloorMs = null;
+      _pendingPolicyEvents.clear();
+      _processedPolicyEventIds.clear();
+      return;
+    }
+
+    final nextKey = childId;
+    if (_policyEventsSubscriptionKey == nextKey &&
+        _policyEventsSubscription != null) {
+      return;
+    }
+
+    _policyEventsSubscription?.cancel();
+    _policyEventEpochFloorMs = DateTime.now().millisecondsSinceEpoch - 5000;
+    _pendingPolicyEvents.clear();
+    _processedPolicyEventIds.clear();
+    _policyEventsSubscription = _firestore
+        .collection('children')
+        .doc(childId)
+        .collection('policy_events')
+        .where(
+          'eventEpochMs',
+          isGreaterThanOrEqualTo: _policyEventEpochFloorMs,
+        )
+        .orderBy('eventEpochMs')
+        .limitToLast(500)
+        .snapshots()
+        .listen((snapshot) {
+      for (final change in snapshot.docChanges) {
+        if (change.type == DocumentChangeType.removed) {
+          continue;
+        }
+        final docId = change.doc.id;
+        if (_processedPolicyEventIds.contains(docId)) {
+          continue;
+        }
+        _processedPolicyEventIds.add(docId);
+        final event = _policyEventFromRaw(change.doc.data());
+        if (event == null) {
+          continue;
+        }
+        final floor = _policyEventEpochFloorMs;
+        if (floor != null && event.eventEpochMs < floor) {
+          continue;
+        }
+        debugPrint(
+          '[ChildStatus] policy_event doc=${change.doc.id} '
+          'epochMs=${event.eventEpochMs} '
+          'cats=${event.blockedCategories.length} '
+          'domains=${event.blockedDomains.length}',
+        );
+        final baseChild = _lastKnownChild;
+        if (baseChild == null) {
+          debugPrint(
+            '[ChildStatus] policy_event queued (missing base child) '
+            'doc=${change.doc.id}',
+          );
+          _pendingPolicyEvents.addLast(event);
+          continue;
+        }
+        debugPrint(
+          '[ChildStatus] policy_event applying now doc=${change.doc.id}',
+        );
+        unawaited(_applyPolicyEvent(baseChild, event));
+      }
+    }, onError: (Object error) {
+      debugPrint('[ChildStatus] policy_events listener error: $error');
+    });
+    _policyEventsSubscriptionKey = nextKey;
+  }
+
+  _PolicyEventSnapshot? _policyEventFromRaw(Map<String, dynamic>? rawData) {
+    if (rawData == null) {
+      return null;
+    }
+    final categories = normalizeCategoryIds(
+      _readStringList(rawData['blockedCategories']),
+    );
+    final domains = _readStringList(rawData['blockedDomains']);
+    final manualMode = _manualModeFromRaw(rawData['manualMode']);
+    final pausedUntil = _parseNullableDateTime(rawData['pausedUntil']);
+    final eventEpochMs = _readInt(rawData['eventEpochMs']);
+    return _PolicyEventSnapshot(
+      blockedCategories: categories,
+      blockedDomains: domains,
+      manualMode: manualMode,
+      pausedUntil: pausedUntil,
+      eventEpochMs: eventEpochMs,
+    );
+  }
+
+  Future<void> _applyPolicyEvent(
+    ChildProfile baseChild,
+    _PolicyEventSnapshot event,
+  ) async {
+    debugPrint(
+      '[ChildStatus] _applyPolicyEvent '
+      'cats=${event.blockedCategories.length} domains=${event.blockedDomains.length}',
+    );
+    final nextChild = baseChild.copyWith(
+      policy: baseChild.policy.copyWith(
+        blockedCategories: event.blockedCategories,
+        blockedDomains: event.blockedDomains,
+      ),
+      pausedUntil: event.pausedUntil,
+    );
+    _lastKnownChild = nextChild;
+    _lastManualModeOverride = event.manualMode;
+    await _ensureProtectionApplied(
+      nextChild,
+      manualMode: event.manualMode,
+      forceRecheck: true,
+    );
+  }
+
+  Future<void> _drainPendingPolicyEvents() async {
+    final baseChild = _lastKnownChild;
+    if (baseChild == null || _pendingPolicyEvents.isEmpty) {
+      return;
+    }
+    debugPrint(
+      '[ChildStatus] draining queued policy events count=${_pendingPolicyEvents.length}',
+    );
+    var current = baseChild;
+    while (_pendingPolicyEvents.isNotEmpty) {
+      final event = _pendingPolicyEvents.removeFirst();
+      final nextChild = current.copyWith(
+        policy: current.policy.copyWith(
+          blockedCategories: event.blockedCategories,
+          blockedDomains: event.blockedDomains,
+        ),
+        pausedUntil: event.pausedUntil,
+      );
+      _lastKnownChild = nextChild;
+      _lastManualModeOverride = event.manualMode;
+      await _ensureProtectionApplied(
+        nextChild,
+        manualMode: event.manualMode,
+        forceRecheck: true,
+      );
+      current = nextChild;
+    }
+  }
+
+  List<String> _readStringList(Object? rawValue) {
+    if (rawValue is! List) {
+      return const <String>[];
+    }
+    return rawValue
+        .map((entry) => entry.toString().trim())
+        .where((entry) => entry.isNotEmpty)
+        .toSet()
+        .toList()
+      ..sort();
+  }
+
+  int _readInt(Object? rawValue) {
+    if (rawValue is int) {
+      return rawValue;
+    }
+    if (rawValue is num) {
+      return rawValue.toInt();
+    }
+    return 0;
+  }
+
   Future<void> _refreshApprovedExceptionState(String childId) async {
     final parentId = _parentId?.trim();
     if (parentId == null || parentId.isEmpty) {
@@ -517,13 +776,6 @@ class _ChildStatusScreenState extends State<ChildStatusScreen>
   }) async {
     final now = DateTime.now();
     final resolvedManualMode = manualMode ?? _lastManualModeOverride;
-    try {
-      await _refreshApprovedExceptionState(child.id);
-    } catch (_) {
-      // Access-request sync is best-effort; baseline policy still applies.
-      _activeApprovedExceptionDomains = const <String>{};
-      _nextApprovedExceptionExpiry = null;
-    }
     final effectiveRules = _buildEffectiveProtectionRules(
       child: child,
       now: now,
@@ -531,65 +783,123 @@ class _ChildStatusScreenState extends State<ChildStatusScreen>
     );
     final categories = effectiveRules.categories.toList()..sort();
     final domains = effectiveRules.domains.toList()..sort();
-    final temporaryAllowedDomains = _activeApprovedExceptionDomains.toList()
-      ..sort();
-    final signature =
-        '${categories.join('|')}::${domains.join('|')}::${temporaryAllowedDomains.join('|')}';
-
-    if (_isApplyingProtectionRules) {
-      _hasQueuedProtectionReapply = true;
-      return;
-    }
+    final policySignature = '${categories.join('|')}::${domains.join('|')}';
     _scheduleNextProtectionRecheck(
       child: child,
       manualMode: resolvedManualMode,
       now: now,
       nextApprovedExceptionExpiry: _nextApprovedExceptionExpiry,
     );
-    if (!forceRecheck && _lastAppliedPolicySignature == signature) {
+
+    if (!forceRecheck &&
+        _lastAppliedPolicySignature != null &&
+        _lastAppliedPolicySignature!.startsWith('$policySignature::') &&
+        !_isApplyingProtectionRules &&
+        _pendingProtectionApplies.isEmpty) {
       return;
     }
 
+    _enqueueProtectionApply(
+      _QueuedProtectionApply(
+        child: child,
+        manualMode: resolvedManualMode,
+        categories: categories,
+        domains: domains,
+        policySignature: policySignature,
+        forceRecheck: forceRecheck,
+      ),
+    );
+    await _drainProtectionApplyQueue();
+  }
+
+  void _enqueueProtectionApply(_QueuedProtectionApply next) {
+    if (!next.forceRecheck && _pendingProtectionApplies.isNotEmpty) {
+      final last = _pendingProtectionApplies.last;
+      if (!last.forceRecheck && last.policySignature == next.policySignature) {
+        return;
+      }
+    }
+    _pendingProtectionApplies.addLast(next);
+  }
+
+  Future<void> _drainProtectionApplyQueue() async {
+    if (_isApplyingProtectionRules) {
+      debugPrint('[ChildStatus] drainProtection skipped (already applying)');
+      return;
+    }
+    debugPrint(
+      '[ChildStatus] drainProtection start queue=${_pendingProtectionApplies.length}',
+    );
     _isApplyingProtectionRules = true;
+    while (_pendingProtectionApplies.isNotEmpty) {
+      final next = _pendingProtectionApplies.removeFirst();
+      final applied = await _applyProtectionRules(next);
+      if (!applied) {
+        _pendingProtectionApplies.addFirst(next);
+        _scheduleProtectionRetry();
+        break;
+      }
+      if (_pendingProtectionApplies.isNotEmpty) {
+        // Keep each applied state observable under rapid-fire parent edits.
+        await Future<void>.delayed(const Duration(milliseconds: 150));
+      }
+    }
+    _isApplyingProtectionRules = false;
+  }
+
+  Future<bool> _applyProtectionRules(_QueuedProtectionApply next) async {
     try {
+      try {
+        await _refreshApprovedExceptionState(next.child.id);
+      } catch (_) {
+        // Access-request sync is best-effort; baseline policy still applies.
+        _activeApprovedExceptionDomains = const <String>{};
+        _nextApprovedExceptionExpiry = null;
+      }
+      final temporaryAllowedDomains = _activeApprovedExceptionDomains.toList()
+        ..sort();
+      final signature =
+          '${next.policySignature}::${temporaryAllowedDomains.join('|')}';
+      _scheduleNextProtectionRecheck(
+        child: next.child,
+        manualMode: next.manualMode,
+        now: DateTime.now(),
+        nextApprovedExceptionExpiry: _nextApprovedExceptionExpiry,
+      );
+      if (!next.forceRecheck && _lastAppliedPolicySignature == signature) {
+        return true;
+      }
+      debugPrint(
+        '[ChildStatus] applying rules force=${next.forceRecheck} '
+        'cats=${next.categories.length} domains=${next.domains.length} '
+        'allowed=${temporaryAllowedDomains.length}',
+      );
+
       final syncedCategories = _canUseBlocklistSync()
-          ? _mapPolicyCategoriesToBlocklists(categories)
+          ? _mapPolicyCategoriesToBlocklists(next.categories)
           : <BlocklistCategory>{};
 
       // Auto-start VPN if protection rules exist but VPN isn't running.
-      final hasRules = categories.isNotEmpty || domains.isNotEmpty;
+      final hasRules = next.categories.isNotEmpty || next.domains.isNotEmpty;
       final vpnRunning = await _vpnService.isVpnRunning();
       if (hasRules && !vpnRunning) {
         await _vpnService.startVpn(
-          blockedCategories: categories,
-          blockedDomains: domains,
+          blockedCategories: next.categories,
+          blockedDomains: next.domains,
         );
       }
 
-      final applied = await _vpnService.updateFilterRules(
-        blockedCategories: categories,
-        blockedDomains: domains,
+      final applied = await _replaceVpnRules(
+        blockedCategories: next.categories,
+        blockedDomains: next.domains,
         temporaryAllowedDomains: temporaryAllowedDomains,
       );
       if (!applied) {
-        if (!_protectionRetryScheduled) {
-          _protectionRetryScheduled = true;
-          _protectionRetryTimer?.cancel();
-          _protectionRetryTimer = Timer(const Duration(seconds: 5), () {
-            _protectionRetryScheduled = false;
-            if (!mounted) {
-              return;
-            }
-            unawaited(
-              _ensureProtectionApplied(
-                child,
-                manualMode: resolvedManualMode,
-              ),
-            );
-          });
-        }
-        return;
+        debugPrint('[ChildStatus] updateFilterRules returned false');
+        _scheduleProtectionRetry();
+        return false;
       }
+      debugPrint('[ChildStatus] updateFilterRules applied successfully');
       if (syncedCategories.isNotEmpty) {
         unawaited(
           _syncBlocklistsInBackground(
@@ -598,23 +908,62 @@ class _ChildStatusScreenState extends State<ChildStatusScreen>
         );
       }
       _lastAppliedPolicySignature = signature;
-      await _sendHeartbeatOnce();
-    } catch (_) {
+      _schedulePolicyApplyHeartbeat();
+      return true;
+    } catch (error, stackTrace) {
+      debugPrint(
+        '[ChildStatus] Failed to apply protection rules: $error\n$stackTrace',
+      );
+      _scheduleProtectionRetry();
       // Keep child UI functional even if sync fails.
-    } finally {
-      _isApplyingProtectionRules = false;
-      if (_hasQueuedProtectionReapply) {
-        _hasQueuedProtectionReapply = false;
-        final latestChild = _lastKnownChild ?? child;
-        unawaited(
-          _ensureProtectionApplied(
-            latestChild,
-            manualMode: _lastManualModeOverride,
-            forceRecheck: true,
-          ),
-        );
-      }
+      return false;
     }
+  }
+
+  Future<bool> _replaceVpnRules({
+    required List<String> blockedCategories,
+    required List<String> blockedDomains,
+    required List<String> temporaryAllowedDomains,
+  }) async {
+    final cleared = await _vpnService.updateFilterRules(
+      blockedCategories: const <String>[],
+      blockedDomains: const <String>[],
+      temporaryAllowedDomains: const <String>[],
+    );
+    if (!cleared) {
+      debugPrint('[ChildStatus] clear-before-apply updateFilterRules failed');
+      return false;
+    }
+    return _vpnService.updateFilterRules(
+      blockedCategories: blockedCategories,
+      blockedDomains: blockedDomains,
+      temporaryAllowedDomains: temporaryAllowedDomains,
+    );
+  }
+
+  void _scheduleProtectionRetry() {
+    if (_protectionRetryScheduled) {
+      return;
+    }
+    _protectionRetryScheduled = true;
+    _protectionRetryTimer?.cancel();
+    _protectionRetryTimer = Timer(const Duration(seconds: 5), () {
+      _protectionRetryScheduled = false;
+      if (!mounted) {
+        return;
+      }
+      unawaited(_drainProtectionApplyQueue());
+    });
+  }
+
+  void _schedulePolicyApplyHeartbeat() {
+    final now = DateTime.now();
+    final last = _lastPolicyApplyHeartbeatAt;
+    if (last != null && now.difference(last) < const Duration(seconds: 30)) {
+      return;
+    }
+    _lastPolicyApplyHeartbeatAt = now;
+    unawaited(_sendHeartbeatOnce());
   }
 
   Future<void> _syncBlocklistsInBackground(
@@ -635,10 +984,8 @@ class _ChildStatusScreenState extends State<ChildStatusScreen>
     required DateTime now,
     required _ManualModeOverride? manualMode,
   }) {
-    final categories = child.policy.blockedCategories
-        .map((category) => category.trim().toLowerCase())
-        .where((category) => category.isNotEmpty)
-        .toSet();
+    final categories =
+        normalizeCategoryIds(child.policy.blockedCategories).toSet();
     final domains = child.policy.blockedDomains
         .map((domain) => domain.trim().toLowerCase())
         .where((domain) => domain.isNotEmpty)
@@ -872,16 +1219,14 @@ class _ChildStatusScreenState extends State<ChildStatusScreen>
   ) {
     final mapped = <BlocklistCategory>{};
     for (final rawCategory in policyCategories) {
-      final category = rawCategory.trim().toLowerCase();
+      final category = normalizeCategoryId(rawCategory);
       switch (category) {
-        case 'social':
         case 'social-networks':
           mapped.add(BlocklistCategory.social);
           break;
         case 'ads':
           mapped.add(BlocklistCategory.ads);
           break;
-        case 'adult':
         case 'adult-content':
           mapped.add(BlocklistCategory.adult);
           break;
@@ -942,6 +1287,8 @@ class _ChildStatusScreenState extends State<ChildStatusScreen>
       );
     }
     _ensureAccessRequestSubscription();
+    _ensureChildProfileSubscription();
+    _ensurePolicyEventSubscription();
 
     return StreamBuilder<DocumentSnapshot<Map<String, dynamic>>>(
       stream: _firestore.collection('children').doc(childId).snapshots(),
@@ -999,6 +1346,7 @@ class _ChildStatusScreenState extends State<ChildStatusScreen>
         }
         final child = ChildProfile.fromFirestore(doc);
         _lastKnownChild = child;
+        unawaited(_drainPendingPolicyEvents());
         unawaited(
           _ensureProtectionApplied(
             child,
@@ -1038,7 +1386,18 @@ class _ChildStatusScreenState extends State<ChildStatusScreen>
       return;
     }
     _handledMissingChildProfile = true;
+    _pendingProtectionApplies.clear();
+    _isApplyingProtectionRules = false;
+    _policyEventsSubscription?.cancel();
+    _policyEventsSubscription = null;
+    _childProfileSubscription?.cancel();
+    _childProfileSubscription = null;
+    _childProfileSubscriptionKey = null;
+    _policyEventsSubscriptionKey = null;
+    _pendingPolicyEvents.clear();
+    _processedPolicyEventIds.clear();
     _lastAppliedPolicySignature = null;
+    _lastPolicyApplyHeartbeatAt = null;
     _activeApprovedExceptionDomains = const <String>{};
     _nextApprovedExceptionExpiry = null;
 
@@ -1722,6 +2081,40 @@ class _EffectiveProtectionRules {
 
   final Set<String> categories;
   final Set<String> domains;
+}
+
+class _QueuedProtectionApply {
+  const _QueuedProtectionApply({
+    required this.child,
+    required this.manualMode,
+    required this.categories,
+    required this.domains,
+    required this.policySignature,
+    required this.forceRecheck,
+  });
+
+  final ChildProfile child;
+  final _ManualModeOverride? manualMode;
+  final List<String> categories;
+  final List<String> domains;
+  final String policySignature;
+  final bool forceRecheck;
+}
+
+class _PolicyEventSnapshot {
+  const _PolicyEventSnapshot({
+    required this.blockedCategories,
+    required this.blockedDomains,
+    required this.manualMode,
+    required this.pausedUntil,
+    required this.eventEpochMs,
+  });
+
+  final List<String> blockedCategories;
+  final List<String> blockedDomains;
+  final _ManualModeOverride? manualMode;
+  final DateTime? pausedUntil;
+  final int eventEpochMs;
 }
 
 class _ManualModeOverride {

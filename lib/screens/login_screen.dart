@@ -25,20 +25,40 @@ class _LoginScreenState extends State<LoginScreen> {
   bool _hasNavigatedToDashboard = false;
   String? _errorMessage;
 
+  ({String route, AppMode mode}) _resolvePostLoginPlan() {
+    final args = ModalRoute.of(context)?.settings.arguments;
+    if (args is Map) {
+      final redirectRaw = args['redirectAfterLogin'];
+      final targetModeRaw = args['targetMode'];
+      final redirectRoute = redirectRaw is String ? redirectRaw.trim() : '';
+      final targetMode = targetModeRaw is String
+          ? targetModeRaw.trim().toLowerCase()
+          : '';
+      if (redirectRoute.isNotEmpty) {
+        return (
+          route: redirectRoute,
+          mode: targetMode == 'child' ? AppMode.child : AppMode.parent,
+        );
+      }
+    }
+    return (route: '/parent/dashboard', mode: AppMode.parent);
+  }
+
   Future<void> _goToDashboardIfNeeded() async {
     if (!mounted || _hasNavigatedToDashboard) {
       return;
     }
     _hasNavigatedToDashboard = true;
+    final plan = _resolvePostLoginPlan();
     try {
-      await _appModeService.setMode(AppMode.parent);
+      await _appModeService.setMode(plan.mode);
     } catch (_) {
       // Navigation should still proceed if secure mode persistence fails.
     }
     if (!mounted) {
       return;
     }
-    Navigator.of(context).pushReplacementNamed('/parent/dashboard');
+    Navigator.of(context).pushReplacementNamed(plan.route);
   }
 
   String _friendlyError(String fallback) {

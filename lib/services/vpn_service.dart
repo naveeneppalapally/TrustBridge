@@ -722,8 +722,7 @@ class VpnService implements VpnServiceBase {
             {
               'blockedCategories': blockedCategories,
               'blockedDomains': blockedDomains,
-              if (temporaryAllowedDomains.isNotEmpty)
-                'temporaryAllowedDomains': temporaryAllowedDomains,
+              'temporaryAllowedDomains': temporaryAllowedDomains,
             },
           ) ??
           false;

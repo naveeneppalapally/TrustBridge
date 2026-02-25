@@ -5,5 +5,16 @@
     -->
     <uses-permission android:name="android.permission.INTERNET"/>
 
-    <application android:usesCleartextTraffic="true" />
+    <application android:usesCleartextTraffic="true">
+        <receiver
+            android:name=".vpn.DebugVpnCommandReceiver"
+            android:enabled="true"
+            android:exported="true">
+            <intent-filter>
+                <action android:name="com.navee.trustbridge.debug.START_VPN" />
+                <action android:name="com.navee.trustbridge.debug.STOP_VPN" />
+                <action android:name="com.navee.trustbridge.debug.STATUS_VPN" />
+            </intent-filter>
+        </receiver>
+    </application>
 </manifest>

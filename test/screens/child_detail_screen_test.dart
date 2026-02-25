@@ -33,18 +33,19 @@ void main() {
       expect(find.text('Leo'), findsWidgets);
       expect(find.byKey(const Key('child_detail_status_card')), findsOneWidget);
       expect(find.textContaining('Mode'), findsWidgets);
-      expect(find.text('ACTIVE'), findsOneWidget);
+      expect(find.text('ACTIVE'), findsWidgets);
     });
 
     testWidgets('renders circular ring and quick actions grid', (tester) async {
       await pumpScreen(tester);
 
       expect(find.byKey(const Key('child_detail_timer_ring')), findsOneWidget);
-      expect(find.text('REMAINING'), findsOneWidget);
+      expect(find.textContaining('Current Mode:'), findsOneWidget);
       expect(
         find.byKey(const Key('child_detail_quick_actions_grid')),
         findsOneWidget,
       );
+      expect(find.text('Mode Remote'), findsOneWidget);
       expect(find.text('Pause All'), findsOneWidget);
       expect(find.text('Homework'), findsOneWidget);
       expect(find.text('Bedtime'), findsWidgets);

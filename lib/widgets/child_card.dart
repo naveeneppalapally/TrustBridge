@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import 'package:cloud_firestore/cloud_firestore.dart';
 
 import '../models/child_profile.dart';
 import '../models/schedule.dart';
@@ -48,6 +49,18 @@ class ChildCard extends StatelessWidget {
   }
 
   ChildModeState _activeModeState() {
+    final activeManualMode = _activeManualMode();
+    if (activeManualMode != null) {
+      switch (activeManualMode) {
+        case 'bedtime':
+          return ChildModeState.bedtime;
+        case 'homework':
+          return ChildModeState.focusMode;
+        case 'free':
+          return ChildModeState.freeTime;
+      }
+    }
+
     final now = TimeOfDay.now();
     final today = Day.fromDateTime(DateTime.now());
     for (final schedule in child.policy.schedules) {
@@ -72,6 +85,32 @@ class ChildCard extends StatelessWidget {
       }
     }
     return ChildModeState.freeTime;
+  }
+
+  String? _activeManualMode() {
+    final rawMode = child.manualMode;
+    if (rawMode == null || rawMode.isEmpty) {
+      return null;
+    }
+    final mode = (rawMode['mode'] as String?)?.trim().toLowerCase();
+    if (mode == null || mode.isEmpty) {
+      return null;
+    }
+    final expiresAt = _toDateTime(rawMode['expiresAt']);
+    if (expiresAt != null && !expiresAt.isAfter(DateTime.now())) {
+      return null;
+    }
+    return mode;
+  }
+
+  DateTime? _toDateTime(Object? rawValue) {
+    if (rawValue is Timestamp) {
+      return rawValue.toDate();
+    }
+    if (rawValue is DateTime) {
+      return rawValue;
+    }
+    return null;
   }
 
   bool _isTimeInRange(TimeOfDay current, String start, String end) {

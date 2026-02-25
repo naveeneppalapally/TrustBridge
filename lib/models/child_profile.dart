@@ -40,6 +40,7 @@ class ChildProfile {
   final DateTime createdAt;
   final DateTime updatedAt;
   final DateTime? pausedUntil;
+  final Map<String, dynamic>? manualMode;
 
   ChildProfile({
     required this.id,
@@ -53,6 +54,7 @@ class ChildProfile {
     required this.createdAt,
     required this.updatedAt,
     this.pausedUntil,
+    this.manualMode,
   });
 
   factory ChildProfile.create({
@@ -72,6 +74,7 @@ class ChildProfile {
       createdAt: now,
       updatedAt: now,
       pausedUntil: null,
+      manualMode: null,
     );
   }
 
@@ -89,6 +92,7 @@ class ChildProfile {
       createdAt: _toDateTime(data['createdAt']),
       updatedAt: _toDateTime(data['updatedAt']),
       pausedUntil: _toNullableDateTime(data['pausedUntil']),
+      manualMode: _manualModeMap(data['manualMode']),
     );
   }
 
@@ -111,6 +115,11 @@ class ChildProfile {
     if (pausedUntil != null) {
       map['pausedUntil'] = Timestamp.fromDate(pausedUntil!);
     }
+    final serializedManualMode =
+        manualMode == null ? null : _manualModeToFirestore(manualMode!);
+    if (serializedManualMode != null) {
+      map['manualMode'] = serializedManualMode;
+    }
     return map;
   }
 
@@ -125,6 +134,8 @@ class ChildProfile {
     Policy? policy,
     DateTime? pausedUntil,
     bool clearPausedUntil = false,
+    Map<String, dynamic>? manualMode,
+    bool clearManualMode = false,
   }) {
     return ChildProfile(
       id: id,
@@ -140,6 +151,7 @@ class ChildProfile {
       createdAt: createdAt,
       updatedAt: DateTime.now(),
       pausedUntil: clearPausedUntil ? null : (pausedUntil ?? this.pausedUntil),
+      manualMode: clearManualMode ? null : (manualMode ?? this.manualMode),
     );
   }
 
@@ -222,6 +234,48 @@ class ChildProfile {
         continue;
       }
       result[deviceId] = ChildDeviceRecord.fromMap(deviceId, rawMap);
+    }
+    return result;
+  }
+
+  static Map<String, dynamic>? _manualModeMap(Object? rawValue) {
+    final raw = _asMap(rawValue);
+    if (raw.isEmpty) {
+      return null;
+    }
+    final mode = _nullableString(raw['mode'])?.toLowerCase();
+    if (mode == null) {
+      return null;
+    }
+    final setAt = _toNullableDateTime(raw['setAt']);
+    final expiresAt = _toNullableDateTime(raw['expiresAt']);
+    return <String, dynamic>{
+      'mode': mode,
+      if (setAt != null) 'setAt': setAt,
+      if (expiresAt != null) 'expiresAt': expiresAt,
+    };
+  }
+
+  static Map<String, dynamic>? _manualModeToFirestore(
+    Map<String, dynamic> rawMode,
+  ) {
+    if (rawMode.isEmpty) {
+      return null;
+    }
+    final mode = _nullableString(rawMode['mode'])?.toLowerCase();
+    if (mode == null) {
+      return null;
+    }
+    final result = <String, dynamic>{
+      'mode': mode,
+    };
+    final setAt = _toNullableDateTime(rawMode['setAt']);
+    if (setAt != null) {
+      result['setAt'] = Timestamp.fromDate(setAt);
+    }
+    final expiresAt = _toNullableDateTime(rawMode['expiresAt']);
+    if (expiresAt != null) {
+      result['expiresAt'] = Timestamp.fromDate(expiresAt);
     }
     return result;
   }

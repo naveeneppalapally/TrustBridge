@@ -758,6 +758,16 @@ class _DashboardScreenState extends State<DashboardScreen>
         .toSet()
         .toList(growable: false)
       ..sort();
+    final childIdByDeviceId = <String, String>{};
+    for (final child in children) {
+      for (final rawDeviceId in child.deviceIds) {
+        final deviceId = rawDeviceId.trim();
+        if (deviceId.isEmpty) {
+          continue;
+        }
+        childIdByDeviceId.putIfAbsent(deviceId, () => child.id);
+      }
+    }
 
     final nextFingerprint = allDeviceIds.join('|');
     if (nextFingerprint == _heartbeatSubscriptionFingerprint) {
@@ -774,7 +784,11 @@ class _DashboardScreenState extends State<DashboardScreen>
     }
 
     _deviceHeartbeatSubscription = _resolvedFirestoreService
-        .watchDeviceStatuses(allDeviceIds)
+        .watchDeviceStatuses(
+          allDeviceIds,
+          parentId: parentId,
+          childIdByDeviceId: childIdByDeviceId,
+        )
         .listen((statusMap) {
       _latestDeviceStatusByDeviceId = statusMap;
       unawaited(

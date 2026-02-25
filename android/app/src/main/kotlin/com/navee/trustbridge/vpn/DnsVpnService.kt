@@ -37,6 +37,8 @@ class DnsVpnService : VpnService() {
         private const val MAX_RECONNECT_ATTEMPTS = 3
         private const val MAX_BOOT_RESTORE_RETRY_ATTEMPTS = 4
         private const val MAX_TRANSIENT_START_RETRY_ATTEMPTS = 3
+        private const val WATCHDOG_REQUEST_CODE = 4100
+        private const val WATCHDOG_INTERVAL_MS = 60_000L
         private val BOOT_RESTORE_RETRY_DELAYS_MS = longArrayOf(
             15_000L,
             30_000L,
@@ -175,6 +177,10 @@ class DnsVpnService : VpnService() {
     private var activeBootRestoreAttempt: Int = 0
     @Volatile
     private var activeTransientRetryAttempt: Int = 0
+    @Volatile
+    private var lastScheduledBootRetryAttempt: Int = -1
+    @Volatile
+    private var lastScheduledTransientRetryAttempt: Int = -1
     private var lastAppliedCategories: List<String> = emptyList()
     private var lastAppliedDomains: List<String> = emptyList()
     private var lastAppliedAllowedDomains: List<String> = emptyList()
@@ -235,6 +241,7 @@ class DnsVpnService : VpnService() {
                 applyUpstreamDns(upstreamDns)
                 applyFilterRules(categories, domains, allowedDomains)
                 startVpn()
+                scheduleWatchdogPing()
                 START_STICKY
             }
 
@@ -244,8 +251,9 @@ class DnsVpnService : VpnService() {
                 val domains = intent?.getStringArrayListExtra(EXTRA_BLOCKED_DOMAINS) ?: arrayListOf()
                 val allowedDomains =
                     intent?.getStringArrayListExtra(EXTRA_TEMP_ALLOWED_DOMAINS)?.toList()
-                        ?: lastAppliedAllowedDomains
+                        ?: emptyList()
                 applyFilterRules(categories, domains, allowedDomains)
+                scheduleWatchdogPing()
                 START_STICKY
             }
 
@@ -291,6 +299,7 @@ class DnsVpnService : VpnService() {
                 applyUpstreamDns(upstreamDns)
                 applyFilterRules(categories, domains, allowedDomains)
                 startVpn()
+                scheduleWatchdogPing()
                 START_STICKY
             }
 
@@ -301,6 +310,7 @@ class DnsVpnService : VpnService() {
                     stopVpn(stopService = false, markDisabled = false)
                     startVpn()
                 }
+                scheduleWatchdogPing()
                 START_STICKY
             }
 
@@ -314,7 +324,10 @@ class DnsVpnService : VpnService() {
                 activeBootRestoreStart = false
                 activeBootRestoreAttempt = 0
                 activeTransientRetryAttempt = 0
+                lastScheduledBootRetryAttempt = -1
+                lastScheduledTransientRetryAttempt = -1
                 vpnPreferencesStore.setEnabled(false)
+                cancelWatchdogPing()
                 dismissProtectionAttentionNotification()
                 stopVpn(stopService = true, markDisabled = true)
                 START_NOT_STICKY
@@ -366,7 +379,10 @@ class DnsVpnService : VpnService() {
                         scheduleTransientStartRetry()
                     }
                 }
-                if (!retryScheduled) {
+                if (retryScheduled) {
+                    Log.w(TAG, "VPN establish failed; retry scheduled and service kept alive")
+                    return
+                } else {
                     showProtectionAttentionNotification(
                         "Protection is off. Open TrustBridge and tap Restore Protection."
                     )
@@ -395,6 +411,8 @@ class DnsVpnService : VpnService() {
             reconnectAttemptCount = 0
             activeBootRestoreAttempt = 0
             activeTransientRetryAttempt = 0
+            lastScheduledBootRetryAttempt = -1
+            lastScheduledTransientRetryAttempt = -1
             dismissProtectionAttentionNotification()
             startedAtEpochMs = System.currentTimeMillis()
             queriesProcessed = 0
@@ -442,7 +460,14 @@ class DnsVpnService : VpnService() {
             TAG,
             "Scheduling boot restore retry attempt=$nextAttempt in ${delayMs}ms"
         )
-        return scheduleStartRetry(
+        val inProcessScheduled = scheduleInProcessStartRetry(
+            delayMs = maxOf(5_000L, delayMs / 3),
+            config = config,
+            bootRestore = true,
+            bootRestoreAttempt = nextAttempt,
+            transientRetryAttempt = 0
+        )
+        val alarmScheduled = scheduleStartRetry(
             requestCode = 2000 + nextAttempt,
             delayMs = delayMs,
             config = config,
@@ -450,6 +475,7 @@ class DnsVpnService : VpnService() {
             bootRestoreAttempt = nextAttempt,
             transientRetryAttempt = 0
         )
+        return inProcessScheduled || alarmScheduled
     }
 
     private fun scheduleTransientStartRetry(): Boolean {
@@ -475,7 +501,14 @@ class DnsVpnService : VpnService() {
             TAG,
             "Scheduling transient VPN start retry attempt=$nextAttempt in ${delayMs}ms"
         )
-        return scheduleStartRetry(
+        val inProcessScheduled = scheduleInProcessStartRetry(
+            delayMs = delayMs,
+            config = config,
+            bootRestore = false,
+            bootRestoreAttempt = 0,
+            transientRetryAttempt = nextAttempt
+        )
+        val alarmScheduled = scheduleStartRetry(
             requestCode = 3000 + nextAttempt,
             delayMs = delayMs,
             config = config,
@@ -483,6 +516,7 @@ class DnsVpnService : VpnService() {
             bootRestoreAttempt = 0,
             transientRetryAttempt = nextAttempt
         )
+        return inProcessScheduled || alarmScheduled
     }
 
     private fun scheduleStartRetry(
@@ -493,7 +527,193 @@ class DnsVpnService : VpnService() {
         bootRestoreAttempt: Int,
         transientRetryAttempt: Int
     ): Boolean {
-        val retryIntent = Intent(this, DnsVpnService::class.java).apply {
+        val retryIntent = buildStartIntent(
+            config = config,
+            bootRestore = bootRestore,
+            bootRestoreAttempt = bootRestoreAttempt,
+            transientRetryAttempt = transientRetryAttempt
+        )
+
+        val pendingIntent = createServicePendingIntent(
+            requestCode = requestCode,
+            intent = retryIntent,
+            flags = PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE
+        )
+        val alarmManager = getSystemService(AlarmManager::class.java)
+        if (alarmManager == null) {
+            Log.w(TAG, "Retry scheduling skipped: AlarmManager unavailable")
+            return false
+        }
+
+        val triggerAtMs = System.currentTimeMillis() + delayMs
+        return try {
+            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.M) {
+                val canUseExact =
+                    Build.VERSION.SDK_INT < Build.VERSION_CODES.S ||
+                        alarmManager.canScheduleExactAlarms()
+                if (canUseExact) {
+                    alarmManager.setExactAndAllowWhileIdle(
+                        AlarmManager.RTC_WAKEUP,
+                        triggerAtMs,
+                        pendingIntent
+                    )
+                } else {
+                    Log.w(
+                        TAG,
+                        "Exact alarms not permitted; using inexact allow-while-idle alarm"
+                    )
+                    alarmManager.setAndAllowWhileIdle(
+                        AlarmManager.RTC_WAKEUP,
+                        triggerAtMs,
+                        pendingIntent
+                    )
+                }
+            } else {
+                alarmManager.set(AlarmManager.RTC_WAKEUP, triggerAtMs, pendingIntent)
+            }
+            true
+        } catch (error: Exception) {
+            Log.e(TAG, "Unable to schedule VPN retry", error)
+            false
+        }
+    }
+
+    private fun scheduleInProcessStartRetry(
+        delayMs: Long,
+        config: PersistedVpnConfig,
+        bootRestore: Boolean,
+        bootRestoreAttempt: Int,
+        transientRetryAttempt: Int
+    ): Boolean {
+        if (bootRestore) {
+            if (bootRestoreAttempt <= lastScheduledBootRetryAttempt) {
+                return true
+            }
+            lastScheduledBootRetryAttempt = bootRestoreAttempt
+        } else {
+            if (transientRetryAttempt <= lastScheduledTransientRetryAttempt) {
+                return true
+            }
+            lastScheduledTransientRetryAttempt = transientRetryAttempt
+        }
+
+        thread(
+            name = "dns-vpn-inprocess-retry-" +
+                if (bootRestore) "boot-$bootRestoreAttempt" else "transient-$transientRetryAttempt"
+        ) {
+            try {
+                Thread.sleep(delayMs)
+            } catch (_: InterruptedException) {
+                return@thread
+            }
+
+            val latestConfig = vpnPreferencesStore.loadConfig()
+            if (!latestConfig.enabled) {
+                Log.d(TAG, "In-process retry skipped: VPN no longer enabled")
+                return@thread
+            }
+
+            val retryIntent = buildStartIntent(
+                config = latestConfig,
+                bootRestore = bootRestore,
+                bootRestoreAttempt = bootRestoreAttempt,
+                transientRetryAttempt = transientRetryAttempt
+            )
+            try {
+                if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
+                    startForegroundService(retryIntent)
+                } else {
+                    startService(retryIntent)
+                }
+            } catch (error: Exception) {
+                Log.e(TAG, "In-process retry launch failed", error)
+            }
+        }
+        return true
+    }
+
+    private fun scheduleWatchdogPing() {
+        val config = try {
+            vpnPreferencesStore.loadConfig()
+        } catch (_: Exception) {
+            return
+        }
+        if (!config.enabled) {
+            return
+        }
+
+        val alarmManager = getSystemService(AlarmManager::class.java) ?: return
+        val watchdogIntent = buildStartIntent(
+            config = config,
+            bootRestore = false,
+            bootRestoreAttempt = 0,
+            transientRetryAttempt = 0
+        )
+        val pendingIntent = createServicePendingIntent(
+            requestCode = WATCHDOG_REQUEST_CODE,
+            intent = watchdogIntent,
+            flags = PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE
+        )
+        val triggerAtMs = System.currentTimeMillis() + WATCHDOG_INTERVAL_MS
+        try {
+            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.M) {
+                alarmManager.setAndAllowWhileIdle(
+                    AlarmManager.RTC_WAKEUP,
+                    triggerAtMs,
+                    pendingIntent
+                )
+            } else {
+                alarmManager.set(AlarmManager.RTC_WAKEUP, triggerAtMs, pendingIntent)
+            }
+        } catch (error: Exception) {
+            Log.e(TAG, "Unable to schedule VPN watchdog ping", error)
+        }
+    }
+
+    private fun cancelWatchdogPing() {
+        val alarmManager = getSystemService(AlarmManager::class.java) ?: return
+        val pendingIntent = findExistingServicePendingIntent(
+            requestCode = WATCHDOG_REQUEST_CODE,
+            intent = Intent(this, DnsVpnService::class.java).apply {
+                action = ACTION_START
+            },
+            flags = PendingIntent.FLAG_NO_CREATE or PendingIntent.FLAG_IMMUTABLE
+        ) ?: return
+        alarmManager.cancel(pendingIntent)
+        pendingIntent.cancel()
+    }
+
+    private fun createServicePendingIntent(
+        requestCode: Int,
+        intent: Intent,
+        flags: Int
+    ): PendingIntent {
+        return if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
+            PendingIntent.getForegroundService(this, requestCode, intent, flags)
+        } else {
+            PendingIntent.getService(this, requestCode, intent, flags)
+        }
+    }
+
+    private fun findExistingServicePendingIntent(
+        requestCode: Int,
+        intent: Intent,
+        flags: Int
+    ): PendingIntent? {
+        return if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
+            PendingIntent.getForegroundService(this, requestCode, intent, flags)
+        } else {
+            PendingIntent.getService(this, requestCode, intent, flags)
+        }
+    }
+
+    private fun buildStartIntent(
+        config: PersistedVpnConfig,
+        bootRestore: Boolean,
+        bootRestoreAttempt: Int,
+        transientRetryAttempt: Int
+    ): Intent {
+        return Intent(this, DnsVpnService::class.java).apply {
             action = ACTION_START
             putExtra(EXTRA_BOOT_RESTORE, bootRestore)
             putExtra(EXTRA_BOOT_RESTORE_ATTEMPT, bootRestoreAttempt)
@@ -511,48 +731,6 @@ class DnsVpnService : VpnService() {
                 ArrayList(config.temporaryAllowedDomains)
             )
             putExtra(EXTRA_UPSTREAM_DNS, config.upstreamDns)
-        }
-
-        val pendingIntent = PendingIntent.getService(
-            this,
-            requestCode,
-            retryIntent,
-            PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE
-        )
-        val alarmManager = getSystemService(AlarmManager::class.java)
-        if (alarmManager == null) {
-            Log.w(TAG, "Retry scheduling skipped: AlarmManager unavailable")
-            return false
-        }
-
-        val triggerAtMs = System.currentTimeMillis() + delayMs
-        return try {
-            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.M) {
-                try {
-                    alarmManager.setExactAndAllowWhileIdle(
-                        AlarmManager.RTC_WAKEUP,
-                        triggerAtMs,
-                        pendingIntent
-                    )
-                } catch (error: SecurityException) {
-                    Log.w(
-                        TAG,
-                        "Exact alarm denied for VPN retry; falling back to inexact alarm",
-                        error
-                    )
-                    alarmManager.setAndAllowWhileIdle(
-                        AlarmManager.RTC_WAKEUP,
-                        triggerAtMs,
-                        pendingIntent
-                    )
-                }
-            } else {
-                alarmManager.set(AlarmManager.RTC_WAKEUP, triggerAtMs, pendingIntent)
-            }
-            true
-        } catch (error: Exception) {
-            Log.e(TAG, "Unable to schedule VPN retry", error)
-            false
         }
     }
 
@@ -602,6 +780,7 @@ class DnsVpnService : VpnService() {
         if (!serviceRunning && vpnInterface == null && !foregroundActive) {
             if (markDisabled) {
                 vpnPreferencesStore.setEnabled(false)
+                cancelWatchdogPing()
             }
             return
         }
@@ -611,6 +790,7 @@ class DnsVpnService : VpnService() {
         isRunning = false
         if (markDisabled) {
             vpnPreferencesStore.setEnabled(false)
+            cancelWatchdogPing()
         }
         unregisterNetworkCallback()
 
@@ -742,19 +922,56 @@ class DnsVpnService : VpnService() {
         domains: List<String>,
         temporaryAllowedDomains: List<String>
     ) {
-        lastAppliedCategories = categories
-        lastAppliedDomains = domains
-        lastAppliedAllowedDomains = temporaryAllowedDomains
+        val normalizedCategories = categories
+            .map(::normalizeCategoryToken)
+            .filter { it.isNotEmpty() }
+            .distinct()
+        val normalizedDomains = domains
+            .map(::normalizeDomainToken)
+            .filter { it.isNotEmpty() }
+            .distinct()
+        val normalizedAllowedDomains = temporaryAllowedDomains
+            .map(::normalizeDomainToken)
+            .filter { it.isNotEmpty() }
+            .distinct()
+
+        lastAppliedCategories = normalizedCategories
+        lastAppliedDomains = normalizedDomains
+        lastAppliedAllowedDomains = normalizedAllowedDomains
         vpnPreferencesStore.saveRules(
-            categories = categories,
-            domains = domains,
-            temporaryAllowedDomains = temporaryAllowedDomains,
+            categories = normalizedCategories,
+            domains = normalizedDomains,
+            temporaryAllowedDomains = normalizedAllowedDomains,
             upstreamDns = lastAppliedUpstreamDns
         )
-        filterEngine.updateFilterRules(categories, domains, temporaryAllowedDomains)
+        filterEngine.updateFilterRules(
+            normalizedCategories,
+            normalizedDomains,
+            normalizedAllowedDomains
+        )
         blockedCategoryCount = filterEngine.blockedCategoryCount()
         blockedDomainCount = filterEngine.effectiveBlockedDomainCount()
         lastRuleUpdateEpochMs = System.currentTimeMillis()
+    }
+
+    private fun normalizeCategoryToken(rawCategory: String): String {
+        val normalized = rawCategory.trim().lowercase()
+        return when (normalized) {
+            "social" -> "social-networks"
+            "adult" -> "adult-content"
+            else -> normalized
+        }
+    }
+
+    private fun normalizeDomainToken(rawDomain: String): String {
+        var normalized = rawDomain.trim().lowercase()
+        if (normalized.startsWith("*.")) {
+            normalized = normalized.removePrefix("*.")
+        }
+        while (normalized.endsWith(".")) {
+            normalized = normalized.dropLast(1)
+        }
+        return normalized
     }
 
     private fun currentModeNameForBlockedEvent(): String {
@@ -968,6 +1185,7 @@ class DnsVpnService : VpnService() {
     }
 
     override fun onDestroy() {
+        scheduleUnexpectedStopRecovery(reason = "onDestroy")
         stopVpn(stopService = false, markDisabled = false)
         try {
             filterEngine.close()
@@ -975,5 +1193,60 @@ class DnsVpnService : VpnService() {
         }
         super.onDestroy()
         Log.d(TAG, "DNS VPN service destroyed")
+    }
+
+    override fun onTaskRemoved(rootIntent: Intent?) {
+        super.onTaskRemoved(rootIntent)
+        scheduleUnexpectedStopRecovery(reason = "onTaskRemoved")
+    }
+
+    private fun scheduleUnexpectedStopRecovery(reason: String) {
+        val config = try {
+            vpnPreferencesStore.loadConfig()
+        } catch (_: Exception) {
+            return
+        }
+        if (!config.enabled) {
+            Log.d(TAG, "Unexpected-stop recovery skipped ($reason): VPN disabled")
+            return
+        }
+
+        if (VpnService.prepare(this) != null) {
+            Log.w(TAG, "Unexpected-stop recovery skipped ($reason): VPN permission missing")
+            showProtectionAttentionNotification(
+                "Protection was turned off. Open TrustBridge to restore VPN permission."
+            )
+            return
+        }
+
+        val nextTransientAttempt = maxOf(1, activeTransientRetryAttempt + 1)
+        val inProcessScheduled = scheduleInProcessStartRetry(
+            delayMs = 5_000L,
+            config = config,
+            bootRestore = false,
+            bootRestoreAttempt = 0,
+            transientRetryAttempt = nextTransientAttempt
+        )
+        val alarmScheduled = scheduleStartRetry(
+            requestCode = 4000 + nextTransientAttempt,
+            delayMs = 15_000L,
+            config = config,
+            bootRestore = false,
+            bootRestoreAttempt = 0,
+            transientRetryAttempt = nextTransientAttempt
+        )
+
+        if (inProcessScheduled || alarmScheduled) {
+            Log.w(
+                TAG,
+                "Scheduled unexpected-stop recovery ($reason) " +
+                    "attempt=$nextTransientAttempt inProcess=$inProcessScheduled alarm=$alarmScheduled"
+            )
+            return
+        }
+
+        showProtectionAttentionNotification(
+            "Protection is off. Open TrustBridge and tap Restore Protection."
+        )
     }
 }

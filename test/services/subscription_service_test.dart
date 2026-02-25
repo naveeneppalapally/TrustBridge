@@ -12,7 +12,7 @@ void main() {
 
     setUp(() {
       firestore = FakeFirebaseFirestore();
-      now = DateTime(2026, 2, 20, 12, 0, 0);
+      now = DateTime.now();
       service = SubscriptionService(
         firestore: firestore,
         nowProvider: () => now,

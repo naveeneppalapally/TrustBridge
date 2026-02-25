@@ -51,6 +51,10 @@ class SocialMediaDomains {
       'googlevideo.com',
       'ytimg.com',
       'youtube-nocookie.com',
+      'youtubei.googleapis.com',
+      'youtube.googleapis.com',
+      'youtubeandroidplayer.googleapis.com',
+      'yt3.ggpht.com',
     ],
     'reddit': <String>[
       'reddit.com',
