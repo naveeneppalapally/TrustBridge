@@ -164,7 +164,8 @@ void main() {
       expect(createdAt, originalCreatedAt);
     });
 
-    test('deleteChild removes document and enqueues cleanup commands', () async {
+    test('deleteChild removes document and enqueues cleanup commands',
+        () async {
       final child = await firestoreService.addChild(
         parentId: 'parentA',
         nickname: 'Delete Me',

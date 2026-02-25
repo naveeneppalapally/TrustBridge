@@ -162,6 +162,7 @@ class _ChildStatusScreenState extends State<ChildStatusScreen>
   final Queue<_QueuedProtectionApply> _pendingProtectionApplies =
       Queue<_QueuedProtectionApply>();
   String? _lastAppliedPolicySignature;
+  int? _lastAppliedPolicyVersion;
   bool _protectionRetryScheduled = false;
   DateTime? _lastPolicyApplyHeartbeatAt;
   ChildProfile? _lastKnownChild;
@@ -172,6 +173,8 @@ class _ChildStatusScreenState extends State<ChildStatusScreen>
   Set<String> _effectiveBlockedPackages = const <String>{};
   final AppUsageService _appUsageService = AppUsageService();
   bool _showingBlockedPackageOverlay = false;
+  bool? _usageAccessPermissionGrantedForBlocking;
+  bool _policyApplyAckSupportsUsageAccess = true;
 
   @override
   void initState() {
@@ -181,6 +184,7 @@ class _ChildStatusScreenState extends State<ChildStatusScreen>
     _firestoreService = FirestoreService(firestore: _firestore);
     _parentId = widget.parentId?.trim();
     _childId = widget.childId?.trim();
+    unawaited(_refreshAppBlockingUsageAccessState());
     unawaited(_resolveContext());
   }
 
@@ -193,6 +197,7 @@ class _ChildStatusScreenState extends State<ChildStatusScreen>
       if (child != null) {
         unawaited(_ensureProtectionApplied(child, forceRecheck: true));
       }
+      unawaited(_refreshAppBlockingUsageAccessState());
       unawaited(_processPendingRemoteCommands());
     }
   }
@@ -427,6 +432,33 @@ class _ChildStatusScreenState extends State<ChildStatusScreen>
     unawaited(_checkBlockedForegroundPackage());
   }
 
+  bool _requiresUsageAccessForAppBlocking() {
+    return _effectiveBlockedPackages.isNotEmpty;
+  }
+
+  Future<bool> _refreshAppBlockingUsageAccessState() async {
+    if (!_requiresUsageAccessForAppBlocking()) {
+      _setUsageAccessPermissionState(true);
+      return true;
+    }
+    final granted = await _appUsageService.hasUsageAccessPermission();
+    _setUsageAccessPermissionState(granted);
+    return granted;
+  }
+
+  void _setUsageAccessPermissionState(bool value) {
+    if (_usageAccessPermissionGrantedForBlocking == value) {
+      return;
+    }
+    if (!mounted) {
+      _usageAccessPermissionGrantedForBlocking = value;
+      return;
+    }
+    setState(() {
+      _usageAccessPermissionGrantedForBlocking = value;
+    });
+  }
+
   Future<void> _checkBlockedForegroundPackage() async {
     if (!mounted || _showingBlockedPackageOverlay) {
       return;
@@ -435,6 +467,9 @@ class _ChildStatusScreenState extends State<ChildStatusScreen>
       return;
     }
     if (WidgetsBinding.instance.lifecycleState != AppLifecycleState.resumed) {
+      return;
+    }
+    if (_usageAccessPermissionGrantedForBlocking == false) {
       return;
     }
 
@@ -621,12 +656,19 @@ class _ChildStatusScreenState extends State<ChildStatusScreen>
       _childProfileSubscription?.cancel();
       _childProfileSubscription = null;
       _childProfileSubscriptionKey = null;
+      _resetPolicyTrackingState(clearEffectiveSnapshot: true);
       return;
     }
 
     if (_childProfileSubscriptionKey == childId &&
         _childProfileSubscription != null) {
       return;
+    }
+
+    final childIdChanged = _childProfileSubscriptionKey != null &&
+        _childProfileSubscriptionKey != childId;
+    if (childIdChanged) {
+      _resetPolicyTrackingState(clearEffectiveSnapshot: true);
     }
 
     _childProfileSubscription?.cancel();
@@ -713,6 +755,10 @@ class _ChildStatusScreenState extends State<ChildStatusScreen>
         .limitToLast(500)
         .snapshots()
         .listen((snapshot) {
+      if (_lastEffectivePolicySnapshot != null) {
+        _pendingPolicyEvents.clear();
+        return;
+      }
       for (final change in snapshot.docChanges) {
         if (change.type == DocumentChangeType.removed) {
           continue;
@@ -767,13 +813,18 @@ class _ChildStatusScreenState extends State<ChildStatusScreen>
       _effectivePolicySubscription?.cancel();
       _effectivePolicySubscription = null;
       _effectivePolicySubscriptionKey = null;
-      _lastEffectivePolicySnapshot = null;
+      _resetPolicyTrackingState(clearEffectiveSnapshot: true);
       return;
     }
 
     if (_effectivePolicySubscriptionKey == childId &&
         _effectivePolicySubscription != null) {
       return;
+    }
+
+    if (_effectivePolicySubscriptionKey != null &&
+        _effectivePolicySubscriptionKey != childId) {
+      _lastEffectivePolicySnapshot = null;
     }
 
     _effectivePolicySubscription?.cancel();
@@ -785,10 +836,38 @@ class _ChildStatusScreenState extends State<ChildStatusScreen>
         .snapshots()
         .listen((doc) {
       if (!doc.exists) {
+        final hadSnapshot = _lastEffectivePolicySnapshot != null;
+        _lastEffectivePolicySnapshot = null;
+        if (hadSnapshot) {
+          final baseChild = _lastKnownChild;
+          if (baseChild != null) {
+            unawaited(
+              _ensureProtectionApplied(
+                baseChild,
+                manualMode: _lastManualModeOverride,
+                forceRecheck: true,
+              ),
+            );
+          }
+        }
         return;
       }
       final snapshot = _effectivePolicyFromRaw(doc.data());
       if (snapshot == null) {
+        final hadSnapshot = _lastEffectivePolicySnapshot != null;
+        _lastEffectivePolicySnapshot = null;
+        if (hadSnapshot) {
+          final baseChild = _lastKnownChild;
+          if (baseChild != null) {
+            unawaited(
+              _ensureProtectionApplied(
+                baseChild,
+                manualMode: _lastManualModeOverride,
+                forceRecheck: true,
+              ),
+            );
+          }
+        }
         return;
       }
       final previous = _lastEffectivePolicySnapshot;
@@ -803,6 +882,7 @@ class _ChildStatusScreenState extends State<ChildStatusScreen>
       unawaited(_applyEffectivePolicySnapshot(baseChild, snapshot));
     }, onError: (Object error) {
       debugPrint('[ChildStatus] effective_policy listener error: $error');
+      _lastEffectivePolicySnapshot = null;
     });
     _effectivePolicySubscriptionKey = childId;
   }
@@ -827,9 +907,7 @@ class _ChildStatusScreenState extends State<ChildStatusScreen>
       return null;
     }
     return _EffectivePolicySnapshot(
-      version: version <= 0
-          ? DateTime.now().millisecondsSinceEpoch
-          : version,
+      version: version <= 0 ? DateTime.now().millisecondsSinceEpoch : version,
       blockedCategories: blockedCategories,
       blockedServices: blockedServices,
       blockedDomains: blockedDomains,
@@ -854,32 +932,13 @@ class _ChildStatusScreenState extends State<ChildStatusScreen>
     );
     _lastKnownChild = nextChild;
     _lastManualModeOverride = snapshot.manualMode;
-    final effectiveServices = ServiceDefinitions.resolveEffectiveServices(
-      blockedCategories: snapshot.blockedCategories,
-      blockedServices: snapshot.blockedServices,
-    ).toList()
-      ..sort();
-    final effectivePackages = ServiceDefinitions.resolvePackages(
-      blockedCategories: snapshot.blockedCategories,
-      blockedServices: snapshot.blockedServices,
-    ).toList()
-      ..sort();
-    _effectiveBlockedPackages = effectivePackages.toSet();
-    _enqueueProtectionApply(
-      _QueuedProtectionApply(
-        child: nextChild,
-        manualMode: snapshot.manualMode,
-        categories: snapshot.blockedCategories.toList()..sort(),
-        services: effectiveServices,
-        domains: snapshot.blockedDomainsResolved.toList()..sort(),
-        policySignature:
-            'effective:${snapshot.version}:${snapshot.blockedCategories.join('|')}:${effectiveServices.join('|')}:${snapshot.blockedDomainsResolved.join('|')}',
-        policyVersion: snapshot.version,
-        blockedPackages: effectivePackages,
-        forceRecheck: true,
-      ),
+    _pendingPolicyEvents.clear();
+    await _ensureProtectionApplied(
+      nextChild,
+      manualMode: snapshot.manualMode,
+      policyVersion: snapshot.version,
+      forceRecheck: true,
     );
-    await _drainProtectionApplyQueue();
   }
 
   _PolicyEventSnapshot? _policyEventFromRaw(Map<String, dynamic>? rawData) {
@@ -908,6 +967,9 @@ class _ChildStatusScreenState extends State<ChildStatusScreen>
     ChildProfile baseChild,
     _PolicyEventSnapshot event,
   ) async {
+    if (_lastEffectivePolicySnapshot != null) {
+      return;
+    }
     debugPrint(
       '[ChildStatus] _applyPolicyEvent '
       'cats=${event.blockedCategories.length} domains=${event.blockedDomains.length}',
@@ -931,6 +993,10 @@ class _ChildStatusScreenState extends State<ChildStatusScreen>
   }
 
   Future<void> _drainPendingPolicyEvents() async {
+    if (_lastEffectivePolicySnapshot != null) {
+      _pendingPolicyEvents.clear();
+      return;
+    }
     final baseChild = _lastKnownChild;
     if (baseChild == null || _pendingPolicyEvents.isEmpty) {
       return;
@@ -1019,10 +1085,49 @@ class _ChildStatusScreenState extends State<ChildStatusScreen>
     int? policyVersion,
     bool forceRecheck = false,
   }) async {
+    var sourceChild = child;
+    var sourceManualMode = manualMode;
+    var sourcePolicyVersion = policyVersion;
+    if (sourcePolicyVersion != null && sourcePolicyVersion <= 0) {
+      sourcePolicyVersion = null;
+    }
+
+    final effectiveSnapshot = _lastEffectivePolicySnapshot;
+    final childManualMode =
+        sourceManualMode ?? _manualModeFromRaw(child.manualMode);
+    if (effectiveSnapshot != null &&
+        (sourcePolicyVersion == null ||
+            sourcePolicyVersion < effectiveSnapshot.version)) {
+      final snapshotIsStale = _isEffectiveSnapshotStale(
+        child: child,
+        manualMode: childManualMode,
+        snapshot: effectiveSnapshot,
+      );
+      if (snapshotIsStale) {
+        debugPrint(
+          '[ChildStatus] ignoring stale effective_policy snapshot '
+          'version=${effectiveSnapshot.version} childUpdatedAt=${child.updatedAt.toIso8601String()} '
+          'sourceUpdatedAt=${effectiveSnapshot.sourceUpdatedAt?.toIso8601String() ?? '<null>'}',
+        );
+        _lastEffectivePolicySnapshot = null;
+      } else {
+        sourceChild = child.copyWith(
+          policy: child.policy.copyWith(
+            blockedCategories: effectiveSnapshot.blockedCategories,
+            blockedServices: effectiveSnapshot.blockedServices,
+            blockedDomains: effectiveSnapshot.blockedDomains,
+          ),
+          pausedUntil: effectiveSnapshot.pausedUntil,
+        );
+        sourceManualMode = childManualMode ?? effectiveSnapshot.manualMode;
+        sourcePolicyVersion = effectiveSnapshot.version;
+      }
+    }
+
     final now = DateTime.now();
-    final resolvedManualMode = manualMode ?? _lastManualModeOverride;
+    final resolvedManualMode = sourceManualMode ?? _lastManualModeOverride;
     final effectiveRules = _buildEffectiveProtectionRules(
-      child: child,
+      child: sourceChild,
       now: now,
       manualMode: resolvedManualMode,
     );
@@ -1030,16 +1135,22 @@ class _ChildStatusScreenState extends State<ChildStatusScreen>
     final services = effectiveRules.services.toList()..sort();
     final domains = effectiveRules.domains.toList()..sort();
     _effectiveBlockedPackages = effectiveRules.blockedPackages.toSet();
+    unawaited(_refreshAppBlockingUsageAccessState());
     final policySignature =
         '${categories.join('|')}::${services.join('|')}::${domains.join('|')}';
     _scheduleNextProtectionRecheck(
-      child: child,
+      child: sourceChild,
       manualMode: resolvedManualMode,
       now: now,
       nextApprovedExceptionExpiry: _nextApprovedExceptionExpiry,
     );
 
+    final lastAppliedVersion = _lastAppliedPolicyVersion;
+    final hasSameVersion = sourcePolicyVersion != null &&
+        lastAppliedVersion != null &&
+        sourcePolicyVersion == lastAppliedVersion;
     if (!forceRecheck &&
+        hasSameVersion &&
         _lastAppliedPolicySignature != null &&
         _lastAppliedPolicySignature!.startsWith('$policySignature::') &&
         !_isApplyingProtectionRules &&
@@ -1049,13 +1160,14 @@ class _ChildStatusScreenState extends State<ChildStatusScreen>
 
     _enqueueProtectionApply(
       _QueuedProtectionApply(
-        child: child,
+        child: sourceChild,
         manualMode: resolvedManualMode,
         categories: categories,
         services: services,
         domains: domains,
         policySignature: policySignature,
-        policyVersion: policyVersion ?? _lastEffectivePolicySnapshot?.version,
+        policyVersion:
+            sourcePolicyVersion ?? _lastEffectivePolicySnapshot?.version,
         blockedPackages: effectiveRules.blockedPackages.toList()..sort(),
         forceRecheck: forceRecheck,
       ),
@@ -1063,12 +1175,113 @@ class _ChildStatusScreenState extends State<ChildStatusScreen>
     await _drainProtectionApplyQueue();
   }
 
+  bool _isEffectiveSnapshotStale({
+    required ChildProfile child,
+    required _ManualModeOverride? manualMode,
+    required _EffectivePolicySnapshot snapshot,
+  }) {
+    final childCategories = normalizeCategoryIds(
+      child.policy.blockedCategories,
+    ).toSet();
+    final snapshotCategories = normalizeCategoryIds(
+      snapshot.blockedCategories,
+    ).toSet();
+
+    final childServices = child.policy.blockedServices
+        .map((value) => value.trim().toLowerCase())
+        .where((value) => value.isNotEmpty)
+        .toSet();
+    final snapshotServices = snapshot.blockedServices
+        .map((value) => value.trim().toLowerCase())
+        .where((value) => value.isNotEmpty)
+        .toSet();
+
+    final childDomains = child.policy.blockedDomains
+        .map((value) => value.trim().toLowerCase())
+        .where((value) => value.isNotEmpty)
+        .toSet();
+    final snapshotDomains = snapshot.blockedDomains
+        .map((value) => value.trim().toLowerCase())
+        .where((value) => value.isNotEmpty)
+        .toSet();
+
+    final hasPolicyMismatch =
+        !_sameStringSet(childCategories, snapshotCategories) ||
+            !_sameStringSet(childServices, snapshotServices) ||
+            !_sameStringSet(childDomains, snapshotDomains);
+    final hasPauseMismatch = !_sameNullableDateTime(
+      child.pausedUntil,
+      snapshot.pausedUntil,
+    );
+    final hasManualModeMismatch = !_sameManualMode(
+      manualMode,
+      snapshot.manualMode,
+    );
+
+    if (!hasPolicyMismatch && !hasPauseMismatch && !hasManualModeMismatch) {
+      return false;
+    }
+
+    final sourceUpdatedAt = snapshot.sourceUpdatedAt;
+    if (sourceUpdatedAt == null) {
+      return true;
+    }
+
+    final childUpdatedAt = child.updatedAt;
+    return childUpdatedAt.isAfter(
+      sourceUpdatedAt.add(const Duration(seconds: 1)),
+    );
+  }
+
+  bool _sameStringSet(Set<String> left, Set<String> right) {
+    if (identical(left, right)) {
+      return true;
+    }
+    if (left.length != right.length) {
+      return false;
+    }
+    return left.containsAll(right);
+  }
+
+  bool _sameNullableDateTime(DateTime? left, DateTime? right) {
+    if (left == null || right == null) {
+      return left == right;
+    }
+    return left.isAtSameMomentAs(right);
+  }
+
+  bool _sameManualMode(_ManualModeOverride? left, _ManualModeOverride? right) {
+    if (left == null || right == null) {
+      return left == right;
+    }
+    return left.mode == right.mode &&
+        _sameNullableDateTime(left.setAt, right.setAt) &&
+        _sameNullableDateTime(left.expiresAt, right.expiresAt);
+  }
+
   void _enqueueProtectionApply(_QueuedProtectionApply next) {
-    if (!next.forceRecheck && _pendingProtectionApplies.isNotEmpty) {
-      final last = _pendingProtectionApplies.last;
-      if (!last.forceRecheck && last.policySignature == next.policySignature) {
+    final nextVersion = next.policyVersion;
+    if (nextVersion != null) {
+      final hasNewerQueuedVersion = _pendingProtectionApplies.any((queued) {
+        final queuedVersion = queued.policyVersion;
+        return queuedVersion != null && queuedVersion > nextVersion;
+      });
+      if (hasNewerQueuedVersion) {
         return;
       }
+      _pendingProtectionApplies.removeWhere((queued) {
+        final queuedVersion = queued.policyVersion;
+        return queuedVersion == null || queuedVersion <= nextVersion;
+      });
+    }
+
+    final duplicateQueued = _pendingProtectionApplies.any((queued) {
+      return queued.policySignature == next.policySignature &&
+          queued.policyVersion == next.policyVersion &&
+          queued.forceRecheck == next.forceRecheck;
+    });
+    if (duplicateQueued) {
+      return;
     }
     _pendingProtectionApplies.addLast(next);
   }
@@ -1084,6 +1297,9 @@ class _ChildStatusScreenState extends State<ChildStatusScreen>
     _isApplyingProtectionRules = true;
     while (_pendingProtectionApplies.isNotEmpty) {
       final next = _pendingProtectionApplies.removeFirst();
+      if (_isQueuedApplyStale(next)) {
+        continue;
+      }
       final applied = await _applyProtectionRules(next);
       if (!applied) {
         _pendingProtectionApplies.addFirst(next);
@@ -1110,7 +1326,7 @@ class _ChildStatusScreenState extends State<ChildStatusScreen>
       final temporaryAllowedDomains = _activeApprovedExceptionDomains.toList()
         ..sort();
       final signature =
-          '${next.policySignature}::${temporaryAllowedDomains.join('|')}';
+          '${next.policySignature}::v=${next.policyVersion ?? 0}::${temporaryAllowedDomains.join('|')}';
       _scheduleNextProtectionRecheck(
         child: next.child,
         manualMode: next.manualMode,
@@ -1130,14 +1346,24 @@ class _ChildStatusScreenState extends State<ChildStatusScreen>
       final syncedCategories = _canUseBlocklistSync()
           ? _mapPolicyCategoriesToBlocklists(next.categories)
           : <BlocklistCategory>{};
+      final usageAccessGranted = await _refreshAppBlockingUsageAccessState();
 
-      // Auto-start VPN if protection rules exist but VPN isn't running.
-      final hasRules = next.categories.isNotEmpty || next.domains.isNotEmpty;
       var vpnRunning = await _vpnService.isVpnRunning();
-      if (hasRules && !vpnRunning) {
+      final restarted = await _vpnService.restartVpn(
+        blockedCategories: next.categories,
+        blockedDomains: next.domains,
+        temporaryAllowedDomains: temporaryAllowedDomains,
+        parentId: _parentId,
+        childId: next.child.id,
+      );
+      vpnRunning = await _vpnService.isVpnRunning();
+      if (!restarted || !vpnRunning) {
         await _vpnService.startVpn(
           blockedCategories: next.categories,
           blockedDomains: next.domains,
+          temporaryAllowedDomains: temporaryAllowedDomains,
+          parentId: _parentId,
+          childId: next.child.id,
         );
         vpnRunning = await _vpnService.isVpnRunning();
       }
@@ -1146,6 +1372,8 @@ class _ChildStatusScreenState extends State<ChildStatusScreen>
         blockedCategories: next.categories,
         blockedDomains: next.domains,
         temporaryAllowedDomains: temporaryAllowedDomains,
+        parentId: _parentId,
+        childId: next.child.id,
       );
       if (!applied) {
         debugPrint('[ChildStatus] updateFilterRules returned false');
@@ -1153,6 +1381,7 @@ class _ChildStatusScreenState extends State<ChildStatusScreen>
           next: next,
           applyStatus: 'failed',
           vpnRunning: vpnRunning,
+          usageAccessGranted: usageAccessGranted,
           error: 'updateFilterRules returned false',
           cacheSnapshot: null,
         );
@@ -1177,6 +1406,7 @@ class _ChildStatusScreenState extends State<ChildStatusScreen>
           next: next,
           applyStatus: 'mismatch',
           vpnRunning: vpnRunning,
+          usageAccessGranted: usageAccessGranted,
           error:
               'Rule cache mismatch expected(${next.categories.length}/${next.domains.length}) actual(${cacheSnapshot.categoryCount}/${cacheSnapshot.domainCount})',
           cacheSnapshot: cacheSnapshot,
@@ -1193,10 +1423,14 @@ class _ChildStatusScreenState extends State<ChildStatusScreen>
         );
       }
       _lastAppliedPolicySignature = signature;
+      if (next.policyVersion != null && next.policyVersion! > 0) {
+        _lastAppliedPolicyVersion = next.policyVersion;
+      }
       await _writePolicyApplyAck(
         next: next,
         applyStatus: 'applied',
         vpnRunning: vpnRunning,
+        usageAccessGranted: usageAccessGranted,
         error: null,
         cacheSnapshot: cacheSnapshot,
       );
@@ -1210,6 +1444,7 @@ class _ChildStatusScreenState extends State<ChildStatusScreen>
         next: next,
         applyStatus: 'error',
         vpnRunning: await _vpnService.isVpnRunning(),
+        usageAccessGranted: await _refreshAppBlockingUsageAccessState(),
         error: error.toString(),
         cacheSnapshot: null,
       );
@@ -1223,21 +1458,52 @@ class _ChildStatusScreenState extends State<ChildStatusScreen>
     required List<String> blockedCategories,
     required List<String> blockedDomains,
     required List<String> temporaryAllowedDomains,
+    String? parentId,
+    String? childId,
   }) async {
-    final cleared = await _vpnService.updateFilterRules(
-      blockedCategories: const <String>[],
-      blockedDomains: const <String>[],
-      temporaryAllowedDomains: const <String>[],
-    );
-    if (!cleared) {
-      debugPrint('[ChildStatus] clear-before-apply updateFilterRules failed');
-      return false;
-    }
+    // Native layer replaces in-memory and persisted rules atomically.
     return _vpnService.updateFilterRules(
       blockedCategories: blockedCategories,
       blockedDomains: blockedDomains,
       temporaryAllowedDomains: temporaryAllowedDomains,
+      parentId: parentId,
+      childId: childId,
     );
+  }
+
+  bool _isQueuedApplyStale(_QueuedProtectionApply next) {
+    final nextVersion = next.policyVersion;
+    final effectiveSnapshot = _lastEffectivePolicySnapshot;
+    if (effectiveSnapshot != null) {
+      if (nextVersion == null) {
+        return true;
+      }
+      if (nextVersion < effectiveSnapshot.version) {
+        return true;
+      }
+    }
+    if (nextVersion != null &&
+        _lastAppliedPolicyVersion != null &&
+        nextVersion < _lastAppliedPolicyVersion!) {
+      return true;
+    }
+    return false;
+  }
+
+  void _resetPolicyTrackingState({required bool clearEffectiveSnapshot}) {
+    _pendingPolicyEvents.clear();
+    _processedPolicyEventIds.clear();
+    _policyEventEpochFloorMs = null;
+    _pendingProtectionApplies.clear();
+    _lastAppliedPolicySignature = null;
+    _lastAppliedPolicyVersion = null;
+    _effectiveBlockedPackages = const <String>{};
+    _protectionRetryTimer?.cancel();
+    _protectionRetryTimer = null;
+    _protectionRetryScheduled = false;
+    if (clearEffectiveSnapshot) {
+      _lastEffectivePolicySnapshot = null;
+    }
   }
 
   bool _ruleCacheMatchesExpected({
@@ -1255,6 +1521,7 @@ class _ChildStatusScreenState extends State<ChildStatusScreen>
     required _QueuedProtectionApply next,
     required String applyStatus,
     required bool vpnRunning,
+    required bool usageAccessGranted,
     required String? error,
     required RuleCacheSnapshot? cacheSnapshot,
   }) async {
@@ -1267,8 +1534,7 @@ class _ChildStatusScreenState extends State<ChildStatusScreen>
       return;
     }
     final parentId = _parentId?.trim();
-    final appliedVersion =
-        next.policyVersion ??
+    final appliedVersion = next.policyVersion ??
         _lastEffectivePolicySnapshot?.version ??
         DateTime.now().millisecondsSinceEpoch;
 
@@ -1277,32 +1543,49 @@ class _ChildStatusScreenState extends State<ChildStatusScreen>
       'domainsExpected': next.domains.length,
       'servicesExpected': next.services.length,
       'packagesExpected': next.blockedPackages.length,
-      if (cacheSnapshot != null) 'categoriesCached': cacheSnapshot.categoryCount,
+      if (cacheSnapshot != null)
+        'categoriesCached': cacheSnapshot.categoryCount,
       if (cacheSnapshot != null) 'domainsCached': cacheSnapshot.domainCount,
     };
 
-    try {
-      await _firestore
+    Future<void> writeAck({required bool includeUsageField}) {
+      final payload = <String, dynamic>{
+        'parentId': parentId,
+        'childId': childId,
+        'deviceId': deviceId,
+        'appliedVersion': appliedVersion,
+        'appliedAt': FieldValue.serverTimestamp(),
+        'vpnRunning': vpnRunning,
+        'ruleCounts': ruleCounts,
+        'applyStatus': applyStatus,
+        'error': error,
+        'updatedAt': FieldValue.serverTimestamp(),
+      };
+      if (includeUsageField) {
+        payload['usageAccessGranted'] = usageAccessGranted;
+      }
+      return _firestore
           .collection('children')
           .doc(childId)
           .collection('policy_apply_acks')
           .doc(deviceId)
-          .set(
-        <String, dynamic>{
-          'parentId': parentId,
-          'childId': childId,
-          'deviceId': deviceId,
-          'appliedVersion': appliedVersion,
-          'appliedAt': FieldValue.serverTimestamp(),
-          'vpnRunning': vpnRunning,
-          'ruleCounts': ruleCounts,
-          'applyStatus': applyStatus,
-          'error': error,
-          'updatedAt': FieldValue.serverTimestamp(),
-        },
-        SetOptions(merge: true),
-      );
+          .set(payload, SetOptions(merge: true));
+    }
+
+    try {
+      await writeAck(includeUsageField: _policyApplyAckSupportsUsageAccess);
     } catch (ackError) {
+      if (_policyApplyAckSupportsUsageAccess &&
+          ackError is FirebaseException &&
+          ackError.code == 'permission-denied') {
+        _policyApplyAckSupportsUsageAccess = false;
+        try {
+          await writeAck(includeUsageField: false);
+          return;
+        } catch (_) {
+          // Fall through to logging below.
+        }
+      }
       debugPrint('[ChildStatus] policy_apply_acks write failed: $ackError');
     }
   }
@@ -1363,7 +1646,8 @@ class _ChildStatusScreenState extends State<ChildStatusScreen>
     required DateTime now,
     required _ManualModeOverride? manualMode,
   }) {
-    final categories = normalizeCategoryIds(child.policy.blockedCategories).toSet();
+    final categories =
+        normalizeCategoryIds(child.policy.blockedCategories).toSet();
     final explicitServices = child.policy.blockedServices
         .map((serviceId) => serviceId.trim().toLowerCase())
         .where((serviceId) => serviceId.isNotEmpty)
@@ -1943,6 +2227,71 @@ class _ChildStatusScreenState extends State<ChildStatusScreen>
     );
   }
 
+  Widget _buildUsageAccessWarning() {
+    if (!_requiresUsageAccessForAppBlocking() ||
+        _usageAccessPermissionGrantedForBlocking != false) {
+      return const SizedBox.shrink();
+    }
+    return Container(
+      margin: const EdgeInsets.only(bottom: 12),
+      padding: const EdgeInsets.all(12),
+      decoration: BoxDecoration(
+        color: Colors.red.shade50,
+        border: Border.all(color: Colors.red.shade200),
+        borderRadius: BorderRadius.circular(12),
+      ),
+      child: Row(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Icon(Icons.warning_amber_rounded, color: Colors.red.shade700),
+          const SizedBox(width: 10),
+          Expanded(
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Text(
+                  'App blocking is off',
+                  style: TextStyle(
+                    fontWeight: FontWeight.w700,
+                    color: Colors.red.shade900,
+                  ),
+                ),
+                const SizedBox(height: 4),
+                Text(
+                  'Turn on Usage Access for TrustBridge to block apps like Instagram and YouTube.',
+                  style: TextStyle(
+                    color: Colors.red.shade800,
+                    fontSize: 12,
+                  ),
+                ),
+                const SizedBox(height: 8),
+                SizedBox(
+                  height: 34,
+                  child: OutlinedButton.icon(
+                    onPressed: () async {
+                      await _appUsageService.openUsageAccessSettings();
+                      await Future<void>.delayed(const Duration(seconds: 1));
+                      await _refreshAppBlockingUsageAccessState();
+                    },
+                    icon: const Icon(Icons.settings, size: 16),
+                    label: const Text(
+                      'Open Usage Access',
+                      style: TextStyle(fontSize: 12),
+                    ),
+                    style: OutlinedButton.styleFrom(
+                      padding: const EdgeInsets.symmetric(horizontal: 12),
+                      side: BorderSide(color: Colors.red.shade300),
+                    ),
+                  ),
+                ),
+              ],
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+
   Widget _buildContent(
     BuildContext context,
     ChildProfile child, {
@@ -1996,6 +2345,7 @@ class _ChildStatusScreenState extends State<ChildStatusScreen>
         ),
         const SizedBox(height: 14),
         _buildPrivateDnsWarning(),
+        _buildUsageAccessWarning(),
         if (hasParentContext)
           _buildApprovalBanner(
             context: context,

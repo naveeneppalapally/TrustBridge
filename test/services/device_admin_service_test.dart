@@ -12,7 +12,8 @@ void main() {
         .setMockMethodCallHandler(channel, null);
   });
 
-  test('isDeviceAdminActive returns false when platform reports false', () async {
+  test('isDeviceAdminActive returns false when platform reports false',
+      () async {
     TestDefaultBinaryMessengerBinding.instance.defaultBinaryMessenger
         .setMockMethodCallHandler(channel, (MethodCall call) async {
       if (call.method == 'isDeviceAdminActive') {

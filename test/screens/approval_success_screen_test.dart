@@ -20,7 +20,8 @@ void main() {
       expect(find.text('Success!'), findsOneWidget);
       expect(find.text('instagram.com approved for 30 min'), findsOneWidget);
       expect(find.text('Sent to Aarav'), findsOneWidget);
-      expect(find.byKey(const Key('approval_success_done_button')), findsOneWidget);
+      expect(find.byKey(const Key('approval_success_done_button')),
+          findsOneWidget);
     });
 
     testWidgets('done button pops the screen', (tester) async {
@@ -58,7 +59,8 @@ void main() {
       await tester.tap(find.byKey(const Key('approval_success_done_button')));
       await tester.pumpAndSettle();
 
-      expect(find.byKey(const Key('open_approval_success_button')), findsOneWidget);
+      expect(find.byKey(const Key('open_approval_success_button')),
+          findsOneWidget);
     });
   });
 }

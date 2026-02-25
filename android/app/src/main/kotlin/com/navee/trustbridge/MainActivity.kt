@@ -110,6 +110,7 @@ class MainActivity : FlutterFragmentActivity() {
                 val upstreamDns = call.argument<String>("upstreamDns")
                     ?.trim()
                     ?.takeIf { it.isNotEmpty() }
+                persistPolicyContext(call)
 
                 val serviceIntent = Intent(this, DnsVpnService::class.java).apply {
                     action = DnsVpnService.ACTION_START
@@ -152,6 +153,7 @@ class MainActivity : FlutterFragmentActivity() {
                 val upstreamDns = call.argument<String>("upstreamDns")
                     ?.trim()
                     ?.takeIf { it.isNotEmpty() }
+                persistPolicyContext(call)
 
                 val serviceIntent = Intent(this, DnsVpnService::class.java).apply {
                     action = DnsVpnService.ACTION_RESTART
@@ -288,6 +290,7 @@ class MainActivity : FlutterFragmentActivity() {
                     call.argument<List<String>>("blockedDomains") ?: emptyList()
                 val temporaryAllowedDomains =
                     call.argument<List<String>>("temporaryAllowedDomains") ?: emptyList()
+                persistPolicyContext(call)
 
                 val serviceIntent = Intent(this, DnsVpnService::class.java).apply {
                     action = DnsVpnService.ACTION_UPDATE_RULES
@@ -327,6 +330,7 @@ class MainActivity : FlutterFragmentActivity() {
                         categories = config.blockedCategories,
                         domains = config.blockedDomains,
                         temporaryAllowedDomains = config.temporaryAllowedDomains,
+                        blockedPackages = config.blockedPackages,
                         upstreamDns = upstreamDns
                     )
                 }
@@ -335,6 +339,18 @@ class MainActivity : FlutterFragmentActivity() {
             }
 
             else -> result.notImplemented()
+        }
+    }
+
+    private fun persistPolicyContext(call: MethodCall) {
+        val parentId = call.argument<String>("parentId")
+            ?.trim()
+            ?.takeIf { it.isNotEmpty() }
+        val childId = call.argument<String>("childId")
+            ?.trim()
+            ?.takeIf { it.isNotEmpty() }
+        if (parentId != null || childId != null) {
+            vpnPreferencesStore.savePolicyContext(parentId = parentId, childId = childId)
         }
     }
 

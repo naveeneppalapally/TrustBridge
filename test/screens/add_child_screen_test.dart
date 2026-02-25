@@ -51,7 +51,8 @@ void main() {
         ),
       );
 
-      await tester.enterText(find.byKey(const Key('add_child_nickname_input')), 'A');
+      await tester.enterText(
+          find.byKey(const Key('add_child_nickname_input')), 'A');
       final submitButton = find.byKey(const Key('add_child_submit'));
       await tester.scrollUntilVisible(
         submitButton,
@@ -62,7 +63,8 @@ void main() {
       await tester.tap(submitButton);
       await tester.pump();
 
-      expect(find.text('Nickname must be at least 2 characters'), findsOneWidget);
+      expect(
+          find.text('Nickname must be at least 2 characters'), findsOneWidget);
     });
 
     testWidgets('shows validation error for long nickname', (tester) async {
@@ -74,8 +76,8 @@ void main() {
         ),
       );
 
-      await tester.enterText(
-          find.byKey(const Key('add_child_nickname_input')), 'ABCDEFGHIJKLMNOPQRSTU');
+      await tester.enterText(find.byKey(const Key('add_child_nickname_input')),
+          'ABCDEFGHIJKLMNOPQRSTU');
       final submitButton = find.byKey(const Key('add_child_submit'));
       await tester.scrollUntilVisible(
         submitButton,
@@ -86,7 +88,8 @@ void main() {
       await tester.tap(submitButton);
       await tester.pump();
 
-      expect(find.text('Nickname must be less than 20 characters'), findsOneWidget);
+      expect(find.text('Nickname must be less than 20 characters'),
+          findsOneWidget);
     });
 
     testWidgets('renders protection level cards', (tester) async {

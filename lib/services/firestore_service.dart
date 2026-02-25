@@ -2610,6 +2610,7 @@ class FirestoreService {
         error: error,
         stackTrace: stackTrace,
       );
+      rethrow;
     }
   }
 
@@ -2640,11 +2641,11 @@ class FirestoreService {
         'blockedDomains': customBlockedDomains,
         'blockedDomainsResolved': blockedDomainsResolved,
         'manualMode': manualMode,
-        'pausedUntil': pausedUntil == null ? null : Timestamp.fromDate(pausedUntil),
+        'pausedUntil':
+            pausedUntil == null ? null : Timestamp.fromDate(pausedUntil),
         'sourceUpdatedAt': Timestamp.fromDate(sourceUpdatedAt),
         'updatedAt': FieldValue.serverTimestamp(),
       },
-      SetOptions(merge: true),
     );
   }
 

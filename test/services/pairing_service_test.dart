@@ -81,7 +81,8 @@ void main() {
           await firestore.collection('pairing_codes').doc('123456').get();
       expect(codeDoc.data()!['used'], true);
 
-      final childDoc = await firestore.collection('children').doc(childId).get();
+      final childDoc =
+          await firestore.collection('children').doc(childId).get();
       final deviceIds = (childDoc.data()!['deviceIds'] as List).cast<String>();
       expect(deviceIds.contains('device-1'), true);
 
@@ -103,7 +104,8 @@ void main() {
         'childId': childId,
         'parentId': parentId,
         'createdAt': Timestamp.fromDate(now.subtract(const Duration(hours: 1))),
-        'expiresAt': Timestamp.fromDate(now.subtract(const Duration(minutes: 1))),
+        'expiresAt':
+            Timestamp.fromDate(now.subtract(const Duration(minutes: 1))),
         'used': false,
       });
 

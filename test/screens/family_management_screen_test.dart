@@ -77,7 +77,8 @@ void main() {
       );
       await tester.pumpAndSettle();
 
-      expect(find.byKey(const Key('family_leave_group_button')), findsOneWidget);
+      expect(
+          find.byKey(const Key('family_leave_group_button')), findsOneWidget);
     });
   });
 }

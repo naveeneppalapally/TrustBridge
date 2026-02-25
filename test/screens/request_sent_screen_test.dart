@@ -36,8 +36,8 @@ void main() {
       expect(find.text('Waiting for approval'), findsOneWidget);
       expect(find.byKey(const Key('request_sent_view_status_button')),
           findsOneWidget);
-      expect(
-          find.byKey(const Key('request_sent_back_home_button')), findsOneWidget);
+      expect(find.byKey(const Key('request_sent_back_home_button')),
+          findsOneWidget);
     });
 
     testWidgets('view status button opens child request updates screen',

@@ -172,7 +172,8 @@ void main() {
       expect(find.byType(SkeletonListTile), findsWidgets);
     });
 
-    testWidgets('shows child-report waiting state when usage data is unavailable',
+    testWidgets(
+        'shows child-report waiting state when usage data is unavailable',
         (tester) async {
       await pumpScreen(
         tester,
@@ -184,7 +185,8 @@ void main() {
 
       expect(find.text('No child devices paired'), findsOneWidget);
       expect(find.text('Grant Access'), findsNothing);
-      expect(find.byKey(const Key('usage_reports_nextdns_card')), findsOneWidget);
+      expect(
+          find.byKey(const Key('usage_reports_nextdns_card')), findsOneWidget);
     });
 
     testWidgets('shows NextDNS analytics when profile is configured',
@@ -241,7 +243,8 @@ void main() {
         parentIdOverride: parentId,
       );
 
-      expect(find.byKey(const Key('usage_reports_nextdns_card')), findsOneWidget);
+      expect(
+          find.byKey(const Key('usage_reports_nextdns_card')), findsOneWidget);
       expect(find.text('Sites Blocked Today: 19'), findsOneWidget);
       expect(find.text('youtube.com'), findsOneWidget);
       expect(find.text('tiktok.com'), findsOneWidget);

@@ -112,7 +112,8 @@ void main() {
       expect(find.text('This device ID is already linked.'), findsOneWidget);
     });
 
-    testWidgets('shows QR setup and verifies NextDNS routing for linked profile',
+    testWidgets(
+        'shows QR setup and verifies NextDNS routing for linked profile',
         (tester) async {
       await tester.binding.setSurfaceSize(const Size(430, 1300));
       addTearDown(() => tester.binding.setSurfaceSize(null));
@@ -154,7 +155,8 @@ void main() {
       await tester.tap(find.byKey(const Key('verify_nextdns_button')));
       await tester.pumpAndSettle();
 
-      expect(find.byKey(const Key('child_device_verify_message')), findsOneWidget);
+      expect(
+          find.byKey(const Key('child_device_verify_message')), findsOneWidget);
       expect(find.textContaining('Protected'), findsOneWidget);
     });
   });

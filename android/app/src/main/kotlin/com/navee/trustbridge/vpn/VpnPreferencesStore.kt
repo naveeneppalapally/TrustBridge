@@ -6,9 +6,12 @@ import org.json.JSONArray
 
 internal data class PersistedVpnConfig(
     val enabled: Boolean,
+    val parentId: String?,
+    val childId: String?,
     val blockedCategories: List<String>,
     val blockedDomains: List<String>,
     val temporaryAllowedDomains: List<String>,
+    val blockedPackages: List<String>,
     val upstreamDns: String
 )
 
@@ -16,9 +19,12 @@ internal class VpnPreferencesStore(context: Context) {
     companion object {
         private const val PREFS_NAME = "trustbridge_vpn_prefs"
         private const val KEY_ENABLED = "vpn_enabled"
+        private const val KEY_PARENT_ID = "vpn_parent_id"
+        private const val KEY_CHILD_ID = "vpn_child_id"
         private const val KEY_BLOCKED_CATEGORIES = "vpn_blocked_categories"
         private const val KEY_BLOCKED_DOMAINS = "vpn_blocked_domains"
         private const val KEY_TEMP_ALLOWED_DOMAINS = "vpn_temp_allowed_domains"
+        private const val KEY_BLOCKED_PACKAGES = "vpn_blocked_packages"
         private const val KEY_UPSTREAM_DNS = "vpn_upstream_dns"
         private const val DEFAULT_UPSTREAM_DNS = "1.1.1.1"
     }
@@ -45,6 +51,12 @@ internal class VpnPreferencesStore(context: Context) {
     fun loadConfig(): PersistedVpnConfig {
         return PersistedVpnConfig(
             enabled = prefs.getBoolean(KEY_ENABLED, false),
+            parentId = prefs.getString(KEY_PARENT_ID, null)
+                ?.trim()
+                ?.takeIf { it.isNotEmpty() },
+            childId = prefs.getString(KEY_CHILD_ID, null)
+                ?.trim()
+                ?.takeIf { it.isNotEmpty() },
             blockedCategories = decodeStringList(
                 prefs.getString(KEY_BLOCKED_CATEGORIES, "[]")
             ),
@@ -53,6 +65,9 @@ internal class VpnPreferencesStore(context: Context) {
             ),
             temporaryAllowedDomains = decodeStringList(
                 prefs.getString(KEY_TEMP_ALLOWED_DOMAINS, "[]")
+            ),
+            blockedPackages = decodeStringList(
+                prefs.getString(KEY_BLOCKED_PACKAGES, "[]")
             ),
             upstreamDns = normalizeUpstreamDns(
                 prefs.getString(KEY_UPSTREAM_DNS, DEFAULT_UPSTREAM_DNS)
@@ -64,12 +79,14 @@ internal class VpnPreferencesStore(context: Context) {
         categories: List<String>,
         domains: List<String>,
         temporaryAllowedDomains: List<String>,
+        blockedPackages: List<String>,
         upstreamDns: String? = null
     ) {
         prefs.edit()
             .putString(KEY_BLOCKED_CATEGORIES, encodeStringList(categories))
             .putString(KEY_BLOCKED_DOMAINS, encodeStringList(domains))
             .putString(KEY_TEMP_ALLOWED_DOMAINS, encodeStringList(temporaryAllowedDomains))
+            .putString(KEY_BLOCKED_PACKAGES, encodeStringList(blockedPackages))
             .putString(KEY_UPSTREAM_DNS, normalizeUpstreamDns(upstreamDns))
             .apply()
     }
@@ -78,6 +95,23 @@ internal class VpnPreferencesStore(context: Context) {
         prefs.edit()
             .putBoolean(KEY_ENABLED, enabled)
             .apply()
+    }
+
+    fun savePolicyContext(parentId: String?, childId: String?) {
+        prefs.edit().apply {
+            val normalizedParentId = parentId?.trim().orEmpty()
+            val normalizedChildId = childId?.trim().orEmpty()
+            if (normalizedParentId.isEmpty()) {
+                remove(KEY_PARENT_ID)
+            } else {
+                putString(KEY_PARENT_ID, normalizedParentId)
+            }
+            if (normalizedChildId.isEmpty()) {
+                remove(KEY_CHILD_ID)
+            } else {
+                putString(KEY_CHILD_ID, normalizedChildId)
+            }
+        }.apply()
     }
 
     private fun migrateLegacyPrefsIfNeeded() {

@@ -96,7 +96,8 @@ void main() {
       );
       await tester.pump();
 
-      expect(find.byKey(const Key('child_request_draft_preview')), findsOneWidget);
+      expect(
+          find.byKey(const Key('child_request_draft_preview')), findsOneWidget);
       expect(find.text('Instagram'), findsWidgets);
     });
 
@@ -128,7 +129,8 @@ void main() {
       await tester.pump();
 
       expect(find.textContaining('2 hours'), findsOneWidget);
-      expect(find.byKey(const Key('child_request_draft_preview')), findsOneWidget);
+      expect(
+          find.byKey(const Key('child_request_draft_preview')), findsOneWidget);
     });
   });
 }

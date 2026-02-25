@@ -218,11 +218,12 @@ class DnsPacketHandler(
         header[7] = 0x01
 
         // Append answer section: name-pointer + type A + class IN + TTL + rdlength + 0.0.0.0
+        // TTL is 0 so blocked answers are not cached after policy flips.
         val answer = byteArrayOf(
             0xC0.toByte(), 0x0C,       // name pointer to question
             0x00, 0x01,                 // type A
             0x00, 0x01,                 // class IN
-            0x00, 0x00, 0x00, 0x3C,     // TTL = 60 seconds
+            0x00, 0x00, 0x00, 0x00,     // TTL = 0 seconds
             0x00, 0x04,                 // RDLENGTH = 4
             0x00, 0x00, 0x00, 0x00      // RDATA = 0.0.0.0
         )

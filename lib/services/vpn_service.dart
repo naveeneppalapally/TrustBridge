@@ -333,12 +333,18 @@ abstract class VpnServiceBase {
   Future<bool> startVpn({
     List<String> blockedCategories,
     List<String> blockedDomains,
+    List<String> temporaryAllowedDomains,
+    String? parentId,
+    String? childId,
     String? upstreamDns,
   });
 
   Future<bool> restartVpn({
     List<String> blockedCategories,
     List<String> blockedDomains,
+    List<String> temporaryAllowedDomains,
+    String? parentId,
+    String? childId,
     String? upstreamDns,
   });
 
@@ -348,6 +354,8 @@ abstract class VpnServiceBase {
     required List<String> blockedCategories,
     required List<String> blockedDomains,
     List<String> temporaryAllowedDomains = const [],
+    String? parentId,
+    String? childId,
   });
 
   Future<bool> setUpstreamDns({String? upstreamDns});
@@ -520,6 +528,9 @@ class VpnService implements VpnServiceBase {
   Future<bool> startVpn({
     List<String> blockedCategories = const [],
     List<String> blockedDomains = const [],
+    List<String> temporaryAllowedDomains = const [],
+    String? parentId,
+    String? childId,
     String? upstreamDns,
   }) async {
     if (!_supported) {
@@ -534,6 +545,11 @@ class VpnService implements VpnServiceBase {
             {
               'blockedCategories': blockedCategories,
               'blockedDomains': blockedDomains,
+              'temporaryAllowedDomains': temporaryAllowedDomains,
+              if (parentId != null && parentId.trim().isNotEmpty)
+                'parentId': parentId.trim(),
+              if (childId != null && childId.trim().isNotEmpty)
+                'childId': childId.trim(),
               if (upstreamDns != null && upstreamDns.trim().isNotEmpty)
                 'upstreamDns': upstreamDns.trim(),
             },
@@ -554,6 +570,11 @@ class VpnService implements VpnServiceBase {
         trace,
         'blocked_domains',
         blockedDomains.length,
+      );
+      await _performanceService.setMetric(
+        trace,
+        'temporary_allowed_domains',
+        temporaryAllowedDomains.length,
       );
       await _performanceService.setMetric(trace, 'started', started ? 1 : 0);
       await _performanceService.annotateThreshold(
@@ -682,6 +703,9 @@ class VpnService implements VpnServiceBase {
   Future<bool> restartVpn({
     List<String> blockedCategories = const [],
     List<String> blockedDomains = const [],
+    List<String> temporaryAllowedDomains = const [],
+    String? parentId,
+    String? childId,
     String? upstreamDns,
   }) async {
     if (!_supported) {
@@ -694,6 +718,11 @@ class VpnService implements VpnServiceBase {
             {
               'blockedCategories': blockedCategories,
               'blockedDomains': blockedDomains,
+              'temporaryAllowedDomains': temporaryAllowedDomains,
+              if (parentId != null && parentId.trim().isNotEmpty)
+                'parentId': parentId.trim(),
+              if (childId != null && childId.trim().isNotEmpty)
+                'childId': childId.trim(),
               if (upstreamDns != null && upstreamDns.trim().isNotEmpty)
                 'upstreamDns': upstreamDns.trim(),
             },
@@ -711,6 +740,8 @@ class VpnService implements VpnServiceBase {
     required List<String> blockedCategories,
     required List<String> blockedDomains,
     List<String> temporaryAllowedDomains = const [],
+    String? parentId,
+    String? childId,
   }) async {
     if (!_supported) {
       return false;
@@ -723,6 +754,10 @@ class VpnService implements VpnServiceBase {
               'blockedCategories': blockedCategories,
               'blockedDomains': blockedDomains,
               'temporaryAllowedDomains': temporaryAllowedDomains,
+              if (parentId != null && parentId.trim().isNotEmpty)
+                'parentId': parentId.trim(),
+              if (childId != null && childId.trim().isNotEmpty)
+                'childId': childId.trim(),
             },
           ) ??
           false;

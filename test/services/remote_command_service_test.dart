@@ -64,7 +64,8 @@ void main() {
       expect(updated.data()?['executedAt'], isNotNull);
     });
 
-    test('processPendingCommands clears pairing and stops protection', () async {
+    test('processPendingCommands clears pairing and stops protection',
+        () async {
       final commandRef = firestore
           .collection('devices')
           .doc('device-1')
@@ -132,6 +133,9 @@ class _FakeVpnService implements VpnServiceBase {
   Future<bool> restartVpn({
     List<String> blockedCategories = const <String>[],
     List<String> blockedDomains = const <String>[],
+    List<String> temporaryAllowedDomains = const <String>[],
+    String? parentId,
+    String? childId,
     String? upstreamDns,
   }) async {
     restartVpnCalls += 1;
@@ -191,6 +195,9 @@ class _FakeVpnService implements VpnServiceBase {
   Future<bool> startVpn({
     List<String> blockedCategories = const <String>[],
     List<String> blockedDomains = const <String>[],
+    List<String> temporaryAllowedDomains = const <String>[],
+    String? parentId,
+    String? childId,
     String? upstreamDns,
   }) async =>
       true;
@@ -206,6 +213,8 @@ class _FakeVpnService implements VpnServiceBase {
     required List<String> blockedCategories,
     required List<String> blockedDomains,
     List<String> temporaryAllowedDomains = const <String>[],
+    String? parentId,
+    String? childId,
   }) async {
     updateFilterRulesCalls += 1;
     return true;

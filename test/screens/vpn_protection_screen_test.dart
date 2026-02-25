@@ -72,8 +72,11 @@ class _FakeVpnService implements VpnServiceBase {
 
   @override
   Future<bool> startVpn({
-    List<String> blockedCategories = const [],
-    List<String> blockedDomains = const [],
+    List<String> blockedCategories = const <String>[],
+    List<String> blockedDomains = const <String>[],
+    List<String> temporaryAllowedDomains = const <String>[],
+    String? parentId,
+    String? childId,
     String? upstreamDns,
   }) async {
     startCalls += 1;
@@ -94,8 +97,11 @@ class _FakeVpnService implements VpnServiceBase {
 
   @override
   Future<bool> restartVpn({
-    List<String> blockedCategories = const [],
-    List<String> blockedDomains = const [],
+    List<String> blockedCategories = const <String>[],
+    List<String> blockedDomains = const <String>[],
+    List<String> temporaryAllowedDomains = const <String>[],
+    String? parentId,
+    String? childId,
     String? upstreamDns,
   }) async {
     if (restartResult) {
@@ -110,6 +116,8 @@ class _FakeVpnService implements VpnServiceBase {
     required List<String> blockedCategories,
     required List<String> blockedDomains,
     List<String> temporaryAllowedDomains = const <String>[],
+    String? parentId,
+    String? childId,
   }) async {
     updateFilterRulesCalls += 1;
     lastUpdatedCategories = List<String>.from(blockedCategories);
