@@ -2,7 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:trustbridge_app/config/category_ids.dart';
 import 'package:trustbridge_app/config/feature_gates.dart';
-import 'package:trustbridge_app/config/social_media_domains.dart';
+import 'package:trustbridge_app/config/service_definitions.dart';
 import 'package:trustbridge_app/models/child_profile.dart';
 import 'package:trustbridge_app/models/content_categories.dart';
 import 'package:trustbridge_app/models/policy.dart';
@@ -39,7 +39,7 @@ class BlockCategoriesScreen extends StatefulWidget {
 }
 
 class _BlockCategoriesScreenState extends State<BlockCategoriesScreen> {
-  static const Map<String, List<String>> _appsByCategory =
+  static const Map<String, List<String>> _serviceOrderByCategory =
       <String, List<String>>{
     'social-networks': <String>[
       'instagram',
@@ -51,6 +51,7 @@ class _BlockCategoriesScreenState extends State<BlockCategoriesScreen> {
     'streaming': <String>['youtube'],
     'games': <String>['roblox'],
     'forums': <String>['reddit'],
+    'chat': <String>['whatsapp', 'telegram', 'discord'],
   };
 
   static const List<String> _nextDnsServiceIds = <String>[
@@ -77,8 +78,10 @@ class _BlockCategoriesScreenState extends State<BlockCategoriesScreen> {
   final FeatureGateService _featureGateService = FeatureGateService();
 
   late Set<String> _initialBlockedCategories;
+  late Set<String> _initialBlockedServices;
   late Set<String> _initialBlockedDomains;
   late Set<String> _blockedCategories;
+  late Set<String> _blockedServices;
   late Set<String> _blockedDomains;
   late Map<String, bool> _nextDnsServiceToggles;
   late bool _nextDnsSafeSearchEnabled;
@@ -122,6 +125,7 @@ class _BlockCategoriesScreenState extends State<BlockCategoriesScreen> {
 
   bool get _hasChanges {
     return !_setEquals(_initialBlockedCategories, _blockedCategories) ||
+        !_setEquals(_initialBlockedServices, _blockedServices) ||
         !_setEquals(_initialBlockedDomains, _blockedDomains);
   }
 
@@ -220,14 +224,34 @@ class _BlockCategoriesScreenState extends State<BlockCategoriesScreen> {
     super.initState();
     final normalizedCategories =
         normalizeCategoryIds(widget.child.policy.blockedCategories).toSet();
+    final normalizedServices = widget.child.policy.blockedServices
+        .map((serviceId) => serviceId.trim().toLowerCase())
+        .where((serviceId) => serviceId.isNotEmpty)
+        .toSet();
+    final normalizedDomains = widget.child.policy.blockedDomains
+        .map(_normalizeDomain)
+        .where((domain) => domain.isNotEmpty)
+        .toSet();
+    final inferredServices =
+        ServiceDefinitions.inferServicesFromLegacyDomains(normalizedDomains);
+    final mergedServices = <String>{...normalizedServices, ...inferredServices};
+    final inferredServiceDomains = ServiceDefinitions.resolveDomains(
+      blockedCategories: const <String>[],
+      blockedServices: mergedServices,
+      customBlockedDomains: const <String>[],
+    );
+    final customDomains = normalizedDomains.difference(inferredServiceDomains);
+
     _initialBlockedCategories = Set<String>.from(normalizedCategories);
-    _initialBlockedDomains = widget.child.policy.blockedDomains.toSet();
+    _initialBlockedServices = Set<String>.from(mergedServices);
+    _initialBlockedDomains = Set<String>.from(customDomains);
     _blockedCategories = Set<String>.from(normalizedCategories);
-    _blockedDomains = widget.child.policy.blockedDomains.toSet();
+    _blockedServices = Set<String>.from(mergedServices);
+    _blockedDomains = Set<String>.from(customDomains);
     _expandedCategoryIds = <String>{
       ..._blockedCategories,
     };
-    for (final entry in _appsByCategory.entries) {
+    for (final entry in _serviceOrderByCategory.entries) {
       final hasBlockedApp =
           entry.value.any((appKey) => _isAppExplicitlyBlocked(appKey));
       if (hasBlockedApp) {
@@ -525,7 +549,27 @@ class _BlockCategoriesScreenState extends State<BlockCategoriesScreen> {
   }
 
   List<String> _appsForCategory(String categoryId) {
-    return _appsByCategory[categoryId] ?? const <String>[];
+    final dynamicServices = ServiceDefinitions.servicesForCategory(categoryId);
+    if (dynamicServices.isEmpty) {
+      return const <String>[];
+    }
+    final orderedIds = _serviceOrderByCategory[categoryId];
+    if (orderedIds == null || orderedIds.isEmpty) {
+      final sorted = dynamicServices.toList()..sort();
+      return sorted;
+    }
+    final ordered = <String>[];
+    for (final serviceId in orderedIds) {
+      if (dynamicServices.contains(serviceId)) {
+        ordered.add(serviceId);
+      }
+    }
+    for (final serviceId in dynamicServices) {
+      if (!ordered.contains(serviceId)) {
+        ordered.add(serviceId);
+      }
+    }
+    return ordered;
   }
 
   Widget _buildCategoryAppRow({
@@ -783,6 +827,7 @@ class _BlockCategoriesScreenState extends State<BlockCategoriesScreen> {
 
       final updatedPolicy = widget.child.policy.copyWith(
         blockedCategories: _orderedBlockedCategories(_blockedCategories),
+        blockedServices: _orderedBlockedServices(_blockedServices),
         blockedDomains: _orderedBlockedDomains(_blockedDomains),
       );
       final updatedChild = widget.child.copyWith(
@@ -819,6 +864,7 @@ class _BlockCategoriesScreenState extends State<BlockCategoriesScreen> {
       } else {
         setState(() {
           _initialBlockedCategories = Set<String>.from(_blockedCategories);
+          _initialBlockedServices = Set<String>.from(_blockedServices);
           _initialBlockedDomains = Set<String>.from(_blockedDomains);
         });
       }
@@ -849,16 +895,7 @@ class _BlockCategoriesScreenState extends State<BlockCategoriesScreen> {
   }
 
   bool _isAppExplicitlyBlocked(String appKey) {
-    final domains = SocialMediaDomains.byApp[appKey];
-    if (domains == null || domains.isEmpty) {
-      return false;
-    }
-    for (final domain in domains) {
-      if (!_blockedDomains.contains(domain.trim().toLowerCase())) {
-        return false;
-      }
-    }
-    return true;
+    return _blockedServices.contains(appKey.trim().toLowerCase());
   }
 
   bool _isAppEffectivelyBlocked(
@@ -872,7 +909,7 @@ class _BlockCategoriesScreenState extends State<BlockCategoriesScreen> {
     if (categoryId != null && _isCategoryBlocked(categoryId)) {
       return true;
     }
-    final fallbackCategory = _appsByCategory.entries
+    final fallbackCategory = _serviceOrderByCategory.entries
         .firstWhere(
           (entry) => entry.value.contains(appKey),
           orElse: () => const MapEntry<String, List<String>>('', <String>[]),
@@ -905,8 +942,8 @@ class _BlockCategoriesScreenState extends State<BlockCategoriesScreen> {
       return;
     }
 
-    final domains = SocialMediaDomains.byApp[appKey];
-    if (domains == null || domains.isEmpty) {
+    final service = ServiceDefinitions.byId[appKey];
+    if (service == null) {
       return;
     }
 
@@ -944,15 +981,14 @@ class _BlockCategoriesScreenState extends State<BlockCategoriesScreen> {
 
     setState(() {
       if (enabled) {
-        for (final domain in domains) {
-          _blockedDomains.add(domain.trim().toLowerCase());
-        }
+        _blockedServices.add(appKey.trim().toLowerCase());
       } else {
-        for (final domain in domains) {
-          _blockedDomains.remove(domain.trim().toLowerCase());
-        }
+        _blockedServices.remove(appKey.trim().toLowerCase());
       }
     });
+    if (_nextDnsServiceToggles.containsKey(service.serviceId)) {
+      await _toggleNextDnsService(service.serviceId, enabled);
+    }
     if (!enabled && categoryBlocked && mounted) {
       ScaffoldMessenger.of(context).showSnackBar(
         SnackBar(
@@ -1029,13 +1065,19 @@ class _BlockCategoriesScreenState extends State<BlockCategoriesScreen> {
 
   Future<void> _syncVpnRulesIfRunning(Policy updatedPolicy) async {
     try {
+      final resolvedDomains = ServiceDefinitions.resolveDomains(
+        blockedCategories: updatedPolicy.blockedCategories,
+        blockedServices: updatedPolicy.blockedServices,
+        customBlockedDomains: updatedPolicy.blockedDomains,
+      ).toList()
+        ..sort();
       // Always push rules to the native layer so they are persisted and
       // available when the VPN starts, even if it isn't running right now.
       // On the parent device the VPN channel may not be registered, so we
       // catch MissingPluginException and all other platform errors.
       await _resolvedVpnService.updateFilterRules(
         blockedCategories: updatedPolicy.blockedCategories,
-        blockedDomains: updatedPolicy.blockedDomains,
+        blockedDomains: resolvedDomains,
       );
     } on MissingPluginException {
       // Parent device – VPN channel not registered. Ignore.
@@ -1101,8 +1143,15 @@ class _BlockCategoriesScreenState extends State<BlockCategoriesScreen> {
         return 'Reddit';
       case 'twitter':
         return 'Twitter / X';
+      case 'whatsapp':
+        return 'WhatsApp';
+      case 'telegram':
+        return 'Telegram';
+      case 'discord':
+        return 'Discord';
       default:
-        return _prettyLabel(appKey);
+        return ServiceDefinitions.byId[appKey]?.displayName ??
+            _prettyLabel(appKey);
     }
   }
 
@@ -1250,6 +1299,19 @@ class _BlockCategoriesScreenState extends State<BlockCategoriesScreen> {
         .toList()
       ..sort();
     return [...knownOrder, ...extras];
+  }
+
+  List<String> _orderedBlockedServices(Set<String> selectedServices) {
+    final normalizedSet = selectedServices
+        .map((serviceId) => serviceId.trim().toLowerCase())
+        .where((serviceId) => serviceId.isNotEmpty)
+        .where((serviceId) => ServiceDefinitions.byId.containsKey(serviceId))
+        .toSet();
+
+    return ServiceDefinitions.all
+        .map((service) => service.serviceId)
+        .where(normalizedSet.contains)
+        .toList(growable: false);
   }
 
   List<String> _orderedBlockedDomains(Set<String> selectedDomains) {

@@ -186,6 +186,22 @@ class AppUsageService {
     }
   }
 
+  Future<String?> getCurrentForegroundPackage() async {
+    try {
+      final value =
+          await _channel.invokeMethod<String>('getCurrentForegroundPackage');
+      final normalized = value?.trim().toLowerCase();
+      if (normalized == null || normalized.isEmpty) {
+        return null;
+      }
+      return normalized;
+    } on PlatformException {
+      return null;
+    } on MissingPluginException {
+      return null;
+    }
+  }
+
   Future<UsageReportData> getUsageReport({
     int pastDays = 7,
     int topAppCount = 5,

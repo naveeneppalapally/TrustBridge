@@ -5,6 +5,7 @@ import android.app.admin.DevicePolicyManager
 import android.content.Intent
 import android.content.ComponentName
 import android.app.usage.UsageStatsManager
+import android.app.usage.UsageEvents
 import android.os.Build
 import android.os.PowerManager
 import android.net.Uri
@@ -362,6 +363,9 @@ class MainActivity : FlutterFragmentActivity() {
                 val pastDays = call.argument<Int>("pastDays") ?: 7
                 result.success(getUsageStats(pastDays))
             }
+            "getCurrentForegroundPackage" -> {
+                result.success(getCurrentForegroundPackage())
+            }
             else -> result.notImplemented()
         }
     }
@@ -524,6 +528,38 @@ class MainActivity : FlutterFragmentActivity() {
                     "dailyUsageMs" to dailyMap
                 )
             }
+    }
+
+    private fun getCurrentForegroundPackage(): String? {
+        if (!hasUsageStatsPermission()) {
+            return null
+        }
+        val usageStatsManager = getSystemService(UsageStatsManager::class.java) ?: return null
+        val endTime = System.currentTimeMillis()
+        val startTime = endTime - 120_000L
+        val usageEvents = usageStatsManager.queryEvents(startTime, endTime)
+        val event = UsageEvents.Event()
+        var latestPackage: String? = null
+        var latestTimestamp = 0L
+
+        while (usageEvents.hasNextEvent()) {
+            usageEvents.getNextEvent(event)
+            val isForegroundEvent = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) {
+                event.eventType == UsageEvents.Event.ACTIVITY_RESUMED ||
+                    event.eventType == UsageEvents.Event.MOVE_TO_FOREGROUND
+            } else {
+                event.eventType == UsageEvents.Event.MOVE_TO_FOREGROUND
+            }
+            if (!isForegroundEvent) {
+                continue
+            }
+            val packageName = event.packageName ?: continue
+            if (event.timeStamp >= latestTimestamp) {
+                latestTimestamp = event.timeStamp
+                latestPackage = packageName.trim()
+            }
+        }
+        return latestPackage
     }
 
     private fun formatDateKey(epochMs: Long): String {

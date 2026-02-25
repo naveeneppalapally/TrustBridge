@@ -3,6 +3,7 @@ import 'dart:developer' as developer;
 
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:trustbridge_app/config/category_ids.dart';
+import 'package:trustbridge_app/config/service_definitions.dart';
 import 'package:trustbridge_app/models/access_request.dart';
 import 'package:trustbridge_app/models/child_profile.dart';
 import 'package:trustbridge_app/models/support_ticket.dart';
@@ -1722,6 +1723,7 @@ class FirestoreService {
     final existingManualMode = _dynamicMap(childData['manualMode']);
     final normalizedPolicy = child.policy.copyWith(
       blockedCategories: normalizeCategoryIds(child.policy.blockedCategories),
+      blockedServices: _normalizeServiceIds(child.policy.blockedServices),
     );
     final updatedAt = DateTime.now();
     final childRef = childDoc.reference;
@@ -1744,6 +1746,7 @@ class FirestoreService {
       parentId: parentId,
       childId: child.id,
       blockedCategories: normalizedPolicy.blockedCategories,
+      blockedServices: normalizedPolicy.blockedServices,
       blockedDomains: normalizedPolicy.blockedDomains,
       manualMode: existingManualMode.isEmpty ? null : existingManualMode,
       pausedUntil: child.pausedUntil,
@@ -1851,14 +1854,33 @@ class FirestoreService {
     }
 
     final pausedUntil = DateTime.now().add(duration);
+    final updatedAt = DateTime.now();
     final batch = _firestore.batch();
+    final childrenForEvents = <DocumentSnapshot<Map<String, dynamic>>>[];
     for (final doc in snapshot.docs) {
+      childrenForEvents.add(doc);
       batch.update(doc.reference, <String, dynamic>{
         'pausedUntil': Timestamp.fromDate(pausedUntil),
-        'updatedAt': Timestamp.fromDate(DateTime.now()),
+        'updatedAt': Timestamp.fromDate(updatedAt),
       });
     }
     await batch.commit();
+
+    for (final doc in childrenForEvents) {
+      final data = doc.data() ?? const <String, dynamic>{};
+      final policy = _dynamicMap(data['policy']);
+      final manualMode = _dynamicMap(data['manualMode']);
+      await _recordPolicyEventSnapshot(
+        parentId: parentId,
+        childId: doc.id,
+        blockedCategories: _dynamicStringList(policy['blockedCategories']),
+        blockedServices: _dynamicStringList(policy['blockedServices']),
+        blockedDomains: _dynamicStringList(policy['blockedDomains']),
+        manualMode: manualMode.isEmpty ? null : manualMode,
+        pausedUntil: pausedUntil,
+        sourceUpdatedAt: updatedAt,
+      );
+    }
   }
 
   Future<void> resumeAllChildren(String parentId) async {
@@ -1875,14 +1897,33 @@ class FirestoreService {
       return;
     }
 
+    final updatedAt = DateTime.now();
     final batch = _firestore.batch();
+    final childrenForEvents = <DocumentSnapshot<Map<String, dynamic>>>[];
     for (final doc in snapshot.docs) {
+      childrenForEvents.add(doc);
       batch.update(doc.reference, <String, dynamic>{
         'pausedUntil': null,
-        'updatedAt': Timestamp.fromDate(DateTime.now()),
+        'updatedAt': Timestamp.fromDate(updatedAt),
       });
     }
     await batch.commit();
+
+    for (final doc in childrenForEvents) {
+      final data = doc.data() ?? const <String, dynamic>{};
+      final policy = _dynamicMap(data['policy']);
+      final manualMode = _dynamicMap(data['manualMode']);
+      await _recordPolicyEventSnapshot(
+        parentId: parentId,
+        childId: doc.id,
+        blockedCategories: _dynamicStringList(policy['blockedCategories']),
+        blockedServices: _dynamicStringList(policy['blockedServices']),
+        blockedDomains: _dynamicStringList(policy['blockedDomains']),
+        manualMode: manualMode.isEmpty ? null : manualMode,
+        pausedUntil: null,
+        sourceUpdatedAt: updatedAt,
+      );
+    }
   }
 
   /// Applies or clears pause for a single child profile.
@@ -1906,6 +1947,7 @@ class FirestoreService {
     final policy = _dynamicMap(childData['policy']);
     final manualMode = _dynamicMap(childData['manualMode']);
     final blockedCategories = _dynamicStringList(policy['blockedCategories']);
+    final blockedServices = _dynamicStringList(policy['blockedServices']);
     final blockedDomains = _dynamicStringList(policy['blockedDomains']);
     final updatedAt = DateTime.now();
     await childDoc.reference.update(<String, dynamic>{
@@ -1917,6 +1959,7 @@ class FirestoreService {
       parentId: parentId,
       childId: childId,
       blockedCategories: blockedCategories,
+      blockedServices: blockedServices,
       blockedDomains: blockedDomains,
       manualMode: manualMode.isEmpty ? null : manualMode,
       pausedUntil: pausedUntil,
@@ -1947,6 +1990,7 @@ class FirestoreService {
     final childData = childDoc.data() ?? const <String, dynamic>{};
     final policy = _dynamicMap(childData['policy']);
     final blockedCategories = _dynamicStringList(policy['blockedCategories']);
+    final blockedServices = _dynamicStringList(policy['blockedServices']);
     final blockedDomains = _dynamicStringList(policy['blockedDomains']);
     final pausedUntil = _dynamicDateTime(childData['pausedUntil']);
     final normalizedMode = mode?.trim().toLowerCase();
@@ -1961,6 +2005,7 @@ class FirestoreService {
         parentId: parentId,
         childId: childId,
         blockedCategories: blockedCategories,
+        blockedServices: blockedServices,
         blockedDomains: blockedDomains,
         manualMode: null,
         pausedUntil: pausedUntil,
@@ -1982,6 +2027,7 @@ class FirestoreService {
       parentId: parentId,
       childId: childId,
       blockedCategories: blockedCategories,
+      blockedServices: blockedServices,
       blockedDomains: blockedDomains,
       manualMode: manualModePayload,
       pausedUntil: pausedUntil,
@@ -2501,6 +2547,7 @@ class FirestoreService {
     required String parentId,
     required String childId,
     required Iterable<String> blockedCategories,
+    required Iterable<String> blockedServices,
     required Iterable<String> blockedDomains,
     required Map<String, dynamic>? manualMode,
     required DateTime? pausedUntil,
@@ -2514,8 +2561,16 @@ class FirestoreService {
     try {
       final normalizedCategories = _normalizeStringIterable(blockedCategories);
       final canonicalCategories = normalizeCategoryIds(normalizedCategories);
+      final normalizedServices = _normalizeServiceIds(blockedServices);
       final normalizedDomains = _normalizeStringIterable(blockedDomains);
+      final resolvedDomains = ServiceDefinitions.resolveDomains(
+        blockedCategories: canonicalCategories,
+        blockedServices: normalizedServices,
+        customBlockedDomains: normalizedDomains,
+      ).toList()
+        ..sort();
       final normalizedManualMode = _normalizeManualModeMap(manualMode);
+      final version = _nextPolicyEventEpochMs();
 
       await _firestore
           .collection('children')
@@ -2525,14 +2580,29 @@ class FirestoreService {
         'parentId': normalizedParentId,
         'childId': normalizedChildId,
         'blockedCategories': canonicalCategories,
+        'blockedServices': normalizedServices,
         'blockedDomains': normalizedDomains,
+        'blockedDomainsResolved': resolvedDomains,
         'manualMode': normalizedManualMode,
         'pausedUntil':
             pausedUntil == null ? null : Timestamp.fromDate(pausedUntil),
         'sourceUpdatedAt': Timestamp.fromDate(sourceUpdatedAt),
-        'eventEpochMs': _nextPolicyEventEpochMs(),
+        'eventEpochMs': version,
+        'version': version,
         'createdAt': FieldValue.serverTimestamp(),
       });
+      await _writeEffectivePolicyCurrent(
+        parentId: normalizedParentId,
+        childId: normalizedChildId,
+        blockedCategories: canonicalCategories,
+        blockedServices: normalizedServices,
+        customBlockedDomains: normalizedDomains,
+        blockedDomainsResolved: resolvedDomains,
+        manualMode: normalizedManualMode,
+        pausedUntil: pausedUntil,
+        sourceUpdatedAt: sourceUpdatedAt,
+        version: version,
+      );
     } catch (error, stackTrace) {
       developer.log(
         'Failed to append child policy event for $normalizedChildId',
@@ -2543,6 +2613,41 @@ class FirestoreService {
     }
   }
 
+  Future<void> _writeEffectivePolicyCurrent({
+    required String parentId,
+    required String childId,
+    required List<String> blockedCategories,
+    required List<String> blockedServices,
+    required List<String> customBlockedDomains,
+    required List<String> blockedDomainsResolved,
+    required Map<String, dynamic>? manualMode,
+    required DateTime? pausedUntil,
+    required DateTime sourceUpdatedAt,
+    required int version,
+  }) async {
+    await _firestore
+        .collection('children')
+        .doc(childId)
+        .collection('effective_policy')
+        .doc('current')
+        .set(
+      <String, dynamic>{
+        'parentId': parentId,
+        'childId': childId,
+        'version': version,
+        'blockedCategories': blockedCategories,
+        'blockedServices': blockedServices,
+        'blockedDomains': customBlockedDomains,
+        'blockedDomainsResolved': blockedDomainsResolved,
+        'manualMode': manualMode,
+        'pausedUntil': pausedUntil == null ? null : Timestamp.fromDate(pausedUntil),
+        'sourceUpdatedAt': Timestamp.fromDate(sourceUpdatedAt),
+        'updatedAt': FieldValue.serverTimestamp(),
+      },
+      SetOptions(merge: true),
+    );
+  }
+
   List<String> _normalizeStringIterable(Iterable<String> values) {
     return values
         .map((value) => value.trim().toLowerCase())
@@ -2550,6 +2655,22 @@ class FirestoreService {
         .toSet()
         .toList()
       ..sort();
+  }
+
+  List<String> _normalizeServiceIds(Iterable<String> values) {
+    final normalized = <String>{};
+    for (final value in values) {
+      final serviceId = value.trim().toLowerCase();
+      if (serviceId.isEmpty) {
+        continue;
+      }
+      if (!ServiceDefinitions.byId.containsKey(serviceId)) {
+        continue;
+      }
+      normalized.add(serviceId);
+    }
+    final ordered = normalized.toList()..sort();
+    return ordered;
   }
 
   Map<String, dynamic>? _normalizeManualModeMap(Map<String, dynamic>? rawMode) {

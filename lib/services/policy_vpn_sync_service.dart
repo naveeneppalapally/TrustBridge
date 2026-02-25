@@ -8,6 +8,7 @@ import 'package:sqflite/sqflite.dart';
 import '../models/access_request.dart';
 import '../models/blocklist_source.dart';
 import '../models/child_profile.dart';
+import '../config/service_definitions.dart';
 import 'auth_service.dart';
 import 'blocklist_sync_service.dart';
 import 'firestore_service.dart';
@@ -383,7 +384,13 @@ class PolicyVpnSyncService extends ChangeNotifier {
 
         for (final child in children) {
           mergedCategories.addAll(child.policy.blockedCategories);
-          mergedDomains.addAll(child.policy.blockedDomains);
+          mergedDomains.addAll(
+            ServiceDefinitions.resolveDomains(
+              blockedCategories: child.policy.blockedCategories,
+              blockedServices: child.policy.blockedServices,
+              customBlockedDomains: child.policy.blockedDomains,
+            ),
+          );
         }
 
         final categories = mergedCategories.toList()..sort();
@@ -452,8 +459,14 @@ class PolicyVpnSyncService extends ChangeNotifier {
   String _syncSignature(List<ChildProfile> children) {
     final childSignatures = children.map((child) {
       final categories = child.policy.blockedCategories.toList()..sort();
-      final domains = child.policy.blockedDomains.toList()..sort();
-      return '${child.id}:${categories.join(',')}:${domains.join(',')}';
+      final services = child.policy.blockedServices.toList()..sort();
+      final domains = ServiceDefinitions.resolveDomains(
+        blockedCategories: categories,
+        blockedServices: services,
+        customBlockedDomains: child.policy.blockedDomains,
+      ).toList()
+        ..sort();
+      return '${child.id}:${categories.join(',')}:${services.join(',')}:${domains.join(',')}';
     }).toList()
       ..sort();
     return childSignatures.join('||');

@@ -4,12 +4,14 @@ import '../config/category_ids.dart';
 
 class Policy {
   final List<String> blockedCategories;
+  final List<String> blockedServices;
   final List<String> blockedDomains;
   final List<Schedule> schedules;
   final bool safeSearchEnabled;
 
   Policy({
     required this.blockedCategories,
+    this.blockedServices = const <String>[],
     required this.blockedDomains,
     required this.schedules,
     this.safeSearchEnabled = true,
@@ -26,6 +28,7 @@ class Policy {
             'weapons',
             'drugs',
           ],
+          blockedServices: const <String>[],
           blockedDomains: const [],
           schedules: [
             Schedule.bedtime(startTime: '20:00', endTime: '07:00'),
@@ -41,6 +44,7 @@ class Policy {
             'weapons',
             'drugs',
           ],
+          blockedServices: const <String>[],
           blockedDomains: const [],
           schedules: [
             Schedule.bedtime(startTime: '21:30', endTime: '07:00'),
@@ -55,6 +59,7 @@ class Policy {
             'weapons',
             'drugs',
           ],
+          blockedServices: const <String>[],
           blockedDomains: const [],
           schedules: [
             Schedule.bedtime(startTime: '23:00', endTime: '07:00'),
@@ -83,6 +88,7 @@ class Policy {
 
     return Policy(
       blockedCategories: _categoryList(map['blockedCategories']),
+      blockedServices: _stringList(map['blockedServices']),
       blockedDomains: _stringList(map['blockedDomains']),
       schedules: parsedSchedules,
       safeSearchEnabled: _boolValue(map['safeSearchEnabled']),
@@ -92,6 +98,11 @@ class Policy {
   Map<String, dynamic> toMap() {
     return {
       'blockedCategories': normalizeCategoryIds(blockedCategories),
+      'blockedServices': blockedServices
+          .map((service) => service.trim().toLowerCase())
+          .where((service) => service.isNotEmpty)
+          .toSet()
+          .toList(growable: false),
       'blockedDomains': blockedDomains,
       'schedules': schedules.map((s) => s.toMap()).toList(),
       'safeSearchEnabled': safeSearchEnabled,
@@ -100,12 +111,14 @@ class Policy {
 
   Policy copyWith({
     List<String>? blockedCategories,
+    List<String>? blockedServices,
     List<String>? blockedDomains,
     List<Schedule>? schedules,
     bool? safeSearchEnabled,
   }) {
     return Policy(
       blockedCategories: blockedCategories ?? this.blockedCategories,
+      blockedServices: blockedServices ?? this.blockedServices,
       blockedDomains: blockedDomains ?? this.blockedDomains,
       schedules: schedules ?? this.schedules,
       safeSearchEnabled: safeSearchEnabled ?? this.safeSearchEnabled,
