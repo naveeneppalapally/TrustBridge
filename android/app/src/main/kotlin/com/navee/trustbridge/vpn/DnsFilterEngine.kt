@@ -11,15 +11,20 @@ class DnsFilterEngine(private val context: Context) {
             // Google / Chrome Secure DNS
             "dns.google",
             "dns.google.com",
+            "dns64.dns.google",
             "chrome.cloudflare-dns.com",
+            "mozilla.cloudflare-dns.com",
             // Cloudflare
             "cloudflare-dns.com",
+            "dns.cloudflare.com",
             "one.one.one.one",
             "security.cloudflare-dns.com",
             "family.cloudflare-dns.com",
+            "odoh.cloudflare-dns.com",
             // Quad9
             "dns.quad9.net",
             "dns9.quad9.net",
+            "dns10.quad9.net",
             // OpenDNS / Cisco Umbrella
             "doh.opendns.com",
             "doh.umbrella.com",
@@ -28,11 +33,27 @@ class DnsFilterEngine(private val context: Context) {
             // AdGuard
             "dns.adguard-dns.com",
             "unfiltered.adguard-dns.com",
+            "dns-unfiltered.adguard.com",
             "family.adguard-dns.com",
             "dns-family.adguard.com",
+            // CleanBrowsing
+            "doh.cleanbrowsing.org",
+            "security-filter-dns.cleanbrowsing.org",
+            "family-filter-dns.cleanbrowsing.org",
+            "adult-filter-dns.cleanbrowsing.org",
             // Mullvad / common public resolvers
             "doh.mullvad.net",
-            "dns.sb"
+            "base.dns.mullvad.net",
+            "dns.sb",
+            "doh.applied-privacy.net",
+            "dnsforge.de",
+            "dns0.eu",
+            "zero.dns0.eu",
+            "doh.libredns.gr",
+            "doh.tiar.app",
+            "dns.twnic.tw",
+            "doh.pub",
+            "dot.pub"
         )
         private val CONTROL_PLANE_ALLOWED_DOMAINS = setOf(
             // Firestore / Auth / Installations
@@ -106,14 +127,29 @@ class DnsFilterEngine(private val context: Context) {
         val matchedRule: String?
     )
 
+    data class BlockDecision(
+        val blocked: Boolean,
+        val reasonCode: String,
+        val matchedRule: String? = null
+    )
+
     init {
         hydrateRulesFromDisk()
     }
 
     @Synchronized
     fun shouldBlock(domain: String): Boolean {
+        return evaluateBlockDecision(domain).blocked
+    }
+
+    @Synchronized
+    fun evaluateBlockDecision(domain: String): BlockDecision {
         if (domain.isBlank()) {
-            return false
+            return BlockDecision(
+                blocked = false,
+                reasonCode = "invalid_domain",
+                matchedRule = null
+            )
         }
 
         val normalizedDomain = normalizeDomain(domain)
@@ -125,39 +161,71 @@ class DnsFilterEngine(private val context: Context) {
         val controlPlaneAllowRule = findMatchingControlPlaneAllowRule(normalizedDomain)
         if (controlPlaneAllowRule != null) {
             Log.d(TAG, "ALLOWED by control-plane rule: $controlPlaneAllowRule")
-            return false
+            return BlockDecision(
+                blocked = false,
+                reasonCode = "allow_control_plane",
+                matchedRule = controlPlaneAllowRule
+            )
         }
 
         val allowRule = findMatchingAllowRule(normalizedDomain)
         if (allowRule != null) {
             Log.d(TAG, "ALLOWED by temp-allow rule: $allowRule")
-            return false
+            return BlockDecision(
+                blocked = false,
+                reasonCode = "allow_temp_allowlist",
+                matchedRule = allowRule
+            )
         }
         if (blockedCategories.contains(BLOCK_ALL_CATEGORY_TOKEN)) {
             Log.d(TAG, "BLOCKED by block-all mode token")
-            return true
+            return BlockDecision(
+                blocked = true,
+                reasonCode = "block_all_mode",
+                matchedRule = BLOCK_ALL_CATEGORY_TOKEN
+            )
         }
         val encryptedDnsRule = findMatchingEncryptedDnsResolverRule(normalizedDomain)
         if (encryptedDnsRule != null && hasActiveProtectionRules()) {
             Log.d(TAG, "BLOCKED by anti-bypass encrypted-DNS resolver rule: $encryptedDnsRule")
-            return true
+            return BlockDecision(
+                blocked = true,
+                reasonCode = "block_encrypted_dns_resolver",
+                matchedRule = encryptedDnsRule
+            )
         }
         val domainRule = findMatchingRule(normalizedDomain)
         if (domainRule != null) {
             Log.d(TAG, "BLOCKED by custom domain rule: $domainRule")
-            return true
+            return BlockDecision(
+                blocked = true,
+                reasonCode = "block_custom_domain_rule",
+                matchedRule = domainRule
+            )
         }
         if (isInstantSocialBlock(normalizedDomain)) {
             Log.d(TAG, "BLOCKED by instant social-media list")
-            return true
+            return BlockDecision(
+                blocked = true,
+                reasonCode = "block_instant_social_category",
+                matchedRule = "social-networks"
+            )
         }
         val dbCategory = localBlocklistDb.getCategory(normalizedDomain)
         if (dbCategory != null && isDbCategoryEnabled(dbCategory)) {
             Log.d(TAG, "BLOCKED by blocklist DB category=$dbCategory")
-            return true
+            return BlockDecision(
+                blocked = true,
+                reasonCode = "block_blocklist_db_category",
+                matchedRule = dbCategory
+            )
         }
         Log.d(TAG, "ALLOWED (no matching rule) domain=$normalizedDomain")
-        return false
+        return BlockDecision(
+            blocked = false,
+            reasonCode = "allow_no_match",
+            matchedRule = null
+        )
     }
 
     @Synchronized

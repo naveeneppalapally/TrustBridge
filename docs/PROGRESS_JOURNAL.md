@@ -4810,3 +4810,219 @@ license surfacing + onboarding legal consent alignment.
    - `flutter test` passed (full suite).
 
 ---
+
+## Day 131 - Child Policy Reconcile Hardening (Week 26 Day 6)
+
+Program goal: fix stale child VPN rules persisting after parent unblocks by
+hardening Android `effective_policy` reconciliation and adding policy-sync
+diagnostics.
+
+### Commit entries
+
+1. **2026-02-26**  
+   Commit: `[pending]`  
+   Message: `Harden child effective-policy reconciliation and add policy sync diagnostics`  
+   Changes:
+   - Patched Android VPN service `ACTION_START` handling to avoid reapplying
+     stale rule extras/persisted rules when watchdog/start intents arrive while
+     the VPN is already running:
+     - `android/app/src/main/kotlin/com/navee/trustbridge/vpn/DnsVpnService.kt`
+   - Ensured `startEffectivePolicyListenerIfConfigured()` also restarts/keeps
+     the polling fallback alive for the same child instead of returning early.
+   - Hardened policy apply dedupe logic:
+     - If policy version is non-increasing but the resolved rule state differs,
+       the child now still applies the snapshot (prevents version-skew freezes).
+   - Added child native policy-sync diagnostics surfaced in
+     `vpn_diagnostics/current.policySync` (last seen/applied version, source,
+     skip reason, error, listener/poll heartbeat timestamps).
+   Validation:
+   - `./android/gradlew :app:compileDebugKotlin` passed.
+   - `flutter analyze` passed.
+   - `flutter test` passed (full suite).
+   - `flutter build apk --debug` passed.
+   - Installed latest debug APK on both parent and child devices.
+   - Physical/live verification after install:
+     - Child stale Facebook VPN rules were automatically reconciled to the
+       clean backend `effective_policy/current`.
+     - Child persisted VPN prefs now show `vpn_blocked_domains=[]` and
+       `vpn_blocked_packages=[]`.
+     - `policy_apply_acks.appliedVersion` caught up to the current
+       `effective_policy.version`.
+
+---
+
+## Day 131 - Individual Service Domain Resolution Hardening (Week 26 Day 6)
+
+Program goal: fix parent-visible mismatches caused by service-domain overlap
+across providers (for example, Facebook individual blocks interfering with
+Instagram via shared Meta infrastructure domains).
+
+### Commit entries
+
+1. **2026-02-26**
+   Commit: `[pending]`
+   Message: `Use critical domains for individual service blocks`
+   Changes:
+   - Updated service domain resolution semantics:
+     - Individual service toggles now resolve using `criticalDomains` (when
+       defined) to reduce cross-service collateral blocking.
+     - Category-level blocks still resolve full service domain lists for stronger
+       coverage.
+     - `lib/config/service_definitions.dart`
+   - Added tests proving:
+     - Individual Facebook block excludes shared Meta domains such as
+       `connect.facebook.net` / `fbcdn.net`
+     - `social-networks` category block still includes the broader Facebook
+       domain coverage
+     - `test/config/service_definitions_test.dart`
+   Validation:
+   - `flutter analyze` passed.
+   - `flutter test` passed (full suite).
+   - Note: a standalone targeted `flutter test test/config/service_definitions_test.dart`
+     invocation crashed once due a Flutter tool `PathExistsException` in
+     `build/unit_test_assets` while another test run was active; the full suite
+     completed successfully and includes this test file.
+   Live diagnosis notes:
+   - Parent `Block Apps` tap traces (via `children/{childId}/parent_debug_events`)
+     showed correct sequence and policy saves for Instagram/Facebook toggles.
+   - Child `effective_policy/current` and `policy_apply_acks` versions matched,
+     confirming apply pipeline correctness.
+   - Child `vpn_diagnostics/current` showed Facebook web DNS blocks as
+     `block_custom_domain_rule` (not open-source DB category blocks), supporting
+     the diagnosis that the observed issue is service-domain modeling + browser
+     behavior, not a stale policy or blocklist DB merge.
+
+---
+
+## Day 131 - Native VPN Diagnostics Telemetry + Parent Toggle Debug Traces (Week 26 Day 6)
+
+Program goal: make web-blocking investigations observable without relying on
+fragile UI automation by emitting native/background VPN diagnostics to Firestore
+and logging parent Block Apps toggle/save events to backend.
+
+### Commit entries
+
+1. **2026-02-26**
+   Commit: `[pending]`
+   Message: `Add native vpn diagnostics telemetry and parent block-app debug events`
+   Changes:
+   - Added structured DNS decision reasons in native Android DNS engine:
+     - `android/app/src/main/kotlin/com/navee/trustbridge/vpn/DnsFilterEngine.kt`
+   - Added DNS query reason + matched-rule fields to native recent-query logs:
+     - `android/app/src/main/kotlin/com/navee/trustbridge/vpn/DnsPacketHandler.kt`
+   - Added native/background `children/{childId}/vpn_diagnostics/current`
+     telemetry writes (throttled) from the VPN service, including:
+     - last DNS query + reason
+     - last blocked DNS query + matched rule
+     - likely DNS/DoH bypass signal + reason
+     - foreground package / private DNS / packet counters
+     - `android/app/src/main/kotlin/com/navee/trustbridge/vpn/DnsVpnService.kt`
+   - Extended Flutter DNS query log model to parse native reason fields:
+     - `lib/services/vpn_service.dart`
+   - Extended child web diagnostics UI to show:
+     - last blocked DNS query + exact reason + matched rule
+     - last bypass signal (latched)
+     - `lib/services/browser_dns_bypass_heuristic.dart`
+     - `lib/screens/child/child_status_screen.dart`
+   - Added parent-side debug events for Block Apps actions (`toggle_tapped`,
+     `policy_save_started`, `policy_save_succeeded`,
+     `effective_policy_version_observed`, `policy_save_failed`):
+     - `lib/services/firestore_service.dart`
+     - `lib/screens/block_categories_screen.dart`
+   - Added Firestore rules for new diagnostics/debug subcollections:
+     - `children/{childId}/vpn_diagnostics/{diagId}`
+     - `children/{childId}/parent_debug_events/{eventId}`
+     - `firestore.rules`
+   - Added/updated tests:
+     - `test/services/dns_query_log_entry_test.dart`
+     - `test/services/browser_dns_bypass_heuristic_test.dart`
+   Validation:
+   - `./gradlew :app:compileDebugKotlin` passed.
+   - `flutter analyze` passed.
+   - `flutter test` passed (full suite).
+   - `flutter build apk --debug` passed.
+   - Deployed Firestore rules to `trustbridge-navee`.
+   - Installed latest debug APK on both parent and child devices.
+   - Physical child-device verification:
+     - Child UI shows new diagnostics lines (`Last blocked DNS`, `Matched rule`,
+       `Last bypass signal`).
+     - `vpn_diagnostics/current` writes real blocked DNS reason telemetry (e.g.
+       `block_custom_domain_rule` for `instagram.com`) and matched rule.
+   Notes:
+   - Parent device ADB taps were not actuating UI controls in this session
+     (while `uiautomator dump` remained readable), so physical generation of
+     `parent_debug_events` via parent Block Apps taps was not self-verified in
+     this pass. Code, rules, and tests are in place.
+
+---
+
+## Day 131 - Android v2 Rollout Flags + Parity Mapping Hardening (Week 26 Day 6)
+
+Program goal: harden the Android v2 rollout by adding runtime kill switches,
+patching a known YouTube package mapping gap, and validating with tests.
+
+### Commit entries
+
+1. **2026-02-26 02:55:21 +05:30**  
+   Commit: `[pending]`  
+   Message: `Add v2 rollout flags and patch YouTube package parity gap`  
+   Changes:
+   - Added runtime rollout flags with test overrides:
+     - `lib/config/rollout_flags.dart`
+   - Wired rollout flags into v2 feature paths:
+     - Parent adaptive drawer nav (`lib/widgets/parent_shell.dart`)
+     - Explicit child selection fallback behavior (`lib/widgets/parent_shell.dart`)
+     - Mode overrides entry point/UI gating (`lib/widgets/parent_shell.dart`, `lib/screens/mode_overrides_screen.dart`)
+     - Installed app inventory UI + package-toggle gating (`lib/screens/block_categories_screen.dart`)
+     - Child app inventory sync loop/service gating (`lib/screens/child/child_status_screen.dart`, `lib/services/child_app_inventory_sync_service.dart`)
+     - Child package-block guard enforcement gating (`lib/screens/child/child_status_screen.dart`)
+     - Child per-app usage upload/daily docs gating (`lib/screens/child/child_status_screen.dart`, `lib/services/child_usage_upload_service.dart`)
+     - Parent reports UI gating for day-filter/per-app/trend sections (`lib/screens/usage_reports_screen.dart`)
+   - Patched YouTube service mapping to include ReVanced package:
+     - `app.revanced.android.youtube` in `lib/config/service_definitions.dart`
+   - Added tests:
+     - `test/config/service_definitions_test.dart`
+     - Updated `test/widgets/parent_shell_test.dart` for adaptive nav + explicit child selection flags
+     - Updated `test/screens/usage_reports_screen_test.dart` for per-app reports flag
+   Validation:
+   - `flutter analyze` passed.
+   - `flutter test` passed (full suite).
+
+---
+
+## Day 131 - Web Blocking Diagnostics + DoH Bypass Warnings (Week 26 Day 6)
+
+Program goal: improve real-device debugging for inconsistent website blocking by
+surfacing DNS-path diagnostics on the child device and hardening anti-bypass
+resolver coverage in the Android DNS engine.
+
+### Commit entries
+
+1. **2026-02-26**  
+   Commit: `[pending]`  
+   Message: `Add child web DNS diagnostics and secure DNS bypass warnings`  
+   Changes:
+   - Added a testable browser DNS bypass heuristic:
+     - `lib/services/browser_dns_bypass_heuristic.dart`
+   - Added child-side web protection diagnostics card + Secure DNS/DoH warning
+     heuristics (VPN DNS telemetry + foreground browser package heuristic):
+     - `lib/screens/child/child_status_screen.dart`
+   - Added unit tests for bypass heuristic behavior:
+     - `test/services/browser_dns_bypass_heuristic_test.dart`
+   - Expanded native anti-bypass encrypted DNS resolver domain list to cover
+     more common DoH providers and aliases:
+     - `android/app/src/main/kotlin/com/navee/trustbridge/vpn/DnsFilterEngine.kt`
+   Validation:
+   - `flutter analyze` passed.
+   - `flutter test` passed (full suite).
+   - `flutter build apk --debug` passed.
+   - Installed latest debug APK on both parent and child devices.
+   - Live checks confirmed backend policy + child native DNS blocklist DB can be
+     clean while website behavior remains inconsistent (supports DNS-path bypass
+     hypothesis).
+   Notes:
+   - Child-device UI automation (`uiautomator dump`) was unstable (`null root
+     node`) during physical UI verification of the new diagnostics card on this
+     device, so visual confirmation was blocked in this session.
+
+---

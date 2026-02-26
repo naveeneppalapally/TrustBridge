@@ -31,9 +31,8 @@ class _LoginScreenState extends State<LoginScreen> {
       final redirectRaw = args['redirectAfterLogin'];
       final targetModeRaw = args['targetMode'];
       final redirectRoute = redirectRaw is String ? redirectRaw.trim() : '';
-      final targetMode = targetModeRaw is String
-          ? targetModeRaw.trim().toLowerCase()
-          : '';
+      final targetMode =
+          targetModeRaw is String ? targetModeRaw.trim().toLowerCase() : '';
       if (redirectRoute.isNotEmpty) {
         return (
           route: redirectRoute,
@@ -58,7 +57,27 @@ class _LoginScreenState extends State<LoginScreen> {
     if (!mounted) {
       return;
     }
-    Navigator.of(context).pushReplacementNamed(plan.route);
+    Navigator.of(context).pushNamedAndRemoveUntil(
+      plan.route,
+      (_) => false,
+    );
+  }
+
+  Future<void> _goBackFromLogin() async {
+    final args = ModalRoute.of(context)?.settings.arguments;
+    if (args is Map) {
+      final redirectRaw = args['redirectAfterLogin'];
+      final redirectRoute = redirectRaw is String ? redirectRaw.trim() : '';
+      if (redirectRoute.isNotEmpty && Navigator.of(context).canPop()) {
+        Navigator.of(context).pop();
+        return;
+      }
+    }
+    await _appModeService.clearMode();
+    if (!mounted) {
+      return;
+    }
+    Navigator.of(context).pushNamedAndRemoveUntil('/welcome', (_) => false);
   }
 
   String _friendlyError(String fallback) {
@@ -346,6 +365,14 @@ class _LoginScreenState extends State<LoginScreen> {
               child: Column(
                 crossAxisAlignment: CrossAxisAlignment.stretch,
                 children: [
+                  Align(
+                    alignment: Alignment.centerLeft,
+                    child: IconButton(
+                      onPressed: _goBackFromLogin,
+                      icon: const Icon(Icons.arrow_back),
+                      tooltip: 'Back',
+                    ),
+                  ),
                   _buildHeader(
                     colorScheme: colorScheme,
                     mutedText: mutedText,

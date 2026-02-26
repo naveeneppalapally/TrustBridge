@@ -98,7 +98,7 @@ service cloud.firestore {
           data[field] is map &&
           data[field].keys().hasOnly(['mode', 'setAt', 'expiresAt']) &&
           isRequiredString(data[field], 'mode', 32) &&
-          data[field].mode in ['homework', 'bedtime', 'free'] &&
+          data[field].mode in ['homework', 'bedtime', 'focus', 'free'] &&
           isOptionalTimestamp(data[field], 'setAt') &&
           isOptionalTimestamp(data[field], 'expiresAt')
         );
@@ -331,6 +331,36 @@ service cloud.firestore {
       }
 
       // Optional policy documents used by diagnostics/experiments.
+      match /app_inventory/{inventoryId} {
+        allow read: if isChildParent(childId) || isChildDevice(childId);
+
+        allow create, update: if isChildDevice(childId) &&
+          hasOnlyKeys(
+            request.resource.data,
+            [
+              'version',
+              'hash',
+              'capturedAt',
+              'deviceId',
+              'apps',
+              'inventoryStatus'
+            ]
+          ) &&
+          isRequiredInt(request.resource.data, 'version', 0, 4102444800000) &&
+          isRequiredString(request.resource.data, 'hash', 4096) &&
+          isOptionalTimestamp(request.resource.data, 'capturedAt') &&
+          isRequiredString(request.resource.data, 'deviceId', 128) &&
+          ('apps' in request.resource.data) &&
+          request.resource.data.apps is list &&
+          (
+            !('inventoryStatus' in request.resource.data) ||
+            request.resource.data.inventoryStatus is map
+          );
+
+        allow delete: if false;
+      }
+
+      // Optional policy documents used by diagnostics/experiments.
       match /policy/{policyDocId} {
         allow read: if isChildParent(childId) || isChildDevice(childId);
         allow create, update, delete: if isChildParent(childId);
@@ -349,7 +379,12 @@ service cloud.firestore {
               'blockedCategories',
               'blockedServices',
               'blockedDomains',
+              'blockedPackages',
               'blockedDomainsResolved',
+              'blockedPackagesResolved',
+              'modeOverrides',
+              'modeOverridesResolved',
+              'policySchemaVersion',
               'manualMode',
               'pausedUntil',
               'sourceUpdatedAt',
@@ -369,8 +404,17 @@ service cloud.firestore {
           request.resource.data.blockedServices is list &&
           ('blockedDomains' in request.resource.data) &&
           request.resource.data.blockedDomains is list &&
+          ('blockedPackages' in request.resource.data) &&
+          request.resource.data.blockedPackages is list &&
           ('blockedDomainsResolved' in request.resource.data) &&
           request.resource.data.blockedDomainsResolved is list &&
+          ('blockedPackagesResolved' in request.resource.data) &&
+          request.resource.data.blockedPackagesResolved is list &&
+          (!('modeOverrides' in request.resource.data) ||
+            request.resource.data.modeOverrides is map) &&
+          (!('modeOverridesResolved' in request.resource.data) ||
+            request.resource.data.modeOverridesResolved is map) &&
+          isRequiredInt(request.resource.data, 'policySchemaVersion', 1, 100) &&
           isOptionalManualMode(request.resource.data, 'manualMode') &&
           isOptionalTimestamp(request.resource.data, 'pausedUntil') &&
           isRequiredTimestamp(request.resource.data, 'sourceUpdatedAt') &&
@@ -395,7 +439,11 @@ service cloud.firestore {
               'blockedCategories',
               'blockedServices',
               'blockedDomains',
+              'blockedPackages',
               'blockedDomainsResolved',
+              'blockedPackagesResolved',
+              'modeOverridesResolved',
+              'policySchemaVersion',
               'manualMode',
               'pausedUntil',
               'sourceUpdatedAt',
@@ -414,8 +462,15 @@ service cloud.firestore {
           request.resource.data.blockedServices is list &&
           ('blockedDomains' in request.resource.data) &&
           request.resource.data.blockedDomains is list &&
+          ('blockedPackages' in request.resource.data) &&
+          request.resource.data.blockedPackages is list &&
           ('blockedDomainsResolved' in request.resource.data) &&
           request.resource.data.blockedDomainsResolved is list &&
+          ('blockedPackagesResolved' in request.resource.data) &&
+          request.resource.data.blockedPackagesResolved is list &&
+          (!('modeOverridesResolved' in request.resource.data) ||
+            request.resource.data.modeOverridesResolved is map) &&
+          isRequiredInt(request.resource.data, 'policySchemaVersion', 1, 100) &&
           isOptionalManualMode(request.resource.data, 'manualMode') &&
           isOptionalTimestamp(request.resource.data, 'pausedUntil') &&
           isRequiredTimestamp(request.resource.data, 'sourceUpdatedAt') &&
@@ -446,6 +501,9 @@ service cloud.firestore {
               'appliedVersion',
               'appliedAt',
               'vpnRunning',
+              'appliedBlockedDomainsCount',
+              'appliedBlockedPackagesCount',
+              'applyLatencyMs',
               'usageAccessGranted',
               'ruleCounts',
               'applyStatus',
@@ -460,6 +518,9 @@ service cloud.firestore {
           isRequiredInt(request.resource.data, 'appliedVersion', 0, 4102444800000) &&
           isOptionalTimestamp(request.resource.data, 'appliedAt') &&
           isOptionalBool(request.resource.data, 'vpnRunning') &&
+          isOptionalInt(request.resource.data, 'appliedBlockedDomainsCount', 0, 1000000) &&
+          isOptionalInt(request.resource.data, 'appliedBlockedPackagesCount', 0, 1000000) &&
+          isOptionalInt(request.resource.data, 'applyLatencyMs', 0, 86400000) &&
           isOptionalBool(request.resource.data, 'usageAccessGranted') &&
           (
             !('ruleCounts' in request.resource.data) ||
@@ -489,35 +550,204 @@ service cloud.firestore {
         allow delete: if false;
       }
 
-      // Child-uploaded usage snapshots rendered in parent reports.
-      match /usage_reports/{reportId} {
+      // Native/background VPN diagnostics written by child VPN service.
+      match /vpn_diagnostics/{diagId} {
         allow read: if isChildParent(childId) || isChildDevice(childId);
 
         allow create, update: if isChildDevice(childId) &&
           hasOnlyKeys(
             request.resource.data,
             [
-              'totalScreenTimeMs',
-              'averageDailyScreenTimeMs',
-              'categorySlices',
-              'dailyTrend',
-              'topApps',
-              'uploadedAt',
-              'deviceUploadedAtLocal'
+              'parentId',
+              'childId',
+              'deviceId',
+              'vpnRunning',
+              'privateDnsMode',
+              'privateDnsActive',
+              'protectionActive',
+              'usageAccessGranted',
+              'foregroundPackage',
+              'browserForeground',
+              'recentVpnDnsQueriesInWindow',
+              'likelyDnsBypass',
+              'bypassReasonCode',
+              'lastBypassSignalAtEpochMs',
+              'lastBypassSignalReasonCode',
+              'lastBypassSignalForegroundPackage',
+              'packetCounters',
+              'lastDnsQuery',
+              'lastBlockedDnsQuery',
+              'updatedAt'
             ]
           ) &&
-          isRequiredInt(request.resource.data, 'totalScreenTimeMs', 0, 4102444800000) &&
-          isRequiredInt(request.resource.data, 'averageDailyScreenTimeMs', 0, 4102444800000) &&
-          ('categorySlices' in request.resource.data) &&
-          request.resource.data.categorySlices is list &&
-          ('dailyTrend' in request.resource.data) &&
-          request.resource.data.dailyTrend is list &&
-          ('topApps' in request.resource.data) &&
-          request.resource.data.topApps is list &&
-          isOptionalTimestamp(request.resource.data, 'uploadedAt') &&
-          isOptionalString(request.resource.data, 'deviceUploadedAtLocal', 80);
+          isRequiredString(request.resource.data, 'parentId', 128) &&
+          childParentMatches(childId, request.resource.data.parentId) &&
+          isRequiredString(request.resource.data, 'childId', 128) &&
+          request.resource.data.childId == childId &&
+          isOptionalString(request.resource.data, 'deviceId', 128) &&
+          isOptionalBool(request.resource.data, 'vpnRunning') &&
+          isOptionalString(request.resource.data, 'privateDnsMode', 64) &&
+          isOptionalBool(request.resource.data, 'privateDnsActive') &&
+          isOptionalBool(request.resource.data, 'protectionActive') &&
+          isOptionalBool(request.resource.data, 'usageAccessGranted') &&
+          isOptionalString(request.resource.data, 'foregroundPackage', 256) &&
+          isOptionalBool(request.resource.data, 'browserForeground') &&
+          isOptionalInt(request.resource.data, 'recentVpnDnsQueriesInWindow', 0, 1000000) &&
+          isOptionalBool(request.resource.data, 'likelyDnsBypass') &&
+          isOptionalString(request.resource.data, 'bypassReasonCode', 120) &&
+          isOptionalInt(request.resource.data, 'lastBypassSignalAtEpochMs', 0, 4102444800000) &&
+          isOptionalString(request.resource.data, 'lastBypassSignalReasonCode', 120) &&
+          isOptionalString(request.resource.data, 'lastBypassSignalForegroundPackage', 256) &&
+          (!('packetCounters' in request.resource.data) ||
+            request.resource.data.packetCounters is map) &&
+          (!('lastDnsQuery' in request.resource.data) ||
+            request.resource.data.lastDnsQuery == null ||
+            request.resource.data.lastDnsQuery is map) &&
+          (!('lastBlockedDnsQuery' in request.resource.data) ||
+            request.resource.data.lastBlockedDnsQuery == null ||
+            request.resource.data.lastBlockedDnsQuery is map) &&
+          isOptionalTimestamp(request.resource.data, 'updatedAt');
 
         allow delete: if false;
+      }
+
+      // Parent-side debug traces for toggle/save -> effective policy investigations.
+      match /parent_debug_events/{eventId} {
+        allow read: if isChildParent(childId) || isChildDevice(childId);
+
+        allow create: if isChildParent(childId) &&
+          hasOnlyKeys(
+            request.resource.data,
+            [
+              'parentId',
+              'childId',
+              'source',
+              'screen',
+              'eventType',
+              'payload',
+              'clientTime',
+              'createdAt'
+            ]
+          ) &&
+          isRequiredString(request.resource.data, 'parentId', 128) &&
+          request.resource.data.parentId ==
+            get(/databases/$(database)/documents/children/$(childId)).data.parentId &&
+          isRequiredString(request.resource.data, 'childId', 128) &&
+          request.resource.data.childId == childId &&
+          isRequiredString(request.resource.data, 'source', 40) &&
+          isRequiredString(request.resource.data, 'screen', 64) &&
+          isRequiredString(request.resource.data, 'eventType', 80) &&
+          (!('payload' in request.resource.data) || request.resource.data.payload is map) &&
+          isOptionalTimestamp(request.resource.data, 'clientTime') &&
+          isOptionalTimestamp(request.resource.data, 'createdAt');
+
+        allow update, delete: if false;
+      }
+
+      // Child-uploaded usage snapshots rendered in parent reports.
+      match /usage_reports/{reportId} {
+        allow read: if isChildParent(childId) || isChildDevice(childId);
+
+        allow create, update: if isChildDevice(childId) && (
+          (
+            reportId == 'latest' &&
+            hasOnlyKeys(
+              request.resource.data,
+              [
+                'totalScreenTimeMs',
+                'averageDailyScreenTimeMs',
+                'categorySlices',
+                'dailyTrend',
+                'topApps',
+                'dayKey',
+                'appUsageByPackage',
+                'trendPoint',
+                'uploadedAt',
+                'deviceUploadedAtLocal'
+              ]
+            ) &&
+            isRequiredInt(request.resource.data, 'totalScreenTimeMs', 0, 4102444800000) &&
+            isRequiredInt(request.resource.data, 'averageDailyScreenTimeMs', 0, 4102444800000) &&
+            ('categorySlices' in request.resource.data) &&
+            request.resource.data.categorySlices is list &&
+            ('dailyTrend' in request.resource.data) &&
+            request.resource.data.dailyTrend is list &&
+            ('topApps' in request.resource.data) &&
+            request.resource.data.topApps is list &&
+            (!('dayKey' in request.resource.data) || request.resource.data.dayKey is string) &&
+            (!('appUsageByPackage' in request.resource.data) || request.resource.data.appUsageByPackage is map) &&
+            (!('trendPoint' in request.resource.data) || request.resource.data.trendPoint is map) &&
+            isOptionalTimestamp(request.resource.data, 'uploadedAt') &&
+            isOptionalString(request.resource.data, 'deviceUploadedAtLocal', 80)
+          ) ||
+          (
+            reportId.matches('^daily_[0-9]{4}-[0-9]{2}-[0-9]{2}$') &&
+            hasOnlyKeys(
+              request.resource.data,
+              [
+                'capturedAt',
+                'dayKey',
+                'totalScreenMinutes',
+                'appUsageByPackage',
+                'categoryTotals',
+                'trendPoint',
+                'uploadedAt',
+                'deviceUploadedAtLocal'
+              ]
+            ) &&
+            isOptionalTimestamp(request.resource.data, 'capturedAt') &&
+            isRequiredString(request.resource.data, 'dayKey', 20) &&
+            isRequiredInt(request.resource.data, 'totalScreenMinutes', 0, 2000000) &&
+            ('appUsageByPackage' in request.resource.data) &&
+            request.resource.data.appUsageByPackage is map &&
+            ('categoryTotals' in request.resource.data) &&
+            request.resource.data.categoryTotals is map &&
+            ('trendPoint' in request.resource.data) &&
+            request.resource.data.trendPoint is map &&
+            isOptionalTimestamp(request.resource.data, 'uploadedAt') &&
+            isOptionalString(request.resource.data, 'deviceUploadedAtLocal', 80)
+          )
+        );
+
+        allow delete: if false;
+
+        // Canonical nested daily path for v2 rollout:
+        // children/{childId}/usage_reports/daily/days/{yyyy-MM-dd}
+        match /days/{dayKey} {
+          allow read: if reportId == 'daily' &&
+            (isChildParent(childId) || isChildDevice(childId));
+
+          allow create, update: if reportId == 'daily' &&
+            isChildDevice(childId) &&
+            dayKey.matches('^[0-9]{4}-[0-9]{2}-[0-9]{2}$') &&
+            hasOnlyKeys(
+              request.resource.data,
+              [
+                'capturedAt',
+                'dayKey',
+                'totalScreenMinutes',
+                'appUsageByPackage',
+                'categoryTotals',
+                'trendPoint',
+                'uploadedAt',
+                'deviceUploadedAtLocal'
+              ]
+            ) &&
+            isOptionalTimestamp(request.resource.data, 'capturedAt') &&
+            isRequiredString(request.resource.data, 'dayKey', 20) &&
+            request.resource.data.dayKey == dayKey &&
+            isRequiredInt(request.resource.data, 'totalScreenMinutes', 0, 2000000) &&
+            ('appUsageByPackage' in request.resource.data) &&
+            request.resource.data.appUsageByPackage is map &&
+            ('categoryTotals' in request.resource.data) &&
+            request.resource.data.categoryTotals is map &&
+            ('trendPoint' in request.resource.data) &&
+            request.resource.data.trendPoint is map &&
+            isOptionalTimestamp(request.resource.data, 'uploadedAt') &&
+            isOptionalString(request.resource.data, 'deviceUploadedAtLocal', 80);
+
+          allow delete: if false;
+        }
       }
     }
 

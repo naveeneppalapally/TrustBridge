@@ -57,6 +57,8 @@ class DnsPacketHandler(
     data class QueryLogEntry(
         val domain: String,
         val blocked: Boolean,
+        val reasonCode: String,
+        val matchedRule: String?,
         val timestampEpochMs: Long
     )
 
@@ -101,7 +103,8 @@ class DnsPacketHandler(
             val dnsQuery = packet.copyOfRange(dnsOffset, dnsOffset + dnsLength)
             val parsedDomain = parseDomainName(dnsQuery)
             val normalizedDomain = normalizeDomainForLog(parsedDomain)
-            val isBlocked = filterEngine.shouldBlock(parsedDomain)
+            val decision = filterEngine.evaluateBlockDecision(parsedDomain)
+            val isBlocked = decision.blocked
 
             if (isBlocked) {
                 incrementBlockedQuery(normalizedDomain)
@@ -110,17 +113,27 @@ class DnsPacketHandler(
             }
             appendQueryLog(
                 domain = normalizedDomain,
-                blocked = isBlocked
+                blocked = isBlocked,
+                reasonCode = decision.reasonCode,
+                matchedRule = decision.matchedRule
             )
 
             val dnsResponse = if (isBlocked) {
-                Log.d(TAG, "BLOCKED domain=$normalizedDomain")
+                Log.d(
+                    TAG,
+                    "BLOCKED domain=$normalizedDomain reason=${decision.reasonCode}" +
+                        (decision.matchedRule?.let { " rule=$it" } ?: "")
+                )
                 if (normalizedDomain != "<unknown>") {
                     onBlockedDomain?.invoke(normalizedDomain)
                 }
                 createBlockedResponse(dnsQuery)
             } else {
-                Log.d(TAG, "ALLOWED domain=$normalizedDomain")
+                Log.d(
+                    TAG,
+                    "ALLOWED domain=$normalizedDomain reason=${decision.reasonCode}" +
+                        (decision.matchedRule?.let { " rule=$it" } ?: "")
+                )
                 forwardToUpstreamDns(dnsQuery)
             }
 
@@ -157,11 +170,15 @@ class DnsPacketHandler(
         val safeLimit = if (limit <= 0) 1 else limit
         val snapshot = recentQueries.toList().asReversed().take(safeLimit)
         return snapshot.map { entry ->
-            mapOf(
-                "domain" to entry.domain,
-                "blocked" to entry.blocked,
-                "timestampEpochMs" to entry.timestampEpochMs
-            )
+            buildMap<String, Any> {
+                put("domain", entry.domain)
+                put("blocked", entry.blocked)
+                put("reasonCode", entry.reasonCode)
+                if (!entry.matchedRule.isNullOrBlank()) {
+                    put("matchedRule", entry.matchedRule)
+                }
+                put("timestampEpochMs", entry.timestampEpochMs)
+            }
         }
     }
 
@@ -202,36 +219,72 @@ class DnsPacketHandler(
         }
 
         val questionEnd = findQuestionEndOffset(query) ?: return query
+        val queryTypeOffset = questionEnd - 4
+        val queryClassOffset = questionEnd - 2
+        val queryType = readUInt16(query, queryTypeOffset)
+        val queryClass = readUInt16(query, queryClassOffset)
 
-        // Build a response with an A-record pointing to 0.0.0.0.
-        // This is more effective than NXDOMAIN because apps/browsers that
-        // receive NXDOMAIN often silently retry via DoH. A positive response
-        // with a null-routed IP causes a clean connection failure with no retry.
         val header = query.copyOfRange(0, questionEnd)
 
         // Set response flags: QR=1, AA=1, RCODE=0 (no error)
         header[2] = (header[2].toInt() or 0x84).toByte() // QR=1 + AA=1
         header[3] = (header[3].toInt() and 0xF0.toInt()).toByte() // RCODE=0
 
-        // ANCOUNT = 1
-        header[6] = 0x00
+        // We only include the question section in this synthetic response.
+        // Reset section counts to match the payload we actually return.
+        header[4] = 0x00 // QDCOUNT = 1 (single-question queries only)
+        header[5] = 0x01
+        header[8] = 0x00 // NSCOUNT = 0
+        header[9] = 0x00
+        header[10] = 0x00 // ARCOUNT = 0 (drop EDNS/additional records)
+        header[11] = 0x00
+
+        val answer = when (queryType) {
+            0x0001 -> buildBlockedAnswerSection( // A
+                queryType = queryType,
+                queryClass = queryClass,
+                rdata = byteArrayOf(0x00, 0x00, 0x00, 0x00) // 0.0.0.0
+            )
+            0x001C -> buildBlockedAnswerSection( // AAAA
+                queryType = queryType,
+                queryClass = queryClass,
+                rdata = ByteArray(16) // ::
+            )
+            else -> null
+        }
+
+        if (answer == null) {
+            // Valid NOERROR/NODATA response. This avoids malformed answer-type
+            // mismatches that can cause resolvers to retry or bypass.
+            header[6] = 0x00 // ANCOUNT = 0
+            header[7] = 0x00
+            return header
+        }
+
+        // Valid answer response with TTL=0 so policy flips are not cached.
+        header[6] = 0x00 // ANCOUNT = 1
         header[7] = 0x01
-
-        // Append answer section: name-pointer + type A + class IN + TTL + rdlength + 0.0.0.0
-        // TTL is 0 so blocked answers are not cached after policy flips.
-        val answer = byteArrayOf(
-            0xC0.toByte(), 0x0C,       // name pointer to question
-            0x00, 0x01,                 // type A
-            0x00, 0x01,                 // class IN
-            0x00, 0x00, 0x00, 0x00,     // TTL = 0 seconds
-            0x00, 0x04,                 // RDLENGTH = 4
-            0x00, 0x00, 0x00, 0x00      // RDATA = 0.0.0.0
-        )
-
         val result = ByteArray(header.size + answer.size)
         System.arraycopy(header, 0, result, 0, header.size)
         System.arraycopy(answer, 0, result, header.size, answer.size)
         return result
+    }
+
+    private fun buildBlockedAnswerSection(
+        queryType: Int,
+        queryClass: Int,
+        rdata: ByteArray
+    ): ByteArray {
+        val rdLength = rdata.size
+        val answer = ByteBuffer.allocate(2 + 2 + 2 + 4 + 2 + rdLength)
+        answer.put(0xC0.toByte()) // name pointer to question
+        answer.put(0x0C)
+        answer.putShort(queryType.toShort())
+        answer.putShort(queryClass.toShort())
+        answer.putInt(0) // TTL = 0 seconds
+        answer.putShort(rdLength.toShort())
+        answer.put(rdata)
+        return answer.array()
     }
 
     private fun forwardToUpstreamDns(query: ByteArray): ByteArray {
@@ -424,7 +477,12 @@ class DnsPacketHandler(
     }
 
     @Synchronized
-    private fun appendQueryLog(domain: String, blocked: Boolean) {
+    private fun appendQueryLog(
+        domain: String,
+        blocked: Boolean,
+        reasonCode: String,
+        matchedRule: String?
+    ) {
         if (recentQueries.size >= MAX_QUERY_LOG_ENTRIES) {
             recentQueries.removeFirst()
         }
@@ -432,6 +490,8 @@ class DnsPacketHandler(
             QueryLogEntry(
                 domain = domain,
                 blocked = blocked,
+                reasonCode = reasonCode,
+                matchedRule = matchedRule?.trim()?.takeIf { it.isNotEmpty() },
                 timestampEpochMs = System.currentTimeMillis()
             )
         )

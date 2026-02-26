@@ -198,19 +198,29 @@ class DnsQueryLogEntry {
     required this.domain,
     required this.blocked,
     required this.timestamp,
+    this.reasonCode,
+    this.matchedRule,
   });
 
   final String domain;
   final bool blocked;
   final DateTime timestamp;
+  final String? reasonCode;
+  final String? matchedRule;
 
   factory DnsQueryLogEntry.fromMap(Map<dynamic, dynamic> map) {
     final domain = (map['domain'] as String?)?.trim();
+    final reasonCode = (map['reasonCode'] as String?)?.trim();
+    final matchedRule = (map['matchedRule'] as String?)?.trim();
     return DnsQueryLogEntry(
       domain: (domain == null || domain.isEmpty) ? '<unknown>' : domain,
       blocked: map['blocked'] == true,
       timestamp: VpnStatus._toDateTime(map['timestampEpochMs']) ??
           DateTime.fromMillisecondsSinceEpoch(0),
+      reasonCode:
+          (reasonCode == null || reasonCode.isEmpty) ? null : reasonCode,
+      matchedRule:
+          (matchedRule == null || matchedRule.isEmpty) ? null : matchedRule,
     );
   }
 }

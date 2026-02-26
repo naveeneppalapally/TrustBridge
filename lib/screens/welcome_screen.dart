@@ -15,7 +15,10 @@ class WelcomeScreen extends StatelessWidget {
     if (!context.mounted) {
       return;
     }
-    await Navigator.of(context).pushReplacementNamed(route);
+    await Navigator.of(context).pushNamedAndRemoveUntil(
+      route,
+      (_) => false,
+    );
   }
 
   @override
