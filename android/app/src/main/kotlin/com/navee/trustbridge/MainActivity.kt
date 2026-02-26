@@ -10,6 +10,8 @@ import android.os.Build
 import android.os.PowerManager
 import android.net.Uri
 import android.provider.Settings
+import android.content.pm.ApplicationInfo
+import android.content.pm.PackageManager
 import java.text.SimpleDateFormat
 import java.util.Date
 import java.util.Locale
@@ -382,6 +384,9 @@ class MainActivity : FlutterFragmentActivity() {
             "getCurrentForegroundPackage" -> {
                 result.success(getCurrentForegroundPackage())
             }
+            "getInstalledLaunchableApps" -> {
+                result.success(getInstalledLaunchableApps())
+            }
             else -> result.notImplemented()
         }
     }
@@ -531,7 +536,7 @@ class MainActivity : FlutterFragmentActivity() {
 
         return aggregates.values
             .sortedByDescending { (it["totalForegroundTimeMs"] as? Long) ?: 0L }
-            .take(30)
+            .take(250)
             .map { item ->
                 val dailyMap = item["dailyUsageMs"] as MutableMap<String, Long>
                 mapOf(
@@ -544,6 +549,69 @@ class MainActivity : FlutterFragmentActivity() {
                     "dailyUsageMs" to dailyMap
                 )
             }
+    }
+
+    private fun getInstalledLaunchableApps(): List<Map<String, Any>> {
+        val launcherIntent = Intent(Intent.ACTION_MAIN).apply {
+            addCategory(Intent.CATEGORY_LAUNCHER)
+        }
+        val resolveInfos = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
+            packageManager.queryIntentActivities(
+                launcherIntent,
+                PackageManager.ResolveInfoFlags.of(PackageManager.MATCH_ALL.toLong())
+            )
+        } else {
+            @Suppress("DEPRECATION")
+            packageManager.queryIntentActivities(launcherIntent, PackageManager.MATCH_ALL)
+        }
+
+        if (resolveInfos.isNullOrEmpty()) {
+            return emptyList()
+        }
+
+        val nowEpochMs = System.currentTimeMillis()
+        val seenPackages = mutableSetOf<String>()
+        val apps = mutableListOf<Map<String, Any>>()
+        resolveInfos.forEach { resolveInfo ->
+            val packageName = resolveInfo.activityInfo?.packageName?.trim().orEmpty()
+            if (packageName.isEmpty()) {
+                return@forEach
+            }
+            if (packageName == this.packageName) {
+                return@forEach
+            }
+            if (!seenPackages.add(packageName)) {
+                return@forEach
+            }
+
+            val appName = try {
+                resolveInfo.loadLabel(packageManager)?.toString()?.trim().orEmpty()
+            } catch (_: Exception) {
+                ""
+            }
+
+            val applicationInfo = try {
+                packageManager.getApplicationInfo(packageName, 0)
+            } catch (_: Exception) {
+                null
+            }
+            val isSystemApp = applicationInfo?.let {
+                it.flags and ApplicationInfo.FLAG_SYSTEM != 0
+            } ?: false
+
+            apps.add(
+                mapOf(
+                    "packageName" to packageName.lowercase(),
+                    "appName" to (if (appName.isEmpty()) packageName else appName),
+                    "isSystemApp" to isSystemApp,
+                    "isLaunchable" to true,
+                    "firstSeenAt" to nowEpochMs,
+                    "lastSeenAt" to nowEpochMs
+                )
+            )
+        }
+
+        return apps.sortedBy { (it["appName"] as? String)?.lowercase().orEmpty() }
     }
 
     private fun getCurrentForegroundPackage(): String? {

@@ -1,10 +1,14 @@
+import 'dart:async';
+
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:trustbridge_app/config/category_ids.dart';
 import 'package:trustbridge_app/config/feature_gates.dart';
+import 'package:trustbridge_app/config/rollout_flags.dart';
 import 'package:trustbridge_app/config/service_definitions.dart';
 import 'package:trustbridge_app/models/child_profile.dart';
 import 'package:trustbridge_app/models/content_categories.dart';
+import 'package:trustbridge_app/models/installed_app_info.dart';
 import 'package:trustbridge_app/models/policy.dart';
 import 'package:trustbridge_app/models/schedule.dart';
 import 'package:trustbridge_app/screens/upgrade_screen.dart';
@@ -25,6 +29,7 @@ class BlockCategoriesScreen extends StatefulWidget {
     this.vpnService,
     this.nextDnsApiService,
     this.parentIdOverride,
+    this.showAppBar = true,
   });
 
   final ChildProfile child;
@@ -33,6 +38,7 @@ class BlockCategoriesScreen extends StatefulWidget {
   final VpnServiceBase? vpnService;
   final NextDnsApiService? nextDnsApiService;
   final String? parentIdOverride;
+  final bool showAppBar;
 
   @override
   State<BlockCategoriesScreen> createState() => _BlockCategoriesScreenState();
@@ -80,9 +86,11 @@ class _BlockCategoriesScreenState extends State<BlockCategoriesScreen> {
   late Set<String> _initialBlockedCategories;
   late Set<String> _initialBlockedServices;
   late Set<String> _initialBlockedDomains;
+  late Set<String> _initialBlockedPackages;
   late Set<String> _blockedCategories;
   late Set<String> _blockedServices;
   late Set<String> _blockedDomains;
+  late Set<String> _blockedPackages;
   late Map<String, bool> _nextDnsServiceToggles;
   late bool _nextDnsSafeSearchEnabled;
   late bool _nextDnsYoutubeRestrictedModeEnabled;
@@ -91,7 +99,9 @@ class _BlockCategoriesScreenState extends State<BlockCategoriesScreen> {
 
   bool _isLoading = false;
   bool _isSyncingNextDns = false;
+  bool _isLoadingInstalledApps = false;
   String _query = '';
+  List<InstalledAppInfo> _installedApps = const <InstalledAppInfo>[];
 
   AuthService get _resolvedAuthService {
     _authService ??= widget.authService ?? AuthService();
@@ -123,11 +133,28 @@ class _BlockCategoriesScreenState extends State<BlockCategoriesScreen> {
 
   bool get _hasNextDnsProfile => _nextDnsProfileId != null;
 
+  String? get _resolvedParentId {
+    final override = widget.parentIdOverride?.trim();
+    if (override != null && override.isNotEmpty) {
+      return override;
+    }
+    try {
+      return _resolvedAuthService.currentUser?.uid;
+    } catch (_) {
+      // Widget tests may render this screen without Firebase initialization.
+      return null;
+    }
+  }
+
   bool get _hasChanges {
     return !_setEquals(_initialBlockedCategories, _blockedCategories) ||
         !_setEquals(_initialBlockedServices, _blockedServices) ||
-        !_setEquals(_initialBlockedDomains, _blockedDomains);
+        !_setEquals(_initialBlockedDomains, _blockedDomains) ||
+        !_setEquals(_initialBlockedPackages, _blockedPackages);
   }
+
+  bool get _appInventoryEnabled => RolloutFlags.appInventory;
+  bool get _packageBlockingEnabled => RolloutFlags.appBlockingPackages;
 
   int get _blockedKnownCategoryCount {
     final knownIds = ContentCategories.allCategories.map((c) => c.id).toSet();
@@ -148,6 +175,18 @@ class _BlockCategoriesScreenState extends State<BlockCategoriesScreen> {
       return _appsForCategory(category.id).any(
         (appKey) => _appLabel(appKey).toLowerCase().contains(normalized),
       );
+    }).toList(growable: false);
+  }
+
+  List<InstalledAppInfo> get _visibleInstalledApps {
+    final normalized = _query.trim().toLowerCase();
+    if (normalized.isEmpty) {
+      return _installedApps;
+    }
+    return _installedApps.where((app) {
+      final appName = app.appName.toLowerCase();
+      final packageName = app.packageName.toLowerCase();
+      return appName.contains(normalized) || packageName.contains(normalized);
     }).toList(growable: false);
   }
 
@@ -245,9 +284,14 @@ class _BlockCategoriesScreenState extends State<BlockCategoriesScreen> {
     _initialBlockedCategories = Set<String>.from(normalizedCategories);
     _initialBlockedServices = Set<String>.from(mergedServices);
     _initialBlockedDomains = Set<String>.from(customDomains);
+    _initialBlockedPackages = widget.child.policy.blockedPackages
+        .map((pkg) => pkg.trim().toLowerCase())
+        .where((pkg) => pkg.isNotEmpty)
+        .toSet();
     _blockedCategories = Set<String>.from(normalizedCategories);
     _blockedServices = Set<String>.from(mergedServices);
     _blockedDomains = Set<String>.from(customDomains);
+    _blockedPackages = Set<String>.from(_initialBlockedPackages);
     _expandedCategoryIds = <String>{
       ..._blockedCategories,
     };
@@ -268,6 +312,47 @@ class _BlockCategoriesScreenState extends State<BlockCategoriesScreen> {
     _nextDnsYoutubeRestrictedModeEnabled = false;
     _nextDnsBlockBypassEnabled = true;
     _hydrateNextDnsControls();
+    if (_appInventoryEnabled) {
+      unawaited(_loadInstalledApps());
+    }
+  }
+
+  Future<void> _loadInstalledApps() async {
+    if (!_appInventoryEnabled) {
+      return;
+    }
+    final parentId = _resolvedParentId?.trim();
+    if (parentId == null || parentId.isEmpty) {
+      return;
+    }
+    setState(() {
+      _isLoadingInstalledApps = true;
+    });
+    try {
+      final apps = await _resolvedFirestoreService.getChildInstalledAppsOnce(
+        parentId: parentId,
+        childId: widget.child.id,
+      );
+      if (!mounted) {
+        return;
+      }
+      setState(() {
+        _installedApps = apps;
+      });
+    } catch (_) {
+      if (!mounted) {
+        return;
+      }
+      setState(() {
+        _installedApps = const <InstalledAppInfo>[];
+      });
+    } finally {
+      if (mounted) {
+        setState(() {
+          _isLoadingInstalledApps = false;
+        });
+      }
+    }
   }
 
   bool _isCategoryBlocked(String categoryId) {
@@ -276,129 +361,409 @@ class _BlockCategoriesScreenState extends State<BlockCategoriesScreen> {
 
   @override
   Widget build(BuildContext context) {
-    return Scaffold(
-      appBar: AppBar(
-        title: const Text('Category Blocking'),
-      ),
-      bottomNavigationBar: _hasChanges ? _buildSaveBar() : null,
-      body: ListView(
-        padding: const EdgeInsets.fromLTRB(16, 12, 16, 24),
-        children: [
-          TextField(
-            key: const Key('block_categories_search'),
-            onChanged: (value) => setState(() => _query = value),
-            decoration: InputDecoration(
-              hintText: 'Search categories or apps',
-              prefixIcon: const Icon(Icons.search),
-              border: OutlineInputBorder(
-                borderRadius: BorderRadius.circular(14),
-              ),
+    final content = ListView(
+      padding: const EdgeInsets.fromLTRB(16, 12, 16, 24),
+      children: [
+        TextField(
+          key: const Key('block_categories_search'),
+          onChanged: (value) => setState(() => _query = value),
+          decoration: InputDecoration(
+            hintText: 'Search categories or apps',
+            prefixIcon: const Icon(Icons.search),
+            border: OutlineInputBorder(
+              borderRadius: BorderRadius.circular(14),
             ),
           ),
-          const SizedBox(height: 16),
-          if (_activeRestrictionNotice != null) ...[
-            Card(
-              color: Colors.orange.withValues(alpha: 0.12),
-              child: Padding(
-                padding: const EdgeInsets.all(12),
-                child: Row(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: [
-                    const Icon(Icons.schedule_rounded, color: Colors.orange),
-                    const SizedBox(width: 10),
-                    Expanded(
-                      child: Text(
-                        _activeRestrictionNotice!,
-                        style: TextStyle(
-                          color: Colors.orange.shade900,
-                          fontWeight: FontWeight.w600,
-                        ),
+        ),
+        const SizedBox(height: 16),
+        if (_activeRestrictionNotice != null) ...[
+          Card(
+            color: Colors.orange.withValues(alpha: 0.12),
+            child: Padding(
+              padding: const EdgeInsets.all(12),
+              child: Row(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  const Icon(Icons.schedule_rounded, color: Colors.orange),
+                  const SizedBox(width: 10),
+                  Expanded(
+                    child: Text(
+                      _activeRestrictionNotice!,
+                      style: TextStyle(
+                        color: Colors.orange.shade900,
+                        fontWeight: FontWeight.w600,
                       ),
                     ),
-                  ],
-                ),
+                  ),
+                ],
               ),
             ),
-            const SizedBox(height: 12),
-          ],
-          Text(
-            'APP CATEGORIES',
-            style: Theme.of(context).textTheme.titleSmall?.copyWith(
-                  fontWeight: FontWeight.w800,
-                  letterSpacing: 0.5,
-                ),
           ),
-          const SizedBox(height: 10),
+          const SizedBox(height: 12),
+        ],
+        Text(
+          'APP CATEGORIES',
+          style: Theme.of(context).textTheme.titleSmall?.copyWith(
+                fontWeight: FontWeight.w800,
+                letterSpacing: 0.5,
+              ),
+        ),
+        const SizedBox(height: 10),
+        Container(
+          padding: const EdgeInsets.all(12),
+          decoration: BoxDecoration(
+            color: Colors.blue.withValues(alpha: 0.08),
+            borderRadius: BorderRadius.circular(12),
+            border: Border.all(color: Colors.blue.withValues(alpha: 0.18)),
+          ),
+          child: Text(
+            'Categories are the main controls. Expand a category to manage '
+            'apps inside it. If the category is ON, every app inside is blocked.',
+            style: TextStyle(
+              color: Colors.blue.shade900,
+              fontWeight: FontWeight.w600,
+              height: 1.35,
+            ),
+          ),
+        ),
+        const SizedBox(height: 10),
+        if (_query.trim().isEmpty && _blockedKnownCategoryCount == 0) ...[
+          Card(
+            key: const Key('block_categories_empty_state'),
+            margin: const EdgeInsets.only(bottom: 12),
+            child: EmptyState(
+              icon: const Text('\u{1F6E1}'),
+              title: 'No categories blocked',
+              subtitle: 'Toggle categories to start filtering.',
+              actionLabel: 'Block First Category',
+              onAction: _isLoading
+                  ? null
+                  : () {
+                      setState(() {
+                        _blockedCategories
+                            .add(ContentCategories.allCategories.first.id);
+                      });
+                    },
+            ),
+          ),
+        ],
+        if (_visibleCategories.isEmpty)
+          Padding(
+            padding: const EdgeInsets.symmetric(vertical: 20),
+            child: Text(
+              'No categories match your search.',
+              style: Theme.of(context).textTheme.bodyMedium?.copyWith(
+                    color: Colors.grey[600],
+                  ),
+            ),
+          )
+        else
+          ..._visibleCategories.map((category) => _buildCategoryCard(category)),
+        const SizedBox(height: 18),
+        if (_appInventoryEnabled) ...[
+          _buildInstalledAppsSection(),
+          const SizedBox(height: 18),
+        ],
+        Text(
+          'CUSTOM BLOCKED SITES',
+          style: Theme.of(context).textTheme.titleSmall?.copyWith(
+                fontWeight: FontWeight.w800,
+                letterSpacing: 0.5,
+              ),
+        ),
+        const SizedBox(height: 10),
+        ..._buildCustomDomains(),
+        const SizedBox(height: 10),
+        _buildAddDomainButton(),
+        if (_hasNextDnsProfile) ...[
+          const SizedBox(height: 18),
+          _buildNextDnsCard(context),
+        ],
+      ],
+    );
+
+    if (widget.showAppBar) {
+      return Scaffold(
+        appBar: AppBar(
+          title: const Text('Category Blocking'),
+        ),
+        bottomNavigationBar: _hasChanges ? _buildSaveBar() : null,
+        body: content,
+      );
+    }
+
+    return Column(
+      children: [
+        Expanded(child: content),
+        if (_hasChanges) _buildSaveBar(),
+      ],
+    );
+  }
+
+  Widget _buildInstalledAppsSection() {
+    final apps = _visibleInstalledApps;
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        Row(
+          children: [
+            Expanded(
+              child: Text(
+                'INSTALLED APPS',
+                style: Theme.of(context).textTheme.titleSmall?.copyWith(
+                      fontWeight: FontWeight.w800,
+                      letterSpacing: 0.5,
+                    ),
+              ),
+            ),
+            IconButton(
+              tooltip: 'Refresh installed apps',
+              onPressed: _isLoadingInstalledApps
+                  ? null
+                  : () => unawaited(_loadInstalledApps()),
+              icon: const Icon(Icons.refresh_rounded),
+            ),
+          ],
+        ),
+        const SizedBox(height: 8),
+        Container(
+          padding: const EdgeInsets.all(12),
+          decoration: BoxDecoration(
+            color: Colors.purple.withValues(alpha: 0.07),
+            borderRadius: BorderRadius.circular(12),
+            border: Border.all(color: Colors.purple.withValues(alpha: 0.2)),
+          ),
+          child: const Text(
+            'These are apps detected on your child device. '
+            'Turning one ON blocks that app package even if it is not in a preset category.',
+          ),
+        ),
+        if (!_packageBlockingEnabled) ...[
+          const SizedBox(height: 8),
           Container(
             padding: const EdgeInsets.all(12),
             decoration: BoxDecoration(
-              color: Colors.blue.withValues(alpha: 0.08),
+              color: Colors.orange.withValues(alpha: 0.08),
               borderRadius: BorderRadius.circular(12),
-              border: Border.all(color: Colors.blue.withValues(alpha: 0.18)),
+              border: Border.all(color: Colors.orange.withValues(alpha: 0.18)),
             ),
-            child: Text(
-              'Categories are the main controls. Expand a category to manage '
-              'apps inside it. If the category is ON, every app inside is blocked.',
-              style: TextStyle(
-                color: Colors.blue.shade900,
-                fontWeight: FontWeight.w600,
-                height: 1.35,
-              ),
+            child: const Text(
+              'Package-level app blocking is temporarily disabled by rollout '
+              'flag. Inventory remains visible for verification.',
             ),
           ),
-          const SizedBox(height: 10),
-          if (_query.trim().isEmpty && _blockedKnownCategoryCount == 0) ...[
-            Card(
-              key: const Key('block_categories_empty_state'),
-              margin: const EdgeInsets.only(bottom: 12),
-              child: EmptyState(
-                icon: const Text('\u{1F6E1}'),
-                title: 'No categories blocked',
-                subtitle: 'Toggle categories to start filtering.',
-                actionLabel: 'Block First Category',
-                onAction: _isLoading
-                    ? null
-                    : () {
-                        setState(() {
-                          _blockedCategories
-                              .add(ContentCategories.allCategories.first.id);
-                        });
-                      },
-              ),
-            ),
-          ],
-          if (_visibleCategories.isEmpty)
-            Padding(
-              padding: const EdgeInsets.symmetric(vertical: 20),
-              child: Text(
-                'No categories match your search.',
-                style: Theme.of(context).textTheme.bodyMedium?.copyWith(
-                      color: Colors.grey[600],
-                    ),
-              ),
-            )
-          else
-            ..._visibleCategories
-                .map((category) => _buildCategoryCard(category)),
-          const SizedBox(height: 18),
-          Text(
-            'CUSTOM BLOCKED SITES',
-            style: Theme.of(context).textTheme.titleSmall?.copyWith(
-                  fontWeight: FontWeight.w800,
-                  letterSpacing: 0.5,
-                ),
-          ),
-          const SizedBox(height: 10),
-          ..._buildCustomDomains(),
-          const SizedBox(height: 10),
-          _buildAddDomainButton(),
-          if (_hasNextDnsProfile) ...[
-            const SizedBox(height: 18),
-            _buildNextDnsCard(context),
-          ],
         ],
+        if (_isLoadingInstalledApps) ...[
+          const SizedBox(height: 10),
+          const LinearProgressIndicator(minHeight: 3),
+        ],
+        const SizedBox(height: 10),
+        if (apps.isEmpty)
+          Card(
+            child: Padding(
+              padding: const EdgeInsets.all(14),
+              child: Text(
+                _isLoadingInstalledApps
+                    ? 'Loading app inventory from child device...'
+                    : 'No app inventory yet. Open TrustBridge on the child phone to sync installed apps.',
+                style: Theme.of(context).textTheme.bodyMedium,
+              ),
+            ),
+          )
+        else
+          ...apps.map(_buildInstalledAppRow),
+      ],
+    );
+  }
+
+  Widget _buildInstalledAppRow(InstalledAppInfo app) {
+    final packageName = app.packageName.trim().toLowerCase();
+    final explicitBlocked = _blockedPackages.contains(packageName);
+    final effectiveState = _effectiveInstalledPackageState(app);
+    final subtitlePieces = <String>[
+      if (app.isSystemApp) 'System',
+      packageName,
+      effectiveState.status,
+    ];
+    final subtitle = subtitlePieces.join(' • ');
+
+    return Card(
+      margin: const EdgeInsets.only(bottom: 8),
+      child: ListTile(
+        leading: Icon(
+          Icons.apps_rounded,
+          color: effectiveState.blocked ? Colors.red : Colors.blueGrey,
+        ),
+        title: Text(
+          app.appName.isEmpty ? packageName : app.appName,
+          maxLines: 1,
+          overflow: TextOverflow.ellipsis,
+        ),
+        subtitle: Text(
+          subtitle,
+          maxLines: 2,
+          overflow: TextOverflow.ellipsis,
+          style: TextStyle(color: effectiveState.color),
+        ),
+        trailing: Switch.adaptive(
+          value: explicitBlocked,
+          onChanged: _isLoading || !_packageBlockingEnabled
+              ? null
+              : (enabled) => _toggleInstalledPackageWithPin(
+                    packageName: packageName,
+                    enabled: enabled,
+                    appName: app.appName.isEmpty ? packageName : app.appName,
+                  ),
+        ),
       ),
     );
+  }
+
+  ({bool blocked, String status, Color color}) _effectiveInstalledPackageState(
+    InstalledAppInfo app,
+  ) {
+    final packageName = app.packageName.trim().toLowerCase();
+    String? matchedServiceId;
+    String? matchedCategoryId;
+    for (final service in ServiceDefinitions.all) {
+      final packages = service.androidPackages
+          .map((pkg) => pkg.trim().toLowerCase())
+          .toSet();
+      if (!packages.contains(packageName)) {
+        continue;
+      }
+      matchedServiceId = service.serviceId;
+      matchedCategoryId = service.categoryId;
+      break;
+    }
+
+    final serviceBlocked =
+        matchedServiceId != null && _isAppExplicitlyBlocked(matchedServiceId);
+    final categoryBlocked = matchedCategoryId != null &&
+        _isCategoryBlocked(normalizeCategoryId(matchedCategoryId));
+    final packageBlocked = _blockedPackages.contains(packageName);
+
+    final activeModeKey = _activeModeOverrideKeyForParent();
+    final modeOverride = !RolloutFlags.modeAppOverrides || activeModeKey == null
+        ? null
+        : widget.child.policy.modeOverrides[activeModeKey];
+    final forceBlockByMode = modeOverride?.forceBlockPackages
+            .map((pkg) => pkg.trim().toLowerCase())
+            .contains(packageName) ==
+        true;
+    final forceAllowByMode = modeOverride?.forceAllowPackages
+            .map((pkg) => pkg.trim().toLowerCase())
+            .contains(packageName) ==
+        true;
+
+    if (forceAllowByMode) {
+      return (
+        blocked: false,
+        status: 'Allowed by mode override',
+        color: Colors.green.shade700
+      );
+    }
+    if (forceBlockByMode) {
+      return (
+        blocked: true,
+        status: 'Blocked by mode',
+        color: Colors.deepOrange.shade700
+      );
+    }
+    if (categoryBlocked) {
+      return (
+        blocked: true,
+        status: 'Blocked by category',
+        color: Colors.red.shade700
+      );
+    }
+    if (serviceBlocked) {
+      return (
+        blocked: true,
+        status: 'Blocked by service toggle',
+        color: Colors.red.shade700
+      );
+    }
+    if (packageBlocked) {
+      return (
+        blocked: true,
+        status: 'Blocked individually',
+        color: Colors.red.shade700
+      );
+    }
+    return (blocked: false, status: 'Allowed', color: Colors.green.shade700);
+  }
+
+  String? _activeModeOverrideKeyForParent() {
+    final now = DateTime.now();
+    final pausedUntil = widget.child.pausedUntil;
+    if (pausedUntil != null && pausedUntil.isAfter(now)) {
+      return 'bedtime';
+    }
+    final activeManualMode = _activeManualModeAt(now);
+    final manualValue =
+        (activeManualMode?['mode'] as String?)?.trim().toLowerCase();
+    if (manualValue != null && manualValue.isNotEmpty) {
+      switch (manualValue) {
+        case 'bedtime':
+          return 'bedtime';
+        case 'homework':
+          return 'homework';
+        case 'free':
+          return 'free';
+        default:
+          return 'focus';
+      }
+    }
+    final activeSchedule = _activeScheduleAt(now);
+    if (activeSchedule == null) {
+      return null;
+    }
+    switch (activeSchedule.action) {
+      case ScheduleAction.blockAll:
+        return 'bedtime';
+      case ScheduleAction.blockDistracting:
+        return 'homework';
+      case ScheduleAction.allowAll:
+        return 'free';
+    }
+  }
+
+  Future<void> _toggleInstalledPackageWithPin({
+    required String packageName,
+    required bool enabled,
+    required String appName,
+  }) async {
+    if (!_packageBlockingEnabled) {
+      return;
+    }
+    if (!mounted) {
+      return;
+    }
+    final allowed = await requireParentPin(context);
+    if (!allowed || !mounted) {
+      return;
+    }
+    setState(() {
+      if (enabled) {
+        _blockedPackages.add(packageName);
+      } else {
+        _blockedPackages.remove(packageName);
+      }
+    });
+    unawaited(
+      _emitBlockAppsDebugEvent(
+        eventType: 'toggle_tapped',
+        payload: <String, dynamic>{
+          'targetType': 'package',
+          'targetId': packageName,
+          'targetLabel': appName,
+          'enabled': enabled,
+          'effectiveBlockedAfterTap': _blockedPackages.contains(packageName),
+        },
+      ),
+    );
+    await _autoSaveToggleChanges();
   }
 
   Widget _buildCategoryCard(ContentCategory category) {
@@ -806,10 +1171,25 @@ class _BlockCategoriesScreenState extends State<BlockCategoriesScreen> {
     setState(() {
       _blockedDomains.add(normalized);
     });
+    unawaited(
+      _emitBlockAppsDebugEvent(
+        eventType: 'toggle_tapped',
+        payload: <String, dynamic>{
+          'targetType': 'domain',
+          'targetId': normalized,
+          'enabled': true,
+        },
+      ),
+    );
+    await _autoSaveToggleChanges();
     await _syncNextDnsDomain(normalized, blocked: true);
   }
 
-  Future<void> _saveChanges() async {
+  Future<void> _saveChanges({
+    bool popOnSuccess = true,
+    bool showSuccessSnackBar = true,
+    String debugOrigin = 'manual_save',
+  }) async {
     if (!_hasChanges) {
       return;
     }
@@ -819,16 +1199,28 @@ class _BlockCategoriesScreenState extends State<BlockCategoriesScreen> {
     });
 
     try {
-      final parentId =
-          widget.parentIdOverride ?? _resolvedAuthService.currentUser?.uid;
+      final parentId = _resolvedParentId;
       if (parentId == null) {
         throw Exception('Not logged in');
       }
+      unawaited(
+        _emitBlockAppsDebugEvent(
+          eventType: 'policy_save_started',
+          payload: <String, dynamic>{
+            'origin': debugOrigin,
+            'blockedCategoriesCount': _blockedCategories.length,
+            'blockedServicesCount': _blockedServices.length,
+            'blockedDomainsCount': _blockedDomains.length,
+            'blockedPackagesCount': _blockedPackages.length,
+          },
+        ),
+      );
 
       final updatedPolicy = widget.child.policy.copyWith(
         blockedCategories: _orderedBlockedCategories(_blockedCategories),
         blockedServices: _orderedBlockedServices(_blockedServices),
         blockedDomains: _orderedBlockedDomains(_blockedDomains),
+        blockedPackages: _orderedBlockedPackages(_blockedPackages),
       );
       final updatedChild = widget.child.copyWith(
         policy: updatedPolicy,
@@ -849,26 +1241,69 @@ class _BlockCategoriesScreenState extends State<BlockCategoriesScreen> {
       // VPN sync is best-effort – don't let it block the save.
       await _syncVpnRulesIfRunning(updatedPolicy);
 
+      final effectiveVersion =
+          await _resolvedFirestoreService.getEffectivePolicyCurrentVersion(
+        parentId: parentId,
+        childId: widget.child.id,
+      );
+      unawaited(
+        _emitBlockAppsDebugEvent(
+          eventType: 'policy_save_succeeded',
+          payload: <String, dynamic>{
+            'origin': debugOrigin,
+            'blockedCategoriesCount': updatedPolicy.blockedCategories.length,
+            'blockedServicesCount': updatedPolicy.blockedServices.length,
+            'blockedDomainsCount': updatedPolicy.blockedDomains.length,
+            'blockedPackagesCount': updatedPolicy.blockedPackages.length,
+            if (effectiveVersion != null)
+              'effectivePolicyVersion': effectiveVersion,
+          },
+        ),
+      );
+      if (effectiveVersion != null) {
+        unawaited(
+          _emitBlockAppsDebugEvent(
+            eventType: 'effective_policy_version_observed',
+            payload: <String, dynamic>{
+              'origin': debugOrigin,
+              'version': effectiveVersion,
+            },
+          ),
+        );
+      }
+
       if (!mounted) {
         return;
       }
-      ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(
-          content: Text('Category blocks updated successfully!'),
-          backgroundColor: Colors.green,
-        ),
-      );
+      if (showSuccessSnackBar) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(
+            content: Text('Category blocks updated successfully!'),
+            backgroundColor: Colors.green,
+          ),
+        );
+      }
       final navigator = Navigator.of(context);
-      if (navigator.canPop()) {
+      if (popOnSuccess && navigator.canPop()) {
         navigator.pop(updatedChild);
       } else {
         setState(() {
           _initialBlockedCategories = Set<String>.from(_blockedCategories);
           _initialBlockedServices = Set<String>.from(_blockedServices);
           _initialBlockedDomains = Set<String>.from(_blockedDomains);
+          _initialBlockedPackages = Set<String>.from(_blockedPackages);
         });
       }
     } catch (error) {
+      unawaited(
+        _emitBlockAppsDebugEvent(
+          eventType: 'policy_save_failed',
+          payload: <String, dynamic>{
+            'origin': debugOrigin,
+            'error': '$error',
+          },
+        ),
+      );
       if (!mounted) {
         return;
       }
@@ -891,6 +1326,39 @@ class _BlockCategoriesScreenState extends State<BlockCategoriesScreen> {
           _isLoading = false;
         });
       }
+    }
+  }
+
+  Future<void> _autoSaveToggleChanges() async {
+    // Widget tests often render this screen without auth/Firebase.
+    if (_resolvedParentId == null || _isLoading || !_hasChanges) {
+      return;
+    }
+    await _saveChanges(
+      popOnSuccess: false,
+      showSuccessSnackBar: false,
+      debugOrigin: 'auto_toggle',
+    );
+  }
+
+  Future<void> _emitBlockAppsDebugEvent({
+    required String eventType,
+    Map<String, dynamic>? payload,
+  }) async {
+    final parentId = _resolvedParentId?.trim();
+    if (parentId == null || parentId.isEmpty) {
+      return;
+    }
+    try {
+      await _resolvedFirestoreService.appendParentDebugEvent(
+        parentId: parentId,
+        childId: widget.child.id,
+        eventType: eventType,
+        screen: 'block_apps',
+        payload: payload,
+      );
+    } catch (_) {
+      // Debug traces must not block user actions.
     }
   }
 
@@ -986,6 +1454,21 @@ class _BlockCategoriesScreenState extends State<BlockCategoriesScreen> {
         _blockedServices.remove(appKey.trim().toLowerCase());
       }
     });
+    unawaited(
+      _emitBlockAppsDebugEvent(
+        eventType: 'toggle_tapped',
+        payload: <String, dynamic>{
+          'targetType': 'service',
+          'targetId': appKey.trim().toLowerCase(),
+          'enabled': enabled,
+          if (categoryId != null) 'categoryId': categoryId,
+          'categoryBlockedAtTap': categoryBlocked,
+          'effectiveBlockedAfterTap':
+              _isAppEffectivelyBlocked(appKey, categoryId: categoryId),
+        },
+      ),
+    );
+    await _autoSaveToggleChanges();
     if (_nextDnsServiceToggles.containsKey(service.serviceId)) {
       await _toggleNextDnsService(service.serviceId, enabled);
     }
@@ -1051,6 +1534,18 @@ class _BlockCategoriesScreenState extends State<BlockCategoriesScreen> {
         removeCategoryAndAliases(_blockedCategories, normalizedCategoryId);
       }
     });
+    unawaited(
+      _emitBlockAppsDebugEvent(
+        eventType: 'toggle_tapped',
+        payload: <String, dynamic>{
+          'targetType': 'category',
+          'targetId': normalizeCategoryId(categoryId),
+          'enabled': enabled,
+          'effectiveBlockedAfterTap': _isCategoryBlocked(categoryId),
+        },
+      ),
+    );
+    await _autoSaveToggleChanges();
     await _syncNextDnsCategoryForLocalToggle(
       localCategoryId: normalizeCategoryId(categoryId),
       blocked: enabled,
@@ -1320,6 +1815,16 @@ class _BlockCategoriesScreenState extends State<BlockCategoriesScreen> {
     return ordered;
   }
 
+  List<String> _orderedBlockedPackages(Set<String> selectedPackages) {
+    final ordered = selectedPackages
+        .map((pkg) => pkg.trim().toLowerCase())
+        .where((pkg) => pkg.isNotEmpty)
+        .toSet()
+        .toList();
+    ordered.sort();
+    return ordered;
+  }
+
   bool _setEquals(Set<String> left, Set<String> right) {
     if (left.length != right.length) {
       return false;
@@ -1534,6 +2039,17 @@ class _BlockCategoriesScreenState extends State<BlockCategoriesScreen> {
     setState(() {
       _blockedDomains.remove(domain);
     });
+    unawaited(
+      _emitBlockAppsDebugEvent(
+        eventType: 'toggle_tapped',
+        payload: <String, dynamic>{
+          'targetType': 'domain',
+          'targetId': domain,
+          'enabled': false,
+        },
+      ),
+    );
+    await _autoSaveToggleChanges();
     await _syncNextDnsDomain(domain, blocked: false);
   }
 

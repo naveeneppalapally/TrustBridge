@@ -2,6 +2,7 @@ import 'package:firebase_auth/firebase_auth.dart';
 import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 
+import '../services/app_mode_service.dart';
 import '../services/heartbeat_service.dart';
 import '../services/pairing_service.dart';
 
@@ -32,6 +33,14 @@ class _ChildSetupScreenState extends State<ChildSetupScreen> {
   bool _isReady = false;
   String? _errorMessage;
   String? _lastAuthErrorCode;
+
+  Future<void> _goBackToRolePicker() async {
+    await AppModeService().clearMode();
+    if (!mounted) {
+      return;
+    }
+    Navigator.of(context).pushNamedAndRemoveUntil('/welcome', (_) => false);
+  }
 
   Future<void> _openParentSignIn() async {
     if (_isConnecting) {
@@ -264,6 +273,14 @@ class _ChildSetupScreenState extends State<ChildSetupScreen> {
         child: ListView(
           padding: const EdgeInsets.fromLTRB(24, 28, 24, 24),
           children: [
+            Align(
+              alignment: Alignment.centerLeft,
+              child: IconButton(
+                onPressed: _isConnecting ? null : _goBackToRolePicker,
+                icon: const Icon(Icons.arrow_back),
+                tooltip: 'Back',
+              ),
+            ),
             const SizedBox(height: 28),
             const Icon(
               Icons.shield_outlined,

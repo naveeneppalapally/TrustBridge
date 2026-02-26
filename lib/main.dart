@@ -56,9 +56,7 @@ Future<void> main() async {
     debugPrint('[Startup] Firebase initialization timed out/skipped: $error');
   }
   try {
-    await AppModeService()
-        .primeCache()
-        .timeout(const Duration(seconds: 3));
+    await AppModeService().primeCache().timeout(const Duration(seconds: 3));
   } catch (error) {
     debugPrint('[Startup] App mode cache prime timed out/skipped: $error');
   }
@@ -196,6 +194,7 @@ class _MyAppState extends State<MyApp> {
       ],
       child: MaterialApp(
         navigatorKey: NotificationService.navigatorKey,
+        debugShowCheckedModeBanner: false,
         showPerformanceOverlay: kDebugMode &&
             const bool.fromEnvironment(
               'SHOW_PERF_OVERLAY',
