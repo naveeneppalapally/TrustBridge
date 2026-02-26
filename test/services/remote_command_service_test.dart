@@ -51,6 +51,7 @@ void main() {
 
       await commandRef.set(<String, dynamic>{
         'commandId': 'command-1',
+        'parentId': 'parent-1',
         'command': 'restartVpn',
         'status': 'pending',
         'attempts': 0,
@@ -62,6 +63,9 @@ void main() {
       expect(updated.data()?['status'], 'executed');
       expect(updated.data()?['attempts'], 1);
       expect(updated.data()?['executedAt'], isNotNull);
+      expect(vpnService.lastRestartParentId, 'parent-1');
+      expect(vpnService.lastRestartChildId, 'child-1');
+      expect(vpnService.lastRestartUsedPersistedRules, isTrue);
     });
 
     test('processPendingCommands clears pairing and stops protection',
@@ -74,6 +78,7 @@ void main() {
 
       await commandRef.set(<String, dynamic>{
         'commandId': 'command-clear',
+        'parentId': 'parent-1',
         'command': RemoteCommandService.commandClearPairingAndStopProtection,
         'childId': 'child-1',
         'reason': 'childProfileDeleted',
@@ -128,6 +133,9 @@ class _FakeVpnService implements VpnServiceBase {
   int restartVpnCalls = 0;
   int stopVpnCalls = 0;
   int updateFilterRulesCalls = 0;
+  String? lastRestartParentId;
+  String? lastRestartChildId;
+  bool lastRestartUsedPersistedRules = false;
 
   @override
   Future<bool> restartVpn({
@@ -137,8 +145,12 @@ class _FakeVpnService implements VpnServiceBase {
     String? parentId,
     String? childId,
     String? upstreamDns,
+    bool usePersistedRules = false,
   }) async {
     restartVpnCalls += 1;
+    lastRestartParentId = parentId;
+    lastRestartChildId = childId;
+    lastRestartUsedPersistedRules = usePersistedRules;
     return shouldRestartSucceed;
   }
 

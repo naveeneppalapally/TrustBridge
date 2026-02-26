@@ -1,5 +1,6 @@
 import 'dart:async';
 
+import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:trustbridge_app/config/category_ids.dart';
@@ -16,6 +17,8 @@ import 'package:trustbridge_app/services/auth_service.dart';
 import 'package:trustbridge_app/services/feature_gate_service.dart';
 import 'package:trustbridge_app/services/firestore_service.dart';
 import 'package:trustbridge_app/services/nextdns_api_service.dart';
+import 'package:trustbridge_app/services/policy_apply_status.dart';
+import 'package:trustbridge_app/services/remote_command_service.dart';
 import 'package:trustbridge_app/services/vpn_service.dart';
 import 'package:trustbridge_app/utils/parent_pin_gate.dart';
 import 'package:trustbridge_app/widgets/empty_state.dart';
@@ -97,9 +100,23 @@ class _BlockCategoriesScreenState extends State<BlockCategoriesScreen> {
   late bool _nextDnsBlockBypassEnabled;
   late Set<String> _expandedCategoryIds;
 
+  StreamSubscription<DocumentSnapshot<Map<String, dynamic>>>?
+      _effectivePolicySubscription;
+  StreamSubscription<QuerySnapshot<Map<String, dynamic>>>?
+      _policyApplyAckSubscription;
+  StreamSubscription<DocumentSnapshot<Map<String, dynamic>>>?
+      _vpnDiagnosticsSubscription;
+
+  int? _latestEffectivePolicyVersion;
+  DateTime? _latestEffectivePolicyUpdatedAt;
+  _PolicyApplyAckSnapshot? _latestPolicyApplyAck;
+  _VpnDiagnosticsSnapshot? _latestVpnDiagnostics;
+  DateTime? _lastToggleTapAt;
+
   bool _isLoading = false;
   bool _isSyncingNextDns = false;
   bool _isLoadingInstalledApps = false;
+  bool _autoSaveQueued = false;
   String _query = '';
   List<InstalledAppInfo> _installedApps = const <InstalledAppInfo>[];
 
@@ -261,13 +278,49 @@ class _BlockCategoriesScreenState extends State<BlockCategoriesScreen> {
   @override
   void initState() {
     super.initState();
+    _hydrateStateFromChild(widget.child);
+    if (_appInventoryEnabled) {
+      unawaited(_loadInstalledApps());
+    }
+    _startPolicyTelemetryListeners();
+  }
+
+  @override
+  void didUpdateWidget(covariant BlockCategoriesScreen oldWidget) {
+    super.didUpdateWidget(oldWidget);
+    final parentChanged =
+        oldWidget.parentIdOverride?.trim() != widget.parentIdOverride?.trim();
+    final childChanged = oldWidget.child.id != widget.child.id;
+    if (childChanged) {
+      _hydrateStateFromChild(widget.child);
+      if (_appInventoryEnabled) {
+        unawaited(_loadInstalledApps());
+      }
+    }
+    if (childChanged || parentChanged) {
+      _startPolicyTelemetryListeners();
+    }
+  }
+
+  @override
+  void dispose() {
+    _effectivePolicySubscription?.cancel();
+    _effectivePolicySubscription = null;
+    _policyApplyAckSubscription?.cancel();
+    _policyApplyAckSubscription = null;
+    _vpnDiagnosticsSubscription?.cancel();
+    _vpnDiagnosticsSubscription = null;
+    super.dispose();
+  }
+
+  void _hydrateStateFromChild(ChildProfile child) {
     final normalizedCategories =
-        normalizeCategoryIds(widget.child.policy.blockedCategories).toSet();
-    final normalizedServices = widget.child.policy.blockedServices
+        normalizeCategoryIds(child.policy.blockedCategories).toSet();
+    final normalizedServices = child.policy.blockedServices
         .map((serviceId) => serviceId.trim().toLowerCase())
         .where((serviceId) => serviceId.isNotEmpty)
         .toSet();
-    final normalizedDomains = widget.child.policy.blockedDomains
+    final normalizedDomains = child.policy.blockedDomains
         .map(_normalizeDomain)
         .where((domain) => domain.isNotEmpty)
         .toSet();
@@ -284,7 +337,7 @@ class _BlockCategoriesScreenState extends State<BlockCategoriesScreen> {
     _initialBlockedCategories = Set<String>.from(normalizedCategories);
     _initialBlockedServices = Set<String>.from(mergedServices);
     _initialBlockedDomains = Set<String>.from(customDomains);
-    _initialBlockedPackages = widget.child.policy.blockedPackages
+    _initialBlockedPackages = child.policy.blockedPackages
         .map((pkg) => pkg.trim().toLowerCase())
         .where((pkg) => pkg.isNotEmpty)
         .toSet();
@@ -308,13 +361,10 @@ class _BlockCategoriesScreenState extends State<BlockCategoriesScreen> {
     _nextDnsServiceToggles = <String, bool>{
       for (final id in _nextDnsServiceIds) id: false,
     };
-    _nextDnsSafeSearchEnabled = widget.child.policy.safeSearchEnabled;
+    _nextDnsSafeSearchEnabled = child.policy.safeSearchEnabled;
     _nextDnsYoutubeRestrictedModeEnabled = false;
     _nextDnsBlockBypassEnabled = true;
     _hydrateNextDnsControls();
-    if (_appInventoryEnabled) {
-      unawaited(_loadInstalledApps());
-    }
   }
 
   Future<void> _loadInstalledApps() async {
@@ -359,6 +409,400 @@ class _BlockCategoriesScreenState extends State<BlockCategoriesScreen> {
     return _blockedCategories.contains(normalizeCategoryId(categoryId));
   }
 
+  void _startPolicyTelemetryListeners() {
+    _effectivePolicySubscription?.cancel();
+    _effectivePolicySubscription = null;
+    _policyApplyAckSubscription?.cancel();
+    _policyApplyAckSubscription = null;
+    _vpnDiagnosticsSubscription?.cancel();
+    _vpnDiagnosticsSubscription = null;
+
+    final parentId = _resolvedParentId?.trim();
+    final childId = widget.child.id.trim();
+    if (parentId == null || parentId.isEmpty || childId.isEmpty) {
+      if (mounted) {
+        setState(() {
+          _latestEffectivePolicyVersion = null;
+          _latestEffectivePolicyUpdatedAt = null;
+          _latestPolicyApplyAck = null;
+          _latestVpnDiagnostics = null;
+        });
+      }
+      return;
+    }
+
+    final childRef =
+        _resolvedFirestoreService.firestore.collection('children').doc(childId);
+
+    _effectivePolicySubscription = childRef
+        .collection('effective_policy')
+        .doc('current')
+        .snapshots()
+        .listen((snapshot) {
+      if (!mounted) {
+        return;
+      }
+      final data = snapshot.data();
+      final nextVersion = data == null ? null : _dynamicInt(data['version']);
+      final nextUpdatedAt =
+          data == null ? null : _dynamicDateTime(data['updatedAt']);
+      if (_latestEffectivePolicyVersion == nextVersion &&
+          _latestEffectivePolicyUpdatedAt == nextUpdatedAt) {
+        return;
+      }
+      setState(() {
+        _latestEffectivePolicyVersion = nextVersion;
+        _latestEffectivePolicyUpdatedAt = nextUpdatedAt;
+      });
+    }, onError: (_, __) {});
+
+    _policyApplyAckSubscription =
+        childRef.collection('policy_apply_acks').snapshots().listen((snapshot) {
+      if (!mounted) {
+        return;
+      }
+      _PolicyApplyAckSnapshot? newest;
+      for (final doc in snapshot.docs) {
+        final candidate = _PolicyApplyAckSnapshot.fromMap(doc.id, doc.data());
+        if (candidate == null) {
+          continue;
+        }
+        if (newest == null || candidate.sortTime.isAfter(newest.sortTime)) {
+          newest = candidate;
+        }
+      }
+      if (_latestPolicyApplyAck == newest) {
+        return;
+      }
+      setState(() {
+        _latestPolicyApplyAck = newest;
+      });
+    }, onError: (_, __) {});
+
+    _vpnDiagnosticsSubscription = childRef
+        .collection('vpn_diagnostics')
+        .doc('current')
+        .snapshots()
+        .listen((snapshot) {
+      if (!mounted) {
+        return;
+      }
+      final nextSnapshot = _VpnDiagnosticsSnapshot.fromMap(
+          snapshot.data() ?? const <String, dynamic>{});
+      if (_latestVpnDiagnostics == nextSnapshot) {
+        return;
+      }
+      setState(() {
+        _latestVpnDiagnostics = nextSnapshot;
+      });
+    }, onError: (_, __) {});
+  }
+
+  Widget _buildPolicyApplyStatusCard(BuildContext context) {
+    final evaluation = PolicyApplyStatusEvaluator.evaluate(
+      effectiveVersion: _latestEffectivePolicyVersion,
+      effectiveUpdatedAt: _latestEffectivePolicyUpdatedAt,
+      appliedVersion: _latestPolicyApplyAck?.appliedVersion,
+      ackUpdatedAt: _latestPolicyApplyAck?.updatedAt,
+      applyStatus: _latestPolicyApplyAck?.applyStatus,
+    );
+    final indicatorColor = switch (evaluation.indicator) {
+      PolicyApplyIndicator.applied => Colors.green.shade700,
+      PolicyApplyIndicator.pending => Colors.orange.shade700,
+      PolicyApplyIndicator.stale => Colors.red.shade700,
+      PolicyApplyIndicator.unknown => Colors.blueGrey,
+    };
+    final indicatorLabel = switch (evaluation.indicator) {
+      PolicyApplyIndicator.applied => 'Applied',
+      PolicyApplyIndicator.pending => 'Pending',
+      PolicyApplyIndicator.stale => 'Stale',
+      PolicyApplyIndicator.unknown => 'Unknown',
+    };
+
+    final lag = evaluation.versionLag;
+    final lagLabel = lag == null ? '—' : '$lag';
+    final applyDelayLabel = _formatDurationCompact(evaluation.applyDelay);
+    final freshnessLabel = switch (evaluation.ackAge) {
+      null => 'No recent ack',
+      final Duration age when age > PolicyApplyStatusEvaluator.staleAckWindow =>
+        'Stale (${_formatDurationCompact(age)} ago)',
+      final Duration age => 'Fresh (${_formatDurationCompact(age)} ago)',
+    };
+
+    return Card(
+      key: const Key('block_categories_policy_sync_card'),
+      child: Padding(
+        padding: const EdgeInsets.all(12),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Row(
+              children: [
+                const Expanded(
+                  child: Text(
+                    'POLICY APPLY STATUS',
+                    style: TextStyle(
+                      fontWeight: FontWeight.w800,
+                      letterSpacing: 0.5,
+                    ),
+                  ),
+                ),
+                Container(
+                  key: const Key('block_categories_policy_sync_indicator'),
+                  padding:
+                      const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
+                  decoration: BoxDecoration(
+                    color: indicatorColor.withValues(alpha: 0.14),
+                    borderRadius: BorderRadius.circular(999),
+                  ),
+                  child: Text(
+                    indicatorLabel,
+                    style: TextStyle(
+                      color: indicatorColor,
+                      fontWeight: FontWeight.w700,
+                      fontSize: 11,
+                    ),
+                  ),
+                ),
+              ],
+            ),
+            const SizedBox(height: 8),
+            _buildTelemetryLine(
+              label: 'Effective policy version',
+              value: _latestEffectivePolicyVersion?.toString() ?? '—',
+            ),
+            _buildTelemetryLine(
+              label: 'Child applied version',
+              value: _latestPolicyApplyAck?.appliedVersion?.toString() ?? '—',
+            ),
+            _buildTelemetryLine(label: 'Version lag', value: lagLabel),
+            _buildTelemetryLine(
+                label: 'Apply freshness', value: freshnessLabel),
+            _buildTelemetryLine(label: 'Apply delay', value: applyDelayLabel),
+            if (_latestPolicyApplyAck?.deviceId != null)
+              _buildTelemetryLine(
+                label: 'Ack device',
+                value: _latestPolicyApplyAck!.deviceId,
+              ),
+            if ((_latestPolicyApplyAck?.applyStatus ?? '').isNotEmpty)
+              _buildTelemetryLine(
+                label: 'Child apply status',
+                value: _latestPolicyApplyAck!.applyStatus,
+              ),
+            if (_lastToggleTapAt != null)
+              _buildTelemetryLine(
+                label: 'Last parent toggle',
+                value:
+                    '${_formatDurationCompact(DateTime.now().difference(_lastToggleTapAt!))} ago',
+              ),
+            if (evaluation.indicator == PolicyApplyIndicator.pending)
+              Padding(
+                padding: const EdgeInsets.only(top: 8),
+                child: Text(
+                  'Child has not applied the latest effective policy yet. Keep this screen open until versions match.',
+                  style: TextStyle(
+                    color: Colors.orange.shade900,
+                    fontWeight: FontWeight.w600,
+                  ),
+                ),
+              ),
+            if (evaluation.indicator == PolicyApplyIndicator.stale)
+              Padding(
+                padding: const EdgeInsets.only(top: 8),
+                child: Text(
+                  evaluation.ackHasFailureStatus
+                      ? 'Child reported an apply failure. Check child diagnostics and retry once online.'
+                      : 'Child apply telemetry is stale. Open the child app to refresh policy status.',
+                  style: TextStyle(
+                    color: Colors.red.shade900,
+                    fontWeight: FontWeight.w600,
+                  ),
+                ),
+              ),
+          ],
+        ),
+      ),
+    );
+  }
+
+  Widget _buildWebValidationCard(BuildContext context) {
+    final diagnostics = _latestVpnDiagnostics;
+    final now = DateTime.now();
+    final lastBlocked = diagnostics?.lastBlockedDnsQuery;
+    final diagnosticsAge = diagnostics?.updatedAt == null
+        ? null
+        : now.difference(diagnostics!.updatedAt!);
+    final diagnosticsStale =
+        diagnosticsAge != null && diagnosticsAge > const Duration(minutes: 3);
+    final recentParentToggle = _lastToggleTapAt != null &&
+        now.difference(_lastToggleTapAt!) <= const Duration(minutes: 10);
+    final diagnosticsBehindEffectivePolicy = _latestEffectivePolicyUpdatedAt != null &&
+        (diagnostics?.updatedAt == null ||
+            diagnostics!.updatedAt!.isBefore(
+              _latestEffectivePolicyUpdatedAt!
+                  .subtract(const Duration(seconds: 5)),
+            ));
+    final shouldShowDiagnosticsWarning =
+        diagnosticsBehindEffectivePolicy || (diagnosticsStale && recentParentToggle);
+    final blockedAge =
+        lastBlocked == null ? null : now.difference(lastBlocked.timestamp);
+    final blockedStale =
+        blockedAge != null && blockedAge > const Duration(minutes: 3);
+    final cacheBusterDomain = (lastBlocked?.domain ?? 'facebook.com').trim();
+    final cacheBusterUrl =
+        'https://$cacheBusterDomain/?tb=${DateTime.now().millisecondsSinceEpoch}';
+
+    return Card(
+      key: const Key('block_categories_web_validation_card'),
+      child: Padding(
+        padding: const EdgeInsets.all(12),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Text(
+              'WEB VALIDATION HINTS',
+              style: Theme.of(context).textTheme.titleSmall?.copyWith(
+                    fontWeight: FontWeight.w800,
+                    letterSpacing: 0.5,
+                  ),
+            ),
+            const SizedBox(height: 6),
+            const Text(
+              'TrustBridge website blocking is DNS-only. Browser cache and Secure DNS (DoH) can make unblock checks look inconsistent.',
+            ),
+            const SizedBox(height: 8),
+            _buildTelemetryLine(
+              label: 'Diagnostics updated',
+              value: diagnostics?.updatedAt == null
+                  ? 'No diagnostics document'
+                  : '${_formatDurationCompact(diagnosticsAge)} ago',
+            ),
+            _buildTelemetryLine(
+              label: 'Last blocked DNS',
+              value: lastBlocked == null
+                  ? 'No blocked DNS event captured'
+                  : '${lastBlocked.domain} (${_formatDiagReason(lastBlocked.reasonCode)})',
+            ),
+            if (lastBlocked != null)
+              _buildTelemetryLine(
+                label: 'Blocked evidence',
+                value: blockedStale
+                    ? 'Stale (${_formatDurationCompact(blockedAge)} ago)'
+                    : 'Fresh (${_formatDurationCompact(blockedAge)} ago)',
+              ),
+            if ((lastBlocked?.matchedRule ?? '').isNotEmpty)
+              _buildTelemetryLine(
+                label: 'Matched rule',
+                value: lastBlocked!.matchedRule!,
+              ),
+            if ((diagnostics?.bypassReasonCode ?? '').isNotEmpty)
+              _buildTelemetryLine(
+                label: 'Bypass signal',
+                value:
+                    '${diagnostics!.likelyDnsBypass ? 'Likely' : 'Not likely'} (${_formatDiagReason(diagnostics.bypassReasonCode)})',
+              ),
+            const SizedBox(height: 8),
+            const Text(
+              'Website unblock check: open a fresh tab and test with a cache-buster URL.',
+              style: TextStyle(fontWeight: FontWeight.w600),
+            ),
+            const SizedBox(height: 2),
+            SelectableText(
+              cacheBusterUrl,
+              style: TextStyle(color: Colors.blue.shade700),
+            ),
+            if (shouldShowDiagnosticsWarning)
+              Padding(
+                padding: const EdgeInsets.only(top: 8),
+                child: Text(
+                  diagnosticsBehindEffectivePolicy
+                      ? 'Child diagnostics are behind the latest policy update. Keep TrustBridge open on child device while re-testing.'
+                      : 'Child diagnostics are stale. Keep TrustBridge open on child device while re-testing.',
+                  style: TextStyle(
+                    color: Colors.orange.shade900,
+                    fontWeight: FontWeight.w600,
+                  ),
+                ),
+              ),
+          ],
+        ),
+      ),
+    );
+  }
+
+  Widget _buildTelemetryLine({
+    required String label,
+    required String value,
+  }) {
+    return Padding(
+      padding: const EdgeInsets.only(bottom: 3),
+      child: Text(
+        '$label: $value',
+        style: const TextStyle(
+          fontSize: 12,
+          fontWeight: FontWeight.w600,
+        ),
+      ),
+    );
+  }
+
+  String _formatDurationCompact(Duration? value) {
+    if (value == null) {
+      return '—';
+    }
+    if (value.inSeconds < 60) {
+      return '${value.inSeconds}s';
+    }
+    if (value.inMinutes < 60) {
+      return '${value.inMinutes}m';
+    }
+    return '${value.inHours}h';
+  }
+
+  String _formatDiagReason(String? value) {
+    final normalized = value?.trim();
+    if (normalized == null || normalized.isEmpty) {
+      return 'unknown';
+    }
+    return normalized.replaceAll('_', ' ');
+  }
+
+  DateTime? _dynamicDateTime(Object? rawValue) {
+    if (rawValue is Timestamp) {
+      return rawValue.toDate();
+    }
+    if (rawValue is DateTime) {
+      return rawValue;
+    }
+    if (rawValue is int && rawValue > 0) {
+      return DateTime.fromMillisecondsSinceEpoch(rawValue);
+    }
+    if (rawValue is num && rawValue.toInt() > 0) {
+      return DateTime.fromMillisecondsSinceEpoch(rawValue.toInt());
+    }
+    if (rawValue is String) {
+      final numeric = int.tryParse(rawValue.trim());
+      if (numeric != null && numeric > 0) {
+        return DateTime.fromMillisecondsSinceEpoch(numeric);
+      }
+      return DateTime.tryParse(rawValue.trim());
+    }
+    return null;
+  }
+
+  int? _dynamicInt(Object? rawValue) {
+    if (rawValue is int) {
+      return rawValue;
+    }
+    if (rawValue is num) {
+      return rawValue.toInt();
+    }
+    if (rawValue is String) {
+      return int.tryParse(rawValue.trim());
+    }
+    return null;
+  }
+
   @override
   Widget build(BuildContext context) {
     final content = ListView(
@@ -399,6 +843,14 @@ class _BlockCategoriesScreenState extends State<BlockCategoriesScreen> {
               ),
             ),
           ),
+          const SizedBox(height: 12),
+        ],
+        if (RolloutFlags.parentPolicyApplyStatus) ...[
+          _buildPolicyApplyStatusCard(context),
+          const SizedBox(height: 12),
+        ],
+        if (RolloutFlags.parentWebValidationHints) ...[
+          _buildWebValidationCard(context),
           const SizedBox(height: 12),
         ],
         Text(
@@ -588,6 +1040,7 @@ class _BlockCategoriesScreenState extends State<BlockCategoriesScreen> {
     final subtitle = subtitlePieces.join(' • ');
 
     return Card(
+      key: Key('installed_app_row_$packageName'),
       margin: const EdgeInsets.only(bottom: 8),
       child: ListTile(
         leading: Icon(
@@ -606,6 +1059,7 @@ class _BlockCategoriesScreenState extends State<BlockCategoriesScreen> {
           style: TextStyle(color: effectiveState.color),
         ),
         trailing: Switch.adaptive(
+          key: Key('installed_app_switch_$packageName'),
           value: explicitBlocked,
           onChanged: _isLoading || !_packageBlockingEnabled
               ? null
@@ -750,6 +1204,7 @@ class _BlockCategoriesScreenState extends State<BlockCategoriesScreen> {
       } else {
         _blockedPackages.remove(packageName);
       }
+      _lastToggleTapAt = DateTime.now();
     });
     unawaited(
       _emitBlockAppsDebugEvent(
@@ -783,6 +1238,7 @@ class _BlockCategoriesScreenState extends State<BlockCategoriesScreen> {
         .length;
 
     return Card(
+      key: Key('block_category_card_${category.id}'),
       margin: const EdgeInsets.only(bottom: 10),
       shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(14)),
       child: Column(
@@ -842,6 +1298,7 @@ class _BlockCategoriesScreenState extends State<BlockCategoriesScreen> {
                   ),
                 ),
                 Switch(
+                  key: Key('block_category_switch_${category.id}'),
                   value: isBlocked,
                   onChanged: _isLoading || _isSyncingNextDns
                       ? null
@@ -954,6 +1411,7 @@ class _BlockCategoriesScreenState extends State<BlockCategoriesScreen> {
         effectiveBlocked ? Colors.red.shade700 : Colors.green.shade700;
 
     return Container(
+      key: Key('block_app_row_${categoryId}_$appKey'),
       margin: const EdgeInsets.only(bottom: 8),
       padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 10),
       decoration: BoxDecoration(
@@ -1001,6 +1459,7 @@ class _BlockCategoriesScreenState extends State<BlockCategoriesScreen> {
             ),
           ),
           Switch(
+            key: Key('block_app_switch_${categoryId}_$appKey'),
             value: explicitBlocked,
             onChanged: _isLoading || _isSyncingNextDns
                 ? null
@@ -1170,6 +1629,7 @@ class _BlockCategoriesScreenState extends State<BlockCategoriesScreen> {
 
     setState(() {
       _blockedDomains.add(normalized);
+      _lastToggleTapAt = DateTime.now();
     });
     unawaited(
       _emitBlockAppsDebugEvent(
@@ -1241,11 +1701,31 @@ class _BlockCategoriesScreenState extends State<BlockCategoriesScreen> {
       // VPN sync is best-effort – don't let it block the save.
       await _syncVpnRulesIfRunning(updatedPolicy);
 
+      // Trigger remote command to child devices for immediate policy sync.
+      // This ensures the child receives policy updates in real-time,
+      // even if Firestore listeners are not working in background.
+      if (RolloutFlags.policySyncTriggerRemoteCommand &&
+          widget.child.deviceIds.isNotEmpty) {
+        final remoteCommandService = RemoteCommandService();
+        for (final deviceId in widget.child.deviceIds) {
+          unawaited(
+            remoteCommandService.sendRestartVpnCommand(deviceId).catchError(
+                  (_) => '',
+                ),
+          );
+        }
+      }
+
       final effectiveVersion =
           await _resolvedFirestoreService.getEffectivePolicyCurrentVersion(
         parentId: parentId,
         childId: widget.child.id,
       );
+      if (mounted && effectiveVersion != null) {
+        setState(() {
+          _latestEffectivePolicyVersion = effectiveVersion;
+        });
+      }
       unawaited(
         _emitBlockAppsDebugEvent(
           eventType: 'policy_save_succeeded',
@@ -1326,12 +1806,27 @@ class _BlockCategoriesScreenState extends State<BlockCategoriesScreen> {
           _isLoading = false;
         });
       }
+      final shouldFlushQueuedAutoSave = _autoSaveQueued && _hasChanges;
+      _autoSaveQueued = false;
+      if (shouldFlushQueuedAutoSave) {
+        unawaited(
+          _saveChanges(
+            popOnSuccess: false,
+            showSuccessSnackBar: false,
+            debugOrigin: 'auto_toggle_flush',
+          ),
+        );
+      }
     }
   }
 
   Future<void> _autoSaveToggleChanges() async {
     // Widget tests often render this screen without auth/Firebase.
-    if (_resolvedParentId == null || _isLoading || !_hasChanges) {
+    if (_resolvedParentId == null || !_hasChanges) {
+      return;
+    }
+    if (_isLoading) {
+      _autoSaveQueued = true;
       return;
     }
     await _saveChanges(
@@ -1453,6 +1948,7 @@ class _BlockCategoriesScreenState extends State<BlockCategoriesScreen> {
       } else {
         _blockedServices.remove(appKey.trim().toLowerCase());
       }
+      _lastToggleTapAt = DateTime.now();
     });
     unawaited(
       _emitBlockAppsDebugEvent(
@@ -1460,6 +1956,7 @@ class _BlockCategoriesScreenState extends State<BlockCategoriesScreen> {
         payload: <String, dynamic>{
           'targetType': 'service',
           'targetId': appKey.trim().toLowerCase(),
+          'targetLabel': _appLabel(appKey),
           'enabled': enabled,
           if (categoryId != null) 'categoryId': categoryId,
           'categoryBlockedAtTap': categoryBlocked,
@@ -1533,6 +2030,7 @@ class _BlockCategoriesScreenState extends State<BlockCategoriesScreen> {
       } else {
         removeCategoryAndAliases(_blockedCategories, normalizedCategoryId);
       }
+      _lastToggleTapAt = DateTime.now();
     });
     unawaited(
       _emitBlockAppsDebugEvent(
@@ -1540,6 +2038,7 @@ class _BlockCategoriesScreenState extends State<BlockCategoriesScreen> {
         payload: <String, dynamic>{
           'targetType': 'category',
           'targetId': normalizeCategoryId(categoryId),
+          'targetLabel': _prettyLabel(normalizeCategoryId(categoryId)),
           'enabled': enabled,
           'effectiveBlockedAfterTap': _isCategoryBlocked(categoryId),
         },
@@ -2038,6 +2537,7 @@ class _BlockCategoriesScreenState extends State<BlockCategoriesScreen> {
   Future<void> _removeDomain(String domain) async {
     setState(() {
       _blockedDomains.remove(domain);
+      _lastToggleTapAt = DateTime.now();
     });
     unawaited(
       _emitBlockAppsDebugEvent(
@@ -2240,4 +2740,196 @@ class _BlockCategoriesScreenState extends State<BlockCategoriesScreen> {
       ),
     );
   }
+}
+
+class _PolicyApplyAckSnapshot {
+  const _PolicyApplyAckSnapshot({
+    required this.deviceId,
+    required this.appliedVersion,
+    required this.applyStatus,
+    required this.updatedAt,
+    required this.appliedAt,
+  });
+
+  final String deviceId;
+  final int? appliedVersion;
+  final String applyStatus;
+  final DateTime? updatedAt;
+  final DateTime? appliedAt;
+
+  DateTime get sortTime =>
+      updatedAt ?? appliedAt ?? DateTime.fromMillisecondsSinceEpoch(0);
+
+  static _PolicyApplyAckSnapshot? fromMap(
+    String deviceId,
+    Map<String, dynamic> data,
+  ) {
+    final status = (data['applyStatus'] as String?)?.trim();
+    if (status == null || status.isEmpty) {
+      return null;
+    }
+    return _PolicyApplyAckSnapshot(
+      deviceId: deviceId,
+      appliedVersion: _dynamicInt(data['appliedVersion']),
+      applyStatus: status,
+      updatedAt: _dynamicDateTime(data['updatedAt']),
+      appliedAt: _dynamicDateTime(data['appliedAt']),
+    );
+  }
+
+  @override
+  bool operator ==(Object other) {
+    if (identical(this, other)) {
+      return true;
+    }
+    return other is _PolicyApplyAckSnapshot &&
+        other.deviceId == deviceId &&
+        other.appliedVersion == appliedVersion &&
+        other.applyStatus == applyStatus &&
+        other.updatedAt == updatedAt &&
+        other.appliedAt == appliedAt;
+  }
+
+  @override
+  int get hashCode =>
+      Object.hash(deviceId, appliedVersion, applyStatus, updatedAt, appliedAt);
+}
+
+class _VpnDiagnosticsSnapshot {
+  const _VpnDiagnosticsSnapshot({
+    required this.updatedAt,
+    required this.likelyDnsBypass,
+    required this.bypassReasonCode,
+    required this.lastBlockedDnsQuery,
+  });
+
+  final DateTime? updatedAt;
+  final bool likelyDnsBypass;
+  final String? bypassReasonCode;
+  final _DnsQueryDiagnostics? lastBlockedDnsQuery;
+
+  static _VpnDiagnosticsSnapshot fromMap(Map<String, dynamic> data) {
+    return _VpnDiagnosticsSnapshot(
+      updatedAt: _dynamicDateTime(data['updatedAt']),
+      likelyDnsBypass: data['likelyDnsBypass'] == true,
+      bypassReasonCode: (data['bypassReasonCode'] as String?)?.trim(),
+      lastBlockedDnsQuery: _DnsQueryDiagnostics.fromMap(
+        _dynamicMap(data['lastBlockedDnsQuery']),
+      ),
+    );
+  }
+
+  @override
+  bool operator ==(Object other) {
+    if (identical(this, other)) {
+      return true;
+    }
+    return other is _VpnDiagnosticsSnapshot &&
+        other.updatedAt == updatedAt &&
+        other.likelyDnsBypass == likelyDnsBypass &&
+        other.bypassReasonCode == bypassReasonCode &&
+        other.lastBlockedDnsQuery == lastBlockedDnsQuery;
+  }
+
+  @override
+  int get hashCode => Object.hash(
+        updatedAt,
+        likelyDnsBypass,
+        bypassReasonCode,
+        lastBlockedDnsQuery,
+      );
+}
+
+class _DnsQueryDiagnostics {
+  const _DnsQueryDiagnostics({
+    required this.domain,
+    required this.timestamp,
+    required this.reasonCode,
+    required this.matchedRule,
+  });
+
+  final String domain;
+  final DateTime timestamp;
+  final String? reasonCode;
+  final String? matchedRule;
+
+  static _DnsQueryDiagnostics? fromMap(Map<String, dynamic> data) {
+    if (data.isEmpty) {
+      return null;
+    }
+    final domain = (data['domain'] as String?)?.trim();
+    final timestamp = _dynamicDateTime(data['timestampEpochMs']);
+    if (domain == null || domain.isEmpty || timestamp == null) {
+      return null;
+    }
+    return _DnsQueryDiagnostics(
+      domain: domain,
+      timestamp: timestamp,
+      reasonCode: (data['reasonCode'] as String?)?.trim(),
+      matchedRule: (data['matchedRule'] as String?)?.trim(),
+    );
+  }
+
+  @override
+  bool operator ==(Object other) {
+    if (identical(this, other)) {
+      return true;
+    }
+    return other is _DnsQueryDiagnostics &&
+        other.domain == domain &&
+        other.timestamp == timestamp &&
+        other.reasonCode == reasonCode &&
+        other.matchedRule == matchedRule;
+  }
+
+  @override
+  int get hashCode => Object.hash(domain, timestamp, reasonCode, matchedRule);
+}
+
+DateTime? _dynamicDateTime(Object? rawValue) {
+  if (rawValue is Timestamp) {
+    return rawValue.toDate();
+  }
+  if (rawValue is DateTime) {
+    return rawValue;
+  }
+  if (rawValue is int && rawValue > 0) {
+    return DateTime.fromMillisecondsSinceEpoch(rawValue);
+  }
+  if (rawValue is num && rawValue.toInt() > 0) {
+    return DateTime.fromMillisecondsSinceEpoch(rawValue.toInt());
+  }
+  if (rawValue is String) {
+    final numeric = int.tryParse(rawValue.trim());
+    if (numeric != null && numeric > 0) {
+      return DateTime.fromMillisecondsSinceEpoch(numeric);
+    }
+    return DateTime.tryParse(rawValue.trim());
+  }
+  return null;
+}
+
+int? _dynamicInt(Object? rawValue) {
+  if (rawValue is int) {
+    return rawValue;
+  }
+  if (rawValue is num) {
+    return rawValue.toInt();
+  }
+  if (rawValue is String) {
+    return int.tryParse(rawValue.trim());
+  }
+  return null;
+}
+
+Map<String, dynamic> _dynamicMap(Object? rawValue) {
+  if (rawValue is Map<String, dynamic>) {
+    return rawValue;
+  }
+  if (rawValue is Map) {
+    return rawValue.map(
+      (key, value) => MapEntry(key.toString(), value),
+    );
+  }
+  return const <String, dynamic>{};
 }

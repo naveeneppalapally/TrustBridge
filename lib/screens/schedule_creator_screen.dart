@@ -1,8 +1,10 @@
 import 'package:flutter/material.dart';
+import 'package:trustbridge_app/config/rollout_flags.dart';
 import 'package:trustbridge_app/models/child_profile.dart';
 import 'package:trustbridge_app/models/schedule.dart';
 import 'package:trustbridge_app/services/auth_service.dart';
 import 'package:trustbridge_app/services/firestore_service.dart';
+import 'package:trustbridge_app/services/remote_command_service.dart';
 import 'package:uuid/uuid.dart';
 
 class ScheduleCreatorScreen extends StatefulWidget {
@@ -571,6 +573,16 @@ class _ScheduleCreatorScreenState extends State<ScheduleCreatorScreen> {
         parentId: parentId,
         child: updatedChild,
       );
+
+      if (RolloutFlags.policySyncTriggerRemoteCommand &&
+          widget.child.deviceIds.isNotEmpty) {
+        final remoteCommandService = RemoteCommandService();
+        for (final deviceId in widget.child.deviceIds) {
+          remoteCommandService.sendRestartVpnCommand(deviceId).catchError(
+                (_) => '',
+              );
+        }
+      }
 
       if (!mounted) {
         return;

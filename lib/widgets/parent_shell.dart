@@ -650,6 +650,8 @@ class _ParentBlockAppsTabState extends State<_ParentBlockAppsTab> {
                 child: selected == null
                     ? const _SelectChildPrompt()
                     : BlockCategoriesScreen(
+                        key:
+                            ValueKey<String>('block_categories_${selected.id}'),
                         child: selected,
                         authService: widget.authService,
                         firestoreService: widget.firestoreService,

@@ -1,9 +1,11 @@
 import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
+import 'package:trustbridge_app/config/rollout_flags.dart';
 import 'package:trustbridge_app/models/child_profile.dart';
 import 'package:trustbridge_app/models/policy.dart';
 import 'package:trustbridge_app/services/auth_service.dart';
 import 'package:trustbridge_app/services/firestore_service.dart';
+import 'package:trustbridge_app/services/remote_command_service.dart';
 import 'package:trustbridge_app/services/vpn_service.dart';
 
 class CustomDomainsScreen extends StatefulWidget {
@@ -323,6 +325,16 @@ class _CustomDomainsScreenState extends State<CustomDomainsScreen> {
         child: updatedChild,
       );
       await _syncVpnRulesIfRunning(updatedPolicy);
+
+      if (RolloutFlags.policySyncTriggerRemoteCommand &&
+          widget.child.deviceIds.isNotEmpty) {
+        final remoteCommandService = RemoteCommandService();
+        for (final deviceId in widget.child.deviceIds) {
+          remoteCommandService.sendRestartVpnCommand(deviceId).catchError(
+                (_) => '',
+              );
+        }
+      }
 
       if (!mounted) {
         return;

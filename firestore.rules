@@ -574,12 +574,13 @@ service cloud.firestore {
               'lastBypassSignalAtEpochMs',
               'lastBypassSignalReasonCode',
               'lastBypassSignalForegroundPackage',
-              'packetCounters',
-              'lastDnsQuery',
-              'lastBlockedDnsQuery',
-              'updatedAt'
-            ]
-          ) &&
+               'packetCounters',
+               'lastDnsQuery',
+               'lastBlockedDnsQuery',
+               'policySync',
+               'updatedAt'
+             ]
+           ) &&
           isRequiredString(request.resource.data, 'parentId', 128) &&
           childParentMatches(childId, request.resource.data.parentId) &&
           isRequiredString(request.resource.data, 'childId', 128) &&
@@ -600,13 +601,47 @@ service cloud.firestore {
           isOptionalString(request.resource.data, 'lastBypassSignalForegroundPackage', 256) &&
           (!('packetCounters' in request.resource.data) ||
             request.resource.data.packetCounters is map) &&
-          (!('lastDnsQuery' in request.resource.data) ||
-            request.resource.data.lastDnsQuery == null ||
-            request.resource.data.lastDnsQuery is map) &&
-          (!('lastBlockedDnsQuery' in request.resource.data) ||
-            request.resource.data.lastBlockedDnsQuery == null ||
-            request.resource.data.lastBlockedDnsQuery is map) &&
-          isOptionalTimestamp(request.resource.data, 'updatedAt');
+           (!('lastDnsQuery' in request.resource.data) ||
+             request.resource.data.lastDnsQuery == null ||
+             request.resource.data.lastDnsQuery is map) &&
+           (!('lastBlockedDnsQuery' in request.resource.data) ||
+             request.resource.data.lastBlockedDnsQuery == null ||
+             request.resource.data.lastBlockedDnsQuery is map) &&
+           (
+             !('policySync' in request.resource.data) ||
+             (
+               request.resource.data.policySync is map &&
+               request.resource.data.policySync.keys().hasOnly([
+                 'lastSeenVersion',
+                 'lastAppliedVersion',
+                 'lastSnapshotSeenAtEpochMs',
+                 'lastApplyAttemptAtEpochMs',
+                 'lastApplySuccessAtEpochMs',
+                 'lastSource',
+                 'lastSnapshotSource',
+                 'lastSkipReason',
+                 'lastError',
+                 'listenerAttached',
+                 'pollingActive',
+                 'lastListenerEventAtEpochMs',
+                 'lastPollSuccessAtEpochMs'
+               ]) &&
+               isOptionalInt(request.resource.data.policySync, 'lastSeenVersion', 0, 4102444800000) &&
+               isOptionalInt(request.resource.data.policySync, 'lastAppliedVersion', 0, 4102444800000) &&
+               isOptionalInt(request.resource.data.policySync, 'lastSnapshotSeenAtEpochMs', 0, 4102444800000) &&
+               isOptionalInt(request.resource.data.policySync, 'lastApplyAttemptAtEpochMs', 0, 4102444800000) &&
+               isOptionalInt(request.resource.data.policySync, 'lastApplySuccessAtEpochMs', 0, 4102444800000) &&
+               isOptionalString(request.resource.data.policySync, 'lastSource', 80) &&
+               isOptionalString(request.resource.data.policySync, 'lastSnapshotSource', 80) &&
+               isOptionalString(request.resource.data.policySync, 'lastSkipReason', 120) &&
+               isOptionalString(request.resource.data.policySync, 'lastError', 500) &&
+               isOptionalBool(request.resource.data.policySync, 'listenerAttached') &&
+               isOptionalBool(request.resource.data.policySync, 'pollingActive') &&
+               isOptionalInt(request.resource.data.policySync, 'lastListenerEventAtEpochMs', 0, 4102444800000) &&
+               isOptionalInt(request.resource.data.policySync, 'lastPollSuccessAtEpochMs', 0, 4102444800000)
+             )
+           ) &&
+           isOptionalTimestamp(request.resource.data, 'updatedAt');
 
         allow delete: if false;
       }
@@ -812,7 +847,10 @@ service cloud.firestore {
           isOptionalTimestamp(request.resource.data, 'sentAt');
 
         allow update: if isAuthed() &&
-          resource.data.parentId == request.auth.uid &&
+          (
+            resource.data.parentId == request.auth.uid ||
+            request.auth.uid == deviceId
+          ) &&
           request.resource.data.parentId == resource.data.parentId &&
           request.resource.data.commandId == resource.data.commandId &&
           request.resource.data.command == resource.data.command &&

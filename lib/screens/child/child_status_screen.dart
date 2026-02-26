@@ -319,25 +319,23 @@ class _ChildStatusScreenState extends State<ChildStatusScreen>
 
     User? currentUser;
     try {
-      currentUser = FirebaseAuth.instance.currentUser;
-      if (currentUser == null) {
-        final credential = await FirebaseAuth.instance.signInAnonymously();
-        currentUser = credential.user;
-      }
+      currentUser = await _normalizeChildFirestoreSession(
+        expectedParentId: normalizedParentId,
+      );
     } catch (_) {
       return;
     }
     final currentUid = currentUser?.uid.trim();
+    final isAnonymousSession = currentUser?.isAnonymous == true;
     if (currentUid == null || currentUid.isEmpty) {
       debugPrint(
-        '[ChildStatus] Missing signed-in Firebase session. '
-        'Child mode expects the shared parent account session.',
+        '[ChildStatus] Missing signed-in Firebase session after normalization.',
       );
       return;
     }
-    if (currentUid != normalizedParentId) {
+    if (currentUid != normalizedParentId && !isAnonymousSession) {
       debugPrint(
-        '[ChildStatus] Parent mismatch during bootstrap. '
+        '[ChildStatus] Parent mismatch during bootstrap and session is non-anonymous. '
         'expectedParentId=$normalizedParentId currentUid=$currentUid',
       );
     }
@@ -352,6 +350,46 @@ class _ChildStatusScreenState extends State<ChildStatusScreen>
       await HeartbeatService.sendHeartbeat();
     } catch (_) {
       // Heartbeat bootstrap is best-effort.
+    }
+  }
+
+  Future<User?> _normalizeChildFirestoreSession({
+    required String expectedParentId,
+  }) async {
+    var currentUser = FirebaseAuth.instance.currentUser;
+    final currentUid = currentUser?.uid.trim();
+    final isParentSession =
+        currentUid != null && currentUid.isNotEmpty && currentUid == expectedParentId;
+    final isAnonymousSession = currentUser?.isAnonymous == true;
+
+    if (currentUser != null && (isParentSession || isAnonymousSession)) {
+      return currentUser;
+    }
+
+    if (currentUser != null) {
+      debugPrint(
+        '[ChildStatus] Resetting unexpected Firebase session '
+        'expectedParentId=$expectedParentId currentUid=${currentUid ?? 'null'} '
+        'anonymous=${currentUser.isAnonymous}',
+      );
+      try {
+        await FirebaseAuth.instance.signOut();
+      } catch (_) {
+        // Best-effort sign-out before child anonymous bootstrap.
+      }
+    }
+
+    try {
+      final credential = await FirebaseAuth.instance.signInAnonymously();
+      return credential.user;
+    } on FirebaseAuthException catch (error) {
+      debugPrint(
+        '[ChildStatus] Anonymous sign-in failed '
+        'code=${error.code} message=${error.message}',
+      );
+      return FirebaseAuth.instance.currentUser;
+    } catch (_) {
+      return FirebaseAuth.instance.currentUser;
     }
   }
 
@@ -593,9 +631,14 @@ class _ChildStatusScreenState extends State<ChildStatusScreen>
 
   Future<void> _processPendingRemoteCommands() async {
     try {
-      await _resolvedRemoteCommandService.processPendingCommands();
+      await HeartbeatService.sendHeartbeat();
     } catch (_) {
-      // Best-effort command processing while child screen is active.
+      // Best-effort auth/device-link refresh before command processing.
+    }
+    try {
+      await _resolvedRemoteCommandService.processPendingCommands();
+    } catch (error) {
+      debugPrint('[ChildStatus] remote command poll failed: $error');
     }
   }
 
@@ -2662,6 +2705,19 @@ class _ChildStatusScreenState extends State<ChildStatusScreen>
       null => 'No DNS queries captured yet',
     };
     final lastBlockedQuery = assessment.lastBlockedDnsQuery;
+    final blockedAge = lastBlockedQuery == null
+        ? null
+        : now.difference(lastBlockedQuery.timestamp);
+    final blockedEvidenceStale =
+        blockedAge != null && blockedAge > const Duration(minutes: 3);
+    final blockedSeenText = switch (lastBlockedQuery) {
+      final DnsQueryLogEntry query => _relativeTimeLabel(query.timestamp, now),
+      null => 'No blocked DNS query captured yet',
+    };
+    final cacheBusterDomain =
+        (lastBlockedQuery?.domain ?? 'facebook.com').trim();
+    final cacheBusterUrl =
+        'https://$cacheBusterDomain/?tb=${DateTime.now().millisecondsSinceEpoch}';
     final lastBypassSignalText = switch (_lastBrowserDnsBypassSignalAt) {
       final DateTime value => _relativeTimeLabel(value, now),
       null => 'None observed in this session',
@@ -2750,6 +2806,16 @@ class _ChildStatusScreenState extends State<ChildStatusScreen>
               value:
                   '${lastBlockedQuery.domain} (${_formatDiagReasonCode(lastBlockedQuery.reasonCode)})',
             ),
+            _buildDiagLine(
+              label: 'Last blocked seen',
+              value: blockedSeenText,
+            ),
+            _buildDiagLine(
+              label: 'Evidence freshness',
+              value: blockedEvidenceStale
+                  ? 'Stale (${_formatDurationCompact(blockedAge)} ago)'
+                  : 'Fresh (${_formatDurationCompact(blockedAge)} ago)',
+            ),
             if ((lastBlockedQuery.matchedRule ?? '').isNotEmpty)
               _buildDiagLine(
                 label: 'Matched rule',
@@ -2775,6 +2841,37 @@ class _ChildStatusScreenState extends State<ChildStatusScreen>
               color: shouldWarn ? Colors.orange.shade900 : Colors.blue.shade900,
             ),
           ),
+          const SizedBox(height: 6),
+          Text(
+            'For unblock checks, open a fresh tab and use a cache-buster URL:',
+            style: TextStyle(
+              fontSize: 12,
+              fontWeight: FontWeight.w600,
+              color: shouldWarn ? Colors.orange.shade900 : Colors.blue.shade900,
+            ),
+          ),
+          const SizedBox(height: 2),
+          SelectableText(
+            cacheBusterUrl,
+            style: TextStyle(
+              fontSize: 12,
+              color: shouldWarn ? Colors.orange.shade900 : Colors.blue.shade900,
+            ),
+          ),
+          if (blockedEvidenceStale)
+            Padding(
+              padding: const EdgeInsets.only(top: 6),
+              child: Text(
+                'Last blocked DNS evidence is old. Re-test after refreshing browser tab.',
+                style: TextStyle(
+                  fontSize: 12,
+                  fontWeight: FontWeight.w600,
+                  color: shouldWarn
+                      ? Colors.orange.shade900
+                      : Colors.blue.shade900,
+                ),
+              ),
+            ),
           const SizedBox(height: 8),
           Wrap(
             spacing: 8,
@@ -2826,6 +2923,19 @@ class _ChildStatusScreenState extends State<ChildStatusScreen>
       return '${diff.inMinutes}m ago';
     }
     return '${diff.inHours}h ago';
+  }
+
+  String _formatDurationCompact(Duration? value) {
+    if (value == null) {
+      return '—';
+    }
+    if (value.inSeconds < 60) {
+      return '${value.inSeconds}s';
+    }
+    if (value.inMinutes < 60) {
+      return '${value.inMinutes}m';
+    }
+    return '${value.inHours}h';
   }
 
   String _formatDiagReasonCode(String? value) {

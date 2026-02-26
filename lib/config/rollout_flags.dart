@@ -57,6 +57,30 @@ class RolloutFlags {
         ),
       );
 
+  static bool get parentPolicyApplyStatus => _resolve(
+        'parent_policy_apply_status',
+        const bool.fromEnvironment(
+          'TB_FLAG_PARENT_POLICY_APPLY_STATUS',
+          defaultValue: true,
+        ),
+      );
+
+  static bool get parentWebValidationHints => _resolve(
+        'parent_web_validation_hints',
+        const bool.fromEnvironment(
+          'TB_FLAG_PARENT_WEB_VALIDATION_HINTS',
+          defaultValue: true,
+        ),
+      );
+
+  static bool get policySyncTriggerRemoteCommand => _resolve(
+        'policy_sync_trigger_remote_command',
+        const bool.fromEnvironment(
+          'TB_FLAG_POLICY_SYNC_TRIGGER_REMOTE_COMMAND',
+          defaultValue: true,
+        ),
+      );
+
   static bool _resolve(String key, bool defaultValue) {
     return _testOverrides[key] ?? defaultValue;
   }
