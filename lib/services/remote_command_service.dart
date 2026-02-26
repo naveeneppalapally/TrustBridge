@@ -2,6 +2,7 @@ import 'dart:async';
 
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:firebase_auth/firebase_auth.dart';
+import 'package:flutter/foundation.dart';
 import 'package:workmanager/workmanager.dart';
 
 import 'notification_service.dart';
@@ -119,12 +120,16 @@ class RemoteCommandService {
   /// Child processes pending command queue.
   Future<void> processPendingCommands() async {
     final deviceId = await _pairingService.getOrCreateDeviceId();
-    final snapshot = await _firestore
+    final pairedParentId = (await _pairingService.getPairedParentId())?.trim();
+    var query = _firestore
         .collection('devices')
         .doc(deviceId)
         .collection('pendingCommands')
-        .where('status', isEqualTo: 'pending')
-        .get();
+        .where('status', isEqualTo: 'pending');
+    if (pairedParentId != null && pairedParentId.isNotEmpty) {
+      query = query.where('parentId', isEqualTo: pairedParentId);
+    }
+    final snapshot = await query.get();
 
     for (final doc in snapshot.docs) {
       final data = doc.data();
@@ -132,11 +137,12 @@ class RemoteCommandService {
       final attempts = _readInt(data['attempts']);
 
       if (attempts >= 3) {
-        await doc.reference.update(<String, dynamic>{
-          'status': 'failed',
-          'error': 'Max attempts reached',
-          'executedAt': FieldValue.serverTimestamp(),
-        });
+        await _markCommandResult(
+          doc.reference,
+          status: 'failed',
+          attempts: attempts,
+          error: 'Max attempts reached',
+        );
         continue;
       }
 
@@ -145,18 +151,39 @@ class RemoteCommandService {
           command: command,
           payload: data,
         );
-        await doc.reference.update(<String, dynamic>{
-          'status': executed ? 'executed' : 'failed',
-          'attempts': attempts + 1,
-          'executedAt': FieldValue.serverTimestamp(),
-        });
-      } catch (_) {
-        await doc.reference.update(<String, dynamic>{
-          'status': 'failed',
-          'attempts': attempts + 1,
-          'executedAt': FieldValue.serverTimestamp(),
-        });
+        await _markCommandResult(
+          doc.reference,
+          status: executed ? 'executed' : 'failed',
+          attempts: attempts,
+        );
+      } catch (error) {
+        await _markCommandResult(
+          doc.reference,
+          status: 'failed',
+          attempts: attempts,
+          error: error.toString(),
+        );
       }
+    }
+  }
+
+  Future<void> _markCommandResult(
+    DocumentReference<Map<String, dynamic>> reference, {
+    required String status,
+    required int attempts,
+    String? error,
+  }) async {
+    try {
+      await reference.update(<String, dynamic>{
+        'status': status,
+        'attempts': attempts + 1,
+        'executedAt': FieldValue.serverTimestamp(),
+        if (error != null && error.trim().isNotEmpty) 'error': error.trim(),
+        'updatedAt': FieldValue.serverTimestamp(),
+      });
+    } catch (updateError) {
+      debugPrint(
+          '[RemoteCommandService] command result update failed: $updateError');
     }
   }
 
@@ -166,12 +193,23 @@ class RemoteCommandService {
   }) async {
     switch (command) {
       case commandRestartVpn:
-        return _vpnService.restartVpn();
+        return _restartVpnWithPairingContext();
       case commandClearPairingAndStopProtection:
         return _clearPairingAndStopProtection(payload);
       default:
         return false;
     }
+  }
+
+  Future<bool> _restartVpnWithPairingContext() async {
+    final parentId = (await _pairingService.getPairedParentId())?.trim();
+    final childId = (await _pairingService.getPairedChildId())?.trim();
+
+    return _vpnService.restartVpn(
+      parentId: (parentId == null || parentId.isEmpty) ? null : parentId,
+      childId: (childId == null || childId.isEmpty) ? null : childId,
+      usePersistedRules: true,
+    );
   }
 
   Future<bool> _clearPairingAndStopProtection(

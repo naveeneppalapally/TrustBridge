@@ -31,6 +31,98 @@ UI commit message convention:
 
 ---
 
+## Day 39 - Follow-up Debugging (Command Poll Auth + Rule Cache Stability)
+
+Program goal: continue the two-device unblock investigation and remove newly
+observed blockers in child-side policy apply flow.
+
+### Commit entries
+
+1. **2026-02-26**  
+   Commit: `[pending]`  
+   Message: `Fix command poll auth filtering and harden rule-cache parsing`  
+   Changes:
+   - Ran live two-device acceptance flow on physical devices and captured
+     failing behavior (`docs/TWO_DEVICE_ACCEPTANCE_REPORT.md`):
+     - Child validate timed out.
+     - Repeated child log: `remote command poll failed: permission-denied`.
+     - Repeated child log: `getRuleCacheSnapshot` bool/map type-cast error.
+   - Hardened VPN rule-cache parsing to avoid bool/map cast crashes:
+     - `lib/services/vpn_service.dart`
+     - `getRuleCacheSnapshot()` now reads dynamic payload and safely falls back
+       to empty snapshot when native/mock response is not a map.
+   - Hardened remote command polling and status writeback:
+     - `lib/services/remote_command_service.dart`
+     - Added `parentId` query filter for pending command reads when pairing
+       context is available (fixes query-rule mismatch for parent-auth sessions).
+     - Added resilient `_markCommandResult(...)` helper so status-write failures
+       do not abort the polling loop.
+   - Updated command queue Firestore rule for child-side execution status writes:
+     - `firestore.rules`
+     - `devices/{deviceId}/pendingCommands/{commandId}` update now allows
+       authenticated child device (`request.auth.uid == deviceId`) in addition
+       to parent.
+   - Updated tests and acceptance mock behavior:
+     - `test/services/remote_command_service_test.dart` (seeded `parentId` in
+       pending command docs, preserved restart context assertions).
+     - `integration_test/two_device_authenticated_acceptance_test.dart`
+       now tracks mocked cached categories/domains and returns structured
+       `getRuleCacheSnapshot` payload.
+   Validation:
+   - `flutter analyze` passed.
+   - `flutter test` passed (full suite).
+   - `flutter test test/services/remote_command_service_test.dart` passed.
+   - `firebase deploy --only firestore:rules --project trustbridge-navee` passed.
+   - Live two-device acceptance script passed on physical devices after rules
+     deploy (`tools/two_device_acceptance.ps1 -Mode live`, parent
+     `13973155520008G`, child `aae47d3e`), with report status `PASS` in
+     `docs/TWO_DEVICE_ACCEPTANCE_REPORT.md`.
+
+---
+
+## Day 38 - Parent Apply Status + Web Validation Hardening
+
+Program goal: make parent-side block toggle outcomes observable by wiring policy apply telemetry and web-validation hints, and stabilize tests around the updated Block Apps screen behavior.
+
+### Commit entries
+
+1. **2026-02-26**  
+   Commit: `[pending]`  
+   Message: `Add parent policy apply visibility and web validation hints`  
+   Changes:
+   - Added rollout-gated parent telemetry surfaces on Block Apps:
+     - `POLICY APPLY STATUS` card driven by effective policy + child apply ack data.
+     - `WEB VALIDATION HINTS` card with blocked DNS evidence freshness and cache-buster guidance.
+   - Added policy apply evaluation service and tests:
+     - `lib/services/policy_apply_status.dart`
+     - `test/services/policy_apply_status_test.dart`
+   - Updated parent/child UI wiring to reduce stale screen reuse and improve diagnostics context:
+     - `lib/screens/block_categories_screen.dart`
+     - `lib/screens/child/child_status_screen.dart`
+     - `lib/widgets/parent_shell.dart`
+   - Updated rollout flag definitions for staged enablement:
+     - `lib/config/rollout_flags.dart`
+   - Patched Firestore rules so child VPN diagnostics writes accept `policySync` payload:
+     - `firestore.rules`
+   - Stabilized Block Apps widget tests for new card ordering/state timing:
+     - `test/screens/block_categories_screen_test.dart`
+   - Hardened two-device acceptance script mode selection for reliable live-device execution:
+     - `tools/two_device_acceptance.ps1`
+   - Removed temporary backend probe test artifact:
+     - `integration_test/tmp_firestore_probe_test.dart`
+   Validation:
+   - `flutter analyze` passed.
+   - `flutter test test/screens/block_categories_screen_test.dart` passed.
+   - `flutter test` passed (full suite, 456 tests).
+   - `firebase deploy --only firestore:rules` passed.
+   - `tools/two_device_acceptance.ps1 -Mode live` passed on physical devices
+     (parent `13973155520008G`, child `aae47d3e`), report written to
+     `docs/TWO_DEVICE_ACCEPTANCE_REPORT.md` with overall status `PASS`.
+   Notes:
+   - Child validation role logs repeated non-fatal `getRuleCacheSnapshot` type-cast errors from mocked VPN channel return shape; acceptance assertions still pass end-to-end.
+
+---
+
 ## Day 1 - Foundation
 
 Program goal: project setup, git setup, branding baseline, folder structure.
@@ -5017,12 +5109,54 @@ resolver coverage in the Android DNS engine.
    - `flutter test` passed (full suite).
    - `flutter build apk --debug` passed.
    - Installed latest debug APK on both parent and child devices.
-   - Live checks confirmed backend policy + child native DNS blocklist DB can be
-     clean while website behavior remains inconsistent (supports DNS-path bypass
-     hypothesis).
+    - Live checks confirmed backend policy + child native DNS blocklist DB can be
+      clean while website behavior remains inconsistent (supports DNS-path bypass
+      hypothesis).
+    Notes:
+    - Child-device UI automation (`uiautomator dump`) was unstable (`null root
+      node`) during physical UI verification of the new diagnostics card on this
+      device, so visual confirmation was blocked in this session.
+
+---
+
+## Day 39 - Background Policy Sync Fix (Remote Command Trigger)
+
+Program goal: Fix parent→child policy sync so that parent toggle changes (e.g., unblocking Facebook) are reflected immediately on child device without requiring the TrustBridge app to be opened.
+
+### Commit entries
+
+1. **2026-02-26**  
+   Commit: `[pending]`  
+   Message: `Add remote command trigger for immediate child policy sync`  
+   Changes:
+   - Added rollout flag `policySyncTriggerRemoteCommand` in `lib/config/rollout_flags.dart`
+   - Added remote command trigger after policy saves in 6 screens:
+     - `block_categories_screen.dart` - category toggles
+     - `mode_overrides_screen.dart` - mode overrides
+     - `schedule_creator_screen.dart` - schedule changes
+     - `quick_modes_screen.dart` - quick mode changes
+     - `custom_domains_screen.dart` - custom domain changes
+     - `policy_overview_screen.dart` - safe search changes
+   - After each policy update, sends `restartVpn` command to child devices to force
+     immediate policy fetch, bypassing unreliable Firestore background listeners.
+   - Hardened child command execution path:
+     - Remote restart now includes paired `parentId` + `childId` context.
+     - Added `usePersistedRules` restart mode so remote restart does **not**
+       clobber active rules with empty arrays.
+     - Native Android handler (`MainActivity.kt`) honors `usePersistedRules`
+       by omitting rule extras and reusing persisted VPN rules.
+   - Updated tests and fake VPN implementations to cover the new restart
+     context flow and persisted-rule behavior.
+   - Refined parent Block Apps diagnostics warning logic so "stale diagnostics"
+     is only shown during active retest windows or when diagnostics are behind
+     the latest effective policy update.
+   Validation:
+   - `flutter analyze` passed (no issues).
+   - `flutter test` passed (456 tests, full suite).
    Notes:
-   - Child-device UI automation (`uiautomator dump`) was unstable (`null root
-     node`) during physical UI verification of the new diagnostics card on this
-     device, so visual confirmation was blocked in this session.
+   - Root cause: Firestore real-time listeners lose connection when app is
+     backgrounded on Android; polling fallback (15s) wasn't catching updates reliably.
+   - Solution: Explicit remote command triggers VPN restart on child after policy save,
+     ensuring immediate policy fetch.
 
 ---

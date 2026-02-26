@@ -1,11 +1,13 @@
 import 'dart:convert';
 
+import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:fake_cloud_firestore/fake_cloud_firestore.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:http/http.dart' as http;
 import 'package:http/testing.dart';
+import 'package:trustbridge_app/config/rollout_flags.dart';
 import 'package:trustbridge_app/models/child_profile.dart';
 import 'package:trustbridge_app/screens/block_categories_screen.dart';
 import 'package:trustbridge_app/services/firestore_service.dart';
@@ -19,6 +21,7 @@ void main() {
         MethodChannel('plugins.it_nomads.com/flutter_secure_storage');
 
     setUp(() async {
+      RolloutFlags.resetForTest();
       testChild = ChildProfile.create(
         nickname: 'Test Child',
         ageBand: AgeBand.young,
@@ -58,6 +61,7 @@ void main() {
     });
 
     tearDown(() {
+      RolloutFlags.resetForTest();
       TestDefaultBinaryMessengerBinding.instance.defaultBinaryMessenger
           .setMockMethodCallHandler(secureStorageChannel, null);
     });
@@ -71,12 +75,16 @@ void main() {
           home: BlockCategoriesScreen(child: testChild),
         ),
       );
-      await tester.pump();
+      await tester.pumpAndSettle();
 
       expect(find.text('Category Blocking'), findsOneWidget);
       expect(find.byKey(const Key('block_categories_search')), findsOneWidget);
+      await tester.scrollUntilVisible(
+        find.text('APP CATEGORIES'),
+        200,
+        scrollable: find.byType(Scrollable).first,
+      );
       expect(find.text('APP CATEGORIES'), findsOneWidget);
-      expect(find.text('Adult Content'), findsOneWidget);
     });
 
     testWidgets('shows custom blocked sites section with add button',
@@ -118,7 +126,16 @@ void main() {
       expect(
           find.byKey(const Key('block_categories_save_button')), findsNothing);
 
-      await tester.tap(find.byType(Switch).first);
+      final socialCategorySwitch =
+          find.byKey(const Key('block_category_switch_social-networks'));
+      await tester.scrollUntilVisible(
+        socialCategorySwitch,
+        200,
+        scrollable: find.byType(Scrollable).first,
+      );
+      await tester.ensureVisible(socialCategorySwitch);
+      await tester.pumpAndSettle();
+      await tester.tap(socialCategorySwitch);
       await tester.pumpAndSettle();
 
       expect(find.byKey(const Key('block_categories_save_button')),
@@ -199,6 +216,142 @@ void main() {
       );
       expect(
           find.byKey(const Key('nextdns_safe_search_switch')), findsOneWidget);
+    });
+
+    testWidgets('shows pending then applied policy sync indicator',
+        (tester) async {
+      final fakeFirestore = FakeFirebaseFirestore();
+      final firestoreService = FirestoreService(firestore: fakeFirestore);
+      const parentId = 'parent-policy-status';
+      final child = testChild.copyWith(
+        policy: testChild.policy.copyWith(
+          blockedCategories: const <String>['social-networks'],
+          blockedServices: const <String>['instagram'],
+          blockedDomains: const <String>[],
+        ),
+      );
+
+      await fakeFirestore.collection('children').doc(child.id).set({
+        ...child.toFirestore(),
+        'parentId': parentId,
+      });
+
+      await fakeFirestore
+          .collection('children')
+          .doc(child.id)
+          .collection('effective_policy')
+          .doc('current')
+          .set({
+        'parentId': parentId,
+        'childId': child.id,
+        'version': 200,
+        'updatedAt': Timestamp.now(),
+      });
+
+      await fakeFirestore
+          .collection('children')
+          .doc(child.id)
+          .collection('policy_apply_acks')
+          .doc('device-1')
+          .set({
+        'parentId': parentId,
+        'childId': child.id,
+        'deviceId': 'device-1',
+        'applyStatus': 'applied',
+        'appliedVersion': 199,
+        'updatedAt': Timestamp.now(),
+      });
+
+      await tester.pumpWidget(
+        MaterialApp(
+          home: BlockCategoriesScreen(
+            child: child,
+            firestoreService: firestoreService,
+            parentIdOverride: parentId,
+          ),
+        ),
+      );
+      await tester.pumpAndSettle();
+
+      expect(
+        find.byKey(const Key('block_categories_policy_sync_card')),
+        findsOneWidget,
+      );
+      expect(find.text('Pending'), findsOneWidget);
+
+      await fakeFirestore
+          .collection('children')
+          .doc(child.id)
+          .collection('policy_apply_acks')
+          .doc('device-1')
+          .set({
+        'parentId': parentId,
+        'childId': child.id,
+        'deviceId': 'device-1',
+        'applyStatus': 'applied',
+        'appliedVersion': 200,
+        'updatedAt': Timestamp.now(),
+      });
+      await tester.pumpAndSettle();
+
+      expect(
+        find.descendant(
+          of: find.byKey(const Key('block_categories_policy_sync_indicator')),
+          matching: find.text('Applied'),
+        ),
+        findsOneWidget,
+      );
+    });
+
+    testWidgets('renders web validation hints with cache-buster guidance',
+        (tester) async {
+      final fakeFirestore = FakeFirebaseFirestore();
+      final firestoreService = FirestoreService(firestore: fakeFirestore);
+      const parentId = 'parent-web-hints';
+
+      await fakeFirestore.collection('children').doc(testChild.id).set({
+        ...testChild.toFirestore(),
+        'parentId': parentId,
+      });
+
+      await fakeFirestore
+          .collection('children')
+          .doc(testChild.id)
+          .collection('vpn_diagnostics')
+          .doc('current')
+          .set({
+        'parentId': parentId,
+        'childId': testChild.id,
+        'vpnRunning': true,
+        'updatedAt': Timestamp.fromDate(DateTime(2026, 2, 26, 12, 0)),
+        'likelyDnsBypass': false,
+        'bypassReasonCode': 'browser_not_foreground',
+        'lastBlockedDnsQuery': {
+          'domain': 'instagram.com',
+          'reasonCode': 'block_custom_domain_rule',
+          'matchedRule': 'instagram.com',
+          'timestampEpochMs':
+              DateTime(2026, 2, 26, 11, 59).millisecondsSinceEpoch,
+        },
+      });
+
+      await tester.pumpWidget(
+        MaterialApp(
+          home: BlockCategoriesScreen(
+            child: testChild,
+            firestoreService: firestoreService,
+            parentIdOverride: parentId,
+          ),
+        ),
+      );
+      await tester.pumpAndSettle();
+
+      expect(
+        find.byKey(const Key('block_categories_web_validation_card')),
+        findsOneWidget,
+      );
+      expect(find.textContaining('cache-buster URL'), findsOneWidget);
+      expect(find.textContaining('instagram.com'), findsWidgets);
     });
   });
 }

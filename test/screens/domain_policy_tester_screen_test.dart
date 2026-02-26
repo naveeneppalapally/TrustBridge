@@ -78,6 +78,7 @@ class _FakeVpnServiceForDomainTester implements VpnServiceBase {
     String? parentId,
     String? childId,
     String? upstreamDns,
+    bool usePersistedRules = false,
   }) async =>
       true;
 

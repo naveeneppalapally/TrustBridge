@@ -147,30 +147,37 @@ class MainActivity : FlutterFragmentActivity() {
                 }
 
                 val blockedCategories =
-                    call.argument<List<String>>("blockedCategories") ?: emptyList()
+                    call.argument<List<String>>("blockedCategories")
                 val blockedDomains =
-                    call.argument<List<String>>("blockedDomains") ?: emptyList()
+                    call.argument<List<String>>("blockedDomains")
                 val temporaryAllowedDomains =
-                    call.argument<List<String>>("temporaryAllowedDomains") ?: emptyList()
+                    call.argument<List<String>>("temporaryAllowedDomains")
                 val upstreamDns = call.argument<String>("upstreamDns")
                     ?.trim()
                     ?.takeIf { it.isNotEmpty() }
+                val usePersistedRules = call.argument<Boolean>("usePersistedRules") == true
                 persistPolicyContext(call)
 
                 val serviceIntent = Intent(this, DnsVpnService::class.java).apply {
                     action = DnsVpnService.ACTION_RESTART
-                    putStringArrayListExtra(
-                        DnsVpnService.EXTRA_BLOCKED_CATEGORIES,
-                        ArrayList(blockedCategories)
-                    )
-                    putStringArrayListExtra(
-                        DnsVpnService.EXTRA_BLOCKED_DOMAINS,
-                        ArrayList(blockedDomains)
-                    )
-                    putStringArrayListExtra(
-                        DnsVpnService.EXTRA_TEMP_ALLOWED_DOMAINS,
-                        ArrayList(temporaryAllowedDomains)
-                    )
+                    if (!usePersistedRules || blockedCategories != null) {
+                        putStringArrayListExtra(
+                            DnsVpnService.EXTRA_BLOCKED_CATEGORIES,
+                            ArrayList(blockedCategories ?: emptyList())
+                        )
+                    }
+                    if (!usePersistedRules || blockedDomains != null) {
+                        putStringArrayListExtra(
+                            DnsVpnService.EXTRA_BLOCKED_DOMAINS,
+                            ArrayList(blockedDomains ?: emptyList())
+                        )
+                    }
+                    if (!usePersistedRules || temporaryAllowedDomains != null) {
+                        putStringArrayListExtra(
+                            DnsVpnService.EXTRA_TEMP_ALLOWED_DOMAINS,
+                            ArrayList(temporaryAllowedDomains ?: emptyList())
+                        )
+                    }
                     if (upstreamDns != null) {
                         putExtra(DnsVpnService.EXTRA_UPSTREAM_DNS, upstreamDns)
                     }

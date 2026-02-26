@@ -356,6 +356,7 @@ abstract class VpnServiceBase {
     String? parentId,
     String? childId,
     String? upstreamDns,
+    bool usePersistedRules,
   });
 
   Future<bool> stopVpn();
@@ -717,25 +718,31 @@ class VpnService implements VpnServiceBase {
     String? parentId,
     String? childId,
     String? upstreamDns,
+    bool usePersistedRules = false,
   }) async {
     if (!_supported) {
       return false;
     }
 
     try {
+      final payload = <String, dynamic>{
+        if (!usePersistedRules || blockedCategories.isNotEmpty)
+          'blockedCategories': blockedCategories,
+        if (!usePersistedRules || blockedDomains.isNotEmpty)
+          'blockedDomains': blockedDomains,
+        if (!usePersistedRules || temporaryAllowedDomains.isNotEmpty)
+          'temporaryAllowedDomains': temporaryAllowedDomains,
+        if (usePersistedRules) 'usePersistedRules': true,
+        if (parentId != null && parentId.trim().isNotEmpty)
+          'parentId': parentId.trim(),
+        if (childId != null && childId.trim().isNotEmpty)
+          'childId': childId.trim(),
+        if (upstreamDns != null && upstreamDns.trim().isNotEmpty)
+          'upstreamDns': upstreamDns.trim(),
+      };
       return await _channel.invokeMethod<bool>(
             'restartVpn',
-            {
-              'blockedCategories': blockedCategories,
-              'blockedDomains': blockedDomains,
-              'temporaryAllowedDomains': temporaryAllowedDomains,
-              if (parentId != null && parentId.trim().isNotEmpty)
-                'parentId': parentId.trim(),
-              if (childId != null && childId.trim().isNotEmpty)
-                'childId': childId.trim(),
-              if (upstreamDns != null && upstreamDns.trim().isNotEmpty)
-                'upstreamDns': upstreamDns.trim(),
-            },
+            payload,
           ) ??
           false;
     } on PlatformException {
@@ -917,10 +924,14 @@ class VpnService implements VpnServiceBase {
     }
 
     try {
-      final map = await _channel.invokeMapMethod<dynamic, dynamic>(
+      final result = await _channel.invokeMethod<dynamic>(
         'getRuleCacheSnapshot',
         {'sampleLimit': sampleLimit},
       );
+      if (result is! Map) {
+        return const RuleCacheSnapshot.empty();
+      }
+      final map = Map<dynamic, dynamic>.from(result);
       return RuleCacheSnapshot.fromMap(map);
     } on PlatformException {
       return const RuleCacheSnapshot.empty();

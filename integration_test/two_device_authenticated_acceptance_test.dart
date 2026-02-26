@@ -103,7 +103,8 @@ Future<void> _initializeDefaultFirebase() async {
 
   if (_useEmulators) {
     FirebaseAuth.instance.useAuthEmulator(_emulatorHost, _authPort);
-    FirebaseFirestore.instance.useFirestoreEmulator(_emulatorHost, _firestorePort);
+    FirebaseFirestore.instance
+        .useFirestoreEmulator(_emulatorHost, _firestorePort);
     debugPrint(
       '[E2E] Using Firebase emulators auth=$_emulatorHost:$_authPort '
       'firestore=$_emulatorHost:$_firestorePort',
@@ -188,10 +189,12 @@ Future<void> _runParentSetup(String runId) async {
   final parentId = user!.uid;
 
   debugPrint('[E2E parent_setup] ensureParentProfile start parentId=$parentId');
-  await firestoreService.ensureParentProfile(
-    parentId: parentId,
-    phoneNumber: user.phoneNumber,
-  ).timeout(_ioTimeout());
+  await firestoreService
+      .ensureParentProfile(
+        parentId: parentId,
+        phoneNumber: user.phoneNumber,
+      )
+      .timeout(_ioTimeout());
   debugPrint('[E2E parent_setup] ensureParentProfile done');
 
   debugPrint('[E2E parent_setup] completeOnboarding start');
@@ -199,26 +202,30 @@ Future<void> _runParentSetup(String runId) async {
   debugPrint('[E2E parent_setup] completeOnboarding done');
 
   debugPrint('[E2E parent_setup] addChild start');
-  final child = await firestoreService.addChild(
-    parentId: parentId,
-    nickname: 'E2E Child $runId',
-    ageBand: AgeBand.middle,
-  ).timeout(_ioTimeout());
+  final child = await firestoreService
+      .addChild(
+        parentId: parentId,
+        nickname: 'E2E Child $runId',
+        ageBand: AgeBand.middle,
+      )
+      .timeout(_ioTimeout());
   debugPrint('[E2E parent_setup] addChild done childId=${child.id}');
 
   // Keep baseline policy deterministic for acceptance assertions.
   debugPrint('[E2E parent_setup] baseline updateChild start');
-  await firestoreService.updateChild(
-    parentId: parentId,
-    child: child.copyWith(
-      policy: child.policy.copyWith(
-        blockedCategories: const <String>[],
-        blockedDomains: const <String>[],
-        schedules: const <Schedule>[],
-      ),
-      clearPausedUntil: true,
-    ),
-  ).timeout(_ioTimeout());
+  await firestoreService
+      .updateChild(
+        parentId: parentId,
+        child: child.copyWith(
+          policy: child.policy.copyWith(
+            blockedCategories: const <String>[],
+            blockedDomains: const <String>[],
+            schedules: const <Schedule>[],
+          ),
+          clearPausedUntil: true,
+        ),
+      )
+      .timeout(_ioTimeout());
   debugPrint('[E2E parent_setup] baseline updateChild done');
 
   final pairingCode = _pairingCodeForRun(runId);
@@ -249,6 +256,8 @@ Future<void> _runChildValidation(
 
   final recordedCalls = <MethodCall>[];
   var vpnRunning = false;
+  var cachedCategories = const <String>[];
+  var cachedDomains = const <String>[];
   TestDefaultBinaryMessengerBinding.instance.defaultBinaryMessenger
       .setMockMethodCallHandler(
     _vpnChannel,
@@ -267,7 +276,18 @@ Future<void> _runChildValidation(
           vpnRunning = false;
           return true;
         case 'updateFilterRules':
+          final args = _asMap(call.arguments);
+          cachedCategories = _asStringList(args['blockedCategories']);
+          cachedDomains = _asStringList(args['blockedDomains']);
           return true;
+        case 'getRuleCacheSnapshot':
+          return <String, dynamic>{
+            'categoryCount': cachedCategories.length,
+            'domainCount': cachedDomains.length,
+            'sampleCategories': cachedCategories.take(5).toList(),
+            'sampleDomains': cachedDomains.take(5).toList(),
+            'lastUpdatedAtEpochMs': DateTime.now().millisecondsSinceEpoch,
+          };
         case 'getStatus':
           return <String, dynamic>{
             'supported': true,
@@ -697,8 +717,10 @@ Future<void> _runParentDashboardWatch(
   );
   await _pumpUntil(
     tester,
-    condition: () =>
-        find.byKey(const Key('dashboard_trust_summary_card')).evaluate().isNotEmpty,
+    condition: () => find
+        .byKey(const Key('dashboard_trust_summary_card'))
+        .evaluate()
+        .isNotEmpty,
     timeout: const Duration(seconds: 30),
   );
 

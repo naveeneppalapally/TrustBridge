@@ -2,6 +2,8 @@ param(
     [string]$ParentDevice = "emulator-5554",
     [string]$ChildDevice = "emulator-5556",
     [bool]$UseEmulators = $true,
+    [ValidateSet("emulators", "live")]
+    [string]$Mode = "emulators",
     [string]$OutputPath = "docs/TWO_DEVICE_ACCEPTANCE_REPORT.md"
 )
 
@@ -60,6 +62,11 @@ $sessionStart = Get-IsoNow
 $status = "PASS"
 $errorMessage = ""
 $runId = ("{0:yyyyMMddHHmmss}" -f (Get-Date)) + (Get-Random -Minimum 1000 -Maximum 9999)
+$effectiveUseEmulators = if ($PSBoundParameters.ContainsKey("UseEmulators")) {
+    $UseEmulators
+} else {
+    $Mode -eq "emulators"
+}
 
 try {
     $adbDevices = adb devices
@@ -74,8 +81,8 @@ try {
     Run-CommandBestEffort -Command "adb -s $ParentDevice shell pm clear com.navee.trustbridge" -Workdir $repoRoot
     Run-CommandBestEffort -Command "adb -s $ChildDevice shell pm clear com.navee.trustbridge" -Workdir $repoRoot
 
-    $commonDefines = "--dart-define=TB_RUN_ID=$runId --dart-define=TB_USE_EMULATORS=$(if ($UseEmulators) { 'true' } else { 'false' })"
-    if ($UseEmulators) {
+    $commonDefines = "--dart-define=TB_RUN_ID=$runId --dart-define=TB_USE_EMULATORS=$(if ($effectiveUseEmulators) { 'true' } else { 'false' })"
+    if ($effectiveUseEmulators) {
         $commonDefines += " --dart-define=TB_EMULATOR_HOST=10.0.2.2 --dart-define=TB_AUTH_PORT=9099 --dart-define=TB_FIRESTORE_PORT=8080"
     }
 
@@ -83,7 +90,7 @@ try {
     $childValidate = "flutter test integration_test/two_device_authenticated_acceptance_test.dart -d $ChildDevice --dart-define=TB_ROLE=child_validate $commonDefines"
     $parentVerify = "flutter test integration_test/two_device_authenticated_acceptance_test.dart -d $ParentDevice --dart-define=TB_ROLE=parent_verify $commonDefines"
     $sequence = "$parentSetup && $childValidate && $parentVerify"
-    if ($UseEmulators) {
+    if ($effectiveUseEmulators) {
         $emulatorExec = "firebase emulators:exec --only ""auth,firestore"" ""$sequence"""
         Run-CommandChecked -Command $emulatorExec -Workdir $repoRoot
     } else {
@@ -114,7 +121,7 @@ $reportLines += "1. Parent setup role (parent_setup) on parent device"
 $reportLines += "2. Child validation role (child_validate) on child device"
 $reportLines += "3. Parent verification role (parent_verify) on parent device"
 $reportLines += ""
-$reportLines += $(if ($UseEmulators) {
+$reportLines += $(if ($effectiveUseEmulators) {
     "All steps were executed inside one Firebase emulator session (auth + firestore) to preserve shared test state."
 } else {
     "All steps were executed against the live Firebase project on physical devices."

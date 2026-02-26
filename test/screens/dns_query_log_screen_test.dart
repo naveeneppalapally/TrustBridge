@@ -63,6 +63,7 @@ class _FakeVpnServiceForDnsLogs implements VpnServiceBase {
     String? parentId,
     String? childId,
     String? upstreamDns,
+    bool usePersistedRules = false,
   }) async {
     running = true;
     return true;

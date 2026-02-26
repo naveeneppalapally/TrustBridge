@@ -8,6 +8,7 @@ import '../models/policy.dart';
 import '../models/service_definition.dart';
 import '../services/auth_service.dart';
 import '../services/firestore_service.dart';
+import '../services/remote_command_service.dart';
 import '../utils/parent_pin_gate.dart';
 
 class ModeOverridesScreen extends StatefulWidget {
@@ -457,6 +458,17 @@ class _ModeOverridesScreenState extends State<ModeOverridesScreen> {
         parentId: parentId,
         child: updatedChild,
       );
+
+      if (RolloutFlags.policySyncTriggerRemoteCommand &&
+          widget.child.deviceIds.isNotEmpty) {
+        final remoteCommandService = RemoteCommandService();
+        for (final deviceId in widget.child.deviceIds) {
+          remoteCommandService.sendRestartVpnCommand(deviceId).catchError(
+                (_) => '',
+              );
+        }
+      }
+
       if (!mounted) {
         return;
       }

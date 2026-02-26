@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import 'package:trustbridge_app/config/rollout_flags.dart';
 import 'package:trustbridge_app/models/child_profile.dart';
 import 'package:trustbridge_app/models/policy.dart';
 import 'package:trustbridge_app/models/schedule.dart';
@@ -10,6 +11,7 @@ import 'package:trustbridge_app/screens/quick_modes_screen.dart';
 import 'package:trustbridge_app/screens/schedule_creator_screen.dart';
 import 'package:trustbridge_app/services/auth_service.dart';
 import 'package:trustbridge_app/services/firestore_service.dart';
+import 'package:trustbridge_app/services/remote_command_service.dart';
 
 class PolicyOverviewScreen extends StatefulWidget {
   const PolicyOverviewScreen({
@@ -602,6 +604,16 @@ class _PolicyOverviewScreenState extends State<PolicyOverviewScreen> {
         parentId: parentId,
         child: updatedChild,
       );
+
+      if (RolloutFlags.policySyncTriggerRemoteCommand &&
+          widget.child.deviceIds.isNotEmpty) {
+        final remoteCommandService = RemoteCommandService();
+        for (final deviceId in widget.child.deviceIds) {
+          remoteCommandService.sendRestartVpnCommand(deviceId).catchError(
+                (_) => '',
+              );
+        }
+      }
 
       if (!mounted) {
         return;

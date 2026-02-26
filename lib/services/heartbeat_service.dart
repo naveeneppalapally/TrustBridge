@@ -91,7 +91,31 @@ class HeartbeatService {
         return;
       }
       if (_pairingServiceOverride == null) {
-        final authUid = FirebaseAuth.instance.currentUser?.uid.trim();
+        final auth = FirebaseAuth.instance;
+        var authUser = auth.currentUser;
+        var authUid = authUser?.uid.trim();
+        final isAnonymousSession = authUser?.isAnonymous == true;
+        if (authUid != null &&
+            authUid.isNotEmpty &&
+            authUid != normalizedParentId &&
+            !isAnonymousSession) {
+          debugPrint(
+            '[Heartbeat] Unexpected non-anonymous auth session for child mode. '
+            'expectedParentId=$normalizedParentId currentUid=$authUid '
+            'attempting anonymous re-auth.',
+          );
+          try {
+            await auth.signOut();
+            final credential = await auth.signInAnonymously();
+            authUser = credential.user;
+            authUid = authUser?.uid.trim();
+          } catch (error) {
+            debugPrint(
+              '[Heartbeat] Anonymous re-auth failed; heartbeat skipped: $error',
+            );
+            return;
+          }
+        }
         if (authUid != null &&
             authUid.isNotEmpty &&
             authUid != normalizedParentId) {
