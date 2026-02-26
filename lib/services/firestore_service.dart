@@ -6,6 +6,8 @@ import 'package:trustbridge_app/config/category_ids.dart';
 import 'package:trustbridge_app/config/service_definitions.dart';
 import 'package:trustbridge_app/models/access_request.dart';
 import 'package:trustbridge_app/models/child_profile.dart';
+import 'package:trustbridge_app/models/installed_app_info.dart';
+import 'package:trustbridge_app/models/policy.dart';
 import 'package:trustbridge_app/models/support_ticket.dart';
 import 'package:trustbridge_app/services/crashlytics_service.dart';
 import 'package:trustbridge_app/services/nextdns_api_service.dart';
@@ -1211,6 +1213,106 @@ class FirestoreService {
     return ChildProfile.fromFirestore(snapshot);
   }
 
+  Future<List<InstalledAppInfo>> getChildInstalledAppsOnce({
+    required String parentId,
+    required String childId,
+  }) async {
+    if (parentId.trim().isEmpty) {
+      throw ArgumentError.value(parentId, 'parentId', 'Parent ID is required.');
+    }
+    if (childId.trim().isEmpty) {
+      throw ArgumentError.value(childId, 'childId', 'Child ID is required.');
+    }
+
+    final childDoc = await _loadOwnedChildDoc(
+      parentId: parentId,
+      childId: childId,
+    );
+    if (!childDoc.exists) {
+      return const <InstalledAppInfo>[];
+    }
+
+    final inventoryDoc = await childDoc.reference
+        .collection('app_inventory')
+        .doc('current')
+        .get();
+    return _installedAppsFromSnapshot(inventoryDoc.data());
+  }
+
+  Stream<List<InstalledAppInfo>> watchChildInstalledApps({
+    required String parentId,
+    required String childId,
+  }) {
+    if (parentId.trim().isEmpty) {
+      throw ArgumentError.value(parentId, 'parentId', 'Parent ID is required.');
+    }
+    if (childId.trim().isEmpty) {
+      throw ArgumentError.value(childId, 'childId', 'Child ID is required.');
+    }
+
+    return _firestore
+        .collection('children')
+        .doc(childId.trim())
+        .collection('app_inventory')
+        .doc('current')
+        .snapshots()
+        .asyncMap((snapshot) async {
+      if (!snapshot.exists) {
+        return const <InstalledAppInfo>[];
+      }
+      final childSnapshot =
+          await _firestore.collection('children').doc(childId.trim()).get();
+      final childData = childSnapshot.data() ?? const <String, dynamic>{};
+      final ownerParentId = (childData['parentId'] as String?)?.trim();
+      if (ownerParentId == null || ownerParentId != parentId.trim()) {
+        return const <InstalledAppInfo>[];
+      }
+      return _installedAppsFromSnapshot(snapshot.data());
+    });
+  }
+
+  List<InstalledAppInfo> _installedAppsFromSnapshot(
+      Map<String, dynamic>? data) {
+    if (data == null || data.isEmpty) {
+      return const <InstalledAppInfo>[];
+    }
+    final rawApps = data['apps'];
+    if (rawApps is! List) {
+      return const <InstalledAppInfo>[];
+    }
+    final apps = <InstalledAppInfo>[];
+    for (final raw in rawApps) {
+      final appMap = _dynamicMap(raw);
+      if (appMap.isEmpty) {
+        continue;
+      }
+      final packageName = (appMap['packageName'] as String?)?.trim();
+      if (packageName == null || packageName.isEmpty) {
+        continue;
+      }
+      final firstSeenAt = _dynamicDateTime(appMap['firstSeenAt']) ??
+          _dynamicDateTime(appMap['firstSeenAtEpochMs']);
+      final lastSeenAt = _dynamicDateTime(appMap['lastSeenAt']) ??
+          _dynamicDateTime(appMap['lastSeenAtEpochMs']);
+      final app = InstalledAppInfo(
+        packageName: packageName.toLowerCase(),
+        appName: (appMap['appName'] as String?)?.trim() ?? packageName,
+        isSystemApp: appMap['isSystemApp'] == true,
+        isLaunchable: appMap['isLaunchable'] != false,
+        firstSeenAt: firstSeenAt,
+        lastSeenAt: lastSeenAt,
+      );
+      if (!app.isValid) {
+        continue;
+      }
+      apps.add(app);
+    }
+    apps.sort(
+      (a, b) => a.appName.toLowerCase().compareTo(b.appName.toLowerCase()),
+    );
+    return apps;
+  }
+
   /// Streams latest heartbeat timestamps for a set of device IDs.
   ///
   /// Firestore `whereIn` supports at most 10 IDs; extra IDs are ignored and
@@ -1724,6 +1826,11 @@ class FirestoreService {
     final normalizedPolicy = child.policy.copyWith(
       blockedCategories: normalizeCategoryIds(child.policy.blockedCategories),
       blockedServices: _normalizeServiceIds(child.policy.blockedServices),
+      blockedPackages: _normalizePackageIds(child.policy.blockedPackages),
+      modeOverrides: _normalizeModeOverridesModel(child.policy.modeOverrides),
+      policySchemaVersion: child.policy.policySchemaVersion <= 0
+          ? 2
+          : child.policy.policySchemaVersion,
     );
     final updatedAt = DateTime.now();
     final childRef = childDoc.reference;
@@ -1748,10 +1855,101 @@ class FirestoreService {
       blockedCategories: normalizedPolicy.blockedCategories,
       blockedServices: normalizedPolicy.blockedServices,
       blockedDomains: normalizedPolicy.blockedDomains,
+      blockedPackages: normalizedPolicy.blockedPackages,
+      modeOverrides: normalizedPolicy.modeOverrides.map(
+        (modeName, overrideSet) => MapEntry(modeName, overrideSet.toMap()),
+      ),
       manualMode: existingManualMode.isEmpty ? null : existingManualMode,
       pausedUntil: child.pausedUntil,
       sourceUpdatedAt: updatedAt,
+      policySchemaVersion: normalizedPolicy.policySchemaVersion,
     );
+  }
+
+  Future<void> appendParentDebugEvent({
+    required String parentId,
+    required String childId,
+    required String eventType,
+    required String screen,
+    Map<String, dynamic>? payload,
+    DateTime? clientTime,
+  }) async {
+    final normalizedParentId = parentId.trim();
+    final normalizedChildId = childId.trim();
+    final normalizedEventType = eventType.trim();
+    final normalizedScreen = screen.trim();
+    if (normalizedParentId.isEmpty) {
+      throw ArgumentError.value(parentId, 'parentId', 'Parent ID is required.');
+    }
+    if (normalizedChildId.isEmpty) {
+      throw ArgumentError.value(childId, 'childId', 'Child ID is required.');
+    }
+    if (normalizedEventType.isEmpty) {
+      throw ArgumentError.value(
+        eventType,
+        'eventType',
+        'Event type is required.',
+      );
+    }
+    if (normalizedScreen.isEmpty) {
+      throw ArgumentError.value(screen, 'screen', 'Screen is required.');
+    }
+
+    final childDoc = await _loadOwnedChildDoc(
+      parentId: normalizedParentId,
+      childId: normalizedChildId,
+    );
+    final normalizedPayload = <String, dynamic>{};
+    (payload ?? const <String, dynamic>{}).forEach((key, value) {
+      final normalizedKey = key.trim();
+      if (normalizedKey.isEmpty) {
+        return;
+      }
+      normalizedPayload[normalizedKey] = value;
+    });
+
+    await childDoc.reference.collection('parent_debug_events').add(
+      <String, dynamic>{
+        'parentId': normalizedParentId,
+        'childId': normalizedChildId,
+        'source': 'parent_app',
+        'screen': normalizedScreen,
+        'eventType': normalizedEventType,
+        'payload': normalizedPayload,
+        'clientTime': Timestamp.fromDate(clientTime ?? DateTime.now()),
+        'createdAt': FieldValue.serverTimestamp(),
+      },
+    );
+  }
+
+  Future<int?> getEffectivePolicyCurrentVersion({
+    required String parentId,
+    required String childId,
+  }) async {
+    final normalizedParentId = parentId.trim();
+    final normalizedChildId = childId.trim();
+    if (normalizedParentId.isEmpty || normalizedChildId.isEmpty) {
+      return null;
+    }
+
+    await _loadOwnedChildDoc(
+      parentId: normalizedParentId,
+      childId: normalizedChildId,
+    );
+    final doc = await _firestore
+        .collection('children')
+        .doc(normalizedChildId)
+        .collection('effective_policy')
+        .doc('current')
+        .get();
+    if (!doc.exists) {
+      return null;
+    }
+    final data = doc.data();
+    if (data == null) {
+      return null;
+    }
+    return _dynamicInt(data['version']);
   }
 
   Future<void> deleteChild({
@@ -1876,9 +2074,12 @@ class FirestoreService {
         blockedCategories: _dynamicStringList(policy['blockedCategories']),
         blockedServices: _dynamicStringList(policy['blockedServices']),
         blockedDomains: _dynamicStringList(policy['blockedDomains']),
+        blockedPackages: _dynamicStringList(policy['blockedPackages']),
+        modeOverrides: _dynamicMap(policy['modeOverrides']),
         manualMode: manualMode.isEmpty ? null : manualMode,
         pausedUntil: pausedUntil,
         sourceUpdatedAt: updatedAt,
+        policySchemaVersion: _dynamicInt(policy['policySchemaVersion']) ?? 1,
       );
     }
   }
@@ -1919,9 +2120,12 @@ class FirestoreService {
         blockedCategories: _dynamicStringList(policy['blockedCategories']),
         blockedServices: _dynamicStringList(policy['blockedServices']),
         blockedDomains: _dynamicStringList(policy['blockedDomains']),
+        blockedPackages: _dynamicStringList(policy['blockedPackages']),
+        modeOverrides: _dynamicMap(policy['modeOverrides']),
         manualMode: manualMode.isEmpty ? null : manualMode,
         pausedUntil: null,
         sourceUpdatedAt: updatedAt,
+        policySchemaVersion: _dynamicInt(policy['policySchemaVersion']) ?? 1,
       );
     }
   }
@@ -1949,6 +2153,9 @@ class FirestoreService {
     final blockedCategories = _dynamicStringList(policy['blockedCategories']);
     final blockedServices = _dynamicStringList(policy['blockedServices']);
     final blockedDomains = _dynamicStringList(policy['blockedDomains']);
+    final blockedPackages = _dynamicStringList(policy['blockedPackages']);
+    final modeOverrides = _dynamicMap(policy['modeOverrides']);
+    final policySchemaVersion = _dynamicInt(policy['policySchemaVersion']) ?? 1;
     final updatedAt = DateTime.now();
     await childDoc.reference.update(<String, dynamic>{
       'pausedUntil':
@@ -1961,9 +2168,12 @@ class FirestoreService {
       blockedCategories: blockedCategories,
       blockedServices: blockedServices,
       blockedDomains: blockedDomains,
+      blockedPackages: blockedPackages,
+      modeOverrides: modeOverrides,
       manualMode: manualMode.isEmpty ? null : manualMode,
       pausedUntil: pausedUntil,
       sourceUpdatedAt: updatedAt,
+      policySchemaVersion: policySchemaVersion,
     );
   }
 
@@ -1992,6 +2202,9 @@ class FirestoreService {
     final blockedCategories = _dynamicStringList(policy['blockedCategories']);
     final blockedServices = _dynamicStringList(policy['blockedServices']);
     final blockedDomains = _dynamicStringList(policy['blockedDomains']);
+    final blockedPackages = _dynamicStringList(policy['blockedPackages']);
+    final modeOverrides = _dynamicMap(policy['modeOverrides']);
+    final policySchemaVersion = _dynamicInt(policy['policySchemaVersion']) ?? 1;
     final pausedUntil = _dynamicDateTime(childData['pausedUntil']);
     final normalizedMode = mode?.trim().toLowerCase();
     final updatedAt = DateTime.now();
@@ -2007,9 +2220,12 @@ class FirestoreService {
         blockedCategories: blockedCategories,
         blockedServices: blockedServices,
         blockedDomains: blockedDomains,
+        blockedPackages: blockedPackages,
+        modeOverrides: modeOverrides,
         manualMode: null,
         pausedUntil: pausedUntil,
         sourceUpdatedAt: updatedAt,
+        policySchemaVersion: policySchemaVersion,
       );
       return;
     }
@@ -2029,9 +2245,12 @@ class FirestoreService {
       blockedCategories: blockedCategories,
       blockedServices: blockedServices,
       blockedDomains: blockedDomains,
+      blockedPackages: blockedPackages,
+      modeOverrides: modeOverrides,
       manualMode: manualModePayload,
       pausedUntil: pausedUntil,
       sourceUpdatedAt: updatedAt,
+      policySchemaVersion: policySchemaVersion,
     );
   }
 
@@ -2549,9 +2768,12 @@ class FirestoreService {
     required Iterable<String> blockedCategories,
     required Iterable<String> blockedServices,
     required Iterable<String> blockedDomains,
+    required Iterable<String> blockedPackages,
+    required Map<String, dynamic>? modeOverrides,
     required Map<String, dynamic>? manualMode,
     required DateTime? pausedUntil,
     required DateTime sourceUpdatedAt,
+    required int policySchemaVersion,
   }) async {
     final normalizedParentId = parentId.trim();
     final normalizedChildId = childId.trim();
@@ -2563,11 +2785,21 @@ class FirestoreService {
       final canonicalCategories = normalizeCategoryIds(normalizedCategories);
       final normalizedServices = _normalizeServiceIds(blockedServices);
       final normalizedDomains = _normalizeStringIterable(blockedDomains);
+      final normalizedPackages = _normalizePackageIds(blockedPackages);
+      final normalizedModeOverrides = _normalizeModeOverridesMap(modeOverrides);
       final resolvedDomains = ServiceDefinitions.resolveDomains(
         blockedCategories: canonicalCategories,
         blockedServices: normalizedServices,
         customBlockedDomains: normalizedDomains,
       ).toList()
+        ..sort();
+      final resolvedPackages = <String>{
+        ...ServiceDefinitions.resolvePackages(
+          blockedCategories: canonicalCategories,
+          blockedServices: normalizedServices,
+        ),
+        ...normalizedPackages,
+      }.toList()
         ..sort();
       final normalizedManualMode = _normalizeManualModeMap(manualMode);
       final version = _nextPolicyEventEpochMs();
@@ -2582,7 +2814,13 @@ class FirestoreService {
         'blockedCategories': canonicalCategories,
         'blockedServices': normalizedServices,
         'blockedDomains': normalizedDomains,
+        'blockedPackages': normalizedPackages,
         'blockedDomainsResolved': resolvedDomains,
+        'blockedPackagesResolved': resolvedPackages,
+        'modeOverrides': normalizedModeOverrides,
+        'modeOverridesResolved': normalizedModeOverrides,
+        'policySchemaVersion':
+            policySchemaVersion <= 0 ? 2 : policySchemaVersion,
         'manualMode': normalizedManualMode,
         'pausedUntil':
             pausedUntil == null ? null : Timestamp.fromDate(pausedUntil),
@@ -2597,11 +2835,15 @@ class FirestoreService {
         blockedCategories: canonicalCategories,
         blockedServices: normalizedServices,
         customBlockedDomains: normalizedDomains,
+        blockedPackages: normalizedPackages,
         blockedDomainsResolved: resolvedDomains,
+        blockedPackagesResolved: resolvedPackages,
+        modeOverridesResolved: normalizedModeOverrides,
         manualMode: normalizedManualMode,
         pausedUntil: pausedUntil,
         sourceUpdatedAt: sourceUpdatedAt,
         version: version,
+        policySchemaVersion: policySchemaVersion <= 0 ? 2 : policySchemaVersion,
       );
     } catch (error, stackTrace) {
       developer.log(
@@ -2620,11 +2862,15 @@ class FirestoreService {
     required List<String> blockedCategories,
     required List<String> blockedServices,
     required List<String> customBlockedDomains,
+    required List<String> blockedPackages,
     required List<String> blockedDomainsResolved,
+    required List<String> blockedPackagesResolved,
+    required Map<String, dynamic> modeOverridesResolved,
     required Map<String, dynamic>? manualMode,
     required DateTime? pausedUntil,
     required DateTime sourceUpdatedAt,
     required int version,
+    required int policySchemaVersion,
   }) async {
     await _firestore
         .collection('children')
@@ -2639,7 +2885,12 @@ class FirestoreService {
         'blockedCategories': blockedCategories,
         'blockedServices': blockedServices,
         'blockedDomains': customBlockedDomains,
+        'blockedPackages': blockedPackages,
         'blockedDomainsResolved': blockedDomainsResolved,
+        'blockedPackagesResolved': blockedPackagesResolved,
+        'modeOverridesResolved': modeOverridesResolved,
+        'policySchemaVersion':
+            policySchemaVersion <= 0 ? 2 : policySchemaVersion,
         'manualMode': manualMode,
         'pausedUntil':
             pausedUntil == null ? null : Timestamp.fromDate(pausedUntil),
@@ -2672,6 +2923,97 @@ class FirestoreService {
     }
     final ordered = normalized.toList()..sort();
     return ordered;
+  }
+
+  List<String> _normalizePackageIds(Iterable<String> values) {
+    final normalized = <String>{};
+    for (final value in values) {
+      final packageName = value.trim().toLowerCase();
+      if (packageName.isEmpty) {
+        continue;
+      }
+      normalized.add(packageName);
+    }
+    final ordered = normalized.toList()..sort();
+    return ordered;
+  }
+
+  Map<String, ModeOverrideSet> _normalizeModeOverridesModel(
+    Map<String, ModeOverrideSet> values,
+  ) {
+    final normalized = <String, ModeOverrideSet>{};
+    for (final entry in values.entries) {
+      final modeName = entry.key.trim().toLowerCase();
+      if (modeName.isEmpty) {
+        continue;
+      }
+      final normalizedSet = ModeOverrideSet(
+        forceBlockServices: _normalizeStringIterable(
+          entry.value.forceBlockServices,
+        ),
+        forceAllowServices: _normalizeStringIterable(
+          entry.value.forceAllowServices,
+        ),
+        forceBlockPackages: _normalizePackageIds(
+          entry.value.forceBlockPackages,
+        ),
+        forceAllowPackages: _normalizePackageIds(
+          entry.value.forceAllowPackages,
+        ),
+        forceBlockDomains: _normalizeStringIterable(
+          entry.value.forceBlockDomains,
+        ),
+        forceAllowDomains: _normalizeStringIterable(
+          entry.value.forceAllowDomains,
+        ),
+      );
+      if (normalizedSet.isEmpty) {
+        continue;
+      }
+      normalized[modeName] = normalizedSet;
+    }
+    return normalized;
+  }
+
+  Map<String, dynamic> _normalizeModeOverridesMap(
+    Map<String, dynamic>? rawOverrides,
+  ) {
+    if (rawOverrides == null || rawOverrides.isEmpty) {
+      return <String, dynamic>{};
+    }
+    final normalized = <String, dynamic>{};
+    for (final entry in rawOverrides.entries) {
+      final modeName = entry.key.trim().toLowerCase();
+      if (modeName.isEmpty) {
+        continue;
+      }
+      final modeMap = _dynamicMap(entry.value);
+      if (modeMap.isEmpty) {
+        continue;
+      }
+      final normalizedModeMap = <String, dynamic>{
+        'forceBlockServices': _normalizeStringIterable(
+            _dynamicStringList(modeMap['forceBlockServices'])),
+        'forceAllowServices': _normalizeStringIterable(
+            _dynamicStringList(modeMap['forceAllowServices'])),
+        'forceBlockPackages': _normalizePackageIds(
+            _dynamicStringList(modeMap['forceBlockPackages'])),
+        'forceAllowPackages': _normalizePackageIds(
+            _dynamicStringList(modeMap['forceAllowPackages'])),
+        'forceBlockDomains': _normalizeStringIterable(
+            _dynamicStringList(modeMap['forceBlockDomains'])),
+        'forceAllowDomains': _normalizeStringIterable(
+            _dynamicStringList(modeMap['forceAllowDomains'])),
+      };
+      final hasAnyValue = normalizedModeMap.values.any(
+        (value) => value is List && value.isNotEmpty,
+      );
+      if (!hasAnyValue) {
+        continue;
+      }
+      normalized[modeName] = normalizedModeMap;
+    }
+    return normalized;
   }
 
   Map<String, dynamic>? _normalizeManualModeMap(Map<String, dynamic>? rawMode) {
@@ -2727,6 +3069,35 @@ class FirestoreService {
     }
     if (raw is DateTime) {
       return raw;
+    }
+    if (raw is int && raw > 0) {
+      return DateTime.fromMillisecondsSinceEpoch(raw);
+    }
+    if (raw is num && raw.toInt() > 0) {
+      return DateTime.fromMillisecondsSinceEpoch(raw.toInt());
+    }
+    if (raw is String) {
+      final parsedInt = int.tryParse(raw.trim());
+      if (parsedInt != null && parsedInt > 0) {
+        return DateTime.fromMillisecondsSinceEpoch(parsedInt);
+      }
+      final parsedDate = DateTime.tryParse(raw.trim());
+      if (parsedDate != null) {
+        return parsedDate;
+      }
+    }
+    return null;
+  }
+
+  int? _dynamicInt(Object? raw) {
+    if (raw is int) {
+      return raw;
+    }
+    if (raw is num) {
+      return raw.toInt();
+    }
+    if (raw is String) {
+      return int.tryParse(raw.trim());
     }
     return null;
   }

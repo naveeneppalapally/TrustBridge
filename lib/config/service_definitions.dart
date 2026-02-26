@@ -103,6 +103,7 @@ class ServiceDefinitions {
       ],
       androidPackages: <String>[
         'com.google.android.youtube',
+        'app.revanced.android.youtube',
         'com.google.android.apps.youtube.music',
         'com.google.android.apps.kids.familylinkhelper',
       ],
@@ -180,7 +181,8 @@ class ServiceDefinitions {
     required Iterable<String> blockedServices,
   }) {
     final effective = <String>{};
-    final normalizedCategories = normalizeCategoryIds(blockedCategories).toSet();
+    final normalizedCategories =
+        normalizeCategoryIds(blockedCategories).toSet();
 
     for (final raw in blockedServices) {
       final serviceId = raw.trim().toLowerCase();
@@ -201,6 +203,8 @@ class ServiceDefinitions {
     required Iterable<String> customBlockedDomains,
   }) {
     final result = <String>{};
+    final normalizedCategories =
+        normalizeCategoryIds(blockedCategories).toSet();
     result.addAll(
       customBlockedDomains
           .map((d) => d.trim().toLowerCase())
@@ -216,8 +220,14 @@ class ServiceDefinitions {
       if (service == null) {
         continue;
       }
+      final blockedByCategory =
+          normalizedCategories.contains(service.categoryId);
+      final domainsSource =
+          (!blockedByCategory && service.criticalDomains.isNotEmpty)
+              ? service.criticalDomains
+              : service.domains;
       result.addAll(
-        service.domains
+        domainsSource
             .map((domain) => domain.trim().toLowerCase())
             .where((domain) => domain.isNotEmpty),
       );

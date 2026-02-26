@@ -1,6 +1,8 @@
 import 'package:fl_chart/fl_chart.dart';
 import 'package:flutter/material.dart';
 
+import '../config/rollout_flags.dart';
+import '../config/service_definitions.dart';
 import '../models/child_profile.dart';
 import '../services/auth_service.dart';
 import '../services/app_usage_service.dart';
@@ -12,19 +14,23 @@ class UsageReportsScreen extends StatefulWidget {
   const UsageReportsScreen({
     super.key,
     this.showLoadingState = false,
+    this.showAppBar = true,
     this.appUsageService,
     this.authService,
     this.firestoreService,
     this.nextDnsApiService,
     this.parentIdOverride,
+    this.childIdOverride,
   });
 
   final bool showLoadingState;
+  final bool showAppBar;
   final AppUsageService? appUsageService;
   final AuthService? authService;
   final FirestoreService? firestoreService;
   final NextDnsApiService? nextDnsApiService;
   final String? parentIdOverride;
+  final String? childIdOverride;
 
   @override
   State<UsageReportsScreen> createState() => _UsageReportsScreenState();
@@ -42,6 +48,9 @@ class _UsageReportsScreenState extends State<UsageReportsScreen> {
   bool _nextDnsConfigured = false;
   bool _loading = true;
   String? _error;
+  DateTime _selectedDay = DateTime.now();
+
+  bool get _perAppUsageReportsEnabled => RolloutFlags.perAppUsageReports;
 
   AppUsageService get _resolvedAppUsageService {
     _appUsageService ??= widget.appUsageService ?? AppUsageService();
@@ -95,8 +104,17 @@ class _UsageReportsScreenState extends State<UsageReportsScreen> {
       List<ChildProfile> children = const <ChildProfile>[];
       if (parentId != null && parentId.trim().isNotEmpty) {
         children = await _resolvedFirestoreService.getChildrenOnce(parentId);
+        final childIdFilter = widget.childIdOverride?.trim();
+        if (childIdFilter != null && childIdFilter.isNotEmpty) {
+          children = children
+              .where((child) => child.id.trim() == childIdFilter)
+              .toList(growable: false);
+        }
       }
-      UsageReportData? report = await _loadAggregatedChildUsageReport(children);
+      UsageReportData? report = await _loadAggregatedChildUsageReport(
+        children,
+        selectedDay: _selectedDay,
+      );
       if (report == null) {
         final localReport = await _resolvedAppUsageService.getUsageReport(
           pastDays: 7,
@@ -130,6 +148,10 @@ class _UsageReportsScreenState extends State<UsageReportsScreen> {
 
   @override
   Widget build(BuildContext context) {
+    final body = _buildBody();
+    if (!widget.showAppBar) {
+      return body;
+    }
     return Scaffold(
       appBar: AppBar(
         title: const Text('Usage Reports'),
@@ -144,7 +166,7 @@ class _UsageReportsScreenState extends State<UsageReportsScreen> {
           ),
         ],
       ),
-      body: _buildBody(),
+      body: body,
     );
   }
 
@@ -169,6 +191,10 @@ class _UsageReportsScreenState extends State<UsageReportsScreen> {
       return ListView(
         padding: const EdgeInsets.fromLTRB(16, 12, 16, 24),
         children: [
+          if (_perAppUsageReportsEnabled) ...[
+            _buildDaySelectorCard(),
+            const SizedBox(height: 12),
+          ],
           _buildChildSummaryFallbackCard(),
           const SizedBox(height: 14),
           _buildChildUsagePendingCard(),
@@ -181,13 +207,19 @@ class _UsageReportsScreenState extends State<UsageReportsScreen> {
     return ListView(
       padding: const EdgeInsets.fromLTRB(16, 12, 16, 24),
       children: [
+        if (_perAppUsageReportsEnabled) ...[
+          _buildDaySelectorCard(),
+          const SizedBox(height: 12),
+        ],
         _HeroStatsCard(report: report),
         const SizedBox(height: 14),
         _CategoryCard(report: report),
-        const SizedBox(height: 14),
-        _TrendCard(report: report),
-        const SizedBox(height: 14),
-        _MostUsedAppsCard(report: report),
+        if (_perAppUsageReportsEnabled) ...[
+          const SizedBox(height: 14),
+          _TrendCard(report: report),
+          const SizedBox(height: 14),
+          _MostUsedAppsCard(report: report),
+        ],
         const SizedBox(height: 14),
         _buildNextDnsAnalyticsCard(),
       ],
@@ -265,8 +297,7 @@ class _UsageReportsScreenState extends State<UsageReportsScreen> {
                         Expanded(
                           child: Text(
                             child.nickname,
-                            style:
-                                const TextStyle(fontWeight: FontWeight.w600),
+                            style: const TextStyle(fontWeight: FontWeight.w600),
                           ),
                         ),
                         Text('$categories cats • $domains domains'),
@@ -287,110 +318,319 @@ class _UsageReportsScreenState extends State<UsageReportsScreen> {
     );
   }
 
+  Widget _buildDaySelectorCard() {
+    final options = _recentDayOptions();
+    return Card(
+      child: Padding(
+        padding: const EdgeInsets.all(12),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            const Text(
+              'Day Filter',
+              style: TextStyle(fontWeight: FontWeight.w700),
+            ),
+            const SizedBox(height: 8),
+            Wrap(
+              spacing: 8,
+              runSpacing: 8,
+              children: options.map((day) {
+                final selected = _sameDay(day, _selectedDay);
+                return ChoiceChip(
+                  label: Text(_dayChipLabel(day)),
+                  selected: selected,
+                  onSelected: (_) {
+                    if (selected) {
+                      return;
+                    }
+                    setState(() {
+                      _selectedDay = day;
+                    });
+                    _load();
+                  },
+                );
+              }).toList(growable: false),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+
+  List<DateTime> _recentDayOptions() {
+    final today = _dayStart(DateTime.now());
+    return List<DateTime>.generate(
+      7,
+      (index) => today.subtract(Duration(days: index)),
+    );
+  }
+
+  String _dayChipLabel(DateTime day) {
+    final today = _dayStart(DateTime.now());
+    if (_sameDay(day, today)) {
+      return 'Today';
+    }
+    final yesterday = today.subtract(const Duration(days: 1));
+    if (_sameDay(day, yesterday)) {
+      return 'Yesterday';
+    }
+    return '${day.month}/${day.day}';
+  }
+
+  DateTime _dayStart(DateTime value) {
+    return DateTime(value.year, value.month, value.day);
+  }
+
+  bool _sameDay(DateTime left, DateTime right) {
+    return left.year == right.year &&
+        left.month == right.month &&
+        left.day == right.day;
+  }
+
+  String _dayKey(DateTime value) {
+    final year = value.year.toString().padLeft(4, '0');
+    final month = value.month.toString().padLeft(2, '0');
+    final day = value.day.toString().padLeft(2, '0');
+    return '$year-$month-$day';
+  }
+
   Future<UsageReportData?> _loadAggregatedChildUsageReport(
-    List<ChildProfile> children,
-  ) async {
+    List<ChildProfile> children, {
+    required DateTime selectedDay,
+  }) async {
     if (children.isEmpty) {
       return null;
     }
 
-    final snapshots = await Future.wait(
-      children.map(
-        (child) => _resolvedFirestoreService.firestore
-            .collection('children')
-            .doc(child.id)
-            .collection('usage_reports')
-            .doc('latest')
-            .get(),
-      ),
+    final selectedDayStart = _dayStart(selectedDay);
+    final selectedDayKey = _dayKey(selectedDayStart);
+    final trendDays = List<DateTime>.generate(
+      7,
+      (index) => selectedDayStart.subtract(Duration(days: 6 - index)),
     );
 
     var totalScreenTimeMs = 0;
-    var averageDailyScreenTimeMs = 0;
     var hasAnyData = false;
     final categoryTotalsMs = <String, int>{};
-    final trendTotalsMs = List<int>.filled(7, 0);
-    final trendLabels = List<String>.from(const <String>[
-      'M',
-      'T',
-      'W',
-      'T',
-      'F',
-      'S',
-      'S',
-    ]);
+    final trendTotalsMs = List<int>.filled(trendDays.length, 0);
+    final trendLabels = trendDays
+        .map((day) => '${day.month}/${day.day}')
+        .toList(growable: false);
     final appTotals = <String, _AggregatedAppUsage>{};
 
-    for (final snapshot in snapshots) {
-      if (!snapshot.exists) {
-        continue;
-      }
-      final data = snapshot.data();
-      if (data == null || data.isEmpty) {
-        continue;
-      }
+    for (final child in children) {
+      final usageRef = _resolvedFirestoreService.firestore
+          .collection('children')
+          .doc(child.id)
+          .collection('usage_reports');
+      final latestFuture = usageRef.doc('latest').get();
+      final selectedNestedFuture =
+          usageRef.doc('daily').collection('days').doc(selectedDayKey).get();
+      final selectedFlatFuture = usageRef.doc('daily_$selectedDayKey').get();
+      final trendNestedFutures = trendDays
+          .map((day) =>
+              usageRef.doc('daily').collection('days').doc(_dayKey(day)).get())
+          .toList(growable: false);
+      final trendFlatFutures = trendDays
+          .map((day) => usageRef.doc('daily_${_dayKey(day)}').get())
+          .toList(growable: false);
 
-      final reportTotalMs = _toInt(data['totalScreenTimeMs']);
-      final reportAverageMs = _toInt(data['averageDailyScreenTimeMs']);
-      totalScreenTimeMs += reportTotalMs;
-      averageDailyScreenTimeMs += reportAverageMs;
-      if (reportTotalMs > 0 || reportAverageMs > 0) {
-        hasAnyData = true;
-      }
+      final latestSnapshot = await latestFuture;
+      final selectedNestedSnapshot = await selectedNestedFuture;
+      final selectedFlatSnapshot = await selectedFlatFuture;
+      final trendNestedSnapshots = await Future.wait(trendNestedFutures);
+      final trendFlatSnapshots = await Future.wait(trendFlatFutures);
 
-      for (final slice in _parseMapList(data['categorySlices'])) {
-        final label = (slice['label'] as String?)?.trim();
-        if (label == null || label.isEmpty) {
-          continue;
-        }
-        final durationMs = _toInt(slice['durationMs']);
-        if (durationMs <= 0) {
-          continue;
-        }
-        categoryTotalsMs[label] = (categoryTotalsMs[label] ?? 0) + durationMs;
-        hasAnyData = true;
-      }
+      final latestData = latestSnapshot.data() ?? const <String, dynamic>{};
+      final selectedDailyData =
+          (selectedNestedSnapshot.data() ?? selectedFlatSnapshot.data()) ??
+              const <String, dynamic>{};
 
-      final trend = _parseMapList(data['dailyTrend']);
-      for (var index = 0; index < trend.length && index < trendTotalsMs.length; index++) {
-        final point = trend[index];
-        final durationMs = _toInt(point['durationMs']);
-        trendTotalsMs[index] += durationMs;
-        final label = (point['label'] as String?)?.trim();
-        if (label != null && label.isNotEmpty) {
-          trendLabels[index] = label;
-        }
-        if (durationMs > 0) {
+      if (selectedDailyData.isNotEmpty) {
+        final totalMinutes = _toInt(selectedDailyData['totalScreenMinutes']);
+        totalScreenTimeMs += totalMinutes * Duration.millisecondsPerMinute;
+        if (totalMinutes > 0) {
           hasAnyData = true;
         }
+
+        final categoryTotalsRaw = selectedDailyData['categoryTotals'];
+        if (categoryTotalsRaw is Map) {
+          for (final entry in categoryTotalsRaw.entries) {
+            final label = entry.key.toString().trim();
+            if (label.isEmpty) {
+              continue;
+            }
+            final durationMs = _toInt(entry.value);
+            if (durationMs <= 0) {
+              continue;
+            }
+            categoryTotalsMs[label] =
+                (categoryTotalsMs[label] ?? 0) + durationMs;
+            hasAnyData = true;
+          }
+        }
+
+        final appUsageRaw = selectedDailyData['appUsageByPackage'];
+        if (appUsageRaw is Map) {
+          for (final entry in appUsageRaw.entries) {
+            final packageName = entry.key.toString().trim().toLowerCase();
+            if (packageName.isEmpty) {
+              continue;
+            }
+            final appMap = entry.value is Map
+                ? (entry.value as Map).map(
+                    (key, value) => MapEntry(key.toString(), value),
+                  )
+                : const <String, dynamic>{};
+            final durationMs = _toInt(appMap['durationMs']);
+            final minutes = _toInt(appMap['minutes']);
+            final resolvedDurationMs = durationMs > 0
+                ? durationMs
+                : minutes * Duration.millisecondsPerMinute;
+            if (resolvedDurationMs <= 0) {
+              continue;
+            }
+            final appName =
+                (appMap['appName'] as String?)?.trim().isNotEmpty == true
+                    ? (appMap['appName'] as String).trim()
+                    : _appNameFromPackage(packageName);
+            final aggregateKey = packageName;
+            final existing = appTotals[aggregateKey];
+            if (existing == null) {
+              appTotals[aggregateKey] = _AggregatedAppUsage(
+                packageName: packageName,
+                appName: appName,
+                category: _categoryFromPackage(packageName),
+                durationMs: resolvedDurationMs,
+              );
+            } else {
+              appTotals[aggregateKey] = existing.copyWith(
+                durationMs: existing.durationMs + resolvedDurationMs,
+              );
+            }
+            hasAnyData = true;
+          }
+        }
+      } else if (latestData.isNotEmpty) {
+        final reportTotalMs = _toInt(latestData['totalScreenTimeMs']);
+        if (reportTotalMs > 0) {
+          totalScreenTimeMs += reportTotalMs;
+          hasAnyData = true;
+        }
+
+        for (final slice in _parseMapList(latestData['categorySlices'])) {
+          final label = (slice['label'] as String?)?.trim();
+          if (label == null || label.isEmpty) {
+            continue;
+          }
+          final durationMs = _toInt(slice['durationMs']);
+          if (durationMs <= 0) {
+            continue;
+          }
+          categoryTotalsMs[label] = (categoryTotalsMs[label] ?? 0) + durationMs;
+          hasAnyData = true;
+        }
+
+        final appUsageRaw = latestData['appUsageByPackage'];
+        if (appUsageRaw is Map) {
+          for (final entry in appUsageRaw.entries) {
+            final packageName = entry.key.toString().trim().toLowerCase();
+            if (packageName.isEmpty) {
+              continue;
+            }
+            final appMap = entry.value is Map
+                ? (entry.value as Map).map(
+                    (key, value) => MapEntry(key.toString(), value),
+                  )
+                : const <String, dynamic>{};
+            final durationMs = _toInt(appMap['durationMs']);
+            final minutes = _toInt(appMap['minutes']);
+            final resolvedDurationMs = durationMs > 0
+                ? durationMs
+                : minutes * Duration.millisecondsPerMinute;
+            if (resolvedDurationMs <= 0) {
+              continue;
+            }
+            final appName =
+                (appMap['appName'] as String?)?.trim().isNotEmpty == true
+                    ? (appMap['appName'] as String).trim()
+                    : _appNameFromPackage(packageName);
+            final existing = appTotals[packageName];
+            if (existing == null) {
+              appTotals[packageName] = _AggregatedAppUsage(
+                packageName: packageName,
+                appName: appName,
+                category: _categoryFromPackage(packageName),
+                durationMs: resolvedDurationMs,
+              );
+            } else {
+              appTotals[packageName] = existing.copyWith(
+                durationMs: existing.durationMs + resolvedDurationMs,
+              );
+            }
+            hasAnyData = true;
+          }
+        } else {
+          for (final app in _parseMapList(latestData['topApps'])) {
+            final packageName = (app['packageName'] as String?)?.trim() ?? '';
+            final appName = (app['appName'] as String?)?.trim() ?? packageName;
+            final category = (app['category'] as String?)?.trim() ?? 'Other';
+            final durationMs = _toInt(app['durationMs']);
+            if (durationMs <= 0) {
+              continue;
+            }
+
+            final aggregateKey = packageName.isNotEmpty
+                ? packageName.toLowerCase()
+                : appName.toLowerCase();
+            final existing = appTotals[aggregateKey];
+            if (existing == null) {
+              appTotals[aggregateKey] = _AggregatedAppUsage(
+                packageName: packageName.toLowerCase(),
+                appName: appName.isEmpty ? 'App' : appName,
+                category: category.isEmpty ? 'Other' : category,
+                durationMs: durationMs,
+              );
+            } else {
+              appTotals[aggregateKey] = existing.copyWith(
+                durationMs: existing.durationMs + durationMs,
+              );
+            }
+            hasAnyData = true;
+          }
+        }
       }
 
-      for (final app in _parseMapList(data['topApps'])) {
-        final packageName = (app['packageName'] as String?)?.trim() ?? '';
-        final appName = (app['appName'] as String?)?.trim() ?? packageName;
-        final category = (app['category'] as String?)?.trim() ?? 'Other';
-        final durationMs = _toInt(app['durationMs']);
-        if (durationMs <= 0) {
+      for (var index = 0; index < trendNestedSnapshots.length; index++) {
+        final trendData = (trendNestedSnapshots[index].data() ??
+                trendFlatSnapshots[index].data()) ??
+            const <String, dynamic>{};
+        if (trendData.isEmpty) {
           continue;
         }
-
-        final aggregateKey = packageName.isNotEmpty
-            ? packageName
-            : appName.toLowerCase();
-        final existing = appTotals[aggregateKey];
-        if (existing == null) {
-          appTotals[aggregateKey] = _AggregatedAppUsage(
-            packageName: packageName,
-            appName: appName.isEmpty ? 'App' : appName,
-            category: category.isEmpty ? 'Other' : category,
-            durationMs: durationMs,
-          );
-        } else {
-          appTotals[aggregateKey] = existing.copyWith(
-            durationMs: existing.durationMs + durationMs,
-          );
+        final totalMinutes = _toInt(trendData['totalScreenMinutes']);
+        if (totalMinutes <= 0) {
+          continue;
         }
+        final durationMs = totalMinutes * Duration.millisecondsPerMinute;
+        trendTotalsMs[index] += durationMs;
         hasAnyData = true;
+      }
+
+      if (trendNestedSnapshots.every((snapshot) => !snapshot.exists) &&
+          trendFlatSnapshots.every((snapshot) => !snapshot.exists) &&
+          latestData.isNotEmpty) {
+        final trend = _parseMapList(latestData['dailyTrend']);
+        for (var index = 0;
+            index < trend.length && index < trendTotalsMs.length;
+            index++) {
+          final point = trend[index];
+          final durationMs = _toInt(point['durationMs']);
+          trendTotalsMs[index] += durationMs;
+          if (durationMs > 0) {
+            hasAnyData = true;
+          }
+        }
       }
     }
 
@@ -398,9 +638,10 @@ class _UsageReportsScreenState extends State<UsageReportsScreen> {
       return null;
     }
 
-    if (averageDailyScreenTimeMs <= 0 && totalScreenTimeMs > 0) {
-      averageDailyScreenTimeMs = totalScreenTimeMs ~/ 7;
-    }
+    final trendTotalMs = trendTotalsMs.fold<int>(0, (sum, item) => sum + item);
+    final averageDailyScreenTimeMs = trendTotalMs > 0
+        ? (trendTotalMs / trendTotalsMs.length).round()
+        : (totalScreenTimeMs / 7).round();
 
     final categorySlices = categoryTotalsMs.entries
         .map(
@@ -478,6 +719,32 @@ class _UsageReportsScreenState extends State<UsageReportsScreen> {
       return rawValue.toInt();
     }
     return 0;
+  }
+
+  String _appNameFromPackage(String packageName) {
+    for (final service in ServiceDefinitions.all) {
+      for (final pkg in service.androidPackages) {
+        if (pkg.trim().toLowerCase() == packageName) {
+          return service.displayName;
+        }
+      }
+    }
+    final pieces = packageName.split('.');
+    if (pieces.isEmpty) {
+      return packageName;
+    }
+    return pieces.last;
+  }
+
+  String _categoryFromPackage(String packageName) {
+    for (final service in ServiceDefinitions.all) {
+      for (final pkg in service.androidPackages) {
+        if (pkg.trim().toLowerCase() == packageName) {
+          return service.categoryId;
+        }
+      }
+    }
+    return 'Other';
   }
 
   Widget _buildLoadingState() {
