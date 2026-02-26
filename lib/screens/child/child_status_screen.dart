@@ -8,14 +8,18 @@ import 'package:flutter/material.dart';
 import 'package:intl/intl.dart';
 
 import '../../config/category_ids.dart';
+import '../../config/rollout_flags.dart';
 import '../../config/social_media_domains.dart';
 import '../../config/service_definitions.dart';
 import '../../models/access_request.dart';
 import '../../models/blocklist_source.dart';
 import '../../models/child_profile.dart';
+import '../../models/policy.dart';
 import '../../models/schedule.dart';
 import '../../services/app_usage_service.dart';
 import '../../services/blocklist_sync_service.dart';
+import '../../services/browser_dns_bypass_heuristic.dart';
+import '../../services/child_app_inventory_sync_service.dart';
 import '../../services/child_usage_upload_service.dart';
 import '../../services/firestore_service.dart';
 import '../../services/heartbeat_service.dart';
@@ -126,6 +130,16 @@ class _ChildStatusScreenState extends State<ChildStatusScreen>
     return _usageUploadService!;
   }
 
+  ChildAppInventorySyncService? _appInventorySyncService;
+  ChildAppInventorySyncService get _resolvedAppInventorySyncService {
+    _appInventorySyncService ??= ChildAppInventorySyncService(
+      firestore: _firestore,
+      appUsageService: _appUsageService,
+      pairingService: _resolvedPairingService,
+    );
+    return _appInventorySyncService!;
+  }
+
   late final FirestoreService _firestoreService;
 
   String? _parentId;
@@ -140,6 +154,8 @@ class _ChildStatusScreenState extends State<ChildStatusScreen>
   Timer? _protectionBoundaryTimer;
   Timer? _scheduleWarningTimer;
   Timer? _blockedPackageGuardTimer;
+  Timer? _appInventorySyncTimer;
+  Timer? _browserDnsBypassMonitorTimer;
   StreamSubscription<QuerySnapshot<Map<String, dynamic>>>?
       _accessRequestsSubscription;
   StreamSubscription<DocumentSnapshot<Map<String, dynamic>>>?
@@ -175,6 +191,10 @@ class _ChildStatusScreenState extends State<ChildStatusScreen>
   bool _showingBlockedPackageOverlay = false;
   bool? _usageAccessPermissionGrantedForBlocking;
   bool _policyApplyAckSupportsUsageAccess = true;
+  BrowserDnsBypassAssessment? _browserDnsBypassAssessment;
+  DateTime? _browserDnsBypassDetectedAt;
+  DateTime? _lastBrowserDnsBypassSignalAt;
+  String? _lastBrowserDnsBypassSignalReasonCode;
 
   @override
   void initState() {
@@ -198,7 +218,11 @@ class _ChildStatusScreenState extends State<ChildStatusScreen>
         unawaited(_ensureProtectionApplied(child, forceRecheck: true));
       }
       unawaited(_refreshAppBlockingUsageAccessState());
+      unawaited(_refreshBrowserDnsBypassDiagnostics());
       unawaited(_processPendingRemoteCommands());
+      if (RolloutFlags.appInventory) {
+        unawaited(_syncInstalledAppInventory(force: false));
+      }
     }
   }
 
@@ -223,12 +247,19 @@ class _ChildStatusScreenState extends State<ChildStatusScreen>
       }
       _startHeartbeatLoop();
       _startRemoteCommandLoop();
+      _startBrowserDnsBypassMonitorLoop();
       unawaited(_syncChildDeviceNotificationToken());
       _ensureAccessRequestSubscription();
       _ensureChildProfileSubscription();
       _ensurePolicyEventSubscription();
       _ensureEffectivePolicySubscription();
-      _startBlockedPackageGuardLoop();
+      if (RolloutFlags.appBlockingPackages) {
+        _startBlockedPackageGuardLoop();
+      }
+      if (RolloutFlags.appInventory) {
+        _startAppInventorySyncLoop();
+        unawaited(_syncInstalledAppInventory(force: true));
+      }
       return;
     }
     final parentId = await _resolvedPairingService.getPairedParentId();
@@ -253,12 +284,19 @@ class _ChildStatusScreenState extends State<ChildStatusScreen>
     });
     _startHeartbeatLoop();
     _startRemoteCommandLoop();
+    _startBrowserDnsBypassMonitorLoop();
     unawaited(_syncChildDeviceNotificationToken());
     _ensureAccessRequestSubscription();
     _ensureChildProfileSubscription();
     _ensurePolicyEventSubscription();
     _ensureEffectivePolicySubscription();
-    _startBlockedPackageGuardLoop();
+    if (RolloutFlags.appBlockingPackages) {
+      _startBlockedPackageGuardLoop();
+    }
+    if (RolloutFlags.appInventory) {
+      _startAppInventorySyncLoop();
+      unawaited(_syncInstalledAppInventory(force: true));
+    }
   }
 
   Future<void> _ensureChildAuthAndPrimeHeartbeat({
@@ -359,6 +397,10 @@ class _ChildStatusScreenState extends State<ChildStatusScreen>
     _scheduleWarningTimer = null;
     _blockedPackageGuardTimer?.cancel();
     _blockedPackageGuardTimer = null;
+    _appInventorySyncTimer?.cancel();
+    _appInventorySyncTimer = null;
+    _browserDnsBypassMonitorTimer?.cancel();
+    _browserDnsBypassMonitorTimer = null;
     _accessRequestsSubscription?.cancel();
     _accessRequestsSubscription = null;
     _childProfileSubscription?.cancel();
@@ -375,6 +417,33 @@ class _ChildStatusScreenState extends State<ChildStatusScreen>
     super.dispose();
   }
 
+  void _startAppInventorySyncLoop() {
+    if (!RolloutFlags.appInventory) {
+      return;
+    }
+    if (_appInventorySyncTimer != null) {
+      return;
+    }
+    _appInventorySyncTimer = Timer.periodic(
+      const Duration(hours: 6),
+      (_) => unawaited(_syncInstalledAppInventory(force: false)),
+    );
+  }
+
+  Future<void> _syncInstalledAppInventory({required bool force}) async {
+    if (!RolloutFlags.appInventory) {
+      return;
+    }
+    final childId = _childId?.trim();
+    if (childId == null || childId.isEmpty) {
+      return;
+    }
+    await _resolvedAppInventorySyncService.syncIfNeeded(
+      childId: childId,
+      force: force,
+    );
+  }
+
   void _startHeartbeatLoop() {
     if (_heartbeatTimer != null) {
       return;
@@ -386,6 +455,113 @@ class _ChildStatusScreenState extends State<ChildStatusScreen>
     );
   }
 
+  void _startBrowserDnsBypassMonitorLoop() {
+    _browserDnsBypassMonitorTimer?.cancel();
+    _browserDnsBypassMonitorTimer = Timer.periodic(
+      const Duration(seconds: 12),
+      (_) => unawaited(_refreshBrowserDnsBypassDiagnostics()),
+    );
+    unawaited(_refreshBrowserDnsBypassDiagnostics());
+  }
+
+  Future<void> _refreshBrowserDnsBypassDiagnostics() async {
+    if (!mounted) {
+      return;
+    }
+
+    BrowserDnsBypassAssessment? nextAssessment;
+    try {
+      final status = await _vpnService.getStatus();
+      final queries = await _vpnService.getRecentDnsQueries(limit: 60);
+      String? foregroundPackage;
+      try {
+        foregroundPackage =
+            await _appUsageService.getCurrentForegroundPackage();
+      } catch (_) {
+        foregroundPackage = null;
+      }
+      nextAssessment = BrowserDnsBypassHeuristic.evaluate(
+        status: status,
+        recentDnsQueries: queries,
+        foregroundPackage: foregroundPackage,
+      );
+    } catch (_) {
+      nextAssessment = null;
+    }
+
+    if (!mounted) {
+      return;
+    }
+
+    final now = DateTime.now();
+    DateTime? nextDetectedAt = _browserDnsBypassDetectedAt;
+    if (nextAssessment?.shouldWarn == true) {
+      nextDetectedAt = now;
+    } else if (nextDetectedAt != null &&
+        now.difference(nextDetectedAt) > const Duration(minutes: 2)) {
+      nextDetectedAt = null;
+    }
+
+    DateTime? nextLastBypassSignalAt = _lastBrowserDnsBypassSignalAt;
+    String? nextLastBypassSignalReasonCode =
+        _lastBrowserDnsBypassSignalReasonCode;
+    if (nextAssessment?.shouldWarn == true) {
+      nextLastBypassSignalAt = now;
+      nextLastBypassSignalReasonCode = nextAssessment!.reasonCode;
+    }
+
+    final sameAssessment = _browserDnsBypassAssessment != null &&
+        nextAssessment != null &&
+        _browserDnsBypassAssessment!.shouldWarn == nextAssessment.shouldWarn &&
+        _browserDnsBypassAssessment!.browserForeground ==
+            nextAssessment.browserForeground &&
+        _browserDnsBypassAssessment!.protectionActive ==
+            nextAssessment.protectionActive &&
+        _browserDnsBypassAssessment!.vpnRunning == nextAssessment.vpnRunning &&
+        _browserDnsBypassAssessment!.privateDnsActive ==
+            nextAssessment.privateDnsActive &&
+        _browserDnsBypassAssessment!.foregroundPackage ==
+            nextAssessment.foregroundPackage &&
+        _browserDnsBypassAssessment!.recentVpnDnsQueriesInWindow ==
+            nextAssessment.recentVpnDnsQueriesInWindow &&
+        _browserDnsBypassAssessment!.reasonCode == nextAssessment.reasonCode &&
+        _browserDnsBypassAssessment!.lastBlockedDnsQuery?.timestamp ==
+            nextAssessment.lastBlockedDnsQuery?.timestamp &&
+        _browserDnsBypassAssessment!.lastBlockedDnsQuery?.reasonCode ==
+            nextAssessment.lastBlockedDnsQuery?.reasonCode &&
+        _browserDnsBypassAssessment!.lastBlockedDnsQuery?.matchedRule ==
+            nextAssessment.lastBlockedDnsQuery?.matchedRule &&
+        _browserDnsBypassAssessment!.lastVpnDnsQueryAt ==
+            nextAssessment.lastVpnDnsQueryAt;
+    if (sameAssessment &&
+        _browserDnsBypassDetectedAt == nextDetectedAt &&
+        _lastBrowserDnsBypassSignalAt == nextLastBypassSignalAt &&
+        _lastBrowserDnsBypassSignalReasonCode ==
+            nextLastBypassSignalReasonCode) {
+      return;
+    }
+
+    if (nextAssessment != null) {
+      debugPrint(
+        '[ChildStatus] web-dns-check '
+        'warn=${nextAssessment.shouldWarn} '
+        'reason=${nextAssessment.reasonCode} '
+        'fg=${nextAssessment.foregroundPackage ?? 'unknown'} '
+        'recentDns=${nextAssessment.recentVpnDnsQueriesInWindow} '
+        'vpn=${nextAssessment.vpnRunning} '
+        'privateDns=${nextAssessment.privateDnsActive} '
+        'activeRules=${nextAssessment.protectionActive}',
+      );
+    }
+
+    setState(() {
+      _browserDnsBypassAssessment = nextAssessment;
+      _browserDnsBypassDetectedAt = nextDetectedAt;
+      _lastBrowserDnsBypassSignalAt = nextLastBypassSignalAt;
+      _lastBrowserDnsBypassSignalReasonCode = nextLastBypassSignalReasonCode;
+    });
+  }
+
   Future<void> _sendHeartbeatOnce() async {
     try {
       await HeartbeatService.sendHeartbeat();
@@ -395,7 +571,9 @@ class _ChildStatusScreenState extends State<ChildStatusScreen>
 
     // Upload usage data alongside heartbeat (throttled internally).
     final childId = _childId;
-    if (childId != null && childId.isNotEmpty) {
+    if (RolloutFlags.perAppUsageReports &&
+        childId != null &&
+        childId.isNotEmpty) {
       unawaited(
         _resolvedUsageUploadService.uploadIfNeeded(childId: childId),
       );
@@ -422,6 +600,9 @@ class _ChildStatusScreenState extends State<ChildStatusScreen>
   }
 
   void _startBlockedPackageGuardLoop() {
+    if (!RolloutFlags.appBlockingPackages) {
+      return;
+    }
     if (_blockedPackageGuardTimer != null) {
       return;
     }
@@ -433,6 +614,9 @@ class _ChildStatusScreenState extends State<ChildStatusScreen>
   }
 
   bool _requiresUsageAccessForAppBlocking() {
+    if (!RolloutFlags.appBlockingPackages) {
+      return false;
+    }
     return _effectiveBlockedPackages.isNotEmpty;
   }
 
@@ -460,6 +644,9 @@ class _ChildStatusScreenState extends State<ChildStatusScreen>
   }
 
   Future<void> _checkBlockedForegroundPackage() async {
+    if (!RolloutFlags.appBlockingPackages) {
+      return;
+    }
     if (!mounted || _showingBlockedPackageOverlay) {
       return;
     }
@@ -897,13 +1084,23 @@ class _ChildStatusScreenState extends State<ChildStatusScreen>
     );
     final blockedServices = _readStringList(raw['blockedServices']);
     final blockedDomains = _readStringList(raw['blockedDomains']);
+    final blockedPackages = _readStringList(raw['blockedPackages']);
     final resolvedDomains = _readStringList(
       raw['blockedDomainsResolved'] ?? raw['resolvedDomains'],
     );
+    final resolvedPackages = _readStringList(
+      raw['blockedPackagesResolved'] ?? raw['resolvedPackages'],
+    );
+    final modeOverridesResolved =
+        _readModeOverridesMap(raw['modeOverridesResolved']);
+    final policySchemaVersion = _readInt(raw['policySchemaVersion']);
     final manualMode = _manualModeFromRaw(raw['manualMode']);
     final pausedUntil = _parseNullableDateTime(raw['pausedUntil']);
     final sourceUpdatedAt = _parseNullableDateTime(raw['sourceUpdatedAt']);
-    if (version <= 0 && blockedCategories.isEmpty && resolvedDomains.isEmpty) {
+    if (version <= 0 &&
+        blockedCategories.isEmpty &&
+        resolvedDomains.isEmpty &&
+        resolvedPackages.isEmpty) {
       return null;
     }
     return _EffectivePolicySnapshot(
@@ -911,7 +1108,11 @@ class _ChildStatusScreenState extends State<ChildStatusScreen>
       blockedCategories: blockedCategories,
       blockedServices: blockedServices,
       blockedDomains: blockedDomains,
+      blockedPackages: blockedPackages,
       blockedDomainsResolved: resolvedDomains,
+      blockedPackagesResolved: resolvedPackages,
+      modeOverridesResolved: modeOverridesResolved,
+      policySchemaVersion: policySchemaVersion <= 0 ? 1 : policySchemaVersion,
       manualMode: manualMode,
       pausedUntil: pausedUntil,
       sourceUpdatedAt: sourceUpdatedAt,
@@ -927,6 +1128,9 @@ class _ChildStatusScreenState extends State<ChildStatusScreen>
         blockedCategories: snapshot.blockedCategories,
         blockedServices: snapshot.blockedServices,
         blockedDomains: snapshot.blockedDomains,
+        blockedPackages: snapshot.blockedPackages,
+        modeOverrides: snapshot.modeOverridesResolved,
+        policySchemaVersion: snapshot.policySchemaVersion,
       ),
       pausedUntil: snapshot.pausedUntil,
     );
@@ -950,6 +1154,9 @@ class _ChildStatusScreenState extends State<ChildStatusScreen>
     );
     final services = _readStringList(rawData['blockedServices']);
     final domains = _readStringList(rawData['blockedDomains']);
+    final packages = _readStringList(rawData['blockedPackages']);
+    final modeOverrides = _readModeOverridesMap(rawData['modeOverrides']);
+    final policySchemaVersion = _readInt(rawData['policySchemaVersion']);
     final manualMode = _manualModeFromRaw(rawData['manualMode']);
     final pausedUntil = _parseNullableDateTime(rawData['pausedUntil']);
     final eventEpochMs = _readInt(rawData['eventEpochMs']);
@@ -957,6 +1164,9 @@ class _ChildStatusScreenState extends State<ChildStatusScreen>
       blockedCategories: categories,
       blockedServices: services,
       blockedDomains: domains,
+      blockedPackages: packages,
+      modeOverrides: modeOverrides,
+      policySchemaVersion: policySchemaVersion <= 0 ? 1 : policySchemaVersion,
       manualMode: manualMode,
       pausedUntil: pausedUntil,
       eventEpochMs: eventEpochMs,
@@ -979,6 +1189,9 @@ class _ChildStatusScreenState extends State<ChildStatusScreen>
         blockedCategories: event.blockedCategories,
         blockedServices: event.blockedServices,
         blockedDomains: event.blockedDomains,
+        blockedPackages: event.blockedPackages,
+        modeOverrides: event.modeOverrides,
+        policySchemaVersion: event.policySchemaVersion,
       ),
       pausedUntil: event.pausedUntil,
     );
@@ -1012,6 +1225,9 @@ class _ChildStatusScreenState extends State<ChildStatusScreen>
           blockedCategories: event.blockedCategories,
           blockedServices: event.blockedServices,
           blockedDomains: event.blockedDomains,
+          blockedPackages: event.blockedPackages,
+          modeOverrides: event.modeOverrides,
+          policySchemaVersion: event.policySchemaVersion,
         ),
         pausedUntil: event.pausedUntil,
       );
@@ -1047,6 +1263,34 @@ class _ChildStatusScreenState extends State<ChildStatusScreen>
       return rawValue.toInt();
     }
     return 0;
+  }
+
+  Map<String, ModeOverrideSet> _readModeOverridesMap(Object? rawValue) {
+    if (rawValue is! Map) {
+      return const <String, ModeOverrideSet>{};
+    }
+    final result = <String, ModeOverrideSet>{};
+    for (final entry in rawValue.entries) {
+      final modeName = entry.key.toString().trim().toLowerCase();
+      if (modeName.isEmpty) {
+        continue;
+      }
+      Map<String, dynamic> modeMap;
+      final value = entry.value;
+      if (value is Map<String, dynamic>) {
+        modeMap = value;
+      } else if (value is Map) {
+        modeMap = value.map((key, item) => MapEntry(key.toString(), item));
+      } else {
+        continue;
+      }
+      final overrideSet = ModeOverrideSet.fromMap(modeMap);
+      if (overrideSet.isEmpty) {
+        continue;
+      }
+      result[modeName] = overrideSet;
+    }
+    return result;
   }
 
   Future<void> _refreshApprovedExceptionState(String childId) async {
@@ -1116,6 +1360,9 @@ class _ChildStatusScreenState extends State<ChildStatusScreen>
             blockedCategories: effectiveSnapshot.blockedCategories,
             blockedServices: effectiveSnapshot.blockedServices,
             blockedDomains: effectiveSnapshot.blockedDomains,
+            blockedPackages: effectiveSnapshot.blockedPackages,
+            modeOverrides: effectiveSnapshot.modeOverridesResolved,
+            policySchemaVersion: effectiveSnapshot.policySchemaVersion,
           ),
           pausedUntil: effectiveSnapshot.pausedUntil,
         );
@@ -1134,10 +1381,11 @@ class _ChildStatusScreenState extends State<ChildStatusScreen>
     final categories = effectiveRules.categories.toList()..sort();
     final services = effectiveRules.services.toList()..sort();
     final domains = effectiveRules.domains.toList()..sort();
+    final packages = effectiveRules.blockedPackages.toList()..sort();
     _effectiveBlockedPackages = effectiveRules.blockedPackages.toSet();
     unawaited(_refreshAppBlockingUsageAccessState());
-    final policySignature =
-        '${categories.join('|')}::${services.join('|')}::${domains.join('|')}';
+    final policySignature = '${categories.join('|')}::${services.join('|')}::'
+        '${domains.join('|')}::${packages.join('|')}';
     _scheduleNextProtectionRecheck(
       child: sourceChild,
       manualMode: resolvedManualMode,
@@ -1168,7 +1416,7 @@ class _ChildStatusScreenState extends State<ChildStatusScreen>
         policySignature: policySignature,
         policyVersion:
             sourcePolicyVersion ?? _lastEffectivePolicySnapshot?.version,
-        blockedPackages: effectiveRules.blockedPackages.toList()..sort(),
+        blockedPackages: packages,
         forceRecheck: forceRecheck,
       ),
     );
@@ -1204,11 +1452,20 @@ class _ChildStatusScreenState extends State<ChildStatusScreen>
         .map((value) => value.trim().toLowerCase())
         .where((value) => value.isNotEmpty)
         .toSet();
+    final childPackages = child.policy.blockedPackages
+        .map((value) => value.trim().toLowerCase())
+        .where((value) => value.isNotEmpty)
+        .toSet();
+    final snapshotPackages = snapshot.blockedPackages
+        .map((value) => value.trim().toLowerCase())
+        .where((value) => value.isNotEmpty)
+        .toSet();
 
     final hasPolicyMismatch =
         !_sameStringSet(childCategories, snapshotCategories) ||
             !_sameStringSet(childServices, snapshotServices) ||
-            !_sameStringSet(childDomains, snapshotDomains);
+            !_sameStringSet(childDomains, snapshotDomains) ||
+            !_sameStringSet(childPackages, snapshotPackages);
     final hasPauseMismatch = !_sameNullableDateTime(
       child.pausedUntil,
       snapshot.pausedUntil,
@@ -1217,20 +1474,25 @@ class _ChildStatusScreenState extends State<ChildStatusScreen>
       manualMode,
       snapshot.manualMode,
     );
+    final hasModeOverridesMismatch = !_sameModeOverrides(
+      child.policy.modeOverrides,
+      snapshot.modeOverridesResolved,
+    );
 
-    if (!hasPolicyMismatch && !hasPauseMismatch && !hasManualModeMismatch) {
+    if (!hasPolicyMismatch &&
+        !hasPauseMismatch &&
+        !hasManualModeMismatch &&
+        !hasModeOverridesMismatch) {
       return false;
     }
 
-    final sourceUpdatedAt = snapshot.sourceUpdatedAt;
-    if (sourceUpdatedAt == null) {
-      return true;
-    }
-
-    final childUpdatedAt = child.updatedAt;
-    return childUpdatedAt.isAfter(
-      sourceUpdatedAt.add(const Duration(seconds: 1)),
-    );
+    // Effective policy is the canonical source of truth. The top-level child
+    // document `updatedAt` is also touched by heartbeats/device metadata writes,
+    // so it cannot be used to invalidate a newer effective snapshot.
+    //
+    // If fields differ, prefer the effective snapshot until a newer effective
+    // policy version arrives.
+    return false;
   }
 
   bool _sameStringSet(Set<String> left, Set<String> right) {
@@ -1257,6 +1519,46 @@ class _ChildStatusScreenState extends State<ChildStatusScreen>
     return left.mode == right.mode &&
         _sameNullableDateTime(left.setAt, right.setAt) &&
         _sameNullableDateTime(left.expiresAt, right.expiresAt);
+  }
+
+  bool _sameModeOverrides(
+    Map<String, ModeOverrideSet> left,
+    Map<String, ModeOverrideSet> right,
+  ) {
+    if (left.length != right.length) {
+      return false;
+    }
+    for (final entry in left.entries) {
+      final rightValue = right[entry.key];
+      if (rightValue == null) {
+        return false;
+      }
+      if (!_sameModeOverrideSet(entry.value, rightValue)) {
+        return false;
+      }
+    }
+    return true;
+  }
+
+  bool _sameModeOverrideSet(ModeOverrideSet left, ModeOverrideSet right) {
+    bool sameList(List<String> first, List<String> second) {
+      final firstSet = first
+          .map((value) => value.trim().toLowerCase())
+          .where((value) => value.isNotEmpty)
+          .toSet();
+      final secondSet = second
+          .map((value) => value.trim().toLowerCase())
+          .where((value) => value.isNotEmpty)
+          .toSet();
+      return _sameStringSet(firstSet, secondSet);
+    }
+
+    return sameList(left.forceBlockServices, right.forceBlockServices) &&
+        sameList(left.forceAllowServices, right.forceAllowServices) &&
+        sameList(left.forceBlockPackages, right.forceBlockPackages) &&
+        sameList(left.forceAllowPackages, right.forceAllowPackages) &&
+        sameList(left.forceBlockDomains, right.forceBlockDomains) &&
+        sameList(left.forceAllowDomains, right.forceAllowDomains);
   }
 
   void _enqueueProtectionApply(_QueuedProtectionApply next) {
@@ -1315,6 +1617,7 @@ class _ChildStatusScreenState extends State<ChildStatusScreen>
   }
 
   Future<bool> _applyProtectionRules(_QueuedProtectionApply next) async {
+    final applyStopwatch = Stopwatch()..start();
     try {
       try {
         await _refreshApprovedExceptionState(next.child.id);
@@ -1349,15 +1652,7 @@ class _ChildStatusScreenState extends State<ChildStatusScreen>
       final usageAccessGranted = await _refreshAppBlockingUsageAccessState();
 
       var vpnRunning = await _vpnService.isVpnRunning();
-      final restarted = await _vpnService.restartVpn(
-        blockedCategories: next.categories,
-        blockedDomains: next.domains,
-        temporaryAllowedDomains: temporaryAllowedDomains,
-        parentId: _parentId,
-        childId: next.child.id,
-      );
-      vpnRunning = await _vpnService.isVpnRunning();
-      if (!restarted || !vpnRunning) {
+      if (!vpnRunning) {
         await _vpnService.startVpn(
           blockedCategories: next.categories,
           blockedDomains: next.domains,
@@ -1368,13 +1663,33 @@ class _ChildStatusScreenState extends State<ChildStatusScreen>
         vpnRunning = await _vpnService.isVpnRunning();
       }
 
-      final applied = await _replaceVpnRules(
+      var applied = await _replaceVpnRules(
         blockedCategories: next.categories,
         blockedDomains: next.domains,
         temporaryAllowedDomains: temporaryAllowedDomains,
         parentId: _parentId,
         childId: next.child.id,
       );
+      if (!applied) {
+        // Fallback hard reset only when in-place replacement fails.
+        final restarted = await _vpnService.restartVpn(
+          blockedCategories: next.categories,
+          blockedDomains: next.domains,
+          temporaryAllowedDomains: temporaryAllowedDomains,
+          parentId: _parentId,
+          childId: next.child.id,
+        );
+        vpnRunning = await _vpnService.isVpnRunning();
+        if (restarted && vpnRunning) {
+          applied = await _replaceVpnRules(
+            blockedCategories: next.categories,
+            blockedDomains: next.domains,
+            temporaryAllowedDomains: temporaryAllowedDomains,
+            parentId: _parentId,
+            childId: next.child.id,
+          );
+        }
+      }
       if (!applied) {
         debugPrint('[ChildStatus] updateFilterRules returned false');
         await _writePolicyApplyAck(
@@ -1384,6 +1699,7 @@ class _ChildStatusScreenState extends State<ChildStatusScreen>
           usageAccessGranted: usageAccessGranted,
           error: 'updateFilterRules returned false',
           cacheSnapshot: null,
+          applyLatencyMs: applyStopwatch.elapsedMilliseconds,
         );
         _scheduleProtectionRetry();
         return false;
@@ -1410,6 +1726,7 @@ class _ChildStatusScreenState extends State<ChildStatusScreen>
           error:
               'Rule cache mismatch expected(${next.categories.length}/${next.domains.length}) actual(${cacheSnapshot.categoryCount}/${cacheSnapshot.domainCount})',
           cacheSnapshot: cacheSnapshot,
+          applyLatencyMs: applyStopwatch.elapsedMilliseconds,
         );
         _scheduleProtectionRetry();
         return false;
@@ -1433,6 +1750,7 @@ class _ChildStatusScreenState extends State<ChildStatusScreen>
         usageAccessGranted: usageAccessGranted,
         error: null,
         cacheSnapshot: cacheSnapshot,
+        applyLatencyMs: applyStopwatch.elapsedMilliseconds,
       );
       _schedulePolicyApplyHeartbeat();
       return true;
@@ -1447,6 +1765,7 @@ class _ChildStatusScreenState extends State<ChildStatusScreen>
         usageAccessGranted: await _refreshAppBlockingUsageAccessState(),
         error: error.toString(),
         cacheSnapshot: null,
+        applyLatencyMs: applyStopwatch.elapsedMilliseconds,
       );
       _scheduleProtectionRetry();
       // Keep child UI functional even if sync fails.
@@ -1524,6 +1843,7 @@ class _ChildStatusScreenState extends State<ChildStatusScreen>
     required bool usageAccessGranted,
     required String? error,
     required RuleCacheSnapshot? cacheSnapshot,
+    required int applyLatencyMs,
   }) async {
     final childId = _childId?.trim();
     if (childId == null || childId.isEmpty) {
@@ -1556,6 +1876,9 @@ class _ChildStatusScreenState extends State<ChildStatusScreen>
         'appliedVersion': appliedVersion,
         'appliedAt': FieldValue.serverTimestamp(),
         'vpnRunning': vpnRunning,
+        'appliedBlockedDomainsCount': next.domains.length,
+        'appliedBlockedPackagesCount': next.blockedPackages.length,
+        'applyLatencyMs': applyLatencyMs < 0 ? 0 : applyLatencyMs,
         'ruleCounts': ruleCounts,
         'applyStatus': applyStatus,
         'error': error,
@@ -1657,13 +1980,20 @@ class _ChildStatusScreenState extends State<ChildStatusScreen>
         .map((domain) => domain.trim().toLowerCase())
         .where((domain) => domain.isNotEmpty)
         .toSet();
+    final customPackages = child.policy.blockedPackages
+        .map((pkg) => pkg.trim().toLowerCase())
+        .where((pkg) => pkg.isNotEmpty)
+        .toSet();
 
     final pauseActive =
         child.pausedUntil != null && child.pausedUntil!.isAfter(now);
+    final activeManualMode = _activeManualMode(manualMode, now);
+    final activeSchedule = activeManualMode == null
+        ? _activeSchedule(child.policy.schedules, now)
+        : null;
     if (pauseActive) {
       categories.add(_blockAllCategory);
     } else {
-      final activeManualMode = _activeManualMode(manualMode, now);
       if (activeManualMode != null) {
         switch (activeManualMode.mode) {
           case 'bedtime':
@@ -1676,19 +2006,16 @@ class _ChildStatusScreenState extends State<ChildStatusScreen>
             // Explicit free mode keeps only baseline policy blocks.
             break;
         }
-      } else {
-        final activeSchedule = _activeSchedule(child.policy.schedules, now);
-        if (activeSchedule != null) {
-          switch (activeSchedule.action) {
-            case ScheduleAction.blockAll:
-              categories.add(_blockAllCategory);
-              break;
-            case ScheduleAction.blockDistracting:
-              categories.addAll(_distractingCategories);
-              break;
-            case ScheduleAction.allowAll:
-              break;
-          }
+      } else if (activeSchedule != null) {
+        switch (activeSchedule.action) {
+          case ScheduleAction.blockAll:
+            categories.add(_blockAllCategory);
+            break;
+          case ScheduleAction.blockDistracting:
+            categories.addAll(_distractingCategories);
+            break;
+          case ScheduleAction.allowAll:
+            break;
         }
       }
     }
@@ -1697,6 +2024,27 @@ class _ChildStatusScreenState extends State<ChildStatusScreen>
       blockedCategories: categories,
       blockedServices: explicitServices,
     );
+    final modeKey = _activeModeOverrideKey(
+      pauseActive: pauseActive,
+      activeManualMode: activeManualMode,
+      activeSchedule: activeSchedule,
+    );
+    final activeModeOverride = !RolloutFlags.modeAppOverrides || modeKey == null
+        ? null
+        : child.policy.modeOverrides[modeKey];
+    if (activeModeOverride != null) {
+      effectiveServices.addAll(
+        activeModeOverride.forceBlockServices
+            .map((serviceId) => serviceId.trim().toLowerCase())
+            .where((serviceId) => serviceId.isNotEmpty)
+            .where(ServiceDefinitions.byId.containsKey),
+      );
+      effectiveServices.removeAll(
+        activeModeOverride.forceAllowServices
+            .map((serviceId) => serviceId.trim().toLowerCase())
+            .where((serviceId) => serviceId.isNotEmpty),
+      );
+    }
     final domains = ServiceDefinitions.resolveDomains(
       blockedCategories: categories,
       blockedServices: effectiveServices,
@@ -1706,16 +2054,80 @@ class _ChildStatusScreenState extends State<ChildStatusScreen>
       categories: categories,
       domains: domains,
     );
-    final blockedPackages = ServiceDefinitions.resolvePackages(
-      blockedCategories: categories,
-      blockedServices: effectiveServices,
-    );
+    if (activeModeOverride != null) {
+      domains.addAll(
+        activeModeOverride.forceBlockDomains
+            .map((domain) => domain.trim().toLowerCase())
+            .where((domain) => domain.isNotEmpty),
+      );
+      domains.removeAll(
+        activeModeOverride.forceAllowDomains
+            .map((domain) => domain.trim().toLowerCase())
+            .where((domain) => domain.isNotEmpty),
+      );
+    }
+
+    final blockedPackages = <String>{};
+    if (RolloutFlags.appBlockingPackages) {
+      blockedPackages.addAll(
+        ServiceDefinitions.resolvePackages(
+          blockedCategories: categories,
+          blockedServices: effectiveServices,
+        ),
+      );
+      blockedPackages.addAll(customPackages);
+      if (activeModeOverride != null) {
+        blockedPackages.addAll(
+          activeModeOverride.forceBlockPackages
+              .map((pkg) => pkg.trim().toLowerCase())
+              .where((pkg) => pkg.isNotEmpty),
+        );
+        blockedPackages.removeAll(
+          activeModeOverride.forceAllowPackages
+              .map((pkg) => pkg.trim().toLowerCase())
+              .where((pkg) => pkg.isNotEmpty),
+        );
+      }
+    }
     return _EffectiveProtectionRules(
       categories: categories,
       services: effectiveServices,
       domains: domains,
       blockedPackages: blockedPackages,
     );
+  }
+
+  String? _activeModeOverrideKey({
+    required bool pauseActive,
+    required _ManualModeOverride? activeManualMode,
+    required Schedule? activeSchedule,
+  }) {
+    if (pauseActive) {
+      return 'bedtime';
+    }
+    if (activeManualMode != null) {
+      switch (activeManualMode.mode) {
+        case 'bedtime':
+          return 'bedtime';
+        case 'homework':
+          return 'homework';
+        case 'free':
+          return 'free';
+        default:
+          return 'focus';
+      }
+    }
+    if (activeSchedule != null) {
+      switch (activeSchedule.action) {
+        case ScheduleAction.blockAll:
+          return 'bedtime';
+        case ScheduleAction.blockDistracting:
+          return 'homework';
+        case ScheduleAction.allowAll:
+          return 'free';
+      }
+    }
+    return null;
   }
 
   void _augmentDomainsFromCategories({
@@ -2227,6 +2639,203 @@ class _ChildStatusScreenState extends State<ChildStatusScreen>
     );
   }
 
+  Widget _buildBrowserSecureDnsWarning() {
+    final assessment = _browserDnsBypassAssessment;
+    if (assessment == null) {
+      return const SizedBox.shrink();
+    }
+
+    final now = DateTime.now();
+    final recentlyDetected = _browserDnsBypassDetectedAt != null &&
+        now.difference(_browserDnsBypassDetectedAt!) <
+            const Duration(minutes: 2);
+    final shouldWarn = assessment.shouldWarn || recentlyDetected;
+
+    // Show a lightweight diagnostics card whenever VPN protection is active,
+    // so child/parent can see whether DNS queries are actually reaching the VPN.
+    if (!assessment.protectionActive && !shouldWarn && !assessment.vpnRunning) {
+      return const SizedBox.shrink();
+    }
+
+    final lastQueryText = switch (assessment.lastVpnDnsQueryAt) {
+      final DateTime value => _relativeTimeLabel(value, now),
+      null => 'No DNS queries captured yet',
+    };
+    final lastBlockedQuery = assessment.lastBlockedDnsQuery;
+    final lastBypassSignalText = switch (_lastBrowserDnsBypassSignalAt) {
+      final DateTime value => _relativeTimeLabel(value, now),
+      null => 'None observed in this session',
+    };
+
+    return Container(
+      margin: const EdgeInsets.only(bottom: 12),
+      padding: const EdgeInsets.all(12),
+      decoration: BoxDecoration(
+        color: shouldWarn ? Colors.orange.shade50 : Colors.blue.shade50,
+        border: Border.all(
+          color: shouldWarn ? Colors.orange.shade300 : Colors.blue.shade200,
+        ),
+        borderRadius: BorderRadius.circular(12),
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Row(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Icon(
+                shouldWarn
+                    ? Icons.warning_amber_rounded
+                    : Icons.privacy_tip_outlined,
+                color:
+                    shouldWarn ? Colors.orange.shade800 : Colors.blue.shade800,
+              ),
+              const SizedBox(width: 10),
+              Expanded(
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Text(
+                      shouldWarn
+                          ? 'Browser Secure DNS may bypass protection'
+                          : 'Web protection diagnostics',
+                      style: TextStyle(
+                        fontWeight: FontWeight.w700,
+                        color: shouldWarn
+                            ? Colors.orange.shade900
+                            : Colors.blue.shade900,
+                      ),
+                    ),
+                    const SizedBox(height: 4),
+                    Text(
+                      shouldWarn
+                          ? 'A browser was active, but TrustBridge saw no recent DNS queries. '
+                              'Chrome/other browsers may be using Secure DNS (DoH), which can bypass DNS-only blocking.'
+                          : 'TrustBridge blocks websites by filtering DNS. If websites ignore toggles, check Chrome Secure DNS / DoH settings.',
+                      style: TextStyle(
+                        fontSize: 12,
+                        color: shouldWarn
+                            ? Colors.orange.shade800
+                            : Colors.blue.shade800,
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+            ],
+          ),
+          const SizedBox(height: 10),
+          _buildDiagLine(
+            label: 'VPN',
+            value: assessment.vpnRunning ? 'Running' : 'Not running',
+          ),
+          _buildDiagLine(
+            label: 'Foreground app',
+            value: (assessment.foregroundPackage == null ||
+                    assessment.foregroundPackage!.isEmpty)
+                ? 'Unknown'
+                : assessment.foregroundPackage!,
+          ),
+          _buildDiagLine(
+            label: 'Recent VPN DNS queries (20s)',
+            value: '${assessment.recentVpnDnsQueriesInWindow}',
+          ),
+          _buildDiagLine(
+            label: 'Last VPN DNS query',
+            value: lastQueryText,
+          ),
+          if (lastBlockedQuery != null) ...[
+            _buildDiagLine(
+              label: 'Last blocked DNS',
+              value:
+                  '${lastBlockedQuery.domain} (${_formatDiagReasonCode(lastBlockedQuery.reasonCode)})',
+            ),
+            if ((lastBlockedQuery.matchedRule ?? '').isNotEmpty)
+              _buildDiagLine(
+                label: 'Matched rule',
+                value: lastBlockedQuery.matchedRule!,
+              ),
+          ],
+          _buildDiagLine(
+            label: 'Last bypass signal',
+            value: '$lastBypassSignalText'
+                '${(_lastBrowserDnsBypassSignalReasonCode ?? '').isEmpty ? '' : ' (${_formatDiagReasonCode(_lastBrowserDnsBypassSignalReasonCode)})'}',
+          ),
+          if (assessment.reasonCode.isNotEmpty)
+            _buildDiagLine(
+              label: 'Check',
+              value: _formatDiagReasonCode(assessment.reasonCode),
+            ),
+          const SizedBox(height: 8),
+          Text(
+            'Chrome: Menu → Settings → Privacy and security → Use Secure DNS → Off',
+            style: TextStyle(
+              fontSize: 12,
+              fontWeight: FontWeight.w600,
+              color: shouldWarn ? Colors.orange.shade900 : Colors.blue.shade900,
+            ),
+          ),
+          const SizedBox(height: 8),
+          Wrap(
+            spacing: 8,
+            runSpacing: 8,
+            children: [
+              SizedBox(
+                height: 32,
+                child: OutlinedButton.icon(
+                  onPressed: () => _vpnService.openPrivateDnsSettings(),
+                  icon: const Icon(Icons.settings, size: 16),
+                  label: const Text(
+                    'Open DNS Settings',
+                    style: TextStyle(fontSize: 12),
+                  ),
+                ),
+              ),
+            ],
+          ),
+        ],
+      ),
+    );
+  }
+
+  Widget _buildDiagLine({
+    required String label,
+    required String value,
+  }) {
+    return Padding(
+      padding: const EdgeInsets.only(bottom: 3),
+      child: Text(
+        '$label: $value',
+        style: const TextStyle(fontSize: 12, fontWeight: FontWeight.w600),
+      ),
+    );
+  }
+
+  String _relativeTimeLabel(DateTime value, DateTime now) {
+    var diff = now.difference(value);
+    if (diff.isNegative) {
+      diff = Duration.zero;
+    }
+    if (diff.inSeconds < 3) {
+      return 'just now';
+    }
+    if (diff.inSeconds < 60) {
+      return '${diff.inSeconds}s ago';
+    }
+    if (diff.inMinutes < 60) {
+      return '${diff.inMinutes}m ago';
+    }
+    return '${diff.inHours}h ago';
+  }
+
+  String _formatDiagReasonCode(String? value) {
+    final raw = value?.trim();
+    if (raw == null || raw.isEmpty) {
+      return 'unknown';
+    }
+    return raw.replaceAll('_', ' ');
+  }
+
   Widget _buildUsageAccessWarning() {
     if (!_requiresUsageAccessForAppBlocking() ||
         _usageAccessPermissionGrantedForBlocking != false) {
@@ -2345,6 +2954,7 @@ class _ChildStatusScreenState extends State<ChildStatusScreen>
         ),
         const SizedBox(height: 14),
         _buildPrivateDnsWarning(),
+        _buildBrowserSecureDnsWarning(),
         _buildUsageAccessWarning(),
         if (hasParentContext)
           _buildApprovalBanner(
@@ -2860,6 +3470,9 @@ class _PolicyEventSnapshot {
     required this.blockedCategories,
     required this.blockedServices,
     required this.blockedDomains,
+    required this.blockedPackages,
+    required this.modeOverrides,
+    required this.policySchemaVersion,
     required this.manualMode,
     required this.pausedUntil,
     required this.eventEpochMs,
@@ -2868,6 +3481,9 @@ class _PolicyEventSnapshot {
   final List<String> blockedCategories;
   final List<String> blockedServices;
   final List<String> blockedDomains;
+  final List<String> blockedPackages;
+  final Map<String, ModeOverrideSet> modeOverrides;
+  final int policySchemaVersion;
   final _ManualModeOverride? manualMode;
   final DateTime? pausedUntil;
   final int eventEpochMs;
@@ -2879,7 +3495,11 @@ class _EffectivePolicySnapshot {
     required this.blockedCategories,
     required this.blockedServices,
     required this.blockedDomains,
+    required this.blockedPackages,
     required this.blockedDomainsResolved,
+    required this.blockedPackagesResolved,
+    required this.modeOverridesResolved,
+    required this.policySchemaVersion,
     required this.manualMode,
     required this.pausedUntil,
     required this.sourceUpdatedAt,
@@ -2889,7 +3509,11 @@ class _EffectivePolicySnapshot {
   final List<String> blockedCategories;
   final List<String> blockedServices;
   final List<String> blockedDomains;
+  final List<String> blockedPackages;
   final List<String> blockedDomainsResolved;
+  final List<String> blockedPackagesResolved;
+  final Map<String, ModeOverrideSet> modeOverridesResolved;
+  final int policySchemaVersion;
   final _ManualModeOverride? manualMode;
   final DateTime? pausedUntil;
   final DateTime? sourceUpdatedAt;

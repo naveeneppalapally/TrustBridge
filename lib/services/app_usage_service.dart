@@ -1,6 +1,7 @@
 import 'dart:math' as math;
 
 import 'package:flutter/services.dart';
+import 'package:trustbridge_app/models/installed_app_info.dart';
 
 class AppUsageEntry {
   const AppUsageEntry({
@@ -199,6 +200,35 @@ class AppUsageService {
       return null;
     } on MissingPluginException {
       return null;
+    }
+  }
+
+  Future<List<InstalledAppInfo>> getInstalledLaunchableApps() async {
+    try {
+      final result = await _channel.invokeMethod<List<dynamic>>(
+        'getInstalledLaunchableApps',
+      );
+      if (result == null || result.isEmpty) {
+        return const <InstalledAppInfo>[];
+      }
+      final apps = result
+          .whereType<Map>()
+          .map(
+            (raw) => InstalledAppInfo.fromMap(
+              raw.map((key, value) => MapEntry(key.toString(), value)),
+            ),
+          )
+          .where((app) => app.isValid)
+          .toList(growable: false);
+      apps.sort(
+        (a, b) =>
+            a.appName.toLowerCase().compareTo(b.appName.toLowerCase()),
+      );
+      return apps;
+    } on PlatformException {
+      return const <InstalledAppInfo>[];
+    } on MissingPluginException {
+      return const <InstalledAppInfo>[];
     }
   }
 

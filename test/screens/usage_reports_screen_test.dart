@@ -5,6 +5,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:http/http.dart' as http;
 import 'package:http/testing.dart';
+import 'package:trustbridge_app/config/rollout_flags.dart';
 import 'package:trustbridge_app/screens/usage_reports_screen.dart';
 import 'package:trustbridge_app/services/app_usage_service.dart';
 import 'package:trustbridge_app/services/firestore_service.dart';
@@ -37,6 +38,9 @@ class _FakeAppUsageService extends AppUsageService {
 
 void main() {
   group('UsageReportsScreen', () {
+    setUp(RolloutFlags.resetForTest);
+    tearDown(RolloutFlags.resetForTest);
+
     Future<void> pumpScreen(
       WidgetTester tester, {
       AppUsageService? appUsageService,
@@ -155,6 +159,22 @@ void main() {
       expect(find.text('Social'), findsWidgets);
     });
 
+    testWidgets('hides per-app/day-filter sections when rollout flag is off',
+        (tester) async {
+      RolloutFlags.setForTest('per_app_usage_reports', false);
+
+      await pumpScreen(tester, appUsageService: buildDataService());
+
+      expect(find.text('Day Filter'), findsNothing);
+      expect(find.byKey(const Key('usage_reports_trend_card')), findsNothing);
+      expect(find.byKey(const Key('usage_reports_apps_card')), findsNothing);
+      expect(find.byKey(const Key('usage_reports_hero_card')), findsOneWidget);
+      expect(
+        find.byKey(const Key('usage_reports_category_card')),
+        findsOneWidget,
+      );
+    });
+
     testWidgets('shows skeleton loaders when loading state is enabled',
         (tester) async {
       await tester.binding.setSurfaceSize(const Size(430, 1300));
@@ -242,6 +262,13 @@ void main() {
         nextDnsApiService: nextDnsApiService,
         parentIdOverride: parentId,
       );
+
+      await tester.dragUntilVisible(
+        find.byKey(const Key('usage_reports_nextdns_card')),
+        find.byType(ListView).first,
+        const Offset(0, -240),
+      );
+      await tester.pumpAndSettle();
 
       expect(
           find.byKey(const Key('usage_reports_nextdns_card')), findsOneWidget);

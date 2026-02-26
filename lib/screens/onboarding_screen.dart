@@ -3,7 +3,6 @@ import 'dart:async';
 import 'package:flutter/material.dart';
 import 'package:flutter/foundation.dart';
 import 'package:trustbridge_app/screens/add_child_screen.dart';
-import 'package:trustbridge_app/screens/vpn_protection_screen.dart';
 import 'package:trustbridge_app/services/firestore_service.dart';
 import 'package:trustbridge_app/services/onboarding_state_service.dart';
 import 'package:url_launcher/url_launcher.dart';
@@ -475,13 +474,13 @@ class _OnboardingScreenState extends State<OnboardingScreen> {
       padding: const EdgeInsets.fromLTRB(32, 12, 32, 20),
       children: [
         Icon(
-          Icons.security_outlined,
+          Icons.phonelink_setup,
           size: 72,
           color: Theme.of(context).colorScheme.primary,
         ),
         const SizedBox(height: 24),
         Text(
-          'Enable protection',
+          'Connect your child phone',
           textAlign: TextAlign.center,
           style: Theme.of(context).textTheme.headlineMedium?.copyWith(
                 fontWeight: FontWeight.bold,
@@ -489,7 +488,7 @@ class _OnboardingScreenState extends State<OnboardingScreen> {
         ),
         const SizedBox(height: 14),
         Text(
-          'TrustBridge uses local VPN mode to filter DNS safely on this device.',
+          'Finish setup by pairing the child phone. The child phone handles protection permission during its own setup.',
           textAlign: TextAlign.center,
           style: Theme.of(context).textTheme.bodyLarge?.copyWith(
                 color: Colors.grey.shade600,
@@ -500,44 +499,45 @@ class _OnboardingScreenState extends State<OnboardingScreen> {
         _stepRow(
           context,
           number: '1',
-          label: 'Open Protection screen',
+          label: 'Open Dashboard and select your child profile',
         ),
         const SizedBox(height: 10),
         _stepRow(
           context,
           number: '2',
-          label: 'Tap "Enable Protection"',
+          label: 'Tap "Add Child Device" to generate a setup code',
         ),
         const SizedBox(height: 10),
         _stepRow(
           context,
           number: '3',
-          label: 'Allow VPN permission when Android prompts',
+          label: 'On child phone tap "I\'m a Child" and enter the code',
         ),
         const SizedBox(height: 10),
         _stepRow(
           context,
           number: '4',
-          label: 'Set TrustBridge battery to Unrestricted / Don\'t optimize',
+          label:
+              'Approve permissions on the child phone to activate protection',
         ),
         const SizedBox(height: 20),
-        OutlinedButton.icon(
-          onPressed: () async {
-            await Navigator.of(context).push(
-              MaterialPageRoute<void>(
-                builder: (_) => const VpnProtectionScreen(),
-              ),
-            );
-          },
-          icon: const Icon(Icons.security),
-          label: const Text('Open Protection Settings'),
-          style: OutlinedButton.styleFrom(
-            minimumSize: const Size(double.infinity, 50),
+        Container(
+          padding: const EdgeInsets.all(14),
+          decoration: BoxDecoration(
+            color: Theme.of(context).colorScheme.surfaceContainerHighest,
+            borderRadius: BorderRadius.circular(12),
+          ),
+          child: Text(
+            'Parent phone VPN permission is not required during onboarding.',
+            textAlign: TextAlign.center,
+            style: Theme.of(context).textTheme.bodyMedium?.copyWith(
+                  fontWeight: FontWeight.w600,
+                ),
           ),
         ),
         const SizedBox(height: 10),
         Text(
-          'Important on Vivo/Oppo/Realme devices: if battery optimization stays on, Android may stop protection later. You can always revisit this setup guide from Settings.',
+          'If protection looks unstable later, open child phone battery settings and set TrustBridge to Unrestricted.',
           textAlign: TextAlign.center,
           style: Theme.of(context).textTheme.bodySmall?.copyWith(
                 color: Colors.grey.shade600,

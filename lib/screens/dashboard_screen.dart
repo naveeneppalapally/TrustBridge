@@ -45,6 +45,8 @@ class _DashboardScreenState extends State<DashboardScreen>
   static const Duration _deviceOnlineWindow = Duration(minutes: 2);
   static const Duration _deviceWarningWindow = Duration(minutes: 10);
   static const Duration _deviceCriticalWindow = Duration(hours: 24);
+  static const Duration _policyAckAtRiskWindow = Duration(minutes: 10);
+  static const Duration _policyAckUnprotectedWindow = Duration(minutes: 30);
   AuthService? _authService;
   FirestoreService? _firestoreService;
   Stream<List<ChildProfile>>? _childrenStream;
@@ -75,6 +77,12 @@ class _DashboardScreenState extends State<DashboardScreen>
       <String, StreamSubscription<DocumentSnapshot<Map<String, dynamic>>>>{};
   final Map<String, _ChildUsageSnapshot> _latestUsageByChildId =
       <String, _ChildUsageSnapshot>{};
+  String _policyAckSubscriptionFingerprint = '';
+  final Map<String, StreamSubscription<QuerySnapshot<Map<String, dynamic>>>>
+      _policyAckSubscriptionsByChildId =
+      <String, StreamSubscription<QuerySnapshot<Map<String, dynamic>>>>{};
+  final Map<String, _ChildPolicyAckSnapshot> _latestPolicyAckByChildId =
+      <String, _ChildPolicyAckSnapshot>{};
 
   @override
   void initState() {
@@ -104,6 +112,10 @@ class _DashboardScreenState extends State<DashboardScreen>
       subscription.cancel();
     }
     _usageReportSubscriptionsByChildId.clear();
+    for (final subscription in _policyAckSubscriptionsByChildId.values) {
+      subscription.cancel();
+    }
+    _policyAckSubscriptionsByChildId.clear();
     unawaited(_stopDashboardLoadTrace());
     super.dispose();
   }
@@ -460,7 +472,7 @@ class _DashboardScreenState extends State<DashboardScreen>
     }
     ScaffoldMessenger.of(context).showSnackBar(
       const SnackBar(
-        content: Text('Open Schedule from parent shell to configure bedtime.'),
+        content: Text('Open Modes from parent shell to configure bedtime.'),
       ),
     );
   }
@@ -623,6 +635,96 @@ class _DashboardScreenState extends State<DashboardScreen>
     }
   }
 
+  void _ensurePolicyAckSubscriptions(List<ChildProfile> children) {
+    final childIds = children
+        .map((child) => child.id.trim())
+        .where((id) => id.isNotEmpty)
+        .toSet()
+        .toList(growable: false)
+      ..sort();
+
+    final nextFingerprint = childIds.join('|');
+    if (nextFingerprint == _policyAckSubscriptionFingerprint) {
+      return;
+    }
+    _policyAckSubscriptionFingerprint = nextFingerprint;
+
+    final nextChildIdSet = childIds.toSet();
+    final staleChildIds = _policyAckSubscriptionsByChildId.keys
+        .where((childId) => !nextChildIdSet.contains(childId))
+        .toList(growable: false);
+
+    for (final childId in staleChildIds) {
+      _policyAckSubscriptionsByChildId.remove(childId)?.cancel();
+      _latestPolicyAckByChildId.remove(childId);
+    }
+
+    for (final childId in childIds) {
+      if (_policyAckSubscriptionsByChildId.containsKey(childId)) {
+        continue;
+      }
+      final subscription = _resolvedFirestoreService.firestore
+          .collection('children')
+          .doc(childId)
+          .collection('policy_apply_acks')
+          .snapshots()
+          .listen((snapshot) {
+        if (!mounted) {
+          return;
+        }
+        if (snapshot.docs.isEmpty) {
+          final removed = _latestPolicyAckByChildId.remove(childId) != null;
+          if (removed) {
+            setState(() {});
+            unawaited(_refreshDeviceHealthFromLatestState());
+          }
+          return;
+        }
+
+        _ChildPolicyAckSnapshot? newest;
+        for (final doc in snapshot.docs) {
+          final data = doc.data();
+          if (data.isEmpty) {
+            continue;
+          }
+          final candidate = _ChildPolicyAckSnapshot.fromMap(data);
+          if (candidate == null) {
+            continue;
+          }
+          if (newest == null || candidate.sortTime.isAfter(newest.sortTime)) {
+            newest = candidate;
+          }
+        }
+
+        if (newest == null) {
+          final removed = _latestPolicyAckByChildId.remove(childId) != null;
+          if (removed) {
+            setState(() {});
+            unawaited(_refreshDeviceHealthFromLatestState());
+          }
+          return;
+        }
+
+        final existing = _latestPolicyAckByChildId[childId];
+        if (existing == newest) {
+          return;
+        }
+        _latestPolicyAckByChildId[childId] = newest;
+        setState(() {});
+        unawaited(_refreshDeviceHealthFromLatestState());
+      }, onError: (Object error, StackTrace stackTrace) {
+        if (!mounted) {
+          return;
+        }
+        if (_latestPolicyAckByChildId.remove(childId) != null) {
+          setState(() {});
+          unawaited(_refreshDeviceHealthFromLatestState());
+        }
+      });
+      _policyAckSubscriptionsByChildId[childId] = subscription;
+    }
+  }
+
   Map<String, dynamic> _asMap(Object? rawValue) {
     if (rawValue is Map<String, dynamic>) {
       return rawValue;
@@ -649,7 +751,14 @@ class _DashboardScreenState extends State<DashboardScreen>
     final tokens = <String>[];
     for (final child in children) {
       final deviceIds = child.deviceIds.toList()..sort();
-      tokens.add('${child.id}:${deviceIds.join(',')}');
+      final ack = _latestPolicyAckByChildId[child.id];
+      tokens.add(
+        '${child.id}:${deviceIds.join(',')}:'
+        '${ack?.applyStatus ?? ''}:'
+        '${ack?.vpnRunning == true ? 1 : 0}:'
+        '${ack?.usageAccessGranted == false ? 0 : 1}:'
+        '${ack?.sortTime.millisecondsSinceEpoch ?? 0}',
+      );
     }
     tokens.sort();
     return tokens.join('|');
@@ -721,7 +830,7 @@ class _DashboardScreenState extends State<DashboardScreen>
         } else if (mostRecentHeartbeatAge > _deviceOnlineWindow) {
           nextState[child.id] = const _ChildDeviceHealth.offline();
         } else {
-          nextState[child.id] = const _ChildDeviceHealth.online();
+          nextState[child.id] = _protectionHealthForOnlineChild(child.id, now);
         }
       }
 
@@ -736,6 +845,28 @@ class _DashboardScreenState extends State<DashboardScreen>
     } finally {
       _isRefreshingDeviceHealth = false;
     }
+  }
+
+  _ChildDeviceHealth _protectionHealthForOnlineChild(String childId, DateTime now) {
+    final ack = _latestPolicyAckByChildId[childId];
+    if (ack == null) {
+      return const _ChildDeviceHealth.atRiskNoAck();
+    }
+
+    final ackAge = now.difference(ack.sortTime);
+    if (!ack.vpnRunning || ack.hasFailureStatus) {
+      return const _ChildDeviceHealth.unprotected();
+    }
+    if (ackAge > _policyAckUnprotectedWindow) {
+      return const _ChildDeviceHealth.unprotected();
+    }
+    if (ackAge > _policyAckAtRiskWindow) {
+      return const _ChildDeviceHealth.atRiskStaleAck();
+    }
+    if (ack.usageAccessGranted == false) {
+      return const _ChildDeviceHealth.atRiskPermission();
+    }
+    return const _ChildDeviceHealth.protected();
   }
 
   Future<void> _refreshDeviceHealthFromLatestState() async {
@@ -911,6 +1042,7 @@ class _DashboardScreenState extends State<DashboardScreen>
                 parentId: parentId,
               );
               _ensureUsageReportSubscriptions(children);
+              _ensurePolicyAckSubscriptions(children);
               final healthFingerprint = _childrenHealthFingerprint(children);
               if (healthFingerprint != _lastHealthFingerprint) {
                 _lastHealthFingerprint = healthFingerprint;
@@ -1715,6 +1847,70 @@ class _ChildUsageSnapshot {
       Object.hash(totalScreenTimeMs, averageDailyScreenTimeMs, uploadedAt);
 }
 
+class _ChildPolicyAckSnapshot {
+  const _ChildPolicyAckSnapshot({
+    required this.appliedAt,
+    required this.updatedAt,
+    required this.applyStatus,
+    required this.vpnRunning,
+    required this.usageAccessGranted,
+  });
+
+  final DateTime? appliedAt;
+  final DateTime? updatedAt;
+  final String applyStatus;
+  final bool vpnRunning;
+  final bool? usageAccessGranted;
+
+  DateTime get sortTime =>
+      updatedAt ?? appliedAt ?? DateTime.fromMillisecondsSinceEpoch(0);
+
+  bool get hasFailureStatus {
+    final normalized = applyStatus.trim().toLowerCase();
+    return normalized == 'failed' ||
+        normalized == 'error' ||
+        normalized == 'mismatch';
+  }
+
+  static _ChildPolicyAckSnapshot? fromMap(Map<String, dynamic> data) {
+    final applyStatus = (data['applyStatus'] as String?)?.trim();
+    if (applyStatus == null || applyStatus.isEmpty) {
+      return null;
+    }
+    return _ChildPolicyAckSnapshot(
+      appliedAt: _ChildUsageSnapshot._toDateTime(data['appliedAt']),
+      updatedAt: _ChildUsageSnapshot._toDateTime(data['updatedAt']),
+      applyStatus: applyStatus,
+      vpnRunning: data['vpnRunning'] == true,
+      usageAccessGranted: data.containsKey('usageAccessGranted')
+          ? data['usageAccessGranted'] == true
+          : null,
+    );
+  }
+
+  @override
+  bool operator ==(Object other) {
+    if (identical(this, other)) {
+      return true;
+    }
+    return other is _ChildPolicyAckSnapshot &&
+        other.appliedAt == appliedAt &&
+        other.updatedAt == updatedAt &&
+        other.applyStatus == applyStatus &&
+        other.vpnRunning == vpnRunning &&
+        other.usageAccessGranted == usageAccessGranted;
+  }
+
+  @override
+  int get hashCode => Object.hash(
+        appliedAt,
+        updatedAt,
+        applyStatus,
+        vpnRunning,
+        usageAccessGranted,
+      );
+}
+
 class _ChildDeviceHealth {
   const _ChildDeviceHealth({
     required this.online,
@@ -1722,10 +1918,30 @@ class _ChildDeviceHealth {
     required this.color,
   });
 
-  const _ChildDeviceHealth.online()
+  const _ChildDeviceHealth.protected()
       : online = true,
-        label = null,
+        label = 'Protected',
         color = const Color(0xFF22C55E);
+
+  const _ChildDeviceHealth.atRiskNoAck()
+      : online = true,
+        label = 'At Risk',
+        color = Colors.orange;
+
+  const _ChildDeviceHealth.atRiskStaleAck()
+      : online = true,
+        label = 'At Risk',
+        color = Colors.orange;
+
+  const _ChildDeviceHealth.atRiskPermission()
+      : online = true,
+        label = 'At Risk',
+        color = Colors.orange;
+
+  const _ChildDeviceHealth.unprotected()
+      : online = true,
+        label = 'Unprotected',
+        color = Colors.red;
 
   const _ChildDeviceHealth.pending()
       : online = false,
