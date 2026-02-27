@@ -123,6 +123,8 @@ class _BlockCategoriesScreenState extends State<BlockCategoriesScreen> {
 
   StreamSubscription<DocumentSnapshot<Map<String, dynamic>>>?
       _effectivePolicySubscription;
+  StreamSubscription<DocumentSnapshot<Map<String, dynamic>>>?
+      _childContextSubscription;
   StreamSubscription<QuerySnapshot<Map<String, dynamic>>>?
       _policyApplyAckSubscription;
   StreamSubscription<DocumentSnapshot<Map<String, dynamic>>>?
@@ -141,6 +143,9 @@ class _BlockCategoriesScreenState extends State<BlockCategoriesScreen> {
   List<InstalledAppInfo> _installedApps = const <InstalledAppInfo>[];
   final Map<String, Uint8List?> _installedAppIconBytesCache =
       <String, Uint8List?>{};
+  ChildProfile? _liveChildContext;
+
+  ChildProfile get _currentChildContext => _liveChildContext ?? widget.child;
 
   AuthService get _resolvedAuthService {
     _authService ??= widget.authService ?? AuthService();
@@ -163,7 +168,7 @@ class _BlockCategoriesScreenState extends State<BlockCategoriesScreen> {
   }
 
   String? get _nextDnsProfileId {
-    final value = widget.child.nextDnsProfileId?.trim();
+    final value = _currentChildContext.nextDnsProfileId?.trim();
     if (value == null || value.isEmpty) {
       return null;
     }
@@ -248,7 +253,7 @@ class _BlockCategoriesScreenState extends State<BlockCategoriesScreen> {
 
   String? get _activeRestrictionNotice {
     final now = DateTime.now();
-    final pausedUntil = widget.child.pausedUntil;
+    final pausedUntil = _currentChildContext.pausedUntil;
     if (pausedUntil != null && pausedUntil.isAfter(now)) {
       return 'Device is paused until ${_formatTime(pausedUntil)}. '
           'App toggles will apply after pause ends.';
@@ -292,7 +297,7 @@ class _BlockCategoriesScreenState extends State<BlockCategoriesScreen> {
   }
 
   Map<String, dynamic>? _activeManualModeAt(DateTime now) {
-    final rawMode = widget.child.manualMode;
+    final rawMode = _currentChildContext.manualMode;
     if (rawMode == null || rawMode.isEmpty) {
       return null;
     }
@@ -317,6 +322,7 @@ class _BlockCategoriesScreenState extends State<BlockCategoriesScreen> {
   @override
   void initState() {
     super.initState();
+    _liveChildContext = widget.child;
     _hydrateStateFromChild(widget.child);
     if (_appInventoryEnabled) {
       unawaited(_loadInstalledApps());
@@ -331,6 +337,7 @@ class _BlockCategoriesScreenState extends State<BlockCategoriesScreen> {
         oldWidget.parentIdOverride?.trim() != widget.parentIdOverride?.trim();
     final childChanged = oldWidget.child.id != widget.child.id;
     if (childChanged) {
+      _liveChildContext = widget.child;
       _hydrateStateFromChild(widget.child);
       if (_appInventoryEnabled) {
         unawaited(_loadInstalledApps());
@@ -345,6 +352,8 @@ class _BlockCategoriesScreenState extends State<BlockCategoriesScreen> {
   void dispose() {
     _effectivePolicySubscription?.cancel();
     _effectivePolicySubscription = null;
+    _childContextSubscription?.cancel();
+    _childContextSubscription = null;
     _policyApplyAckSubscription?.cancel();
     _policyApplyAckSubscription = null;
     _vpnDiagnosticsSubscription?.cancel();
@@ -457,16 +466,19 @@ class _BlockCategoriesScreenState extends State<BlockCategoriesScreen> {
   void _startPolicyTelemetryListeners() {
     _effectivePolicySubscription?.cancel();
     _effectivePolicySubscription = null;
+    _childContextSubscription?.cancel();
+    _childContextSubscription = null;
     _policyApplyAckSubscription?.cancel();
     _policyApplyAckSubscription = null;
     _vpnDiagnosticsSubscription?.cancel();
     _vpnDiagnosticsSubscription = null;
 
     final parentId = _resolvedParentId?.trim();
-    final childId = widget.child.id.trim();
+    final childId = _currentChildContext.id.trim();
     if (parentId == null || parentId.isEmpty || childId.isEmpty) {
       if (mounted) {
         setState(() {
+          _liveChildContext = widget.child;
           _latestEffectivePolicyVersion = null;
           _latestEffectivePolicyUpdatedAt = null;
           _latestPolicyApplyAck = null;
@@ -478,6 +490,20 @@ class _BlockCategoriesScreenState extends State<BlockCategoriesScreen> {
 
     final childRef =
         _resolvedFirestoreService.firestore.collection('children').doc(childId);
+
+    _childContextSubscription = childRef.snapshots().listen((snapshot) {
+      if (!mounted || !snapshot.exists) {
+        return;
+      }
+      try {
+        final next = ChildProfile.fromFirestore(snapshot);
+        setState(() {
+          _liveChildContext = next;
+        });
+      } catch (_) {
+        // Keep current UI state if parsing fails.
+      }
+    }, onError: (_, __) {});
 
     _effectivePolicySubscription = childRef
         .collection('effective_policy')
@@ -551,10 +577,10 @@ class _BlockCategoriesScreenState extends State<BlockCategoriesScreen> {
     }
 
     final linkedDeviceIds = <String>{
-      ...widget.child.deviceIds
+      ..._currentChildContext.deviceIds
           .map((id) => id.trim())
           .where((id) => id.isNotEmpty),
-      ...widget.child.deviceMetadata.keys
+      ..._currentChildContext.deviceMetadata.keys
           .map((id) => id.trim())
           .where((id) => id.isNotEmpty),
     };
@@ -1054,7 +1080,7 @@ class _BlockCategoriesScreenState extends State<BlockCategoriesScreen> {
 
   String? _activeModeOverrideKeyForParent() {
     final now = DateTime.now();
-    final pausedUntil = widget.child.pausedUntil;
+    final pausedUntil = _currentChildContext.pausedUntil;
     if (pausedUntil != null && pausedUntil.isAfter(now)) {
       return 'bedtime';
     }
@@ -1734,18 +1760,19 @@ class _BlockCategoriesScreenState extends State<BlockCategoriesScreen> {
         ),
       );
 
-      final updatedPolicy = widget.child.policy.copyWith(
+      final sourceChild = _currentChildContext;
+      final updatedPolicy = sourceChild.policy.copyWith(
         blockedCategories: _orderedBlockedCategories(_blockedCategories),
         blockedServices: _orderedBlockedServices(_blockedServices),
         blockedDomains: _orderedBlockedDomains(_blockedDomains),
         blockedPackages: _orderedBlockedPackages(_blockedPackages),
         modeOverrides: _cloneModeOverrides(_modeOverrides),
       );
-      final updatedChild = widget.child.copyWith(
+      final updatedChild = sourceChild.copyWith(
         policy: updatedPolicy,
         nextDnsControls: _hasNextDnsProfile
             ? _buildNextDnsControlsPayload()
-            : widget.child.nextDnsControls,
+            : sourceChild.nextDnsControls,
       );
 
       await _resolvedFirestoreService.updateChild(
@@ -1764,9 +1791,9 @@ class _BlockCategoriesScreenState extends State<BlockCategoriesScreen> {
       // This ensures the child receives policy updates in real-time,
       // even if Firestore listeners are not working in background.
       if (RolloutFlags.policySyncTriggerRemoteCommand &&
-          widget.child.deviceIds.isNotEmpty) {
+          sourceChild.deviceIds.isNotEmpty) {
         final remoteCommandService = RemoteCommandService();
-        for (final deviceId in widget.child.deviceIds) {
+        for (final deviceId in sourceChild.deviceIds) {
           unawaited(
             remoteCommandService.sendRestartVpnCommand(deviceId).catchError(
                   (_) => '',
@@ -1778,7 +1805,7 @@ class _BlockCategoriesScreenState extends State<BlockCategoriesScreen> {
       final effectiveVersion =
           await _resolvedFirestoreService.getEffectivePolicyCurrentVersion(
         parentId: parentId,
-        childId: widget.child.id,
+        childId: sourceChild.id,
       );
       if (mounted && effectiveVersion != null) {
         setState(() {
@@ -2667,7 +2694,7 @@ class _BlockCategoriesScreenState extends State<BlockCategoriesScreen> {
   Schedule? _activeScheduleAt(DateTime now) {
     final today = Day.fromDateTime(now);
     final yesterday = Day.fromDateTime(now.subtract(const Duration(days: 1)));
-    for (final schedule in widget.child.policy.schedules) {
+    for (final schedule in _currentChildContext.policy.schedules) {
       if (!schedule.enabled) {
         continue;
       }
@@ -2931,7 +2958,7 @@ class _BlockCategoriesScreenState extends State<BlockCategoriesScreen> {
   }
 
   void _hydrateNextDnsControls() {
-    final controls = widget.child.nextDnsControls;
+    final controls = _currentChildContext.nextDnsControls;
     final services = controls['services'];
     if (services is Map) {
       for (final entry in services.entries) {
@@ -2973,7 +3000,7 @@ class _BlockCategoriesScreenState extends State<BlockCategoriesScreen> {
     }
     await _resolvedFirestoreService.saveChildNextDnsControls(
       parentId: parentId,
-      childId: widget.child.id,
+      childId: _currentChildContext.id,
       controls: _buildNextDnsControlsPayload(),
     );
   }

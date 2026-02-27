@@ -51,7 +51,7 @@ class DnsVpnService : VpnService() {
         private const val MAX_BOOT_RESTORE_RETRY_ATTEMPTS = 4
         private const val MAX_TRANSIENT_START_RETRY_ATTEMPTS = 3
         private const val WATCHDOG_REQUEST_CODE = 4100
-        private const val WATCHDOG_INTERVAL_MS = 30_000L
+        private const val WATCHDOG_INTERVAL_MS = 5_000L
         private val BOOT_RESTORE_RETRY_DELAYS_MS = longArrayOf(
             15_000L,
             30_000L,
@@ -1582,6 +1582,14 @@ class DnsVpnService : VpnService() {
         val fallbackDomains = parsePolicyStringList(snapshotData["blockedDomains"])
         val resolvedPackages = parsePolicyStringList(snapshotData["blockedPackagesResolved"])
         val fallbackPackages = parsePolicyStringList(snapshotData["blockedPackages"])
+        val resolvedAllowedDomains =
+            parsePolicyStringList(snapshotData["temporaryAllowedDomainsResolved"])
+        val modeBlockedDomains = parsePolicyStringList(snapshotData["modeBlockedDomainsResolved"])
+        val modeAllowedDomains = parsePolicyStringList(snapshotData["modeAllowedDomainsResolved"])
+        val modeBlockedPackages =
+            parsePolicyStringList(snapshotData["modeBlockedPackagesResolved"])
+        val modeAllowedPackages =
+            parsePolicyStringList(snapshotData["modeAllowedPackagesResolved"])
         val snapshotParentId = (snapshotData["parentId"] as? String)?.trim().orEmpty()
         val nowEpochMs = System.currentTimeMillis()
         val pausedUntilEpochMs = parseEpochMillis(snapshotData["pausedUntil"])
@@ -1593,25 +1601,78 @@ class DnsVpnService : VpnService() {
             activeManualMode = activeManualMode,
             pauseActive = pauseActive
         )
-        val domains = (if (resolvedDomains.isNotEmpty()) {
-            resolvedDomains
-        } else {
-            fallbackDomains
-        }).map(::normalizeDomainToken)
-            .filter { it.isNotEmpty() }
-            .distinct()
-        val blockedPackages = (if (resolvedPackages.isNotEmpty()) {
-            resolvedPackages
-        } else {
-            fallbackPackages
-        }).map { it.trim().lowercase() }
-            .filter { it.isNotEmpty() }
-            .distinct()
+        val domainSet = linkedSetOf<String>()
+        domainSet.addAll(
+            (if (resolvedDomains.isNotEmpty()) {
+                resolvedDomains
+            } else {
+                fallbackDomains
+            }).map(::normalizeDomainToken)
+                .filter { it.isNotEmpty() }
+        )
+        domainSet.addAll(
+            modeBlockedDomains
+                .map(::normalizeDomainToken)
+                .filter { it.isNotEmpty() }
+        )
+        domainSet.removeAll(
+            modeAllowedDomains
+                .map(::normalizeDomainToken)
+                .filter { it.isNotEmpty() }
+                .toSet()
+        )
+        val domains = domainSet.toList().sorted()
+
+        val blockedPackageSet = linkedSetOf<String>()
+        blockedPackageSet.addAll(
+            (if (resolvedPackages.isNotEmpty()) {
+                resolvedPackages
+            } else {
+                fallbackPackages
+            }).map { it.trim().lowercase() }
+                .filter { it.isNotEmpty() }
+        )
+        blockedPackageSet.addAll(
+            modeBlockedPackages
+                .map { it.trim().lowercase() }
+                .filter { it.isNotEmpty() }
+        )
+        blockedPackageSet.removeAll(
+            modeAllowedPackages
+                .map { it.trim().lowercase() }
+                .filter { it.isNotEmpty() }
+                .toSet()
+        )
+        val blockedPackages = blockedPackageSet.toList().sorted()
+
+        val allowedDomainSet = linkedSetOf<String>()
+        val hasPolicyAllowedDomainFields =
+            snapshotData.containsKey("temporaryAllowedDomainsResolved") ||
+                snapshotData.containsKey("modeAllowedDomainsResolved")
+        if (!hasPolicyAllowedDomainFields) {
+            allowedDomainSet.addAll(
+                lastAppliedAllowedDomains
+                    .map(::normalizeDomainToken)
+                    .filter { it.isNotEmpty() }
+            )
+        }
+        allowedDomainSet.addAll(
+            resolvedAllowedDomains
+                .map(::normalizeDomainToken)
+                .filter { it.isNotEmpty() }
+        )
+        allowedDomainSet.addAll(
+            modeAllowedDomains
+                .map(::normalizeDomainToken)
+                .filter { it.isNotEmpty() }
+        )
+        val allowedDomains = allowedDomainSet.toList().sorted()
 
         val stateUnchanged =
             categories == lastAppliedCategories &&
                 domains == lastAppliedDomains &&
-                blockedPackages == lastAppliedBlockedPackages
+                blockedPackages == lastAppliedBlockedPackages &&
+                allowedDomains == lastAppliedAllowedDomains
 
         val versionRegressedOrDuplicate =
             incomingVersion != null &&
@@ -1658,12 +1719,13 @@ class DnsVpnService : VpnService() {
             "Applying effective_policy from $source " +
                 "childId=$childId version=${incomingVersion ?: 0L} " +
                 "manualMode=${activeManualMode ?: "none"} pauseActive=$pauseActive " +
-                "cats=${categories.size} domains=${domains.size} packages=${blockedPackages.size}"
+                "cats=${categories.size} domains=${domains.size} packages=${blockedPackages.size} " +
+                "allowed=${allowedDomains.size}"
         )
         applyFilterRules(
             categories = categories,
             domains = domains,
-            temporaryAllowedDomains = lastAppliedAllowedDomains,
+            temporaryAllowedDomains = allowedDomains,
             blockedPackages = blockedPackages
         )
         if (incomingVersion != null && incomingVersion > 0L) {
