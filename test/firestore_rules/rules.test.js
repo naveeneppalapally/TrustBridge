@@ -45,6 +45,7 @@ function childDocData(parentId = PARENT_ID) {
     nickname: 'Aarav',
     ageBand: '6-9',
     deviceIds: [],
+    protectionEnabled: true,
     policy: {
       blockedCategories: ['social-networks'],
       blockedDomains: ['example.com'],
@@ -183,6 +184,34 @@ describe('children top-level collection', () => {
 
     await assertFails(
       testDoc('children/child-bad', PARENT_ID).set(badData),
+    );
+  });
+
+  test('parent can toggle protectionEnabled on owned child', async () => {
+    await testEnv.withSecurityRulesDisabled(async (context) => {
+      await context.firestore().doc('children/child-1').set(childDocData());
+    });
+
+    await assertSucceeds(
+      testDoc('children/child-1', PARENT_ID).update({
+        protectionEnabled: false,
+        updatedAt: new Date(),
+      }),
+    );
+  });
+
+  test('child device cannot toggle protectionEnabled on child profile', async () => {
+    await seedChildWithDevice({
+      childId: 'child-1',
+      parentId: PARENT_ID,
+      deviceId: 'device-1',
+    });
+
+    await assertFails(
+      testDoc('children/child-1', 'device-1').update({
+        protectionEnabled: false,
+        updatedAt: new Date(),
+      }),
     );
   });
 });
@@ -439,6 +468,89 @@ describe('devices/{deviceId}', () => {
         attempts: 0,
         sentAt: new Date(),
       }),
+    );
+  });
+});
+
+describe('bypass_events/{deviceId}/events/{eventId}', () => {
+  test('parent can read safety alert event for owned child device', async () => {
+    await seedChildWithDevice({
+      childId: 'child-1',
+      parentId: PARENT_ID,
+      deviceId: 'device-1',
+    });
+
+    await testEnv.withSecurityRulesDisabled(async (context) => {
+      await context.firestore()
+        .doc('bypass_events/device-1/events/event-1')
+        .set({
+          type: 'vpn_disabled',
+          deviceId: 'device-1',
+          childId: 'child-1',
+          parentId: PARENT_ID,
+          childNickname: 'Aarav',
+          timestampEpochMs: Date.now(),
+          timestamp: new Date(),
+          read: false,
+        });
+    });
+
+    await assertSucceeds(
+      testDoc('bypass_events/device-1/events/event-1', PARENT_ID).get(),
+    );
+  });
+
+  test('parent can query own safety alerts via collectionGroup', async () => {
+    await seedChildWithDevice({
+      childId: 'child-1',
+      parentId: PARENT_ID,
+      deviceId: 'device-1',
+    });
+
+    await testEnv.withSecurityRulesDisabled(async (context) => {
+      await context.firestore()
+        .doc('bypass_events/device-1/events/event-2')
+        .set({
+          type: 'uninstall_attempt',
+          deviceId: 'device-1',
+          childId: 'child-1',
+          parentId: PARENT_ID,
+          childNickname: 'Aarav',
+          timestampEpochMs: Date.now(),
+          timestamp: new Date(),
+          read: false,
+        });
+    });
+
+    const query = testEnv.authenticatedContext(PARENT_ID).firestore()
+      .collectionGroup('events')
+      .where('parentId', '==', PARENT_ID);
+    await assertSucceeds(query.get());
+  });
+
+  test('other parent cannot read safety alert event', async () => {
+    await seedChildWithDevice({
+      childId: 'child-1',
+      parentId: PARENT_ID,
+      deviceId: 'device-1',
+    });
+
+    await testEnv.withSecurityRulesDisabled(async (context) => {
+      await context.firestore()
+        .doc('bypass_events/device-1/events/event-3')
+        .set({
+          type: 'vpn_disabled',
+          deviceId: 'device-1',
+          childId: 'child-1',
+          parentId: PARENT_ID,
+          timestampEpochMs: Date.now(),
+          timestamp: new Date(),
+          read: false,
+        });
+    });
+
+    await assertFails(
+      testDoc('bypass_events/device-1/events/event-3', OTHER_ID).get(),
     );
   });
 });

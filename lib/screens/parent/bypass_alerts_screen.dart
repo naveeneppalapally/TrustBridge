@@ -3,11 +3,8 @@ import 'dart:async';
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:flutter/material.dart';
 
-import '../../config/feature_gates.dart';
 import '../../services/auth_service.dart';
-import '../../services/feature_gate_service.dart';
 import '../../services/remote_command_service.dart';
-import '../upgrade_screen.dart';
 
 /// Parent screen for bypass and protection alerts.
 class BypassAlertsScreen extends StatefulWidget {
@@ -36,12 +33,10 @@ class _BypassAlertsScreenState extends State<BypassAlertsScreen> {
   final Map<String, String> _commandStatusByAlertId = <String, String>{};
   final Map<String, StreamSubscription<CommandResult>> _commandSubscriptions =
       <String, StreamSubscription<CommandResult>>{};
-  final FeatureGateService _featureGateService = FeatureGateService();
 
   String _typeFilter = _allFilter;
   String _deviceFilter = _allFilter;
-  bool _gateResolved = false;
-  bool _gateAllowed = false;
+  bool _gateResolved = true;
 
   static const String _allFilter = '__all__';
 
@@ -72,7 +67,7 @@ class _BypassAlertsScreenState extends State<BypassAlertsScreen> {
   @override
   void initState() {
     super.initState();
-    unawaited(_resolveGate());
+    _resolveGate();
   }
 
   @override
@@ -85,21 +80,13 @@ class _BypassAlertsScreenState extends State<BypassAlertsScreen> {
   }
 
   Future<void> _resolveGate() async {
-    final gate = await _featureGateService.checkGate(AppFeature.bypassAlerts);
+    // Safety alerts must remain visible to all parents.
     if (!mounted) {
       return;
     }
     setState(() {
-      _gateAllowed = gate.allowed;
       _gateResolved = true;
     });
-    if (!gate.allowed) {
-      await UpgradeScreen.maybeShow(
-        context,
-        feature: AppFeature.bypassAlerts,
-        reason: gate.upgradeReason,
-      );
-    }
   }
 
   @override
@@ -116,37 +103,6 @@ class _BypassAlertsScreenState extends State<BypassAlertsScreen> {
       return Scaffold(
         appBar: AppBar(title: const Text('Protection Alerts')),
         body: const Center(child: CircularProgressIndicator()),
-      );
-    }
-
-    if (!_gateAllowed) {
-      return Scaffold(
-        appBar: AppBar(title: const Text('Protection Alerts')),
-        body: Center(
-          child: Padding(
-            padding: const EdgeInsets.all(24),
-            child: Column(
-              mainAxisSize: MainAxisSize.min,
-              children: [
-                const Icon(Icons.lock_outline, size: 44),
-                const SizedBox(height: 10),
-                const Text(
-                  'Bypass alerts are available with TrustBridge Pro.',
-                  textAlign: TextAlign.center,
-                ),
-                const SizedBox(height: 12),
-                FilledButton(
-                  onPressed: () => UpgradeScreen.maybeShow(
-                    context,
-                    feature: AppFeature.bypassAlerts,
-                    reason: 'Bypass alerts are available with TrustBridge Pro.',
-                  ),
-                  child: const Text('View upgrade options'),
-                ),
-              ],
-            ),
-          ),
-        ),
       );
     }
 
@@ -202,6 +158,11 @@ class _BypassAlertsScreenState extends State<BypassAlertsScreen> {
               if (alert.deviceId.trim().isNotEmpty) alert.deviceId.trim(),
           }.toList(growable: false)
             ..sort();
+          final deviceLabels = <String, String>{
+            for (final alert in allAlerts)
+              if (alert.deviceId.trim().isNotEmpty)
+                alert.deviceId.trim(): alert.childLabel,
+          };
 
           return Column(
             children: [
@@ -230,7 +191,7 @@ class _BypassAlertsScreenState extends State<BypassAlertsScreen> {
                         ),
                         const SizedBox(width: 10),
                         Expanded(
-                          child: _buildDeviceDropdown(devices),
+                          child: _buildDeviceDropdown(devices, deviceLabels),
                         ),
                       ],
                     ),
@@ -260,7 +221,7 @@ class _BypassAlertsScreenState extends State<BypassAlertsScreen> {
                                   padding:
                                       const EdgeInsets.fromLTRB(2, 2, 2, 8),
                                   child: Text(
-                                    alert.deviceId,
+                                    _deviceHeadingLabel(alert),
                                     style: Theme.of(context)
                                         .textTheme
                                         .bodySmall
@@ -287,15 +248,14 @@ class _BypassAlertsScreenState extends State<BypassAlertsScreen> {
   }
 
   String _friendlyLoadError(Object? error) {
-    final raw = error?.toString() ?? 'Unknown error';
+    final raw = error?.toString() ?? 'unknown';
     final lower = raw.toLowerCase();
     if (lower.contains('permission-denied') ||
         lower.contains('permission denied') ||
         lower.contains('cloud_permission')) {
-      return 'Could not load alerts.\n\nPermission is not granted for this account yet. '
-          'Re-login, then deploy latest Firestore rules.';
+      return 'Alerts unavailable right now. Please try again in a moment.';
     }
-    return 'Could not load alerts.\n$raw';
+    return 'Alerts unavailable right now. Please try again in a moment.';
   }
 
   Widget _buildFilterChip({
@@ -358,7 +318,10 @@ class _BypassAlertsScreenState extends State<BypassAlertsScreen> {
     );
   }
 
-  Widget _buildDeviceDropdown(List<String> devices) {
+  Widget _buildDeviceDropdown(
+    List<String> devices,
+    Map<String, String> deviceLabels,
+  ) {
     final options = <DropdownMenuItem<String>>[
       const DropdownMenuItem<String>(
         value: _allFilter,
@@ -367,7 +330,11 @@ class _BypassAlertsScreenState extends State<BypassAlertsScreen> {
       ...devices.map(
         (deviceId) => DropdownMenuItem<String>(
           value: deviceId,
-          child: Text(deviceId),
+          child: Text(
+            (deviceLabels[deviceId] ?? '').trim().isEmpty
+                ? 'Child device'
+                : '${deviceLabels[deviceId]} device',
+          ),
         ),
       ),
     ];
@@ -393,6 +360,14 @@ class _BypassAlertsScreenState extends State<BypassAlertsScreen> {
         });
       },
     );
+  }
+
+  String _deviceHeadingLabel(_BypassAlertItem alert) {
+    final childLabel = alert.childLabel.trim();
+    if (childLabel.isNotEmpty) {
+      return '$childLabel device';
+    }
+    return 'Child device';
   }
 
   Widget _buildAlertCard(_BypassAlertItem alert) {
@@ -673,7 +648,7 @@ class _BypassAlertItem {
       childId: childId,
       childLabel: (childNickname != null && childNickname.isNotEmpty)
           ? childNickname
-          : (childId.isNotEmpty ? childId : 'Child device'),
+          : 'Child device',
       timestamp: timestamp,
       read: data['read'] == true,
       reference: doc.reference,

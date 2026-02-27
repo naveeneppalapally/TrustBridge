@@ -12,9 +12,15 @@ import android.net.Uri
 import android.provider.Settings
 import android.content.pm.ApplicationInfo
 import android.content.pm.PackageManager
+import android.graphics.Bitmap
+import android.graphics.Canvas
+import android.graphics.drawable.BitmapDrawable
+import android.graphics.drawable.Drawable
+import android.util.Base64
 import java.text.SimpleDateFormat
 import java.util.Date
 import java.util.Locale
+import java.io.ByteArrayOutputStream
 import com.navee.trustbridge.vpn.BlocklistStore
 import com.navee.trustbridge.vpn.DnsFilterEngine
 import com.navee.trustbridge.vpn.DnsVpnService
@@ -299,6 +305,12 @@ class MainActivity : FlutterFragmentActivity() {
                     call.argument<List<String>>("blockedDomains") ?: emptyList()
                 val temporaryAllowedDomains =
                     call.argument<List<String>>("temporaryAllowedDomains") ?: emptyList()
+                val parentId = call.argument<String>("parentId")
+                    ?.trim()
+                    ?.takeIf { it.isNotEmpty() }
+                val childId = call.argument<String>("childId")
+                    ?.trim()
+                    ?.takeIf { it.isNotEmpty() }
                 persistPolicyContext(call)
 
                 val serviceIntent = Intent(this, DnsVpnService::class.java).apply {
@@ -315,6 +327,12 @@ class MainActivity : FlutterFragmentActivity() {
                         DnsVpnService.EXTRA_TEMP_ALLOWED_DOMAINS,
                         ArrayList(temporaryAllowedDomains)
                     )
+                    if (parentId != null) {
+                        putExtra(DnsVpnService.EXTRA_PARENT_ID, parentId)
+                    }
+                    if (childId != null) {
+                        putExtra(DnsVpnService.EXTRA_CHILD_ID, childId)
+                    }
                 }
                 startServiceCompat(serviceIntent)
                 result.success(true)
@@ -596,6 +614,11 @@ class MainActivity : FlutterFragmentActivity() {
             } catch (_: Exception) {
                 ""
             }
+            val appIconBase64 = try {
+                drawableToPngBase64(resolveInfo.loadIcon(packageManager))
+            } catch (_: Exception) {
+                null
+            }
 
             val applicationInfo = try {
                 packageManager.getApplicationInfo(packageName, 0)
@@ -606,19 +629,52 @@ class MainActivity : FlutterFragmentActivity() {
                 it.flags and ApplicationInfo.FLAG_SYSTEM != 0
             } ?: false
 
-            apps.add(
-                mapOf(
-                    "packageName" to packageName.lowercase(),
-                    "appName" to (if (appName.isEmpty()) packageName else appName),
-                    "isSystemApp" to isSystemApp,
-                    "isLaunchable" to true,
-                    "firstSeenAt" to nowEpochMs,
-                    "lastSeenAt" to nowEpochMs
-                )
+            val appPayload = mutableMapOf<String, Any>(
+                "packageName" to packageName.lowercase(),
+                "appName" to (if (appName.isEmpty()) packageName else appName),
+                "isSystemApp" to isSystemApp,
+                "isLaunchable" to true,
+                "firstSeenAt" to nowEpochMs,
+                "lastSeenAt" to nowEpochMs
             )
+            if (!appIconBase64.isNullOrBlank()) {
+                appPayload["appIconBase64"] = appIconBase64
+            }
+            apps.add(appPayload)
         }
 
         return apps.sortedBy { (it["appName"] as? String)?.lowercase().orEmpty() }
+    }
+
+    private fun drawableToPngBase64(drawable: Drawable?): String? {
+        drawable ?: return null
+        return try {
+            val bitmap = when (drawable) {
+                is BitmapDrawable -> drawable.bitmap
+                else -> {
+                    val width = drawable.intrinsicWidth.coerceAtLeast(1)
+                    val height = drawable.intrinsicHeight.coerceAtLeast(1)
+                    Bitmap.createBitmap(width, height, Bitmap.Config.ARGB_8888).also { canvasBitmap ->
+                        val canvas = Canvas(canvasBitmap)
+                        drawable.setBounds(0, 0, canvas.width, canvas.height)
+                        drawable.draw(canvas)
+                    }
+                }
+            }
+            val targetSize = 96
+            val normalizedBitmap = if (bitmap.width > targetSize || bitmap.height > targetSize) {
+                Bitmap.createScaledBitmap(bitmap, targetSize, targetSize, true)
+            } else {
+                bitmap
+            }
+            val output = ByteArrayOutputStream()
+            normalizedBitmap.compress(Bitmap.CompressFormat.PNG, 100, output)
+            val encoded = Base64.encodeToString(output.toByteArray(), Base64.NO_WRAP)
+            output.close()
+            encoded
+        } catch (_: Exception) {
+            null
+        }
     }
 
     private fun getCurrentForegroundPackage(): String? {

@@ -117,13 +117,14 @@ class FamilyManagementScreen extends StatelessWidget {
   }
 
   Widget _buildSubscriptionCard(BuildContext context) {
+    final scheme = Theme.of(context).colorScheme;
     return Container(
       key: const Key('family_subscription_card'),
       padding: const EdgeInsets.all(16),
       decoration: BoxDecoration(
-        color: Colors.white,
+        color: scheme.surfaceContainerHighest,
         borderRadius: BorderRadius.circular(16),
-        border: Border.all(color: const Color(0xFFDDE5F3)),
+        border: Border.all(color: scheme.outlineVariant),
       ),
       child: Column(
         children: [
@@ -133,30 +134,33 @@ class FamilyManagementScreen extends StatelessWidget {
                 width: 42,
                 height: 42,
                 decoration: BoxDecoration(
-                  color: const Color(0xFFE8F2FF),
+                  color: scheme.primary.withValues(alpha: 0.14),
                   borderRadius: BorderRadius.circular(12),
                 ),
-                child: const Icon(
+                child: Icon(
                   Icons.shield_rounded,
-                  color: Color(0xFF2E86FF),
+                  color: scheme.primary,
                 ),
               ),
               const SizedBox(width: 10),
-              const Expanded(
+              Expanded(
                 child: Column(
                   crossAxisAlignment: CrossAxisAlignment.start,
                   children: [
-                    Text(
+                    const Text(
                       'Premium Family',
                       style: TextStyle(
                         fontWeight: FontWeight.w800,
                         fontSize: 16,
                       ),
                     ),
-                    SizedBox(height: 2),
+                    const SizedBox(height: 2),
                     Text(
-                      'Renews Oct 24, 2024',
-                      style: TextStyle(color: Colors.grey, fontSize: 12),
+                      'Active subscription',
+                      style: TextStyle(
+                        color: scheme.onSurfaceVariant,
+                        fontSize: 12,
+                      ),
                     ),
                   ],
                 ),
@@ -165,13 +169,13 @@ class FamilyManagementScreen extends StatelessWidget {
                 padding:
                     const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
                 decoration: BoxDecoration(
-                  color: const Color(0xFFDDFBE8),
+                  color: scheme.primaryContainer,
                   borderRadius: BorderRadius.circular(999),
                 ),
-                child: const Text(
+                child: Text(
                   'ACTIVE',
                   style: TextStyle(
-                    color: Color(0xFF0F9D58),
+                    color: scheme.onPrimaryContainer,
                     fontSize: 11,
                     fontWeight: FontWeight.w800,
                   ),
@@ -182,18 +186,17 @@ class FamilyManagementScreen extends StatelessWidget {
           const SizedBox(height: 12),
           InkWell(
             onTap: () {},
-            child: const Row(
+            child: Row(
               children: [
                 Text(
                   'Manage Billing',
                   style: TextStyle(
-                    color: Color(0xFF2E86FF),
+                    color: scheme.primary,
                     fontWeight: FontWeight.w700,
                   ),
                 ),
-                SizedBox(width: 6),
-                Icon(Icons.arrow_forward_ios,
-                    size: 13, color: Color(0xFF2E86FF)),
+                const SizedBox(width: 6),
+                Icon(Icons.arrow_forward_ios, size: 13, color: scheme.primary),
               ],
             ),
           ),
@@ -364,8 +367,7 @@ class FamilyManagementScreen extends StatelessWidget {
   }
 
   Widget _buildChildRow(ChildProfile child) {
-    final deviceLabel =
-        child.deviceIds.isEmpty ? 'No device linked' : child.deviceIds.first;
+    final deviceLabel = _childDeviceLabel(child);
     final statusText = child.deviceIds.isEmpty ? '2h ago' : 'Active Now';
 
     return Padding(
@@ -412,6 +414,26 @@ class FamilyManagementScreen extends StatelessWidget {
         ],
       ),
     );
+  }
+
+  String _childDeviceLabel(ChildProfile child) {
+    if (child.deviceIds.isEmpty) {
+      return 'No device linked';
+    }
+
+    for (final rawDeviceId in child.deviceIds) {
+      final deviceId = rawDeviceId.trim();
+      if (deviceId.isEmpty) {
+        continue;
+      }
+      final metadata = child.deviceMetadata[deviceId];
+      final alias = (metadata?.alias ?? '').trim();
+      if (alias.isNotEmpty && alias != deviceId) {
+        return alias;
+      }
+    }
+
+    return 'Linked device';
   }
 
   List<_FamilyAdmin> _buildAdminRows(Map<String, dynamic>? profile) {

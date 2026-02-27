@@ -187,8 +187,8 @@ class _LoginScreenState extends State<LoginScreen> {
   }
 
   Future<void> _showEmailAuthSheet() async {
-    final emailController = TextEditingController();
-    final passwordController = TextEditingController();
+    var emailInput = '';
+    var passwordInput = '';
     bool isSignUp = false;
     bool isLoading = false;
     String? errorMessage;
@@ -201,8 +201,8 @@ class _LoginScreenState extends State<LoginScreen> {
           builder: (context, setModalState) {
             Future<void> submit() async {
               final sheetNavigator = Navigator.of(sheetContext);
-              final email = emailController.text.trim();
-              final password = passwordController.text;
+              final email = emailInput.trim();
+              final password = passwordInput;
               if (email.isEmpty || password.isEmpty) {
                 setModalState(() {
                   errorMessage = 'Email and password are required.';
@@ -269,8 +269,8 @@ class _LoginScreenState extends State<LoginScreen> {
                   ),
                   const SizedBox(height: 12),
                   TextField(
-                    controller: emailController,
                     keyboardType: TextInputType.emailAddress,
+                    onChanged: (value) => emailInput = value,
                     decoration: const InputDecoration(
                       labelText: 'Email',
                       border: OutlineInputBorder(),
@@ -278,8 +278,8 @@ class _LoginScreenState extends State<LoginScreen> {
                   ),
                   const SizedBox(height: 10),
                   TextField(
-                    controller: passwordController,
                     obscureText: true,
+                    onChanged: (value) => passwordInput = value,
                     decoration: const InputDecoration(
                       labelText: 'Password',
                       border: OutlineInputBorder(),
@@ -326,9 +326,6 @@ class _LoginScreenState extends State<LoginScreen> {
         );
       },
     );
-
-    emailController.dispose();
-    passwordController.dispose();
   }
 
   @override

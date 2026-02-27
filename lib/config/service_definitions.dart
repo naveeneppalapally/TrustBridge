@@ -161,6 +161,13 @@ class ServiceDefinitions {
     for (final service in all) service.serviceId: service,
   };
 
+  static final Map<String, ServiceDefinition> _byPackage =
+      <String, ServiceDefinition>{
+    for (final service in all)
+      for (final pkg in service.androidPackages)
+        pkg.trim().toLowerCase(): service,
+  };
+
   static List<String> servicesForCategory(String rawCategoryId) {
     final categoryId = normalizeCategoryId(rawCategoryId);
     if (categoryId.isEmpty) {
@@ -253,6 +260,28 @@ class ServiceDefinitions {
         service.androidPackages
             .map((pkg) => pkg.trim().toLowerCase())
             .where((pkg) => pkg.isNotEmpty),
+      );
+    }
+    return result;
+  }
+
+  static Set<String> resolveDomainsForPackages(
+    Iterable<String> blockedPackages,
+  ) {
+    final result = <String>{};
+    for (final rawPackage in blockedPackages) {
+      final packageName = rawPackage.trim().toLowerCase();
+      if (packageName.isEmpty) {
+        continue;
+      }
+      final service = _byPackage[packageName];
+      if (service == null) {
+        continue;
+      }
+      result.addAll(
+        service.domains
+            .map((domain) => domain.trim().toLowerCase())
+            .where((domain) => domain.isNotEmpty),
       );
     }
     return result;

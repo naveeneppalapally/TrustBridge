@@ -1297,6 +1297,7 @@ class FirestoreService {
       final app = InstalledAppInfo(
         packageName: packageName.toLowerCase(),
         appName: (appMap['appName'] as String?)?.trim() ?? packageName,
+        appIconBase64: (appMap['appIconBase64'] as String?)?.trim(),
         isSystemApp: appMap['isSystemApp'] == true,
         isLaunchable: appMap['isLaunchable'] != false,
         firstSeenAt: firstSeenAt,
@@ -1844,6 +1845,7 @@ class FirestoreService {
       ),
       'nextDnsControls': child.nextDnsControls,
       'policy': normalizedPolicy.toMap(),
+      'protectionEnabled': child.protectionEnabled,
       'pausedUntil': child.pausedUntil != null
           ? Timestamp.fromDate(child.pausedUntil!)
           : null,
@@ -1861,6 +1863,7 @@ class FirestoreService {
       ),
       manualMode: existingManualMode.isEmpty ? null : existingManualMode,
       pausedUntil: child.pausedUntil,
+      protectionEnabled: child.protectionEnabled,
       sourceUpdatedAt: updatedAt,
       policySchemaVersion: normalizedPolicy.policySchemaVersion,
     );
@@ -2068,6 +2071,7 @@ class FirestoreService {
       final data = doc.data() ?? const <String, dynamic>{};
       final policy = _dynamicMap(data['policy']);
       final manualMode = _dynamicMap(data['manualMode']);
+      final protectionEnabled = data['protectionEnabled'] != false;
       await _recordPolicyEventSnapshot(
         parentId: parentId,
         childId: doc.id,
@@ -2078,6 +2082,7 @@ class FirestoreService {
         modeOverrides: _dynamicMap(policy['modeOverrides']),
         manualMode: manualMode.isEmpty ? null : manualMode,
         pausedUntil: pausedUntil,
+        protectionEnabled: protectionEnabled,
         sourceUpdatedAt: updatedAt,
         policySchemaVersion: _dynamicInt(policy['policySchemaVersion']) ?? 1,
       );
@@ -2114,6 +2119,7 @@ class FirestoreService {
       final data = doc.data() ?? const <String, dynamic>{};
       final policy = _dynamicMap(data['policy']);
       final manualMode = _dynamicMap(data['manualMode']);
+      final protectionEnabled = data['protectionEnabled'] != false;
       await _recordPolicyEventSnapshot(
         parentId: parentId,
         childId: doc.id,
@@ -2124,6 +2130,7 @@ class FirestoreService {
         modeOverrides: _dynamicMap(policy['modeOverrides']),
         manualMode: manualMode.isEmpty ? null : manualMode,
         pausedUntil: null,
+        protectionEnabled: protectionEnabled,
         sourceUpdatedAt: updatedAt,
         policySchemaVersion: _dynamicInt(policy['policySchemaVersion']) ?? 1,
       );
@@ -2156,6 +2163,7 @@ class FirestoreService {
     final blockedPackages = _dynamicStringList(policy['blockedPackages']);
     final modeOverrides = _dynamicMap(policy['modeOverrides']);
     final policySchemaVersion = _dynamicInt(policy['policySchemaVersion']) ?? 1;
+    final protectionEnabled = childData['protectionEnabled'] != false;
     final updatedAt = DateTime.now();
     await childDoc.reference.update(<String, dynamic>{
       'pausedUntil':
@@ -2172,6 +2180,56 @@ class FirestoreService {
       modeOverrides: modeOverrides,
       manualMode: manualMode.isEmpty ? null : manualMode,
       pausedUntil: pausedUntil,
+      protectionEnabled: protectionEnabled,
+      sourceUpdatedAt: updatedAt,
+      policySchemaVersion: policySchemaVersion,
+    );
+  }
+
+  Future<void> setChildProtectionEnabled({
+    required String parentId,
+    required String childId,
+    required bool enabled,
+  }) async {
+    if (parentId.trim().isEmpty) {
+      throw ArgumentError.value(parentId, 'parentId', 'Parent ID is required.');
+    }
+    if (childId.trim().isEmpty) {
+      throw ArgumentError.value(childId, 'childId', 'Child ID is required.');
+    }
+
+    final childDoc = await _loadOwnedChildDoc(
+      parentId: parentId,
+      childId: childId,
+    );
+    final childData = childDoc.data() ?? const <String, dynamic>{};
+    final policy = _dynamicMap(childData['policy']);
+    final manualMode = _dynamicMap(childData['manualMode']);
+    final blockedCategories = _dynamicStringList(policy['blockedCategories']);
+    final blockedServices = _dynamicStringList(policy['blockedServices']);
+    final blockedDomains = _dynamicStringList(policy['blockedDomains']);
+    final blockedPackages = _dynamicStringList(policy['blockedPackages']);
+    final modeOverrides = _dynamicMap(policy['modeOverrides']);
+    final policySchemaVersion = _dynamicInt(policy['policySchemaVersion']) ?? 1;
+    final pausedUntil = _dynamicDateTime(childData['pausedUntil']);
+    final updatedAt = DateTime.now();
+
+    await childDoc.reference.update(<String, dynamic>{
+      'protectionEnabled': enabled,
+      'updatedAt': Timestamp.fromDate(updatedAt),
+    });
+
+    await _recordPolicyEventSnapshot(
+      parentId: parentId,
+      childId: childId,
+      blockedCategories: blockedCategories,
+      blockedServices: blockedServices,
+      blockedDomains: blockedDomains,
+      blockedPackages: blockedPackages,
+      modeOverrides: modeOverrides,
+      manualMode: manualMode.isEmpty ? null : manualMode,
+      pausedUntil: pausedUntil,
+      protectionEnabled: enabled,
       sourceUpdatedAt: updatedAt,
       policySchemaVersion: policySchemaVersion,
     );
@@ -2206,6 +2264,7 @@ class FirestoreService {
     final modeOverrides = _dynamicMap(policy['modeOverrides']);
     final policySchemaVersion = _dynamicInt(policy['policySchemaVersion']) ?? 1;
     final pausedUntil = _dynamicDateTime(childData['pausedUntil']);
+    final protectionEnabled = childData['protectionEnabled'] != false;
     final normalizedMode = mode?.trim().toLowerCase();
     final updatedAt = DateTime.now();
 
@@ -2224,6 +2283,7 @@ class FirestoreService {
         modeOverrides: modeOverrides,
         manualMode: null,
         pausedUntil: pausedUntil,
+        protectionEnabled: protectionEnabled,
         sourceUpdatedAt: updatedAt,
         policySchemaVersion: policySchemaVersion,
       );
@@ -2249,6 +2309,7 @@ class FirestoreService {
       modeOverrides: modeOverrides,
       manualMode: manualModePayload,
       pausedUntil: pausedUntil,
+      protectionEnabled: protectionEnabled,
       sourceUpdatedAt: updatedAt,
       policySchemaVersion: policySchemaVersion,
     );
@@ -2772,6 +2833,7 @@ class FirestoreService {
     required Map<String, dynamic>? modeOverrides,
     required Map<String, dynamic>? manualMode,
     required DateTime? pausedUntil,
+    required bool protectionEnabled,
     required DateTime sourceUpdatedAt,
     required int policySchemaVersion,
   }) async {
@@ -2787,21 +2849,38 @@ class FirestoreService {
       final normalizedDomains = _normalizeStringIterable(blockedDomains);
       final normalizedPackages = _normalizePackageIds(blockedPackages);
       final normalizedModeOverrides = _normalizeModeOverridesMap(modeOverrides);
-      final resolvedDomains = ServiceDefinitions.resolveDomains(
-        blockedCategories: canonicalCategories,
-        blockedServices: normalizedServices,
-        customBlockedDomains: normalizedDomains,
-      ).toList()
-        ..sort();
-      final resolvedPackages = <String>{
-        ...ServiceDefinitions.resolvePackages(
-          blockedCategories: canonicalCategories,
-          blockedServices: normalizedServices,
-        ),
-        ...normalizedPackages,
-      }.toList()
-        ..sort();
-      final normalizedManualMode = _normalizeManualModeMap(manualMode);
+      final resolvedPackages = protectionEnabled
+          ? (<String>{
+              ...ServiceDefinitions.resolvePackages(
+                blockedCategories: canonicalCategories,
+                blockedServices: normalizedServices,
+              ),
+              ...normalizedPackages,
+            }.toList()
+            ..sort())
+          : <String>[];
+      final resolvedDomains = protectionEnabled
+          ? (<String>{
+              ...ServiceDefinitions.resolveDomains(
+                blockedCategories: canonicalCategories,
+                blockedServices: normalizedServices,
+                customBlockedDomains: normalizedDomains,
+              ),
+              ...ServiceDefinitions.resolveDomainsForPackages(resolvedPackages),
+            }.toList()
+            ..sort())
+          : <String>[];
+      final normalizedManualMode =
+          protectionEnabled ? _normalizeManualModeMap(manualMode) : null;
+      final effectiveCategories =
+          protectionEnabled ? canonicalCategories : <String>[];
+      final effectiveServices =
+          protectionEnabled ? normalizedServices : <String>[];
+      final effectiveDomains =
+          protectionEnabled ? normalizedDomains : <String>[];
+      final effectivePackages =
+          protectionEnabled ? normalizedPackages : <String>[];
+      final effectivePausedUntil = protectionEnabled ? pausedUntil : null;
       final version = _nextPolicyEventEpochMs();
 
       await _firestore
@@ -2811,10 +2890,11 @@ class FirestoreService {
           .add(<String, dynamic>{
         'parentId': normalizedParentId,
         'childId': normalizedChildId,
-        'blockedCategories': canonicalCategories,
-        'blockedServices': normalizedServices,
-        'blockedDomains': normalizedDomains,
-        'blockedPackages': normalizedPackages,
+        'protectionEnabled': protectionEnabled,
+        'blockedCategories': effectiveCategories,
+        'blockedServices': effectiveServices,
+        'blockedDomains': effectiveDomains,
+        'blockedPackages': effectivePackages,
         'blockedDomainsResolved': resolvedDomains,
         'blockedPackagesResolved': resolvedPackages,
         'modeOverrides': normalizedModeOverrides,
@@ -2822,8 +2902,9 @@ class FirestoreService {
         'policySchemaVersion':
             policySchemaVersion <= 0 ? 2 : policySchemaVersion,
         'manualMode': normalizedManualMode,
-        'pausedUntil':
-            pausedUntil == null ? null : Timestamp.fromDate(pausedUntil),
+        'pausedUntil': effectivePausedUntil == null
+            ? null
+            : Timestamp.fromDate(effectivePausedUntil),
         'sourceUpdatedAt': Timestamp.fromDate(sourceUpdatedAt),
         'eventEpochMs': version,
         'version': version,
@@ -2832,15 +2913,16 @@ class FirestoreService {
       await _writeEffectivePolicyCurrent(
         parentId: normalizedParentId,
         childId: normalizedChildId,
-        blockedCategories: canonicalCategories,
-        blockedServices: normalizedServices,
-        customBlockedDomains: normalizedDomains,
-        blockedPackages: normalizedPackages,
+        blockedCategories: effectiveCategories,
+        blockedServices: effectiveServices,
+        customBlockedDomains: effectiveDomains,
+        blockedPackages: effectivePackages,
         blockedDomainsResolved: resolvedDomains,
         blockedPackagesResolved: resolvedPackages,
         modeOverridesResolved: normalizedModeOverrides,
         manualMode: normalizedManualMode,
-        pausedUntil: pausedUntil,
+        pausedUntil: effectivePausedUntil,
+        protectionEnabled: protectionEnabled,
         sourceUpdatedAt: sourceUpdatedAt,
         version: version,
         policySchemaVersion: policySchemaVersion <= 0 ? 2 : policySchemaVersion,
@@ -2868,6 +2950,7 @@ class FirestoreService {
     required Map<String, dynamic> modeOverridesResolved,
     required Map<String, dynamic>? manualMode,
     required DateTime? pausedUntil,
+    required bool protectionEnabled,
     required DateTime sourceUpdatedAt,
     required int version,
     required int policySchemaVersion,
@@ -2882,6 +2965,7 @@ class FirestoreService {
         'parentId': parentId,
         'childId': childId,
         'version': version,
+        'protectionEnabled': protectionEnabled,
         'blockedCategories': blockedCategories,
         'blockedServices': blockedServices,
         'blockedDomains': customBlockedDomains,

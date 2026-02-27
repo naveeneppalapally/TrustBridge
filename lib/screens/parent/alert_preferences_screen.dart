@@ -26,6 +26,7 @@ class _AlertPreferencesScreenState extends State<AlertPreferencesScreen> {
 
   bool _loading = true;
   bool _saving = false;
+  bool _isPremium = false;
 
   bool _vpnDisabled = true;
   bool _uninstallAttempt = true;
@@ -65,16 +66,21 @@ class _AlertPreferencesScreenState extends State<AlertPreferencesScreen> {
     }
 
     final prefs = await _resolvedFirestoreService.getAlertPreferences(parentId);
+    final profile = await _resolvedFirestoreService.getParentProfile(parentId);
+    final subscription = _asMap(profile?['subscription']);
+    final tier = (subscription['tier'] as String?)?.trim().toLowerCase();
+    final isPremium = tier == 'premium';
     if (!mounted) {
       return;
     }
     setState(() {
+      _isPremium = isPremium;
       _vpnDisabled = true;
       _uninstallAttempt = true;
       _privateDnsChanged = prefs['privateDnsChanged'] != false;
       _deviceOffline30m = prefs['deviceOffline30m'] != false;
-      _deviceOffline24h = true;
-      _emailSerious = prefs['emailSeriousAlerts'] == true;
+      _deviceOffline24h = isPremium && prefs['deviceOffline24h'] != false;
+      _emailSerious = isPremium && prefs['emailSeriousAlerts'] == true;
       _loading = false;
     });
   }
@@ -104,40 +110,62 @@ class _AlertPreferencesScreenState extends State<AlertPreferencesScreen> {
                 _buildToggle(
                   title: 'Protection turned off',
                   value: _vpnDisabled,
-                  requiredAlert: true,
+                  alwaysOn: true,
                   onChanged: (value) => _update(parentId, vpnDisabled: value),
                 ),
                 _buildToggle(
                   title: 'Uninstall attempt',
                   value: _uninstallAttempt,
-                  requiredAlert: true,
-                  onChanged: (value) => _update(parentId, uninstallAttempt: value),
+                  alwaysOn: true,
+                  onChanged: (value) =>
+                      _update(parentId, uninstallAttempt: value),
                 ),
                 _buildToggle(
                   title: 'DNS settings changed',
                   value: _privateDnsChanged,
-                  requiredAlert: false,
-                  onChanged: (value) => _update(parentId, privateDnsChanged: value),
+                  alwaysOn: false,
+                  onChanged: (value) =>
+                      _update(parentId, privateDnsChanged: value),
                 ),
                 _buildToggle(
                   title: 'Device offline (30 min)',
                   value: _deviceOffline30m,
-                  requiredAlert: false,
-                  onChanged: (value) => _update(parentId, deviceOffline30m: value),
+                  alwaysOn: false,
+                  onChanged: (value) =>
+                      _update(parentId, deviceOffline30m: value),
                 ),
                 _buildToggle(
                   title: 'Device offline (24 hours)',
                   value: _deviceOffline24h,
-                  requiredAlert: true,
-                  onChanged: (value) => _update(parentId, deviceOffline24h: value),
+                  alwaysOn: false,
+                  premiumLocked: !_isPremium,
+                  onChanged: (value) =>
+                      _update(parentId, deviceOffline24h: value),
                 ),
+                if (!_isPremium) ...[
+                  const SizedBox(height: 8),
+                  Container(
+                    padding: const EdgeInsets.all(10),
+                    decoration: BoxDecoration(
+                      color: Colors.blue.withValues(alpha: 0.08),
+                      borderRadius: BorderRadius.circular(10),
+                      border: Border.all(
+                          color: Colors.blue.withValues(alpha: 0.25)),
+                    ),
+                    child: const Text(
+                      '24-hour offline and email alerts are available on Premium.',
+                    ),
+                  ),
+                ],
                 const Divider(height: 32),
                 CheckboxListTile(
                   contentPadding: EdgeInsets.zero,
                   value: _emailSerious,
                   title: const Text('Also send email for serious alerts'),
-                  subtitle: const Text('(requires email on file)'),
-                  onChanged: _saving
+                  subtitle: Text(
+                    _isPremium ? '(requires email on file)' : 'Premium feature',
+                  ),
+                  onChanged: _saving || !_isPremium
                       ? null
                       : (value) => _update(
                             parentId,
@@ -146,7 +174,7 @@ class _AlertPreferencesScreenState extends State<AlertPreferencesScreen> {
                 ),
                 const SizedBox(height: 8),
                 Text(
-                  'Some alerts cannot be turned off to ensure your child\'s safety.',
+                  'Safety alerts stay on by default to protect your child.',
                   style: Theme.of(context).textTheme.bodySmall?.copyWith(
                         color: Theme.of(context).colorScheme.onSurfaceVariant,
                       ),
@@ -159,7 +187,8 @@ class _AlertPreferencesScreenState extends State<AlertPreferencesScreen> {
   Widget _buildToggle({
     required String title,
     required bool value,
-    required bool requiredAlert,
+    required bool alwaysOn,
+    bool premiumLocked = false,
     required ValueChanged<bool> onChanged,
   }) {
     return SwitchListTile(
@@ -168,15 +197,30 @@ class _AlertPreferencesScreenState extends State<AlertPreferencesScreen> {
       title: Row(
         children: [
           Expanded(child: Text(title)),
-          if (requiredAlert)
+          if (alwaysOn)
             const Tooltip(
-              message: 'This alert is required for your child\'s safety.',
+              message: 'Always on for safety.',
+              child: Icon(Icons.verified_user_outlined, size: 18),
+            ),
+          if (premiumLocked)
+            const Tooltip(
+              message: 'Premium feature',
               child: Icon(Icons.lock_outline, size: 18),
             ),
         ],
       ),
-      onChanged: requiredAlert || _saving ? null : onChanged,
+      onChanged: alwaysOn || premiumLocked || _saving ? null : onChanged,
     );
+  }
+
+  Map<String, dynamic> _asMap(Object? value) {
+    if (value is Map<String, dynamic>) {
+      return value;
+    }
+    if (value is Map) {
+      return value.map((key, raw) => MapEntry(key.toString(), raw));
+    }
+    return const <String, dynamic>{};
   }
 
   Future<void> _update(

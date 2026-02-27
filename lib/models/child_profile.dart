@@ -37,6 +37,7 @@ class ChildProfile {
   final Map<String, ChildDeviceRecord> deviceMetadata;
   final Map<String, dynamic> nextDnsControls;
   final Policy policy;
+  final bool protectionEnabled;
   final DateTime createdAt;
   final DateTime updatedAt;
   final DateTime? pausedUntil;
@@ -51,6 +52,7 @@ class ChildProfile {
     this.deviceMetadata = const {},
     this.nextDnsControls = const {},
     required this.policy,
+    this.protectionEnabled = true,
     required this.createdAt,
     required this.updatedAt,
     this.pausedUntil,
@@ -71,6 +73,7 @@ class ChildProfile {
       deviceMetadata: const <String, ChildDeviceRecord>{},
       nextDnsControls: const <String, dynamic>{},
       policy: Policy.presetForAgeBand(ageBand),
+      protectionEnabled: true,
       createdAt: now,
       updatedAt: now,
       pausedUntil: null,
@@ -89,6 +92,7 @@ class ChildProfile {
       deviceMetadata: _deviceMetadataMap(data['deviceMetadata']),
       nextDnsControls: _asMap(data['nextDnsControls']),
       policy: Policy.fromMap(_asMap(data['policy'])),
+      protectionEnabled: data['protectionEnabled'] != false,
       createdAt: _toDateTime(data['createdAt']),
       updatedAt: _toDateTime(data['updatedAt']),
       pausedUntil: _toNullableDateTime(data['pausedUntil']),
@@ -111,6 +115,7 @@ class ChildProfile {
           (deviceId, metadata) => MapEntry(deviceId, metadata.toMap()),
         ),
       if (nextDnsControls.isNotEmpty) 'nextDnsControls': nextDnsControls,
+      'protectionEnabled': protectionEnabled,
     };
     if (pausedUntil != null) {
       map['pausedUntil'] = Timestamp.fromDate(pausedUntil!);
@@ -132,6 +137,7 @@ class ChildProfile {
     Map<String, ChildDeviceRecord>? deviceMetadata,
     Map<String, dynamic>? nextDnsControls,
     Policy? policy,
+    bool? protectionEnabled,
     DateTime? pausedUntil,
     bool clearPausedUntil = false,
     Map<String, dynamic>? manualMode,
@@ -148,6 +154,7 @@ class ChildProfile {
       deviceMetadata: deviceMetadata ?? this.deviceMetadata,
       nextDnsControls: nextDnsControls ?? this.nextDnsControls,
       policy: policy ?? this.policy,
+      protectionEnabled: protectionEnabled ?? this.protectionEnabled,
       createdAt: createdAt,
       updatedAt: DateTime.now(),
       pausedUntil: clearPausedUntil ? null : (pausedUntil ?? this.pausedUntil),

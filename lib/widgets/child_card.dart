@@ -135,22 +135,6 @@ class ChildCard extends StatelessWidget {
     }
   }
 
-  int _dailyLimitMinutes() {
-    final override = usageLimitMinutesOverride;
-    if (override != null && override > 0) {
-      return override;
-    }
-
-    switch (child.ageBand) {
-      case AgeBand.young:
-        return 120;
-      case AgeBand.middle:
-        return 150;
-      case AgeBand.teen:
-        return 180;
-    }
-  }
-
   int _usageMinutes() {
     final override = usageMinutesOverride;
     if (override != null && override >= 0) {
@@ -186,14 +170,29 @@ class ChildCard extends StatelessWidget {
     }
   }
 
-  String _resolvedDeviceName() {
-    if (deviceName != null && deviceName!.trim().isNotEmpty) {
-      return deviceName!.trim();
+  _StatusBadgeData _primaryStatus({
+    required bool paused,
+    required ({String label, Color color}) modeMeta,
+  }) {
+    if (paused) {
+      return const _StatusBadgeData(
+        label: 'Internet Paused',
+        color: Colors.red,
+      );
     }
-    if (child.deviceIds.isNotEmpty) {
-      return child.deviceIds.first;
+
+    final health = (deviceHealthStatusLabel ?? '').trim();
+    if (health.isNotEmpty) {
+      return _StatusBadgeData(
+        label: health,
+        color: deviceHealthStatusColor ?? Colors.orange,
+      );
     }
-    return 'No linked device';
+
+    return _StatusBadgeData(
+      label: modeMeta.label,
+      color: modeMeta.color,
+    );
   }
 
   Color _avatarColor() {
@@ -213,11 +212,11 @@ class ChildCard extends StatelessWidget {
     final online = _isOnline();
     final mode = _activeModeState();
     final modeMeta = _modeMeta(mode);
+    final primaryStatus = _primaryStatus(
+      paused: paused,
+      modeMeta: modeMeta,
+    );
     final usageMinutes = _usageMinutes();
-    final usageLimitMinutes = _dailyLimitMinutes();
-    final usageRatio = !_hasUsageTelemetry() || usageLimitMinutes == 0
-        ? 0.0
-        : (usageMinutes / usageLimitMinutes).clamp(0.0, 1.0);
     final isDark = Theme.of(context).brightness == Brightness.dark;
 
     return Card(
@@ -286,8 +285,8 @@ class ChildCard extends StatelessWidget {
                       children: [
                         Text(
                           child.nickname,
-                          maxLines: 1,
-                          overflow: TextOverflow.ellipsis,
+                          maxLines: 2,
+                          overflow: TextOverflow.fade,
                           style:
                               Theme.of(context).textTheme.titleMedium?.copyWith(
                                     fontWeight: FontWeight.w800,
@@ -295,19 +294,19 @@ class ChildCard extends StatelessWidget {
                         ),
                         const SizedBox(height: 6),
                         Container(
-                          key: const Key('child_card_mode_badge'),
+                          key: const Key('child_card_status_badge'),
                           padding: const EdgeInsets.symmetric(
                             horizontal: 10,
                             vertical: 4,
                           ),
                           decoration: BoxDecoration(
-                            color: modeMeta.color.withValues(alpha: 0.14),
+                            color: primaryStatus.color.withValues(alpha: 0.14),
                             borderRadius: BorderRadius.circular(999),
                           ),
                           child: Text(
-                            modeMeta.label,
+                            primaryStatus.label,
                             style: TextStyle(
-                              color: modeMeta.color,
+                              color: primaryStatus.color,
                               fontSize: 11,
                               fontWeight: FontWeight.w700,
                             ),
@@ -315,34 +314,12 @@ class ChildCard extends StatelessWidget {
                         ),
                         const SizedBox(height: 6),
                         Text(
-                          paused ? 'Internet paused' : 'Now: ${modeMeta.label}',
+                          'Mode: ${modeMeta.label}',
                           style:
                               Theme.of(context).textTheme.bodySmall?.copyWith(
                                     color: Colors.grey.shade500,
                                   ),
                         ),
-                        if (deviceHealthStatusLabel != null) ...[
-                          const SizedBox(height: 6),
-                          Container(
-                            padding: const EdgeInsets.symmetric(
-                              horizontal: 10,
-                              vertical: 4,
-                            ),
-                            decoration: BoxDecoration(
-                              color: (deviceHealthStatusColor ?? Colors.orange)
-                                  .withValues(alpha: 0.14),
-                              borderRadius: BorderRadius.circular(999),
-                            ),
-                            child: Text(
-                              deviceHealthStatusLabel!,
-                              style: TextStyle(
-                                color: deviceHealthStatusColor ?? Colors.orange,
-                                fontSize: 11,
-                                fontWeight: FontWeight.w700,
-                              ),
-                            ),
-                          ),
-                        ],
                       ],
                     ),
                   ),
@@ -374,20 +351,13 @@ class ChildCard extends StatelessWidget {
                           ),
                         ),
                       ),
-                      const SizedBox(height: 6),
-                      Text(
-                        _resolvedDeviceName(),
-                        style: Theme.of(context).textTheme.bodySmall?.copyWith(
-                              color: Colors.grey.shade500,
-                            ),
-                      ),
                     ],
                   ),
                 ],
               ),
               const SizedBox(height: 14),
               Text(
-                'TIME USAGE',
+                'SCREEN TIME TODAY',
                 style: Theme.of(context).textTheme.bodySmall?.copyWith(
                       color: Colors.grey.shade500,
                       fontWeight: FontWeight.w700,
@@ -399,7 +369,7 @@ class ChildCard extends StatelessWidget {
                 children: [
                   if (_hasUsageTelemetry())
                     Text(
-                      '${_formatDuration(usageMinutes)} / ${_formatDuration(usageLimitMinutes)}',
+                      _formatDuration(usageMinutes),
                       style: Theme.of(context).textTheme.bodyMedium?.copyWith(
                             fontWeight: FontWeight.w700,
                           ),
@@ -412,29 +382,7 @@ class ChildCard extends StatelessWidget {
                             color: Colors.grey.shade600,
                           ),
                     ),
-                  const Spacer(),
-                  Text(
-                    _hasUsageTelemetry()
-                        ? '${(usageRatio * 100).toStringAsFixed(0)}%'
-                        : '--',
-                    style: Theme.of(context).textTheme.bodySmall?.copyWith(
-                          color: Colors.grey.shade600,
-                          fontWeight: FontWeight.w700,
-                        ),
-                  ),
                 ],
-              ),
-              const SizedBox(height: 8),
-              ClipRRect(
-                borderRadius: BorderRadius.circular(999),
-                child: LinearProgressIndicator(
-                  minHeight: 7,
-                  value: usageRatio,
-                  backgroundColor: Colors.blue.withValues(alpha: 0.14),
-                  valueColor: const AlwaysStoppedAnimation<Color>(
-                    Color(0xFF1E88E5),
-                  ),
-                ),
               ),
               const SizedBox(height: 14),
               Row(
@@ -463,21 +411,6 @@ class ChildCard extends StatelessWidget {
                       ),
                     ),
                   ),
-                  const SizedBox(width: 8),
-                  Expanded(
-                    child: OutlinedButton.icon(
-                      key: const Key('child_card_locate_button'),
-                      onPressed: onLocate,
-                      icon: const Icon(Icons.near_me_outlined, size: 18),
-                      label: const Text('Locate'),
-                      style: OutlinedButton.styleFrom(
-                        padding: const EdgeInsets.symmetric(vertical: 12),
-                        shape: RoundedRectangleBorder(
-                          borderRadius: BorderRadius.circular(12),
-                        ),
-                      ),
-                    ),
-                  ),
                 ],
               ),
             ],
@@ -486,4 +419,14 @@ class ChildCard extends StatelessWidget {
       ),
     );
   }
+}
+
+class _StatusBadgeData {
+  const _StatusBadgeData({
+    required this.label,
+    required this.color,
+  });
+
+  final String label;
+  final Color color;
 }

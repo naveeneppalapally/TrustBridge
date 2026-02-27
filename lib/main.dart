@@ -35,7 +35,9 @@ import 'package:trustbridge_app/screens/welcome_screen.dart';
 import 'package:trustbridge_app/routing/router_guard.dart';
 import 'package:trustbridge_app/services/auth_service.dart';
 import 'package:trustbridge_app/services/app_mode_service.dart';
+import 'package:trustbridge_app/services/blocklist_sync_service.dart';
 import 'package:trustbridge_app/services/crashlytics_service.dart';
+import 'package:trustbridge_app/services/child_effective_policy_sync_service.dart';
 import 'package:trustbridge_app/services/firestore_service.dart';
 import 'package:trustbridge_app/services/notification_service.dart';
 import 'package:trustbridge_app/services/blocklist_workmanager_service.dart';
@@ -79,7 +81,38 @@ Future<void> main() async {
     // Defer background scheduler registration until after first frame to
     // minimize startup jank and reduce ANR risk on lower-memory devices.
     unawaited(_initBlocklistWorkmanager());
+    unawaited(_syncBlocklistsOnForeground());
   });
+}
+
+bool _blocklistForegroundSyncInFlight = false;
+DateTime? _lastBlocklistForegroundSyncAt;
+
+Future<void> _syncBlocklistsOnForeground({
+  bool forceRefresh = false,
+}) async {
+  final now = DateTime.now();
+  if (!forceRefresh &&
+      _lastBlocklistForegroundSyncAt != null &&
+      now.difference(_lastBlocklistForegroundSyncAt!) <
+          const Duration(minutes: 10)) {
+    return;
+  }
+  if (_blocklistForegroundSyncInFlight) {
+    return;
+  }
+  _blocklistForegroundSyncInFlight = true;
+  try {
+    await BlocklistSyncService().syncAll(
+      List<BlocklistCategory>.from(BlocklistCategory.values),
+      forceRefresh: forceRefresh,
+    );
+    _lastBlocklistForegroundSyncAt = DateTime.now();
+  } catch (error) {
+    debugPrint('[BlocklistSync] Foreground sync skipped: $error');
+  } finally {
+    _blocklistForegroundSyncInFlight = false;
+  }
 }
 
 Future<void> _initBlocklistWorkmanager() async {
@@ -343,14 +376,29 @@ class _ModeRootScreen extends StatefulWidget {
   State<_ModeRootScreen> createState() => _ModeRootScreenState();
 }
 
-class _ModeRootScreenState extends State<_ModeRootScreen> {
+class _ModeRootScreenState extends State<_ModeRootScreen>
+    with WidgetsBindingObserver {
   final AppModeService _appModeService = AppModeService();
   Future<void>? _modePrimeFuture;
 
   @override
   void initState() {
     super.initState();
+    WidgetsBinding.instance.addObserver(this);
     _modePrimeFuture = _appModeService.primeCache();
+  }
+
+  @override
+  void didChangeAppLifecycleState(AppLifecycleState state) {
+    if (state == AppLifecycleState.resumed) {
+      unawaited(_syncBlocklistsOnForeground());
+    }
+  }
+
+  @override
+  void dispose() {
+    WidgetsBinding.instance.removeObserver(this);
+    super.dispose();
   }
 
   @override
@@ -389,6 +437,7 @@ class _ChildModeEntryScreen extends StatefulWidget {
 class _ChildModeEntryScreenState extends State<_ChildModeEntryScreen> {
   final PairingService _pairingService = PairingService();
   Future<bool>? _pairedFuture;
+  bool _childPolicySyncStarted = false;
 
   @override
   void initState() {
@@ -403,6 +452,32 @@ class _ChildModeEntryScreenState extends State<_ChildModeEntryScreen> {
         (parentId?.trim().isNotEmpty ?? false);
   }
 
+  void _syncChildPolicyListener({required bool paired}) {
+    if (!paired) {
+      if (_childPolicySyncStarted) {
+        _childPolicySyncStarted = false;
+        unawaited(ChildEffectivePolicySyncService.instance.stop());
+      }
+      return;
+    }
+
+    if (_childPolicySyncStarted) {
+      return;
+    }
+
+    _childPolicySyncStarted = true;
+    unawaited(ChildEffectivePolicySyncService.instance.start());
+  }
+
+  @override
+  void dispose() {
+    if (_childPolicySyncStarted) {
+      _childPolicySyncStarted = false;
+      unawaited(ChildEffectivePolicySyncService.instance.stop());
+    }
+    super.dispose();
+  }
+
   @override
   Widget build(BuildContext context) {
     return FutureBuilder<bool>(
@@ -415,6 +490,7 @@ class _ChildModeEntryScreenState extends State<_ChildModeEntryScreen> {
         }
 
         final paired = snapshot.data ?? false;
+        _syncChildPolicyListener(paired: paired);
         if (!paired) {
           return const ChildSetupScreen();
         }

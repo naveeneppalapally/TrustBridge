@@ -77,6 +77,9 @@ class ChildAppInventorySyncService {
                     now.millisecondsSinceEpoch,
                 'lastSeenAtEpochMs': app.lastSeenAt?.millisecondsSinceEpoch ??
                     now.millisecondsSinceEpoch,
+                if (app.appIconBase64 != null &&
+                    app.appIconBase64!.trim().isNotEmpty)
+                  'appIconBase64': app.appIconBase64!.trim(),
               },
             )
             .toList(growable: false),
