@@ -82,39 +82,154 @@ class _DnsAnalyticsScreenState extends State<DnsAnalyticsScreen> {
         throw StateError('Not logged in');
       }
 
-      final vpnService = _resolvedVpnService;
-      final telemetryFuture = vpnService is VpnService
-          ? vpnService.getVpnTelemetry()
-          : vpnService.getStatus().then(VpnTelemetry.fromStatus);
-
       final results = await Future.wait<dynamic>([
-        telemetryFuture,
-        vpnService.getRecentDnsQueries(limit: 300),
         _resolvedFirestoreService.getChildrenOnce(parentId),
         _resolvedFirestoreService.getParentPreferences(parentId),
       ]);
-
-      final telemetry = results[0] as VpnTelemetry;
-      final queryLogs = results[1] as List<DnsQueryLogEntry>;
-      final children = results[2] as List<ChildProfile>;
-      final parentPreferences = results[3] as Map<String, dynamic>?;
+      final children = results[0] as List<ChildProfile>;
+      final parentPreferences = results[1] as Map<String, dynamic>?;
+      final telemetryPayload = await _loadFleetTelemetry(
+        parentId: parentId,
+        children: children,
+      );
+      final topBlockedDomains = await _loadTopBlockedDomains(children);
 
       setState(() {
-        _telemetry = telemetry;
-        _topBlockedDomains = _calculateTopBlockedDomains(queryLogs);
+        _telemetry = telemetryPayload.telemetry;
+        _topBlockedDomains = topBlockedDomains;
         _children = children;
         _parentPreferences = parentPreferences;
         _loading = false;
       });
-    } catch (error) {
+    } catch (_) {
       if (!mounted) {
         return;
       }
       setState(() {
         _loading = false;
-        _error = '$error';
+        _error = 'Analytics unavailable right now.';
       });
     }
+  }
+
+  Future<({VpnTelemetry telemetry, Map<String, DeviceStatusSnapshot> statuses})>
+      _loadFleetTelemetry({
+    required String parentId,
+    required List<ChildProfile> children,
+  }) async {
+    final deviceIds = children
+        .expand((child) => child.deviceIds)
+        .map((id) => id.trim())
+        .where((id) => id.isNotEmpty)
+        .toSet()
+        .toList(growable: false)
+      ..sort();
+    final childIdByDeviceId = <String, String>{
+      for (final child in children)
+        for (final deviceId in child.deviceIds)
+          if (deviceId.trim().isNotEmpty) deviceId.trim(): child.id,
+    };
+
+    if (deviceIds.isNotEmpty) {
+      try {
+        final statuses = await _resolvedFirestoreService
+            .watchDeviceStatuses(
+              deviceIds,
+              parentId: parentId,
+              childIdByDeviceId: childIdByDeviceId,
+            )
+            .first
+            .timeout(const Duration(seconds: 8));
+        var totalProcessed = 0;
+        var totalBlocked = 0;
+        var totalAllowed = 0;
+        var anyVpnRunning = false;
+        for (final status in statuses.values) {
+          final processed = status.queriesProcessed > 0
+              ? status.queriesProcessed
+              : status.queriesBlocked + status.queriesAllowed;
+          totalProcessed += processed;
+          totalBlocked += status.queriesBlocked;
+          totalAllowed += status.queriesAllowed;
+          if (status.vpnActive) {
+            anyVpnRunning = true;
+          }
+        }
+        return (
+          telemetry: VpnTelemetry(
+            queriesIntercepted: totalProcessed,
+            queriesBlocked: totalBlocked,
+            queriesAllowed: totalAllowed,
+            isRunning: anyVpnRunning,
+          ),
+          statuses: statuses,
+        );
+      } catch (_) {
+        // Fall back to local status when fleet telemetry cannot be loaded.
+      }
+    }
+
+    final localStatus = await _resolvedVpnService.getStatus();
+    return (
+      telemetry: VpnTelemetry.fromStatus(localStatus),
+      statuses: const <String, DeviceStatusSnapshot>{},
+    );
+  }
+
+  Future<Map<String, int>> _loadTopBlockedDomains(
+    List<ChildProfile> children,
+  ) async {
+    final fleetCounts = <String, int>{};
+    for (final child in children) {
+      final childId = child.id.trim();
+      if (childId.isEmpty) {
+        continue;
+      }
+      try {
+        final diagnosticsDoc = await _resolvedFirestoreService.firestore
+            .collection('children')
+            .doc(childId)
+            .collection('vpn_diagnostics')
+            .doc('current')
+            .get();
+        final diagnostics = diagnosticsDoc.data() ?? const <String, dynamic>{};
+        final blockedQuery = _mapValue(diagnostics['lastBlockedDnsQuery']);
+        final rawDomain = (blockedQuery['domain'] as String?)?.trim();
+        if (rawDomain == null || rawDomain.isEmpty) {
+          continue;
+        }
+        final domain = rawDomain.toLowerCase();
+        fleetCounts.update(domain, (value) => value + 1, ifAbsent: () => 1);
+      } catch (_) {
+        // Best effort per child.
+      }
+    }
+
+    if (fleetCounts.isNotEmpty) {
+      final sorted = fleetCounts.entries.toList()
+        ..sort((a, b) => b.value.compareTo(a.value));
+      return Map<String, int>.fromEntries(sorted.take(5));
+    }
+
+    try {
+      final localLogs =
+          await _resolvedVpnService.getRecentDnsQueries(limit: 300);
+      return _calculateTopBlockedDomains(localLogs);
+    } catch (_) {
+      return const <String, int>{};
+    }
+  }
+
+  Map<String, dynamic> _mapValue(Object? rawValue) {
+    if (rawValue is Map<String, dynamic>) {
+      return rawValue;
+    }
+    if (rawValue is Map) {
+      return rawValue.map(
+        (key, value) => MapEntry(key.toString(), value),
+      );
+    }
+    return const <String, dynamic>{};
   }
 
   @override
@@ -150,7 +265,7 @@ class _DnsAnalyticsScreenState extends State<DnsAnalyticsScreen> {
                 color: Colors.orange, size: 44),
             const SizedBox(height: 10),
             Text(
-              _error ?? 'Unable to load analytics right now.',
+              _error ?? 'Analytics unavailable right now.',
               textAlign: TextAlign.center,
               style: Theme.of(context).textTheme.bodyMedium,
             ),
@@ -215,7 +330,11 @@ class _DnsAnalyticsScreenState extends State<DnsAnalyticsScreen> {
       ),
       child: Column(
         children: [
-          const Text('🛡️', style: TextStyle(fontSize: 42)),
+          Icon(
+            Icons.shield_outlined,
+            size: 42,
+            color: Theme.of(context).colorScheme.primary,
+          ),
           const SizedBox(height: 8),
           Text(
             '${telemetry.queriesBlocked}',
@@ -305,7 +424,7 @@ class _DnsAnalyticsScreenState extends State<DnsAnalyticsScreen> {
           const SizedBox(width: 10),
           Expanded(
             child: Text(
-              'Protection is off. Metrics shown are from the last active session.',
+              'No active protection signal from child devices right now.',
               style: Theme.of(context).textTheme.bodySmall?.copyWith(
                     color: Colors.orange.shade900,
                   ),
@@ -743,7 +862,11 @@ class _DnsAnalyticsScreenState extends State<DnsAnalyticsScreen> {
       ),
       child: Row(
         children: [
-          const Text('🔒', style: TextStyle(fontSize: 18)),
+          Icon(
+            Icons.lock_outline,
+            size: 18,
+            color: Theme.of(context).colorScheme.onSurfaceVariant,
+          ),
           const SizedBox(width: 10),
           Expanded(
             child: Text(

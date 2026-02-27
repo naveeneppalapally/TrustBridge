@@ -1,4 +1,5 @@
 import 'dart:async';
+import 'dart:convert';
 
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:flutter/material.dart';
@@ -80,6 +81,18 @@ class _BlockCategoriesScreenState extends State<BlockCategoriesScreen> {
     'adult-content': 'porn',
   };
 
+  static const List<String> _priorityInstalledPackages = <String>[
+    'com.whatsapp',
+    'com.instagram.android',
+    'com.google.android.youtube',
+    'com.snapchat.android',
+    'com.dts.freefireth',
+    'com.pubg.imobile',
+    'com.eterno',
+    'in.mohalla.sharechat',
+    'com.boloindya.boloindya',
+  ];
+
   AuthService? _authService;
   FirestoreService? _firestoreService;
   VpnServiceBase? _vpnService;
@@ -119,6 +132,8 @@ class _BlockCategoriesScreenState extends State<BlockCategoriesScreen> {
   bool _autoSaveQueued = false;
   String _query = '';
   List<InstalledAppInfo> _installedApps = const <InstalledAppInfo>[];
+  final Map<String, Uint8List?> _installedAppIconBytesCache =
+      <String, Uint8List?>{};
 
   AuthService get _resolvedAuthService {
     _authService ??= widget.authService ?? AuthService();
@@ -196,15 +211,31 @@ class _BlockCategoriesScreenState extends State<BlockCategoriesScreen> {
   }
 
   List<InstalledAppInfo> get _visibleInstalledApps {
+    final sortedApps = List<InstalledAppInfo>.from(_installedApps)
+      ..sort((a, b) {
+        final rankA = _installedPackageRank(a.packageName);
+        final rankB = _installedPackageRank(b.packageName);
+        if (rankA != rankB) {
+          return rankA.compareTo(rankB);
+        }
+        return a.appName.toLowerCase().compareTo(b.appName.toLowerCase());
+      });
+
     final normalized = _query.trim().toLowerCase();
     if (normalized.isEmpty) {
-      return _installedApps;
+      return sortedApps;
     }
-    return _installedApps.where((app) {
+    return sortedApps.where((app) {
       final appName = app.appName.toLowerCase();
       final packageName = app.packageName.toLowerCase();
       return appName.contains(normalized) || packageName.contains(normalized);
     }).toList(growable: false);
+  }
+
+  int _installedPackageRank(String packageName) {
+    final normalized = packageName.trim().toLowerCase();
+    final index = _priorityInstalledPackages.indexOf(normalized);
+    return index >= 0 ? index : 9999;
   }
 
   String? get _activeRestrictionNotice {
@@ -388,6 +419,7 @@ class _BlockCategoriesScreenState extends State<BlockCategoriesScreen> {
       }
       setState(() {
         _installedApps = apps;
+        _installedAppIconBytesCache.clear();
       });
     } catch (_) {
       if (!mounted) {
@@ -395,6 +427,7 @@ class _BlockCategoriesScreenState extends State<BlockCategoriesScreen> {
       }
       setState(() {
         _installedApps = const <InstalledAppInfo>[];
+        _installedAppIconBytesCache.clear();
       });
     } finally {
       if (mounted) {
@@ -461,21 +494,20 @@ class _BlockCategoriesScreenState extends State<BlockCategoriesScreen> {
       if (!mounted) {
         return;
       }
-      _PolicyApplyAckSnapshot? newest;
+      final candidates = <_PolicyApplyAckSnapshot>[];
       for (final doc in snapshot.docs) {
         final candidate = _PolicyApplyAckSnapshot.fromMap(doc.id, doc.data());
         if (candidate == null) {
           continue;
         }
-        if (newest == null || candidate.sortTime.isAfter(newest.sortTime)) {
-          newest = candidate;
-        }
+        candidates.add(candidate);
       }
-      if (_latestPolicyApplyAck == newest) {
+      final selectedAck = _selectBestPolicyApplyAck(candidates);
+      if (_latestPolicyApplyAck == selectedAck) {
         return;
       }
       setState(() {
-        _latestPolicyApplyAck = newest;
+        _latestPolicyApplyAck = selectedAck;
       });
     }, onError: (_, __) {});
 
@@ -498,6 +530,77 @@ class _BlockCategoriesScreenState extends State<BlockCategoriesScreen> {
     }, onError: (_, __) {});
   }
 
+  _PolicyApplyAckSnapshot? _selectBestPolicyApplyAck(
+    Iterable<_PolicyApplyAckSnapshot> snapshots,
+  ) {
+    final candidates = snapshots.toList(growable: false);
+    if (candidates.isEmpty) {
+      return null;
+    }
+
+    final linkedDeviceIds = <String>{
+      ...widget.child.deviceIds
+          .map((id) => id.trim())
+          .where((id) => id.isNotEmpty),
+      ...widget.child.deviceMetadata.keys
+          .map((id) => id.trim())
+          .where((id) => id.isNotEmpty),
+    };
+    final scoped = linkedDeviceIds.isEmpty
+        ? candidates
+        : candidates
+            .where((snapshot) => linkedDeviceIds.contains(snapshot.deviceId))
+            .toList(growable: false);
+    final eligible = scoped.isEmpty ? candidates : scoped;
+    final effectiveVersion = _latestEffectivePolicyVersion;
+
+    _PolicyApplyAckSnapshot best = eligible.first;
+    var bestPriority = _policyAckPriority(best, effectiveVersion);
+    for (var i = 1; i < eligible.length; i++) {
+      final candidate = eligible[i];
+      final candidatePriority = _policyAckPriority(candidate, effectiveVersion);
+      if (candidatePriority > bestPriority) {
+        best = candidate;
+        bestPriority = candidatePriority;
+        continue;
+      }
+      if (candidatePriority < bestPriority) {
+        continue;
+      }
+      if (candidate.sortTime.isAfter(best.sortTime)) {
+        best = candidate;
+      }
+    }
+    return best;
+  }
+
+  int _policyAckPriority(
+    _PolicyApplyAckSnapshot snapshot,
+    int? effectiveVersion,
+  ) {
+    var priority = 0;
+    if (snapshot.appliedVersion != null) {
+      priority += 50;
+    }
+    if (snapshot.isAppliedSuccess) {
+      priority += 200;
+    }
+    if (snapshot.hasFailureStatus) {
+      priority -= 150;
+    }
+
+    final appliedVersion = snapshot.appliedVersion;
+    if (effectiveVersion != null && appliedVersion != null) {
+      final lag = effectiveVersion - appliedVersion;
+      if (lag <= 0) {
+        priority += 500;
+      } else {
+        priority -= lag.clamp(0, 200);
+      }
+    }
+    return priority;
+  }
+
   Widget _buildPolicyApplyStatusCard(BuildContext context) {
     final evaluation = PolicyApplyStatusEvaluator.evaluate(
       effectiveVersion: _latestEffectivePolicyVersion,
@@ -506,13 +609,27 @@ class _BlockCategoriesScreenState extends State<BlockCategoriesScreen> {
       ackUpdatedAt: _latestPolicyApplyAck?.updatedAt,
       applyStatus: _latestPolicyApplyAck?.applyStatus,
     );
-    final indicatorColor = switch (evaluation.indicator) {
+    final diagnosticsUpdatedAt = _latestVpnDiagnostics?.updatedAt;
+    final diagnosticsCaughtUp = _latestEffectivePolicyUpdatedAt != null &&
+        diagnosticsUpdatedAt != null &&
+        !diagnosticsUpdatedAt.isBefore(
+          _latestEffectivePolicyUpdatedAt!.subtract(const Duration(seconds: 5)),
+        );
+    final diagnosticsBackedApplied =
+        evaluation.indicator == PolicyApplyIndicator.pending &&
+            diagnosticsCaughtUp &&
+            !evaluation.ackHasFailureStatus;
+    final effectiveIndicator = diagnosticsBackedApplied
+        ? PolicyApplyIndicator.applied
+        : evaluation.indicator;
+
+    final indicatorColor = switch (effectiveIndicator) {
       PolicyApplyIndicator.applied => Colors.green.shade700,
       PolicyApplyIndicator.pending => Colors.orange.shade700,
       PolicyApplyIndicator.stale => Colors.red.shade700,
       PolicyApplyIndicator.unknown => Colors.blueGrey,
     };
-    final indicatorLabel = switch (evaluation.indicator) {
+    final indicatorLabel = switch (effectiveIndicator) {
       PolicyApplyIndicator.applied => 'Applied',
       PolicyApplyIndicator.pending => 'Pending',
       PolicyApplyIndicator.stale => 'Stale',
@@ -595,7 +712,19 @@ class _BlockCategoriesScreenState extends State<BlockCategoriesScreen> {
                 value:
                     '${_formatDurationCompact(DateTime.now().difference(_lastToggleTapAt!))} ago',
               ),
-            if (evaluation.indicator == PolicyApplyIndicator.pending)
+            if (diagnosticsBackedApplied)
+              Padding(
+                padding: const EdgeInsets.only(top: 8),
+                child: Text(
+                  'Child diagnostics are newer than the latest policy update. Enforcement appears current even though apply version telemetry is lagging.',
+                  style: TextStyle(
+                    color: Colors.green.shade900,
+                    fontWeight: FontWeight.w600,
+                  ),
+                ),
+              ),
+            if (!diagnosticsBackedApplied &&
+                evaluation.indicator == PolicyApplyIndicator.pending)
               Padding(
                 padding: const EdgeInsets.only(top: 8),
                 child: Text(
@@ -636,14 +765,15 @@ class _BlockCategoriesScreenState extends State<BlockCategoriesScreen> {
         diagnosticsAge != null && diagnosticsAge > const Duration(minutes: 3);
     final recentParentToggle = _lastToggleTapAt != null &&
         now.difference(_lastToggleTapAt!) <= const Duration(minutes: 10);
-    final diagnosticsBehindEffectivePolicy = _latestEffectivePolicyUpdatedAt != null &&
-        (diagnostics?.updatedAt == null ||
-            diagnostics!.updatedAt!.isBefore(
-              _latestEffectivePolicyUpdatedAt!
-                  .subtract(const Duration(seconds: 5)),
-            ));
-    final shouldShowDiagnosticsWarning =
-        diagnosticsBehindEffectivePolicy || (diagnosticsStale && recentParentToggle);
+    final diagnosticsBehindEffectivePolicy =
+        _latestEffectivePolicyUpdatedAt != null &&
+            (diagnostics?.updatedAt == null ||
+                diagnostics!.updatedAt!.isBefore(
+                  _latestEffectivePolicyUpdatedAt!
+                      .subtract(const Duration(seconds: 5)),
+                ));
+    final shouldShowDiagnosticsWarning = diagnosticsBehindEffectivePolicy ||
+        (diagnosticsStale && recentParentToggle);
     final blockedAge =
         lastBlocked == null ? null : now.difference(lastBlocked.timestamp);
     final blockedStale =
@@ -981,9 +1111,13 @@ class _BlockCategoriesScreenState extends State<BlockCategoriesScreen> {
         Container(
           padding: const EdgeInsets.all(12),
           decoration: BoxDecoration(
-            color: Colors.purple.withValues(alpha: 0.07),
+            color:
+                Theme.of(context).colorScheme.primary.withValues(alpha: 0.08),
             borderRadius: BorderRadius.circular(12),
-            border: Border.all(color: Colors.purple.withValues(alpha: 0.2)),
+            border: Border.all(
+              color:
+                  Theme.of(context).colorScheme.primary.withValues(alpha: 0.22),
+            ),
           ),
           child: const Text(
             'These are apps detected on your child device. '
@@ -1032,20 +1166,28 @@ class _BlockCategoriesScreenState extends State<BlockCategoriesScreen> {
     final packageName = app.packageName.trim().toLowerCase();
     final explicitBlocked = _blockedPackages.contains(packageName);
     final effectiveState = _effectiveInstalledPackageState(app);
+    final iconBytes = _installedAppIconBytes(app);
     final subtitlePieces = <String>[
       if (app.isSystemApp) 'System',
-      packageName,
       effectiveState.status,
     ];
-    final subtitle = subtitlePieces.join(' • ');
+    final subtitle = subtitlePieces.join(' - ');
 
     return Card(
       key: Key('installed_app_row_$packageName'),
       margin: const EdgeInsets.only(bottom: 8),
       child: ListTile(
-        leading: Icon(
-          Icons.apps_rounded,
-          color: effectiveState.blocked ? Colors.red : Colors.blueGrey,
+        leading: CircleAvatar(
+          backgroundColor: effectiveState.blocked
+              ? Colors.red.withValues(alpha: 0.12)
+              : Theme.of(context).colorScheme.primary.withValues(alpha: 0.12),
+          foregroundColor: effectiveState.blocked
+              ? Colors.red.shade700
+              : Theme.of(context).colorScheme.primary,
+          backgroundImage: iconBytes == null ? null : MemoryImage(iconBytes),
+          child: iconBytes == null
+              ? Icon(_installedAppIcon(packageName), size: 20)
+              : null,
         ),
         title: Text(
           app.appName.isEmpty ? packageName : app.appName,
@@ -2172,6 +2314,56 @@ class _BlockCategoriesScreenState extends State<BlockCategoriesScreen> {
     }
   }
 
+  IconData _installedAppIcon(String packageName) {
+    switch (packageName) {
+      case 'com.whatsapp':
+      case 'com.whatsapp.w4b':
+        return Icons.chat_rounded;
+      case 'com.instagram.android':
+        return Icons.camera_alt_rounded;
+      case 'com.google.android.youtube':
+      case 'com.google.android.apps.youtube.music':
+        return Icons.play_circle_fill_rounded;
+      case 'com.snapchat.android':
+        return Icons.tag_faces_rounded;
+      case 'com.pubg.imobile':
+      case 'com.dts.freefireth':
+        return Icons.sports_esports_rounded;
+      case 'in.mohalla.sharechat':
+      case 'com.boloindya.boloindya':
+      case 'com.eterno':
+        return Icons.groups_rounded;
+      default:
+        return Icons.apps_rounded;
+    }
+  }
+
+  Uint8List? _installedAppIconBytes(InstalledAppInfo app) {
+    final packageName = app.packageName.trim().toLowerCase();
+    if (_installedAppIconBytesCache.containsKey(packageName)) {
+      return _installedAppIconBytesCache[packageName];
+    }
+
+    final raw = app.appIconBase64?.trim();
+    if (raw == null || raw.isEmpty) {
+      _installedAppIconBytesCache[packageName] = null;
+      return null;
+    }
+
+    try {
+      final bytes = base64Decode(raw);
+      if (bytes.isEmpty) {
+        _installedAppIconBytesCache[packageName] = null;
+        return null;
+      }
+      _installedAppIconBytesCache[packageName] = bytes;
+      return bytes;
+    } catch (_) {
+      _installedAppIconBytesCache[packageName] = null;
+      return null;
+    }
+  }
+
   Schedule? _activeScheduleAt(DateTime now) {
     final today = Day.fromDateTime(now);
     final yesterday = Day.fromDateTime(now.subtract(const Duration(days: 1)));
@@ -2756,6 +2948,15 @@ class _PolicyApplyAckSnapshot {
   final String applyStatus;
   final DateTime? updatedAt;
   final DateTime? appliedAt;
+
+  String get normalizedApplyStatus => applyStatus.trim().toLowerCase();
+
+  bool get isAppliedSuccess => normalizedApplyStatus == 'applied';
+
+  bool get hasFailureStatus {
+    final status = normalizedApplyStatus;
+    return status == 'failed' || status == 'error' || status == 'mismatch';
+  }
 
   DateTime get sortTime =>
       updatedAt ?? appliedAt ?? DateTime.fromMillisecondsSinceEpoch(0);

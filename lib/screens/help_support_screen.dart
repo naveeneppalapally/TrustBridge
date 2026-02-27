@@ -21,6 +21,11 @@ class HelpSupportScreen extends StatefulWidget {
 }
 
 class _HelpSupportScreenState extends State<HelpSupportScreen> {
+  static const String _supportEmail = String.fromEnvironment(
+    'TRUSTBRIDGE_SUPPORT_EMAIL',
+    defaultValue: '',
+  );
+
   static const List<String> _topics = [
     'Policy Question',
     'Child Profile Issue',
@@ -164,10 +169,16 @@ class _HelpSupportScreenState extends State<HelpSupportScreen> {
               ],
             ),
             const SizedBox(height: 10),
-            Text(
-              'Email: support@trustbridge.app',
-              style: Theme.of(context).textTheme.bodyMedium,
-            ),
+            if (_supportEmail.isNotEmpty)
+              Text(
+                'Email: $_supportEmail',
+                style: Theme.of(context).textTheme.bodyMedium,
+              )
+            else
+              Text(
+                'Email support is unavailable right now. Use the support form below.',
+                style: Theme.of(context).textTheme.bodyMedium,
+              ),
             const SizedBox(height: 4),
             Text(
               'Response time: Usually within 24 hours',
@@ -175,13 +186,15 @@ class _HelpSupportScreenState extends State<HelpSupportScreen> {
                     color: Colors.grey.shade600,
                   ),
             ),
-            const SizedBox(height: 12),
-            OutlinedButton.icon(
-              key: const Key('support_copy_email_button'),
-              onPressed: _copySupportEmail,
-              icon: const Icon(Icons.copy_outlined),
-              label: const Text('Copy Support Email'),
-            ),
+            if (_supportEmail.isNotEmpty) ...[
+              const SizedBox(height: 12),
+              OutlinedButton.icon(
+                key: const Key('support_copy_email_button'),
+                onPressed: _copySupportEmail,
+                icon: const Icon(Icons.copy_outlined),
+                label: const Text('Copy Support Email'),
+              ),
+            ],
           ],
         ),
       ),
@@ -372,8 +385,11 @@ class _HelpSupportScreenState extends State<HelpSupportScreen> {
   }
 
   void _copySupportEmail() {
+    if (_supportEmail.isEmpty) {
+      return;
+    }
     Clipboard.setData(
-      const ClipboardData(text: 'support@trustbridge.app'),
+      const ClipboardData(text: _supportEmail),
     );
     ScaffoldMessenger.of(context).showSnackBar(
       const SnackBar(content: Text('Support email copied')),

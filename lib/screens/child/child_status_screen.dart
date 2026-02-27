@@ -358,8 +358,9 @@ class _ChildStatusScreenState extends State<ChildStatusScreen>
   }) async {
     var currentUser = FirebaseAuth.instance.currentUser;
     final currentUid = currentUser?.uid.trim();
-    final isParentSession =
-        currentUid != null && currentUid.isNotEmpty && currentUid == expectedParentId;
+    final isParentSession = currentUid != null &&
+        currentUid.isNotEmpty &&
+        currentUid == expectedParentId;
     final isAnonymousSession = currentUser?.isAnonymous == true;
 
     if (currentUser != null && (isParentSession || isAnonymousSession)) {
@@ -2012,6 +2013,15 @@ class _ChildStatusScreenState extends State<ChildStatusScreen>
     required DateTime now,
     required _ManualModeOverride? manualMode,
   }) {
+    if (!child.protectionEnabled) {
+      return const _EffectiveProtectionRules(
+        categories: <String>{},
+        services: <String>{},
+        domains: <String>{},
+        blockedPackages: <String>{},
+      );
+    }
+
     final categories =
         normalizeCategoryIds(child.policy.blockedCategories).toSet();
     final explicitServices = child.policy.blockedServices
@@ -2131,6 +2141,10 @@ class _ChildStatusScreenState extends State<ChildStatusScreen>
               .where((pkg) => pkg.isNotEmpty),
         );
       }
+    }
+    if (blockedPackages.isNotEmpty) {
+      domains.addAll(
+          ServiceDefinitions.resolveDomainsForPackages(blockedPackages));
     }
     return _EffectiveProtectionRules(
       categories: categories,
@@ -2610,407 +2624,6 @@ class _ChildStatusScreenState extends State<ChildStatusScreen>
     });
   }
 
-  Widget _buildPrivateDnsWarning() {
-    return FutureBuilder<VpnStatus>(
-      future: _vpnService.getStatus(),
-      builder: (context, snapshot) {
-        if (!snapshot.hasData) {
-          return const SizedBox.shrink();
-        }
-        final status = snapshot.data!;
-        if (!status.privateDnsActive) {
-          return const SizedBox.shrink();
-        }
-        return Container(
-          margin: const EdgeInsets.only(bottom: 12),
-          padding: const EdgeInsets.all(12),
-          decoration: BoxDecoration(
-            color: Colors.amber.shade50,
-            border: Border.all(color: Colors.amber.shade300),
-            borderRadius: BorderRadius.circular(12),
-          ),
-          child: Row(
-            crossAxisAlignment: CrossAxisAlignment.start,
-            children: [
-              Icon(Icons.warning_amber_rounded,
-                  color: Colors.amber.shade800, size: 24),
-              const SizedBox(width: 10),
-              Expanded(
-                child: Column(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: [
-                    Text(
-                      'Private DNS is blocking protection',
-                      style: TextStyle(
-                        fontWeight: FontWeight.w700,
-                        fontSize: 13,
-                        color: Colors.amber.shade900,
-                      ),
-                    ),
-                    const SizedBox(height: 4),
-                    Text(
-                      'Your device uses Private DNS which bypasses TrustBridge protection. '
-                      'Ask your parent to turn off Private DNS in Settings → Network.',
-                      style: TextStyle(
-                        fontSize: 12,
-                        color: Colors.amber.shade800,
-                      ),
-                    ),
-                    const SizedBox(height: 8),
-                    SizedBox(
-                      height: 32,
-                      child: OutlinedButton.icon(
-                        onPressed: () => _vpnService.openPrivateDnsSettings(),
-                        icon: const Icon(Icons.settings, size: 16),
-                        label: const Text(
-                          'Open DNS Settings',
-                          style: TextStyle(fontSize: 12),
-                        ),
-                        style: OutlinedButton.styleFrom(
-                          padding: const EdgeInsets.symmetric(horizontal: 12),
-                          side: BorderSide(color: Colors.amber.shade700),
-                        ),
-                      ),
-                    ),
-                  ],
-                ),
-              ),
-            ],
-          ),
-        );
-      },
-    );
-  }
-
-  Widget _buildBrowserSecureDnsWarning() {
-    final assessment = _browserDnsBypassAssessment;
-    if (assessment == null) {
-      return const SizedBox.shrink();
-    }
-
-    final now = DateTime.now();
-    final recentlyDetected = _browserDnsBypassDetectedAt != null &&
-        now.difference(_browserDnsBypassDetectedAt!) <
-            const Duration(minutes: 2);
-    final shouldWarn = assessment.shouldWarn || recentlyDetected;
-
-    // Show a lightweight diagnostics card whenever VPN protection is active,
-    // so child/parent can see whether DNS queries are actually reaching the VPN.
-    if (!assessment.protectionActive && !shouldWarn && !assessment.vpnRunning) {
-      return const SizedBox.shrink();
-    }
-
-    final lastQueryText = switch (assessment.lastVpnDnsQueryAt) {
-      final DateTime value => _relativeTimeLabel(value, now),
-      null => 'No DNS queries captured yet',
-    };
-    final lastBlockedQuery = assessment.lastBlockedDnsQuery;
-    final blockedAge = lastBlockedQuery == null
-        ? null
-        : now.difference(lastBlockedQuery.timestamp);
-    final blockedEvidenceStale =
-        blockedAge != null && blockedAge > const Duration(minutes: 3);
-    final blockedSeenText = switch (lastBlockedQuery) {
-      final DnsQueryLogEntry query => _relativeTimeLabel(query.timestamp, now),
-      null => 'No blocked DNS query captured yet',
-    };
-    final cacheBusterDomain =
-        (lastBlockedQuery?.domain ?? 'facebook.com').trim();
-    final cacheBusterUrl =
-        'https://$cacheBusterDomain/?tb=${DateTime.now().millisecondsSinceEpoch}';
-    final lastBypassSignalText = switch (_lastBrowserDnsBypassSignalAt) {
-      final DateTime value => _relativeTimeLabel(value, now),
-      null => 'None observed in this session',
-    };
-
-    return Container(
-      margin: const EdgeInsets.only(bottom: 12),
-      padding: const EdgeInsets.all(12),
-      decoration: BoxDecoration(
-        color: shouldWarn ? Colors.orange.shade50 : Colors.blue.shade50,
-        border: Border.all(
-          color: shouldWarn ? Colors.orange.shade300 : Colors.blue.shade200,
-        ),
-        borderRadius: BorderRadius.circular(12),
-      ),
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          Row(
-            crossAxisAlignment: CrossAxisAlignment.start,
-            children: [
-              Icon(
-                shouldWarn
-                    ? Icons.warning_amber_rounded
-                    : Icons.privacy_tip_outlined,
-                color:
-                    shouldWarn ? Colors.orange.shade800 : Colors.blue.shade800,
-              ),
-              const SizedBox(width: 10),
-              Expanded(
-                child: Column(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: [
-                    Text(
-                      shouldWarn
-                          ? 'Browser Secure DNS may bypass protection'
-                          : 'Web protection diagnostics',
-                      style: TextStyle(
-                        fontWeight: FontWeight.w700,
-                        color: shouldWarn
-                            ? Colors.orange.shade900
-                            : Colors.blue.shade900,
-                      ),
-                    ),
-                    const SizedBox(height: 4),
-                    Text(
-                      shouldWarn
-                          ? 'A browser was active, but TrustBridge saw no recent DNS queries. '
-                              'Chrome/other browsers may be using Secure DNS (DoH), which can bypass DNS-only blocking.'
-                          : 'TrustBridge blocks websites by filtering DNS. If websites ignore toggles, check Chrome Secure DNS / DoH settings.',
-                      style: TextStyle(
-                        fontSize: 12,
-                        color: shouldWarn
-                            ? Colors.orange.shade800
-                            : Colors.blue.shade800,
-                      ),
-                    ),
-                  ],
-                ),
-              ),
-            ],
-          ),
-          const SizedBox(height: 10),
-          _buildDiagLine(
-            label: 'VPN',
-            value: assessment.vpnRunning ? 'Running' : 'Not running',
-          ),
-          _buildDiagLine(
-            label: 'Foreground app',
-            value: (assessment.foregroundPackage == null ||
-                    assessment.foregroundPackage!.isEmpty)
-                ? 'Unknown'
-                : assessment.foregroundPackage!,
-          ),
-          _buildDiagLine(
-            label: 'Recent VPN DNS queries (20s)',
-            value: '${assessment.recentVpnDnsQueriesInWindow}',
-          ),
-          _buildDiagLine(
-            label: 'Last VPN DNS query',
-            value: lastQueryText,
-          ),
-          if (lastBlockedQuery != null) ...[
-            _buildDiagLine(
-              label: 'Last blocked DNS',
-              value:
-                  '${lastBlockedQuery.domain} (${_formatDiagReasonCode(lastBlockedQuery.reasonCode)})',
-            ),
-            _buildDiagLine(
-              label: 'Last blocked seen',
-              value: blockedSeenText,
-            ),
-            _buildDiagLine(
-              label: 'Evidence freshness',
-              value: blockedEvidenceStale
-                  ? 'Stale (${_formatDurationCompact(blockedAge)} ago)'
-                  : 'Fresh (${_formatDurationCompact(blockedAge)} ago)',
-            ),
-            if ((lastBlockedQuery.matchedRule ?? '').isNotEmpty)
-              _buildDiagLine(
-                label: 'Matched rule',
-                value: lastBlockedQuery.matchedRule!,
-              ),
-          ],
-          _buildDiagLine(
-            label: 'Last bypass signal',
-            value: '$lastBypassSignalText'
-                '${(_lastBrowserDnsBypassSignalReasonCode ?? '').isEmpty ? '' : ' (${_formatDiagReasonCode(_lastBrowserDnsBypassSignalReasonCode)})'}',
-          ),
-          if (assessment.reasonCode.isNotEmpty)
-            _buildDiagLine(
-              label: 'Check',
-              value: _formatDiagReasonCode(assessment.reasonCode),
-            ),
-          const SizedBox(height: 8),
-          Text(
-            'Chrome: Menu → Settings → Privacy and security → Use Secure DNS → Off',
-            style: TextStyle(
-              fontSize: 12,
-              fontWeight: FontWeight.w600,
-              color: shouldWarn ? Colors.orange.shade900 : Colors.blue.shade900,
-            ),
-          ),
-          const SizedBox(height: 6),
-          Text(
-            'For unblock checks, open a fresh tab and use a cache-buster URL:',
-            style: TextStyle(
-              fontSize: 12,
-              fontWeight: FontWeight.w600,
-              color: shouldWarn ? Colors.orange.shade900 : Colors.blue.shade900,
-            ),
-          ),
-          const SizedBox(height: 2),
-          SelectableText(
-            cacheBusterUrl,
-            style: TextStyle(
-              fontSize: 12,
-              color: shouldWarn ? Colors.orange.shade900 : Colors.blue.shade900,
-            ),
-          ),
-          if (blockedEvidenceStale)
-            Padding(
-              padding: const EdgeInsets.only(top: 6),
-              child: Text(
-                'Last blocked DNS evidence is old. Re-test after refreshing browser tab.',
-                style: TextStyle(
-                  fontSize: 12,
-                  fontWeight: FontWeight.w600,
-                  color: shouldWarn
-                      ? Colors.orange.shade900
-                      : Colors.blue.shade900,
-                ),
-              ),
-            ),
-          const SizedBox(height: 8),
-          Wrap(
-            spacing: 8,
-            runSpacing: 8,
-            children: [
-              SizedBox(
-                height: 32,
-                child: OutlinedButton.icon(
-                  onPressed: () => _vpnService.openPrivateDnsSettings(),
-                  icon: const Icon(Icons.settings, size: 16),
-                  label: const Text(
-                    'Open DNS Settings',
-                    style: TextStyle(fontSize: 12),
-                  ),
-                ),
-              ),
-            ],
-          ),
-        ],
-      ),
-    );
-  }
-
-  Widget _buildDiagLine({
-    required String label,
-    required String value,
-  }) {
-    return Padding(
-      padding: const EdgeInsets.only(bottom: 3),
-      child: Text(
-        '$label: $value',
-        style: const TextStyle(fontSize: 12, fontWeight: FontWeight.w600),
-      ),
-    );
-  }
-
-  String _relativeTimeLabel(DateTime value, DateTime now) {
-    var diff = now.difference(value);
-    if (diff.isNegative) {
-      diff = Duration.zero;
-    }
-    if (diff.inSeconds < 3) {
-      return 'just now';
-    }
-    if (diff.inSeconds < 60) {
-      return '${diff.inSeconds}s ago';
-    }
-    if (diff.inMinutes < 60) {
-      return '${diff.inMinutes}m ago';
-    }
-    return '${diff.inHours}h ago';
-  }
-
-  String _formatDurationCompact(Duration? value) {
-    if (value == null) {
-      return '—';
-    }
-    if (value.inSeconds < 60) {
-      return '${value.inSeconds}s';
-    }
-    if (value.inMinutes < 60) {
-      return '${value.inMinutes}m';
-    }
-    return '${value.inHours}h';
-  }
-
-  String _formatDiagReasonCode(String? value) {
-    final raw = value?.trim();
-    if (raw == null || raw.isEmpty) {
-      return 'unknown';
-    }
-    return raw.replaceAll('_', ' ');
-  }
-
-  Widget _buildUsageAccessWarning() {
-    if (!_requiresUsageAccessForAppBlocking() ||
-        _usageAccessPermissionGrantedForBlocking != false) {
-      return const SizedBox.shrink();
-    }
-    return Container(
-      margin: const EdgeInsets.only(bottom: 12),
-      padding: const EdgeInsets.all(12),
-      decoration: BoxDecoration(
-        color: Colors.red.shade50,
-        border: Border.all(color: Colors.red.shade200),
-        borderRadius: BorderRadius.circular(12),
-      ),
-      child: Row(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          Icon(Icons.warning_amber_rounded, color: Colors.red.shade700),
-          const SizedBox(width: 10),
-          Expanded(
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                Text(
-                  'App blocking is off',
-                  style: TextStyle(
-                    fontWeight: FontWeight.w700,
-                    color: Colors.red.shade900,
-                  ),
-                ),
-                const SizedBox(height: 4),
-                Text(
-                  'Turn on Usage Access for TrustBridge to block apps like Instagram and YouTube.',
-                  style: TextStyle(
-                    color: Colors.red.shade800,
-                    fontSize: 12,
-                  ),
-                ),
-                const SizedBox(height: 8),
-                SizedBox(
-                  height: 34,
-                  child: OutlinedButton.icon(
-                    onPressed: () async {
-                      await _appUsageService.openUsageAccessSettings();
-                      await Future<void>.delayed(const Duration(seconds: 1));
-                      await _refreshAppBlockingUsageAccessState();
-                    },
-                    icon: const Icon(Icons.settings, size: 16),
-                    label: const Text(
-                      'Open Usage Access',
-                      style: TextStyle(fontSize: 12),
-                    ),
-                    style: OutlinedButton.styleFrom(
-                      padding: const EdgeInsets.symmetric(horizontal: 12),
-                      side: BorderSide(color: Colors.red.shade300),
-                    ),
-                  ),
-                ),
-              ],
-            ),
-          ),
-        ],
-      ),
-    );
-  }
-
   Widget _buildContent(
     BuildContext context,
     ChildProfile child, {
@@ -3063,9 +2676,7 @@ class _ChildStatusScreenState extends State<ChildStatusScreen>
               ),
         ),
         const SizedBox(height: 14),
-        _buildPrivateDnsWarning(),
-        _buildBrowserSecureDnsWarning(),
-        _buildUsageAccessWarning(),
+        if (!child.protectionEnabled) _buildProtectionOffNotice(context),
         if (hasParentContext)
           _buildApprovalBanner(
             context: context,
@@ -3151,10 +2762,28 @@ class _ChildStatusScreenState extends State<ChildStatusScreen>
               );
             },
             icon: const Icon(Icons.volunteer_activism),
-            label: const Text('Ask for access'),
+            label: const Text('Request Access'),
           ),
         ),
       ],
+    );
+  }
+
+  Widget _buildProtectionOffNotice(BuildContext context) {
+    return Container(
+      margin: const EdgeInsets.only(bottom: 12),
+      padding: const EdgeInsets.all(12),
+      decoration: BoxDecoration(
+        color: Colors.orange.withValues(alpha: 0.12),
+        borderRadius: BorderRadius.circular(12),
+        border: Border.all(color: Colors.orange.withValues(alpha: 0.35)),
+      ),
+      child: Text(
+        'Protection is currently off. Ask your parent to turn it back on.',
+        style: Theme.of(context).textTheme.bodyMedium?.copyWith(
+              fontWeight: FontWeight.w600,
+            ),
+      ),
     );
   }
 

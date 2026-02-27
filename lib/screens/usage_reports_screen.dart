@@ -490,10 +490,10 @@ class _UsageReportsScreenState extends State<UsageReportsScreen> {
             if (resolvedDurationMs <= 0) {
               continue;
             }
-            final appName =
-                (appMap['appName'] as String?)?.trim().isNotEmpty == true
-                    ? (appMap['appName'] as String).trim()
-                    : _appNameFromPackage(packageName);
+            final appName = _resolveAppName(
+              packageName: packageName,
+              reportedName: (appMap['appName'] as String?)?.trim(),
+            );
             final aggregateKey = packageName;
             final existing = appTotals[aggregateKey];
             if (existing == null) {
@@ -551,10 +551,10 @@ class _UsageReportsScreenState extends State<UsageReportsScreen> {
             if (resolvedDurationMs <= 0) {
               continue;
             }
-            final appName =
-                (appMap['appName'] as String?)?.trim().isNotEmpty == true
-                    ? (appMap['appName'] as String).trim()
-                    : _appNameFromPackage(packageName);
+            final appName = _resolveAppName(
+              packageName: packageName,
+              reportedName: (appMap['appName'] as String?)?.trim(),
+            );
             final existing = appTotals[packageName];
             if (existing == null) {
               appTotals[packageName] = _AggregatedAppUsage(
@@ -572,21 +572,24 @@ class _UsageReportsScreenState extends State<UsageReportsScreen> {
           }
         } else {
           for (final app in _parseMapList(latestData['topApps'])) {
-            final packageName = (app['packageName'] as String?)?.trim() ?? '';
-            final appName = (app['appName'] as String?)?.trim() ?? packageName;
+            final packageName =
+                (app['packageName'] as String?)?.trim().toLowerCase() ?? '';
+            final appName = _resolveAppName(
+              packageName: packageName,
+              reportedName: (app['appName'] as String?)?.trim(),
+            );
             final category = (app['category'] as String?)?.trim() ?? 'Other';
             final durationMs = _toInt(app['durationMs']);
             if (durationMs <= 0) {
               continue;
             }
 
-            final aggregateKey = packageName.isNotEmpty
-                ? packageName.toLowerCase()
-                : appName.toLowerCase();
+            final aggregateKey =
+                packageName.isNotEmpty ? packageName : appName.toLowerCase();
             final existing = appTotals[aggregateKey];
             if (existing == null) {
               appTotals[aggregateKey] = _AggregatedAppUsage(
-                packageName: packageName.toLowerCase(),
+                packageName: packageName,
                 appName: appName.isEmpty ? 'App' : appName,
                 category: category.isEmpty ? 'Other' : category,
                 durationMs: durationMs,
@@ -721,7 +724,46 @@ class _UsageReportsScreenState extends State<UsageReportsScreen> {
     return 0;
   }
 
+  static const Map<String, String> _friendlyPackageNames = <String, String>{
+    'com.android.chrome': 'Chrome',
+    'com.android.systemui': 'System UI',
+    'com.android.launcher3': 'System Launcher',
+    'com.android.settings': 'Settings',
+    'com.google.android.apps.nexuslauncher': 'System Launcher',
+    'com.google.android.gms': 'Google Play services',
+    'com.google.android.youtube': 'YouTube',
+    'com.whatsapp': 'WhatsApp',
+    'com.instagram.android': 'Instagram',
+    'com.snapchat.android': 'Snapchat',
+    'com.dts.freefireth': 'Free Fire',
+    'com.pubg.imobile': 'BGMI',
+    'com.josh.app': 'Josh',
+    'in.mohalla.video': 'Moj',
+    'com.sharechat.app': 'ShareChat',
+    'in.mohalla.sharechat': 'ShareChat',
+  };
+
+  String _resolveAppName({
+    required String packageName,
+    String? reportedName,
+  }) {
+    final normalizedPackage = packageName.trim().toLowerCase();
+    final candidate = (reportedName ?? '').trim();
+    if (candidate.isNotEmpty && !_looksLikePackageName(candidate)) {
+      return candidate;
+    }
+    if (normalizedPackage.isEmpty) {
+      return candidate.isEmpty ? 'App' : candidate;
+    }
+    return _appNameFromPackage(normalizedPackage);
+  }
+
   String _appNameFromPackage(String packageName) {
+    final mappedName = _friendlyPackageNames[packageName];
+    if (mappedName != null) {
+      return mappedName;
+    }
+
     for (final service in ServiceDefinitions.all) {
       for (final pkg in service.androidPackages) {
         if (pkg.trim().toLowerCase() == packageName) {
@@ -733,7 +775,29 @@ class _UsageReportsScreenState extends State<UsageReportsScreen> {
     if (pieces.isEmpty) {
       return packageName;
     }
-    return pieces.last;
+    final tail = pieces.last;
+    if (tail.trim().isEmpty) {
+      return packageName;
+    }
+    final words = tail
+        .replaceAll(RegExp(r'[_\-]+'), ' ')
+        .split(RegExp(r'\s+'))
+        .where((word) => word.trim().isNotEmpty)
+        .toList(growable: false);
+    if (words.isEmpty) {
+      return tail;
+    }
+    return words
+        .map((word) => word[0].toUpperCase() + word.substring(1))
+        .join(' ');
+  }
+
+  bool _looksLikePackageName(String value) {
+    final normalized = value.trim();
+    if (normalized.isEmpty) {
+      return false;
+    }
+    return normalized.contains('.') && normalized == normalized.toLowerCase();
   }
 
   String _categoryFromPackage(String packageName) {

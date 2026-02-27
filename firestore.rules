@@ -121,10 +121,6 @@ service cloud.firestore {
           (
             !('uninstallAttempt' in data.alertPreferences) ||
             data.alertPreferences.uninstallAttempt == true
-          ) &&
-          (
-            !('deviceOffline24h' in data.alertPreferences) ||
-            data.alertPreferences.deviceOffline24h == true
           )
         );
     }
@@ -245,6 +241,7 @@ service cloud.firestore {
             'createdAt',
             'updatedAt',
             'parentId',
+            'protectionEnabled',
             'pausedUntil',
             'manualMode',
             'nextDnsProfileId',
@@ -260,6 +257,7 @@ service cloud.firestore {
         isRequiredTimestamp(request.resource.data, 'updatedAt') &&
         isRequiredString(request.resource.data, 'parentId', 128) &&
         request.resource.data.parentId == request.auth.uid &&
+        isOptionalBool(request.resource.data, 'protectionEnabled') &&
         isOptionalTimestamp(request.resource.data, 'pausedUntil') &&
         isOptionalManualMode(request.resource.data, 'manualMode') &&
         isOptionalString(request.resource.data, 'nextDnsProfileId', 32) &&
@@ -278,6 +276,7 @@ service cloud.firestore {
               'ageBand',
               'deviceIds',
               'policy',
+              'protectionEnabled',
               'pausedUntil',
               'manualMode',
               'updatedAt',
@@ -292,6 +291,7 @@ service cloud.firestore {
           request.resource.data.policy is map &&
           isRequiredTimestamp(request.resource.data, 'createdAt') &&
           isRequiredTimestamp(request.resource.data, 'updatedAt') &&
+          isOptionalBool(request.resource.data, 'protectionEnabled') &&
           isOptionalTimestamp(request.resource.data, 'pausedUntil') &&
           isOptionalManualMode(request.resource.data, 'manualMode') &&
           isOptionalString(request.resource.data, 'nextDnsProfileId', 32) &&
@@ -376,6 +376,7 @@ service cloud.firestore {
             [
               'parentId',
               'childId',
+              'protectionEnabled',
               'blockedCategories',
               'blockedServices',
               'blockedDomains',
@@ -398,6 +399,7 @@ service cloud.firestore {
             get(/databases/$(database)/documents/children/$(childId)).data.parentId &&
           isRequiredString(request.resource.data, 'childId', 128) &&
           request.resource.data.childId == childId &&
+          isOptionalBool(request.resource.data, 'protectionEnabled') &&
           ('blockedCategories' in request.resource.data) &&
           request.resource.data.blockedCategories is list &&
           ('blockedServices' in request.resource.data) &&
@@ -436,6 +438,7 @@ service cloud.firestore {
               'parentId',
               'childId',
               'version',
+              'protectionEnabled',
               'blockedCategories',
               'blockedServices',
               'blockedDomains',
@@ -456,6 +459,7 @@ service cloud.firestore {
           isRequiredString(request.resource.data, 'childId', 128) &&
           request.resource.data.childId == childId &&
           isRequiredInt(request.resource.data, 'version', 0, 4102444800000) &&
+          isOptionalBool(request.resource.data, 'protectionEnabled') &&
           ('blockedCategories' in request.resource.data) &&
           request.resource.data.blockedCategories is list &&
           ('blockedServices' in request.resource.data) &&
@@ -826,6 +830,11 @@ service cloud.firestore {
               'parentId' in resource.data &&
               resource.data.parentId is string &&
               resource.data.parentId == request.auth.uid
+            ) ||
+            (
+              'childId' in resource.data &&
+              resource.data.childId is string &&
+              childParentMatches(resource.data.childId, request.auth.uid)
             )
           );
 

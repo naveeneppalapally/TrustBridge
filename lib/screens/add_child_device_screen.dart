@@ -76,7 +76,8 @@ class _AddChildDeviceScreenState extends State<AddChildDeviceScreen> {
       final expiresAt = DateTime.now().add(const Duration(minutes: 15));
 
       await _codeUsedSubscription?.cancel();
-      _codeUsedSubscription = _resolvedPairingService.watchCodeUsed(code).listen(
+      _codeUsedSubscription =
+          _resolvedPairingService.watchCodeUsed(code).listen(
         (used) {
           if (!used || _connected || !mounted) {
             return;
@@ -123,7 +124,7 @@ class _AddChildDeviceScreenState extends State<AddChildDeviceScreen> {
     if (error is FirebaseException) {
       switch (error.code) {
         case 'permission-denied':
-          return 'Permission denied. Deploy latest Firestore rules, then sign in again.';
+          return 'Pairing code is unavailable right now. Please try again in a moment.';
         case 'unavailable':
           return 'Network unavailable. Please check internet and try again.';
         default:
@@ -176,8 +177,10 @@ class _AddChildDeviceScreenState extends State<AddChildDeviceScreen> {
     if (remaining.inSeconds <= 0) {
       return '00:00';
     }
-    final minutes = remaining.inMinutes.remainder(60).toString().padLeft(2, '0');
-    final seconds = remaining.inSeconds.remainder(60).toString().padLeft(2, '0');
+    final minutes =
+        remaining.inMinutes.remainder(60).toString().padLeft(2, '0');
+    final seconds =
+        remaining.inSeconds.remainder(60).toString().padLeft(2, '0');
     return '$minutes:$seconds';
   }
 
@@ -244,7 +247,8 @@ class _AddChildDeviceScreenState extends State<AddChildDeviceScreen> {
                         color: Colors.white,
                         borderRadius: BorderRadius.circular(14),
                         border: Border.all(
-                          color: theme.colorScheme.outline.withValues(alpha: 0.25),
+                          color:
+                              theme.colorScheme.outline.withValues(alpha: 0.25),
                         ),
                       ),
                       child: QrImageView(
@@ -286,7 +290,8 @@ class _AddChildDeviceScreenState extends State<AddChildDeviceScreen> {
                 OutlinedButton.icon(
                   onPressed: _generating ? null : _generateCode,
                   icon: const Icon(Icons.refresh),
-                  label: Text(_isExpired ? 'Generate new code' : 'Generate new code'),
+                  label: Text(
+                      _isExpired ? 'Generate new code' : 'Generate new code'),
                 ),
                 if (_error != null) ...[
                   const SizedBox(height: 10),

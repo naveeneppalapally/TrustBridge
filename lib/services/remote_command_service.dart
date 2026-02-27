@@ -5,6 +5,8 @@ import 'package:firebase_auth/firebase_auth.dart';
 import 'package:flutter/foundation.dart';
 import 'package:workmanager/workmanager.dart';
 
+import '../models/app_mode.dart';
+import 'app_mode_service.dart';
 import 'notification_service.dart';
 import 'pairing_service.dart';
 import 'vpn_service.dart';
@@ -36,13 +38,16 @@ class RemoteCommandService {
     FirebaseFirestore? firestore,
     PairingService? pairingService,
     VpnServiceBase? vpnService,
+    AppModeService? appModeService,
   })  : _firestore = firestore ?? FirebaseFirestore.instance,
         _pairingService = pairingService ?? PairingService(),
-        _vpnService = vpnService ?? VpnService();
+        _vpnService = vpnService ?? VpnService(),
+        _appModeService = appModeService ?? AppModeService();
 
   final FirebaseFirestore _firestore;
   final PairingService _pairingService;
   final VpnServiceBase _vpnService;
+  final AppModeService _appModeService;
 
   /// Registers periodic command polling.
   static Future<void> initialize() async {
@@ -119,6 +124,14 @@ class RemoteCommandService {
 
   /// Child processes pending command queue.
   Future<void> processPendingCommands() async {
+    final mode = await _appModeService.getMode();
+    if (mode == AppMode.parent) {
+      debugPrint(
+        '[RemoteCommandService] Skip command polling in parent mode.',
+      );
+      return;
+    }
+
     final deviceId = await _pairingService.getOrCreateDeviceId();
     final pairedParentId = (await _pairingService.getPairedParentId())?.trim();
     var query = _firestore

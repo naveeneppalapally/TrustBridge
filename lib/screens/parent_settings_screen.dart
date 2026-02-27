@@ -11,6 +11,7 @@ import 'package:trustbridge_app/screens/beta_feedback_screen.dart';
 import 'package:trustbridge_app/screens/change_password_screen.dart';
 import 'package:trustbridge_app/screens/family_management_screen.dart';
 import 'package:trustbridge_app/screens/help_support_screen.dart';
+import 'package:trustbridge_app/screens/modes_screen.dart';
 import 'package:trustbridge_app/screens/nextdns_setup_screen.dart';
 import 'package:trustbridge_app/screens/onboarding_screen.dart';
 import 'package:trustbridge_app/screens/parent/alert_preferences_screen.dart';
@@ -19,6 +20,7 @@ import 'package:trustbridge_app/screens/privacy_center_screen.dart';
 import 'package:trustbridge_app/screens/premium_screen.dart';
 import 'package:trustbridge_app/screens/security_controls_screen.dart';
 import 'package:trustbridge_app/screens/upgrade_screen.dart';
+import 'package:trustbridge_app/screens/usage_reports_screen.dart';
 import 'package:trustbridge_app/services/auth_service.dart';
 import 'package:trustbridge_app/services/app_mode_service.dart';
 import 'package:trustbridge_app/services/blocklist_sync_service.dart';
@@ -458,6 +460,15 @@ class _ParentSettingsScreenState extends State<ParentSettingsScreen> {
           ),
           const Divider(height: 1),
           ListTile(
+            key: const Key('settings_modes_tile'),
+            leading: const Icon(Icons.tune_rounded),
+            title: const Text('Modes'),
+            subtitle: const Text('Free Play, Homework, Bedtime, Lockdown'),
+            trailing: const Icon(Icons.chevron_right),
+            onTap: () => _openModes(context),
+          ),
+          const Divider(height: 1),
+          ListTile(
             key: const Key('settings_alert_preferences_tile'),
             leading: const Icon(Icons.tune_outlined),
             title: const Text('Alert Preferences'),
@@ -516,6 +527,15 @@ class _ParentSettingsScreenState extends State<ParentSettingsScreen> {
             title: const Text('Protection Analytics'),
             trailing: const Icon(Icons.chevron_right),
             onTap: () => Navigator.of(context).pushNamed('/dns-analytics'),
+          ),
+          const Divider(height: 1),
+          ListTile(
+            key: const Key('settings_usage_reports_tile'),
+            leading: const Icon(Icons.insights_outlined),
+            title: const Text('Usage Reports'),
+            subtitle: const Text('Screen time and app usage by child'),
+            trailing: const Icon(Icons.chevron_right),
+            onTap: () => _openUsageReports(context),
           ),
           const Divider(height: 1),
           ListTile(
@@ -830,6 +850,30 @@ class _ParentSettingsScreenState extends State<ParentSettingsScreen> {
     await Navigator.of(context).push(
       MaterialPageRoute(
         builder: (_) => AlertPreferencesScreen(
+          authService: widget.authService,
+          firestoreService: widget.firestoreService,
+          parentIdOverride: widget.parentIdOverride,
+        ),
+      ),
+    );
+  }
+
+  Future<void> _openModes(BuildContext context) async {
+    await Navigator.of(context).push(
+      MaterialPageRoute(
+        builder: (_) => ModesScreen(
+          authService: widget.authService,
+          firestoreService: widget.firestoreService,
+          parentIdOverride: widget.parentIdOverride,
+        ),
+      ),
+    );
+  }
+
+  Future<void> _openUsageReports(BuildContext context) async {
+    await Navigator.of(context).push(
+      MaterialPageRoute(
+        builder: (_) => UsageReportsScreen(
           authService: widget.authService,
           firestoreService: widget.firestoreService,
           parentIdOverride: widget.parentIdOverride,

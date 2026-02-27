@@ -103,6 +103,8 @@ class DnsVpnService : VpnService() {
         const val EXTRA_BLOCKED_PACKAGES = "blockedPackages"
         const val EXTRA_TEMP_ALLOWED_DOMAINS = "temporaryAllowedDomains"
         const val EXTRA_UPSTREAM_DNS = "upstreamDns"
+        const val EXTRA_PARENT_ID = "parentId"
+        const val EXTRA_CHILD_ID = "childId"
         const val EXTRA_BOOT_RESTORE = "bootRestore"
         const val EXTRA_BOOT_RESTORE_ATTEMPT = "bootRestoreAttempt"
         const val EXTRA_TRANSIENT_RETRY_ATTEMPT = "transientRetryAttempt"
@@ -422,7 +424,40 @@ class DnsVpnService : VpnService() {
                 val blockedPackages =
                     intent?.getStringArrayListExtra(EXTRA_BLOCKED_PACKAGES)?.toList()
                         ?: emptyList()
+                val contextParentId = intent?.getStringExtra(EXTRA_PARENT_ID)
+                    ?.trim()
+                    .orEmpty()
+                val contextChildId = intent?.getStringExtra(EXTRA_CHILD_ID)
+                    ?.trim()
+                    .orEmpty()
+                val hasChildPolicyContext =
+                    contextParentId.isNotEmpty() && contextChildId.isNotEmpty()
                 applyFilterRules(categories, domains, allowedDomains, blockedPackages)
+                vpnPreferencesStore.setEnabled(true)
+                if (!serviceRunning && hasChildPolicyContext) {
+                    val hasPermission = VpnService.prepare(this) == null
+                    if (hasPermission) {
+                        activeBootRestoreStart = false
+                        activeBootRestoreAttempt = 0
+                        activeTransientRetryAttempt = 0
+                        reconnectScheduledFromRevoke = false
+                        ensureForegroundStarted()
+                        startVpn()
+                    } else {
+                        Log.w(
+                            TAG,
+                            "Skipping VPN auto-start on rule update: permission missing"
+                        )
+                        showProtectionAttentionNotification(
+                            "Protection is off. Open TrustBridge and tap Restore Protection."
+                        )
+                    }
+                } else if (!serviceRunning) {
+                    Log.d(
+                        TAG,
+                        "Skipping VPN auto-start on rule update: missing child policy context"
+                    )
+                }
                 startEffectivePolicyListenerIfConfigured()
                 scheduleWatchdogPing()
                 START_STICKY
@@ -1667,6 +1702,8 @@ class DnsVpnService : VpnService() {
             )
 
         val recentLogs = getRecentQueryLogs(limit = 60)
+        val recentQueriesForLog = getRecentQueryLogs(limit = 100)
+            .mapNotNull { queryLogMapForDiagnostics(it) }
         val recentCutoff = now - WEB_DIAGNOSTICS_RECENT_DNS_WINDOW_MS
         var recentVpnDnsQueriesInWindow = 0
         for (entry in recentLogs) {
@@ -1761,6 +1798,7 @@ class DnsVpnService : VpnService() {
             ),
             "lastDnsQuery" to queryLogMapForDiagnostics(lastDnsQuery),
             "lastBlockedDnsQuery" to queryLogMapForDiagnostics(lastBlockedDnsQuery),
+            "recentQueries" to recentQueriesForLog,
             "policySync" to hashMapOf<String, Any?>(
                 "lastSeenVersion" to (if (lastPolicySnapshotSeenVersion > 0L) lastPolicySnapshotSeenVersion else null),
                 "lastAppliedVersion" to (if (lastEffectivePolicyVersion > 0L) lastEffectivePolicyVersion else null),
