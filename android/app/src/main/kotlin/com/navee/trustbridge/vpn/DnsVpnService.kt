@@ -1008,8 +1008,6 @@ class DnsVpnService : VpnService() {
                         continue
                     }
 
-                    Log.e(TAG, "TUN_PACKET_READ bytes=$length")
-
                     val response = handler.handlePacket(buffer, length)
                     updatePacketStats(handler.statsSnapshot())
                     updateRecentQueryLogs(handler.recentQueriesSnapshot(limit = 120))

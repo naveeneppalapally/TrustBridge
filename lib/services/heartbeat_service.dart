@@ -217,6 +217,11 @@ class HeartbeatService {
           },
           SetOptions(merge: true),
         );
+        debugPrint(
+          '[ProtectionStatusWrite] path=devices/$deviceId '
+          'childId=$normalizedChildId vpnActive=${status.isRunning} '
+          'atEpochMs=$nowEpochMs',
+        );
       } catch (error) {
         // Root heartbeat telemetry is best-effort. Child-level device linkage
         // and local protection must remain active even if this write is denied.
@@ -249,6 +254,10 @@ class HeartbeatService {
             'updatedAt': FieldValue.serverTimestamp(),
           },
           SetOptions(merge: true),
+        );
+        debugPrint(
+          '[ProtectionStatusWrite] path=children/$normalizedChildId/devices/$deviceId '
+          'vpnActive=${status.isRunning} atEpochMs=$nowEpochMs',
         );
       } catch (error) {
         debugPrint('[Heartbeat] child device heartbeat write skipped: $error');
