@@ -1,4 +1,5 @@
 import 'service_definitions.dart';
+import 'category_ids.dart';
 
 /// Backward-compatible accessors for app domains.
 ///
@@ -8,11 +9,12 @@ class SocialMediaDomains {
 
   static final Map<String, List<String>> byApp = <String, List<String>>{
     for (final service in ServiceDefinitions.all)
-      service.serviceId: List<String>.unmodifiable(
-        service.domains
-            .map((domain) => domain.trim().toLowerCase())
-            .where((domain) => domain.isNotEmpty),
-      ),
+      if (normalizeCategoryId(service.categoryId) == categorySocialNetworks)
+        service.serviceId: List<String>.unmodifiable(
+          service.domains
+              .map((domain) => domain.trim().toLowerCase())
+              .where((domain) => domain.isNotEmpty),
+        ),
   };
 
   static final Set<String> all = byApp.values
@@ -27,6 +29,9 @@ class SocialMediaDomains {
     }
 
     for (final service in ServiceDefinitions.all) {
+      if (normalizeCategoryId(service.categoryId) != categorySocialNetworks) {
+        continue;
+      }
       if (service.matchesDomain(normalized)) {
         return service.serviceId;
       }

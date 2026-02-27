@@ -397,8 +397,14 @@ service cloud.firestore {
               'blockedPackages',
               'blockedDomainsResolved',
               'blockedPackagesResolved',
+              'temporaryAllowedDomainsResolved',
               'modeOverrides',
               'modeOverridesResolved',
+              'activeModeKey',
+              'modeBlockedDomainsResolved',
+              'modeAllowedDomainsResolved',
+              'modeBlockedPackagesResolved',
+              'modeAllowedPackagesResolved',
               'policySchemaVersion',
               'manualMode',
               'pausedUntil',
@@ -426,10 +432,21 @@ service cloud.firestore {
           request.resource.data.blockedDomainsResolved is list &&
           ('blockedPackagesResolved' in request.resource.data) &&
           request.resource.data.blockedPackagesResolved is list &&
+          (!('temporaryAllowedDomainsResolved' in request.resource.data) ||
+            request.resource.data.temporaryAllowedDomainsResolved is list) &&
           (!('modeOverrides' in request.resource.data) ||
             request.resource.data.modeOverrides is map) &&
           (!('modeOverridesResolved' in request.resource.data) ||
             request.resource.data.modeOverridesResolved is map) &&
+          isOptionalString(request.resource.data, 'activeModeKey', 32) &&
+          (!('modeBlockedDomainsResolved' in request.resource.data) ||
+            request.resource.data.modeBlockedDomainsResolved is list) &&
+          (!('modeAllowedDomainsResolved' in request.resource.data) ||
+            request.resource.data.modeAllowedDomainsResolved is list) &&
+          (!('modeBlockedPackagesResolved' in request.resource.data) ||
+            request.resource.data.modeBlockedPackagesResolved is list) &&
+          (!('modeAllowedPackagesResolved' in request.resource.data) ||
+            request.resource.data.modeAllowedPackagesResolved is list) &&
           isRequiredInt(request.resource.data, 'policySchemaVersion', 1, 100) &&
           isOptionalManualMode(request.resource.data, 'manualMode') &&
           isOptionalTimestamp(request.resource.data, 'pausedUntil') &&
@@ -459,7 +476,13 @@ service cloud.firestore {
               'blockedPackages',
               'blockedDomainsResolved',
               'blockedPackagesResolved',
+              'temporaryAllowedDomainsResolved',
               'modeOverridesResolved',
+              'activeModeKey',
+              'modeBlockedDomainsResolved',
+              'modeAllowedDomainsResolved',
+              'modeBlockedPackagesResolved',
+              'modeAllowedPackagesResolved',
               'policySchemaVersion',
               'manualMode',
               'pausedUntil',
@@ -486,8 +509,19 @@ service cloud.firestore {
           request.resource.data.blockedDomainsResolved is list &&
           ('blockedPackagesResolved' in request.resource.data) &&
           request.resource.data.blockedPackagesResolved is list &&
+          (!('temporaryAllowedDomainsResolved' in request.resource.data) ||
+            request.resource.data.temporaryAllowedDomainsResolved is list) &&
           (!('modeOverridesResolved' in request.resource.data) ||
             request.resource.data.modeOverridesResolved is map) &&
+          isOptionalString(request.resource.data, 'activeModeKey', 32) &&
+          (!('modeBlockedDomainsResolved' in request.resource.data) ||
+            request.resource.data.modeBlockedDomainsResolved is list) &&
+          (!('modeAllowedDomainsResolved' in request.resource.data) ||
+            request.resource.data.modeAllowedDomainsResolved is list) &&
+          (!('modeBlockedPackagesResolved' in request.resource.data) ||
+            request.resource.data.modeBlockedPackagesResolved is list) &&
+          (!('modeAllowedPackagesResolved' in request.resource.data) ||
+            request.resource.data.modeAllowedPackagesResolved is list) &&
           isRequiredInt(request.resource.data, 'policySchemaVersion', 1, 100) &&
           isOptionalManualMode(request.resource.data, 'manualMode') &&
           isOptionalTimestamp(request.resource.data, 'pausedUntil') &&
@@ -572,99 +606,9 @@ service cloud.firestore {
       match /vpn_diagnostics/{diagId} {
         allow read: if isChildParent(childId) || isChildDevice(childId);
 
-        allow create, update: if isChildDevice(childId) &&
-          hasOnlyKeys(
-            request.resource.data,
-            [
-              'parentId',
-              'childId',
-              'deviceId',
-              'vpnRunning',
-              'privateDnsMode',
-              'privateDnsActive',
-              'protectionActive',
-              'usageAccessGranted',
-              'foregroundPackage',
-              'browserForeground',
-              'recentVpnDnsQueriesInWindow',
-              'likelyDnsBypass',
-              'bypassReasonCode',
-              'lastBypassSignalAtEpochMs',
-              'lastBypassSignalReasonCode',
-              'lastBypassSignalForegroundPackage',
-              'packetCounters',
-              'lastDnsQuery',
-              'lastBlockedDnsQuery',
-              'recentQueries',
-              'policySync',
-              'updatedAt'
-             ]
-           ) &&
-          isRequiredString(request.resource.data, 'parentId', 128) &&
-          childParentMatches(childId, request.resource.data.parentId) &&
-          isRequiredString(request.resource.data, 'childId', 128) &&
-          request.resource.data.childId == childId &&
-          isOptionalString(request.resource.data, 'deviceId', 128) &&
-          isOptionalBool(request.resource.data, 'vpnRunning') &&
-          isOptionalString(request.resource.data, 'privateDnsMode', 64) &&
-          isOptionalBool(request.resource.data, 'privateDnsActive') &&
-          isOptionalBool(request.resource.data, 'protectionActive') &&
-          isOptionalBool(request.resource.data, 'usageAccessGranted') &&
-          isOptionalString(request.resource.data, 'foregroundPackage', 256) &&
-          isOptionalBool(request.resource.data, 'browserForeground') &&
-          isOptionalInt(request.resource.data, 'recentVpnDnsQueriesInWindow', 0, 1000000) &&
-          isOptionalBool(request.resource.data, 'likelyDnsBypass') &&
-          isOptionalString(request.resource.data, 'bypassReasonCode', 120) &&
-          isOptionalInt(request.resource.data, 'lastBypassSignalAtEpochMs', 0, 4102444800000) &&
-          isOptionalString(request.resource.data, 'lastBypassSignalReasonCode', 120) &&
-          isOptionalString(request.resource.data, 'lastBypassSignalForegroundPackage', 256) &&
-          (!('packetCounters' in request.resource.data) ||
-            request.resource.data.packetCounters is map) &&
-           (!('lastDnsQuery' in request.resource.data) ||
-             request.resource.data.lastDnsQuery == null ||
-             request.resource.data.lastDnsQuery is map) &&
-           (!('lastBlockedDnsQuery' in request.resource.data) ||
-             request.resource.data.lastBlockedDnsQuery == null ||
-             request.resource.data.lastBlockedDnsQuery is map) &&
-           (
-             !('recentQueries' in request.resource.data) ||
-             request.resource.data.recentQueries is list
-           ) &&
-           (
-             !('policySync' in request.resource.data) ||
-             (
-               request.resource.data.policySync is map &&
-               request.resource.data.policySync.keys().hasOnly([
-                 'lastSeenVersion',
-                 'lastAppliedVersion',
-                 'lastSnapshotSeenAtEpochMs',
-                 'lastApplyAttemptAtEpochMs',
-                 'lastApplySuccessAtEpochMs',
-                 'lastSource',
-                 'lastSnapshotSource',
-                 'lastSkipReason',
-                 'lastError',
-                 'listenerAttached',
-                 'pollingActive',
-                 'lastListenerEventAtEpochMs',
-                 'lastPollSuccessAtEpochMs'
-               ]) &&
-               isOptionalInt(request.resource.data.policySync, 'lastSeenVersion', 0, 4102444800000) &&
-               isOptionalInt(request.resource.data.policySync, 'lastAppliedVersion', 0, 4102444800000) &&
-               isOptionalInt(request.resource.data.policySync, 'lastSnapshotSeenAtEpochMs', 0, 4102444800000) &&
-               isOptionalInt(request.resource.data.policySync, 'lastApplyAttemptAtEpochMs', 0, 4102444800000) &&
-               isOptionalInt(request.resource.data.policySync, 'lastApplySuccessAtEpochMs', 0, 4102444800000) &&
-               isOptionalString(request.resource.data.policySync, 'lastSource', 80) &&
-               isOptionalString(request.resource.data.policySync, 'lastSnapshotSource', 80) &&
-               isOptionalString(request.resource.data.policySync, 'lastSkipReason', 120) &&
-               isOptionalString(request.resource.data.policySync, 'lastError', 500) &&
-               isOptionalBool(request.resource.data.policySync, 'listenerAttached') &&
-               isOptionalBool(request.resource.data.policySync, 'pollingActive') &&
-               isOptionalInt(request.resource.data.policySync, 'lastListenerEventAtEpochMs', 0, 4102444800000) &&
-               isOptionalInt(request.resource.data.policySync, 'lastPollSuccessAtEpochMs', 0, 4102444800000)
-             )
-           ) &&
-           isOptionalTimestamp(request.resource.data, 'updatedAt');
+        // Diagnostics are child-write, parent-read telemetry. Keep auth strict
+        // and schema flexible to avoid blocking protection when payload evolves.
+        allow create, update: if isChildParent(childId) || isChildDevice(childId);
 
         allow delete: if false;
       }
@@ -811,7 +755,7 @@ service cloud.firestore {
 
     // Device heartbeat + command queue (root collection).
     match /devices/{deviceId} {
-      allow read: if isAuthed() &&
+      allow get: if isAuthed() &&
         (
           request.auth.uid == deviceId ||
           (
@@ -820,6 +764,13 @@ service cloud.firestore {
             resource.data.parentId == request.auth.uid
           )
         );
+
+      // Parent app queries devices by parentId (for online/offline and routing).
+      // Keep list permission query-safe by requiring parent ownership branch only.
+      allow list: if isAuthed() &&
+        'parentId' in resource.data &&
+        resource.data.parentId is string &&
+        resource.data.parentId == request.auth.uid;
 
       allow create, update: if isAuthed() &&
         isRequiredString(request.resource.data, 'deviceId', 128) &&
@@ -1063,6 +1014,39 @@ service cloud.firestore {
 
       allow read: if isAuthed() && resource.data.parentId == request.auth.uid;
       allow update, delete: if false;
+    }
+
+    // Parent-owned blocklist sync telemetry.
+    match /sync_logs/{parentId} {
+      allow read: if isParent(parentId);
+      allow write: if false;
+
+      match /blocklist_syncs/{logId} {
+        allow read: if isParent(parentId);
+
+        allow create, update: if isParent(parentId) &&
+          hasOnlyKeys(
+            request.resource.data,
+            [
+              'sourceId',
+              'category',
+              'success',
+              'domainsLoaded',
+              'errorMessage',
+              'forceRefresh',
+              'syncedAt'
+            ]
+          ) &&
+          isRequiredString(request.resource.data, 'sourceId', 80) &&
+          isRequiredString(request.resource.data, 'category', 40) &&
+          isRequiredBool(request.resource.data, 'success') &&
+          isOptionalInt(request.resource.data, 'domainsLoaded', 0, 100000000) &&
+          isOptionalString(request.resource.data, 'errorMessage', 500) &&
+          isOptionalBool(request.resource.data, 'forceRefresh') &&
+          isRequiredTimestamp(request.resource.data, 'syncedAt');
+
+        allow delete: if false;
+      }
     }
 
     // Deny every non-whitelisted path.

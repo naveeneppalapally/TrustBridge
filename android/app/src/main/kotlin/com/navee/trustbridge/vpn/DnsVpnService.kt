@@ -10,6 +10,7 @@ import android.app.usage.UsageEvents
 import android.app.usage.UsageStatsManager
 import android.content.Context
 import android.content.Intent
+import android.content.pm.PackageManager
 import android.net.ConnectivityManager
 import android.net.Network
 import android.net.NetworkCapabilities
@@ -40,8 +41,8 @@ import kotlin.concurrent.thread
 class DnsVpnService : VpnService() {
     companion object {
         private const val TAG = "DnsVpnService"
-        private const val VPN_ADDRESS = "10.0.0.1"
-        private const val INTERCEPT_DNS = "45.90.28.0"
+        private const val VPN_ADDRESS = "10.111.111.1"
+        private const val INTERCEPT_DNS = "10.111.111.111"
         private const val DEFAULT_UPSTREAM_DNS = "1.1.1.1"
         private const val NOTIFICATION_ID = 1001
         private const val CHANNEL_ID = "dns_vpn_channel"
@@ -572,15 +573,32 @@ class DnsVpnService : VpnService() {
             ensureForegroundStarted()
             val builder = Builder()
                 .setSession("TrustBridge DNS Filter")
-                .addAddress(VPN_ADDRESS, 32)
+                .addAddress(VPN_ADDRESS, 24)
                 .setMtu(1500)
-                // Route only the DNS interception endpoint through the tunnel.
-                // Full-tunnel routing would break all non-DNS traffic until
-                // generic packet forwarding is implemented.
-                .addRoute(INTERCEPT_DNS, 32)
                 .addDnsServer(INTERCEPT_DNS)
 
             setInitialUnderlyingNetwork(builder)
+
+            // DNS-only VPN: route our synthetic DNS endpoint plus active network DNS
+            // addresses into TUN so resolver traffic cannot bypass interception.
+            val dnsCaptureRoutes = collectDnsCaptureRoutes(activeUnderlyingNetwork)
+            Log.e(TAG, "DNS capture routes=$dnsCaptureRoutes")
+            dnsCaptureRoutes.forEach { dnsRoute ->
+                builder.addRoute(dnsRoute, 32)
+            }
+
+            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) {
+                builder.setBlocking(true)
+            }
+
+            try {
+                // Prevent routing loops for service sockets on OEM stacks (notably Vivo).
+                builder.addDisallowedApplication(packageName)
+            } catch (_: PackageManager.NameNotFoundException) {
+                // Should never happen for own package; ignore if it does.
+            } catch (error: Exception) {
+                Log.w(TAG, "Could not exclude app from VPN", error)
+            }
 
             vpnInterface = builder.establish()
             if (vpnInterface == null) {
@@ -990,6 +1008,8 @@ class DnsVpnService : VpnService() {
                         continue
                     }
 
+                    Log.e(TAG, "TUN_PACKET_READ bytes=$length")
+
                     val response = handler.handlePacket(buffer, length)
                     updatePacketStats(handler.statsSnapshot())
                     updateRecentQueryLogs(handler.recentQueriesSnapshot(limit = 120))
@@ -1015,6 +1035,37 @@ class DnsVpnService : VpnService() {
             }
             Log.d(TAG, "Packet processing loop ended")
         }
+    }
+
+    private fun collectDnsCaptureRoutes(network: Network?): Set<String> {
+        val routes = linkedSetOf<String>()
+        routes.add(INTERCEPT_DNS)
+
+        if (Build.VERSION.SDK_INT < Build.VERSION_CODES.LOLLIPOP || network == null) {
+            return routes
+        }
+
+        val linkProperties = try {
+            connectivityManager.getLinkProperties(network)
+        } catch (error: Exception) {
+            Log.w(TAG, "Unable to read link properties for DNS capture routes", error)
+            null
+        } ?: return routes
+
+        for (dnsServer in linkProperties.dnsServers) {
+            val hostAddress = dnsServer.hostAddress ?: continue
+            val normalized = hostAddress.substringBefore('%').trim()
+            if (normalized.isEmpty()) {
+                continue
+            }
+            // Current packet parser handles IPv4 UDP DNS packets only.
+            if (normalized.contains(":")) {
+                continue
+            }
+            routes.add(normalized)
+        }
+
+        return routes
     }
 
     private fun stopVpn(stopService: Boolean, markDisabled: Boolean) {
@@ -1674,26 +1725,37 @@ class DnsVpnService : VpnService() {
                 blockedPackages == lastAppliedBlockedPackages &&
                 allowedDomains == lastAppliedAllowedDomains
 
-        val versionRegressedOrDuplicate =
-            incomingVersion != null &&
-                incomingVersion > 0L &&
-                incomingVersion <= lastEffectivePolicyVersion
-
-        if (versionRegressedOrDuplicate && stateUnchanged) {
+        val hasIncomingVersion = incomingVersion != null && incomingVersion > 0L
+        if (!hasIncomingVersion && lastEffectivePolicyVersion > 0L) {
             recordPolicyApplySkip(
                 source = source,
                 version = incomingVersion,
-                reason = "version_not_new_and_state_unchanged"
+                reason = "missing_version_after_initial_apply"
             )
             return
         }
-        if (versionRegressedOrDuplicate && !stateUnchanged) {
-            Log.w(
-                TAG,
-                "Applying effective_policy despite non-increasing version " +
-                    "version=${incomingVersion ?: 0L} last=$lastEffectivePolicyVersion source=$source " +
-                    "(state changed)"
+
+        val versionRegressedOrDuplicate =
+            hasIncomingVersion && incomingVersion!! <= lastEffectivePolicyVersion
+        if (versionRegressedOrDuplicate) {
+            if (!stateUnchanged) {
+                Log.w(
+                    TAG,
+                    "Ignoring effective_policy with non-increasing version " +
+                        "version=${incomingVersion ?: 0L} last=$lastEffectivePolicyVersion source=$source " +
+                        "(state changed)"
+                )
+            }
+            recordPolicyApplySkip(
+                source = source,
+                version = incomingVersion,
+                reason = if (stateUnchanged) {
+                    "version_not_new_and_state_unchanged"
+                } else {
+                    "version_not_new_state_changed_ignored"
+                }
             )
+            return
         }
 
         if (stateUnchanged) {
@@ -1983,11 +2045,11 @@ class DnsVpnService : VpnService() {
             "childId" to childId,
             "deviceId" to cachedPolicyAckDeviceId,
             "vpnRunning" to serviceRunning,
-            "privateDnsMode" to privateDnsMode,
+            "privateDnsMode" to privateDnsMode?.takeIf { it.isNotBlank() },
             "privateDnsActive" to privateDnsActive,
             "protectionActive" to protectionActive,
             "usageAccessGranted" to usageAccessGranted,
-            "foregroundPackage" to foregroundPackage,
+            "foregroundPackage" to foregroundPackage?.takeIf { it.isNotBlank() },
             "browserForeground" to browserForeground,
             "recentVpnDnsQueriesInWindow" to recentVpnDnsQueriesInWindow,
             "likelyDnsBypass" to likelyDnsBypass,
@@ -2002,7 +2064,9 @@ class DnsVpnService : VpnService() {
             "lastBypassSignalReasonCode" to (
                 lastBrowserDnsBypassSignalReasonCode.takeIf { it.isNotBlank() }
                 ),
-            "lastBypassSignalForegroundPackage" to lastBrowserDnsBypassSignalForegroundPackage,
+            "lastBypassSignalForegroundPackage" to (
+                lastBrowserDnsBypassSignalForegroundPackage?.takeIf { it.isNotBlank() }
+                ),
             "packetCounters" to hashMapOf<String, Any>(
                 "queriesProcessed" to queriesProcessed.toInt().coerceAtLeast(0),
                 "queriesBlocked" to queriesBlocked.toInt().coerceAtLeast(0),
