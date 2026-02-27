@@ -144,7 +144,7 @@ class _ModesScreenState extends State<ModesScreen> {
               ),
               const SizedBox(height: 6),
               Text(
-                'If settings conflict, the current mode takes priority.',
+                'If settings conflict, your manual app/category change wins.',
                 style: Theme.of(context).textTheme.bodySmall?.copyWith(
                       color: Theme.of(context).colorScheme.onSurfaceVariant,
                     ),

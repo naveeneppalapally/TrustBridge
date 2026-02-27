@@ -257,66 +257,107 @@ class _BypassAlertsScreenState extends State<BypassAlertsScreen> {
   }
 
   Future<List<_BypassAlertItem>> _loadAlerts(String parentId) async {
-    final parentChildrenSnapshot = await _resolvedFirestore
-        .collection('children')
-        .where('parentId', isEqualTo: parentId)
-        .get();
-
     final childNicknameById = <String, String>{};
     final deviceIds = <String>{};
+    try {
+      final parentChildrenSnapshot = await _resolvedFirestore
+          .collection('children')
+          .where('parentId', isEqualTo: parentId)
+          .get();
+      for (final childDoc in parentChildrenSnapshot.docs) {
+        final childId = childDoc.id.trim();
+        final data = childDoc.data();
+        final nickname = (data['nickname'] as String?)?.trim();
+        if (childId.isNotEmpty && nickname != null && nickname.isNotEmpty) {
+          childNicknameById[childId] = nickname;
+        }
 
-    for (final childDoc in parentChildrenSnapshot.docs) {
-      final data = childDoc.data();
-      final nickname = (data['nickname'] as String?)?.trim();
-      if (nickname != null && nickname.isNotEmpty) {
-        childNicknameById[childDoc.id] = nickname;
-      }
-      final rawDeviceIds = data['deviceIds'];
-      if (rawDeviceIds is List) {
-        for (final raw in rawDeviceIds) {
-          final deviceId = raw?.toString().trim() ?? '';
-          if (deviceId.isNotEmpty) {
-            deviceIds.add(deviceId);
+        final rawDeviceIds = data['deviceIds'];
+        if (rawDeviceIds is List) {
+          for (final rawDeviceId in rawDeviceIds) {
+            final deviceId = rawDeviceId?.toString().trim() ?? '';
+            if (deviceId.isNotEmpty) {
+              deviceIds.add(deviceId);
+            }
+          }
+        }
+
+        final rawDeviceMetadata = data['deviceMetadata'];
+        if (rawDeviceMetadata is Map) {
+          for (final entry in rawDeviceMetadata.entries) {
+            final deviceId = entry.key.toString().trim();
+            if (deviceId.isNotEmpty) {
+              deviceIds.add(deviceId);
+            }
           }
         }
       }
 
-      final rawDeviceMetadata = data['deviceMetadata'];
-      if (rawDeviceMetadata is Map) {
-        for (final entry in rawDeviceMetadata.entries) {
-          final deviceId = entry.key.toString().trim();
-          if (deviceId.isNotEmpty) {
-            deviceIds.add(deviceId);
+      // Fallback for older records that only populated children/{id}/devices.
+      if (deviceIds.isEmpty) {
+        for (final childDoc in parentChildrenSnapshot.docs) {
+          try {
+            final devicesSnapshot =
+                await childDoc.reference.collection('devices').limit(20).get();
+            for (final deviceDoc in devicesSnapshot.docs) {
+              final deviceId = deviceDoc.id.trim();
+              if (deviceId.isNotEmpty) {
+                deviceIds.add(deviceId);
+              }
+            }
+          } catch (_) {
+            // Continue collecting devices from other children.
           }
         }
       }
+    } catch (_) {
+      // Child/device discovery failed; return empty state instead of hard error.
+      return const <_BypassAlertItem>[];
     }
 
     if (deviceIds.isEmpty) {
       return const <_BypassAlertItem>[];
     }
 
-    final perDeviceSnapshots = await Future.wait(
-      deviceIds.map(
-        (deviceId) => _resolvedFirestore
+    final alerts = <_BypassAlertItem>[];
+    final seenDocPaths = <String>{};
+
+    void appendSnapshot(QuerySnapshot<Map<String, dynamic>> snapshot) {
+      for (final doc in snapshot.docs) {
+        final path = doc.reference.path;
+        if (seenDocPaths.contains(path)) {
+          continue;
+        }
+        seenDocPaths.add(path);
+        alerts.add(_BypassAlertItem.fromDoc(doc, childNicknameById));
+      }
+    }
+
+    for (final deviceId in deviceIds) {
+      try {
+        final primarySnapshot = await _resolvedFirestore
             .collection('bypass_events')
             .doc(deviceId)
             .collection('events')
             .where('parentId', isEqualTo: parentId)
-            .limit(80)
-            .get(),
-      ),
-    );
+            .limit(160)
+            .get();
+        appendSnapshot(primarySnapshot);
 
-    final alerts = <_BypassAlertItem>[];
-    for (final snapshot in perDeviceSnapshots) {
-      for (final doc in snapshot.docs) {
-        alerts.add(
-          _BypassAlertItem.fromDoc(
-            doc,
-            childNicknameById,
-          ),
-        );
+        if (primarySnapshot.docs.isNotEmpty) {
+          continue;
+        }
+
+        // Fallback for older events that may be missing parentId.
+        final legacySnapshot = await _resolvedFirestore
+            .collection('bypass_events')
+            .doc(deviceId)
+            .collection('events')
+            .limit(80)
+            .get();
+        appendSnapshot(legacySnapshot);
+      } catch (_) {
+        // Continue gathering from other devices.
       }
     }
 
@@ -488,7 +529,7 @@ class _BypassAlertsScreenState extends State<BypassAlertsScreen> {
             ),
             const SizedBox(height: 8),
             Text(
-              '${alert.childLabel} · ${_formatAlertTime(context, alert.timestamp)}',
+              '${alert.childLabel} - ${_formatAlertTime(context, alert.timestamp)}',
               style: Theme.of(context).textTheme.bodySmall?.copyWith(
                     color: Theme.of(context).colorScheme.onSurfaceVariant,
                   ),
@@ -744,7 +785,7 @@ class _BypassAlertItem {
       case 'vpn_disabled':
         return 'Protection turned off';
       case 'private_dns_changed':
-        return 'DNS settings changed';
+        return 'Network settings changed';
       case 'device_offline_30m':
         return 'Device not seen recently';
       case 'device_offline_24h':

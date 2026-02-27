@@ -1,5 +1,6 @@
 import 'dart:async';
 
+import 'package:firebase_auth/firebase_auth.dart';
 import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 import 'package:url_launcher/url_launcher.dart';
@@ -53,13 +54,26 @@ class _OnboardingScreenState extends State<OnboardingScreen> {
 
   PairingService get _pairingService => PairingService();
 
-  Future<void> _completeOnboardingForParent() async {
+  String get _resolvedParentId {
+    final fallback = widget.parentId.trim();
+    try {
+      final authId = FirebaseAuth.instance.currentUser?.uid.trim();
+      if (authId != null && authId.isNotEmpty) {
+        return authId;
+      }
+    } catch (_) {
+      // FirebaseAuth may be unavailable in some test contexts.
+    }
+    return fallback;
+  }
+
+  Future<void> _completeOnboardingForParent(String parentId) async {
     final override = widget.onCompleteOnboarding;
     if (override != null) {
-      await override(widget.parentId);
+      await override(parentId);
       return;
     }
-    await _resolvedFirestoreService.completeOnboarding(widget.parentId);
+    await _resolvedFirestoreService.completeOnboarding(parentId);
   }
 
   @override
@@ -82,7 +96,7 @@ class _OnboardingScreenState extends State<OnboardingScreen> {
     }
     try {
       final profile =
-          await _resolvedFirestoreService.getParentProfile(widget.parentId);
+          await _resolvedFirestoreService.getParentProfile(_resolvedParentId);
       if (!mounted) {
         return;
       }
@@ -125,51 +139,56 @@ class _OnboardingScreenState extends State<OnboardingScreen> {
       return;
     }
 
-    final childName = _childNameController.text.trim();
-    if (childName.length < 2) {
-      setState(() {
-        _errorMessage = 'Please enter your child\'s name.';
-      });
-      return;
-    }
-    if (_requiresConsent && !_consentAccepted) {
-      _showConsentRequired();
-      return;
+    final existingChild = _createdChild;
+    if (existingChild == null) {
+      final childName = _childNameController.text.trim();
+      if (childName.length < 2) {
+        setState(() {
+          _errorMessage = 'Please enter your child\'s name.';
+        });
+        return;
+      }
+      if (_requiresConsent && !_consentAccepted) {
+        _showConsentRequired();
+        return;
+      }
     }
 
+    final parentId = _resolvedParentId;
     setState(() {
       _isSubmitting = true;
       _errorMessage = null;
     });
 
     try {
-      final child = await _resolvedFirestoreService.addChild(
-        parentId: widget.parentId,
-        nickname: childName,
-        ageBand: _selectedAgeBand,
-      );
+      final child = existingChild ??
+          await _resolvedFirestoreService.addChild(
+            parentId: parentId,
+            nickname: _childNameController.text.trim(),
+            ageBand: _selectedAgeBand,
+          );
       final pairingCode = await _pairingService.generatePairingCode(child.id);
 
-      try {
-        await _resolvedOnboardingStateService
-            .markCompleteLocally(widget.parentId);
-      } catch (_) {
-        // Local flag best-effort.
-      }
+      if (existingChild == null) {
+        try {
+          await _resolvedOnboardingStateService.markCompleteLocally(parentId);
+        } catch (_) {
+          // Local flag best-effort.
+        }
 
-      unawaited(() async {
-        try {
-          await _resolvedFirestoreService
-              .recordGuardianConsent(widget.parentId);
-        } catch (_) {
-          // Cloud consent sync is best effort.
-        }
-        try {
-          await _completeOnboardingForParent();
-        } catch (_) {
-          // Cloud completion sync is best effort.
-        }
-      }());
+        unawaited(() async {
+          try {
+            await _resolvedFirestoreService.recordGuardianConsent(parentId);
+          } catch (_) {
+            // Cloud consent sync is best effort.
+          }
+          try {
+            await _completeOnboardingForParent(parentId);
+          } catch (_) {
+            // Cloud completion sync is best effort.
+          }
+        }());
+      }
 
       _pairingTimer?.cancel();
       _pairingTimer = Timer.periodic(const Duration(seconds: 1), (_) {
@@ -194,7 +213,7 @@ class _OnboardingScreenState extends State<OnboardingScreen> {
       }
       setState(() {
         _isSubmitting = false;
-        _errorMessage = 'Could not finish setup. Please try again. ($error)';
+        _errorMessage = _friendlySetupError(error);
       });
     }
   }
@@ -448,6 +467,28 @@ class _OnboardingScreenState extends State<OnboardingScreen> {
         content: Text('Please accept guardian consent to continue.'),
       ),
     );
+  }
+
+  String _friendlySetupError(Object error) {
+    if (error is FirebaseException) {
+      final code = error.code.trim().toLowerCase();
+      if (code == 'permission-denied') {
+        return 'Could not generate pairing code right now. Please try again.';
+      }
+      if (code == 'unavailable' || code == 'network-request-failed') {
+        return 'Network issue. Please check internet and try again.';
+      }
+      if (code == 'unauthenticated') {
+        return 'Please sign in again, then try generating the code.';
+      }
+    }
+    if (error is StateError) {
+      final message = error.message.toString().toLowerCase();
+      if (message.contains('signed in')) {
+        return 'Please sign in again, then try generating the code.';
+      }
+    }
+    return 'Could not finish setup. Please try again.';
   }
 
   Future<void> _openExternalUrl(BuildContext context, String url) async {

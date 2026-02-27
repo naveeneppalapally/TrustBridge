@@ -873,6 +873,35 @@ class VpnService implements VpnServiceBase {
     }
   }
 
+  Future<bool> savePolicyContext({
+    String? parentId,
+    String? childId,
+  }) async {
+    if (!_supported) {
+      return false;
+    }
+
+    final normalizedParentId = parentId?.trim();
+    final normalizedChildId = childId?.trim();
+
+    try {
+      return await _channel.invokeMethod<bool>(
+            'savePolicyContext',
+            <String, dynamic>{
+              if (normalizedParentId != null && normalizedParentId.isNotEmpty)
+                'parentId': normalizedParentId,
+              if (normalizedChildId != null && normalizedChildId.isNotEmpty)
+                'childId': normalizedChildId,
+            },
+          ) ??
+          false;
+    } on PlatformException {
+      return false;
+    } on MissingPluginException {
+      return false;
+    }
+  }
+
   @override
   Future<List<DnsQueryLogEntry>> getRecentDnsQueries({int limit = 100}) async {
     if (!_supported) {

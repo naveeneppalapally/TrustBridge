@@ -121,7 +121,7 @@ class _AlertPreferencesScreenState extends State<AlertPreferencesScreen> {
                       _update(parentId, uninstallAttempt: value),
                 ),
                 _buildToggle(
-                  title: 'DNS settings changed',
+                  title: 'Network settings changed',
                   value: _privateDnsChanged,
                   alwaysOn: false,
                   onChanged: (value) =>

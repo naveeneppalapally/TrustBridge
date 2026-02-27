@@ -199,7 +199,7 @@ class _ProtectionSettingsScreenState extends State<ProtectionSettingsScreen> {
             if (lastSync != null) ...[
               const SizedBox(height: 8),
               Text(
-                'Last local VPN sync: ${_timeAgo(lastSync)}',
+                'Last local update: ${_timeAgo(lastSync)}',
                 style: Theme.of(context).textTheme.bodySmall?.copyWith(
                       color: Theme.of(context).colorScheme.onSurfaceVariant,
                     ),
@@ -338,7 +338,7 @@ class _ProtectionSettingsScreenState extends State<ProtectionSettingsScreen> {
             ),
             const SizedBox(height: 8),
             Text(
-              'Checks child VPN signal, blocking evidence, and Firestore connectivity.',
+              'Checks child protection signal, blocking evidence, and cloud connection.',
               style: Theme.of(context).textTheme.bodySmall?.copyWith(
                     color: Theme.of(context).colorScheme.onSurfaceVariant,
                   ),
@@ -431,7 +431,7 @@ class _ProtectionSettingsScreenState extends State<ProtectionSettingsScreen> {
                 Row(
                   children: [
                     Text(
-                      'DNS Decision Log',
+                      'Activity Log',
                       style: Theme.of(context).textTheme.titleMedium?.copyWith(
                             fontWeight: FontWeight.w800,
                           ),
@@ -446,14 +446,14 @@ class _ProtectionSettingsScreenState extends State<ProtectionSettingsScreen> {
                 ),
                 const SizedBox(height: 4),
                 Text(
-                  'Last 100 blocked/allowed DNS decisions across children.',
+                  'Last 100 blocked/allowed web decisions across children.',
                   style: Theme.of(context).textTheme.bodySmall?.copyWith(
                         color: Theme.of(context).colorScheme.onSurfaceVariant,
                       ),
                 ),
                 const SizedBox(height: 10),
                 if (events.isEmpty)
-                  const Text('No DNS decision logs yet.')
+                  const Text('No activity logs yet.')
                 else ...[
                   Align(
                     alignment: Alignment.centerLeft,
@@ -548,22 +548,22 @@ class _ProtectionSettingsScreenState extends State<ProtectionSettingsScreen> {
               const ListTile(
                 contentPadding: EdgeInsets.zero,
                 leading: Icon(Icons.health_and_safety_outlined),
-                title: Text('VPN Diagnostics'),
+                title: Text('Protection service details'),
               ),
               const ListTile(
                 contentPadding: EdgeInsets.zero,
                 leading: Icon(Icons.network_check_outlined),
-                title: Text('DNS Query Test'),
+                title: Text('Website block test'),
               ),
               const ListTile(
                 contentPadding: EdgeInsets.zero,
                 leading: Icon(Icons.sync_alt_outlined),
-                title: Text('Blocklist Sync Details'),
+                title: Text('Rules refresh details'),
               ),
               const ListTile(
                 contentPadding: EdgeInsets.zero,
                 leading: Icon(Icons.security_outlined),
-                title: Text('Private DNS Detection Status'),
+                title: Text('Bypass detection status'),
               ),
               const SizedBox(height: 8),
               FilledButton.icon(
@@ -667,19 +667,19 @@ class _ProtectionSettingsScreenState extends State<ProtectionSettingsScreen> {
             .timeout(const Duration(seconds: 8));
         if (profile == null) {
           return const _DiagnosticResult(
-            title: 'Firestore connectivity',
+            title: 'Cloud connection',
             passed: false,
             message: 'Account profile is unavailable. Try re-login.',
           );
         }
         return const _DiagnosticResult(
-          title: 'Firestore connectivity',
+          title: 'Cloud connection',
           passed: true,
           message: 'Cloud connection is healthy.',
         );
       } catch (_) {
         return const _DiagnosticResult(
-          title: 'Firestore connectivity',
+          title: 'Cloud connection',
           passed: false,
           message: 'Could not reach cloud data. Check internet and retry.',
         );
@@ -690,7 +690,7 @@ class _ProtectionSettingsScreenState extends State<ProtectionSettingsScreen> {
     final vpnSignalCheck = await () async {
       if (children.isEmpty) {
         return const _DiagnosticResult(
-          title: 'Child VPN signal',
+          title: 'Protection signal',
           passed: false,
           message: 'No child profiles found.',
         );
@@ -703,7 +703,7 @@ class _ProtectionSettingsScreenState extends State<ProtectionSettingsScreen> {
       }.toList(growable: false);
       if (deviceIds.isEmpty) {
         return const _DiagnosticResult(
-          title: 'Child VPN signal',
+          title: 'Protection signal',
           passed: false,
           message: 'No linked child devices yet.',
         );
@@ -726,15 +726,15 @@ class _ProtectionSettingsScreenState extends State<ProtectionSettingsScreen> {
           }
         }
         return _DiagnosticResult(
-          title: 'Child VPN signal',
+          title: 'Protection signal',
           passed: activeSignal,
           message: activeSignal
-              ? 'Child device is online and VPN reports active.'
-              : 'No recent active VPN signal from child devices. Open child app and check permissions.',
+              ? 'Child device is online and protection reports active.'
+              : 'No recent active protection signal from child devices. Open child app and check permissions.',
         );
       } catch (_) {
         return const _DiagnosticResult(
-          title: 'Child VPN signal',
+          title: 'Protection signal',
           passed: false,
           message: 'Could not read device status. Try again in a moment.',
         );
@@ -749,7 +749,7 @@ class _ProtectionSettingsScreenState extends State<ProtectionSettingsScreen> {
           title: 'Blocking evidence',
           passed: false,
           message:
-              'No recent DNS decisions yet. Open a blocked app/site on child phone, then rerun.',
+              'No recent blocking decisions yet. Open a blocked app/site on child phone, then rerun.',
         );
       }
       final latestBlocked = events.firstWhere(
@@ -767,7 +767,7 @@ class _ProtectionSettingsScreenState extends State<ProtectionSettingsScreen> {
           title: 'Blocking evidence',
           passed: false,
           message:
-              'No blocked DNS events found yet. Ensure at least one category is blocked.',
+              'No blocked events found yet. Ensure at least one category is blocked.',
         );
       }
       final recent = DateTime.now().difference(latestBlocked.timestamp) <
@@ -776,8 +776,8 @@ class _ProtectionSettingsScreenState extends State<ProtectionSettingsScreen> {
         title: 'Blocking evidence',
         passed: recent,
         message: recent
-            ? 'Recent blocked DNS detected (${latestBlocked.domain}).'
-            : 'Blocked DNS evidence is stale. Re-test from child device and rerun.',
+            ? 'Recent blocked event detected (${latestBlocked.domain}).'
+            : 'Blocked event evidence is stale. Re-test from child device and rerun.',
       );
     }();
     results.add(blockingCheck);
@@ -869,7 +869,7 @@ class _ProtectionSettingsScreenState extends State<ProtectionSettingsScreen> {
     }
     await Share.share(
       csv.toString(),
-      subject: 'TrustBridge DNS decision log',
+      subject: 'TrustBridge activity log',
     );
   }
 
@@ -944,7 +944,7 @@ class _ChildRuntimeStatus {
         color = Colors.green;
 
   const _ChildRuntimeStatus.onlineVpnOff()
-      : label = 'Online, VPN off',
+      : label = 'Online, protection off',
         color = Colors.orange;
 
   const _ChildRuntimeStatus.offline()

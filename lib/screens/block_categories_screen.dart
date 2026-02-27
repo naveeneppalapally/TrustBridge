@@ -72,6 +72,13 @@ class _BlockCategoriesScreenState extends State<BlockCategoriesScreen> {
     'roblox',
   ];
 
+  static const Set<String> _homeworkModeBlockedCategories = <String>{
+    'social-networks',
+    'chat',
+    'streaming',
+    'games',
+  };
+
   static const Map<String, String> _localToNextDnsCategoryMap =
       <String, String>{
     'social-networks': 'social-networks',
@@ -102,10 +109,12 @@ class _BlockCategoriesScreenState extends State<BlockCategoriesScreen> {
   late Set<String> _initialBlockedServices;
   late Set<String> _initialBlockedDomains;
   late Set<String> _initialBlockedPackages;
+  late Map<String, ModeOverrideSet> _initialModeOverrides;
   late Set<String> _blockedCategories;
   late Set<String> _blockedServices;
   late Set<String> _blockedDomains;
   late Set<String> _blockedPackages;
+  late Map<String, ModeOverrideSet> _modeOverrides;
   late Map<String, bool> _nextDnsServiceToggles;
   late bool _nextDnsSafeSearchEnabled;
   late bool _nextDnsYoutubeRestrictedModeEnabled;
@@ -180,7 +189,8 @@ class _BlockCategoriesScreenState extends State<BlockCategoriesScreen> {
     return !_setEquals(_initialBlockedCategories, _blockedCategories) ||
         !_setEquals(_initialBlockedServices, _blockedServices) ||
         !_setEquals(_initialBlockedDomains, _blockedDomains) ||
-        !_setEquals(_initialBlockedPackages, _blockedPackages);
+        !_setEquals(_initialBlockedPackages, _blockedPackages) ||
+        !_sameModeOverrides(_initialModeOverrides, _modeOverrides);
   }
 
   bool get _appInventoryEnabled => RolloutFlags.appInventory;
@@ -370,10 +380,14 @@ class _BlockCategoriesScreenState extends State<BlockCategoriesScreen> {
         .map((pkg) => pkg.trim().toLowerCase())
         .where((pkg) => pkg.isNotEmpty)
         .toSet();
+    final normalizedModeOverrides =
+        _normalizeModeOverrideSets(child.policy.modeOverrides);
+    _initialModeOverrides = _cloneModeOverrides(normalizedModeOverrides);
     _blockedCategories = Set<String>.from(normalizedCategories);
     _blockedServices = Set<String>.from(mergedServices);
     _blockedDomains = Set<String>.from(customDomains);
     _blockedPackages = Set<String>.from(_initialBlockedPackages);
+    _modeOverrides = _cloneModeOverrides(normalizedModeOverrides);
     _expandedCategoryIds = <String>{
       ..._blockedCategories,
     };
@@ -816,7 +830,7 @@ class _BlockCategoriesScreenState extends State<BlockCategoriesScreen> {
           ),
           child: const Text(
             'These are apps detected on your child device. '
-            'Turning one ON blocks that app package even if it is not in a preset category.',
+            'Turn one ON to block that app.',
           ),
         ),
         if (!_packageBlockingEnabled) ...[
@@ -829,8 +843,7 @@ class _BlockCategoriesScreenState extends State<BlockCategoriesScreen> {
               border: Border.all(color: Colors.orange.withValues(alpha: 0.18)),
             ),
             child: const Text(
-              'Package-level app blocking is temporarily disabled by rollout '
-              'flag. Inventory remains visible for verification.',
+              'App blocking is updating right now. Please try again shortly.',
             ),
           ),
         ],
@@ -846,7 +859,7 @@ class _BlockCategoriesScreenState extends State<BlockCategoriesScreen> {
               child: Text(
                 _isLoadingInstalledApps
                     ? 'Loading app inventory from child device...'
-                    : 'No app inventory yet. Open TrustBridge on the child phone to sync installed apps.',
+                    : 'No apps found yet. Open TrustBridge once on the child phone and come back here.',
                 style: Theme.of(context).textTheme.bodyMedium,
               ),
             ),
@@ -859,7 +872,6 @@ class _BlockCategoriesScreenState extends State<BlockCategoriesScreen> {
 
   Widget _buildInstalledAppRow(InstalledAppInfo app) {
     final packageName = app.packageName.trim().toLowerCase();
-    final explicitBlocked = _blockedPackages.contains(packageName);
     final effectiveState = _effectiveInstalledPackageState(app);
     final iconBytes = _installedAppIconBytes(app);
     final subtitlePieces = <String>[
@@ -897,7 +909,7 @@ class _BlockCategoriesScreenState extends State<BlockCategoriesScreen> {
         ),
         trailing: Switch.adaptive(
           key: Key('installed_app_switch_$packageName'),
-          value: explicitBlocked,
+          value: effectiveState.blocked,
           onChanged: _isLoading || !_packageBlockingEnabled
               ? null
               : (enabled) => _toggleInstalledPackageWithPin(
@@ -914,19 +926,9 @@ class _BlockCategoriesScreenState extends State<BlockCategoriesScreen> {
     InstalledAppInfo app,
   ) {
     final packageName = app.packageName.trim().toLowerCase();
-    String? matchedServiceId;
-    String? matchedCategoryId;
-    for (final service in ServiceDefinitions.all) {
-      final packages = service.androidPackages
-          .map((pkg) => pkg.trim().toLowerCase())
-          .toSet();
-      if (!packages.contains(packageName)) {
-        continue;
-      }
-      matchedServiceId = service.serviceId;
-      matchedCategoryId = service.categoryId;
-      break;
-    }
+    final match = _serviceMatchForPackage(packageName);
+    final matchedServiceId = match.serviceId;
+    final matchedCategoryId = match.categoryId;
 
     final serviceBlocked =
         matchedServiceId != null && _isAppExplicitlyBlocked(matchedServiceId);
@@ -934,55 +936,120 @@ class _BlockCategoriesScreenState extends State<BlockCategoriesScreen> {
         _isCategoryBlocked(normalizeCategoryId(matchedCategoryId));
     final packageBlocked = _blockedPackages.contains(packageName);
 
-    final activeModeKey = _activeModeOverrideKeyForParent();
-    final modeOverride = !RolloutFlags.modeAppOverrides || activeModeKey == null
-        ? null
-        : widget.child.policy.modeOverrides[activeModeKey];
-    final forceBlockByMode = modeOverride?.forceBlockPackages
-            .map((pkg) => pkg.trim().toLowerCase())
+    final modeContext = _activeModeContext();
+    final modeOverride = modeContext.overrideSet;
+    final modeBlockedByCategory = matchedCategoryId != null &&
+        modeContext.blockedCategories.contains(
+          normalizeCategoryId(matchedCategoryId),
+        );
+    final modeBlockedByService = matchedServiceId != null &&
+        (modeOverride?.forceBlockServices
+                .map((value) => value.trim().toLowerCase())
+                .contains(matchedServiceId) ==
+            true);
+    final modeBlockedByPackage = modeOverride?.forceBlockPackages
+            .map((value) => value.trim().toLowerCase())
             .contains(packageName) ==
         true;
-    final forceAllowByMode = modeOverride?.forceAllowPackages
-            .map((pkg) => pkg.trim().toLowerCase())
+    final modeAllowedByService = matchedServiceId != null &&
+        (modeOverride?.forceAllowServices
+                .map((value) => value.trim().toLowerCase())
+                .contains(matchedServiceId) ==
+            true);
+    final modeAllowedByPackage = modeOverride?.forceAllowPackages
+            .map((value) => value.trim().toLowerCase())
             .contains(packageName) ==
         true;
+    final modeAllowed = modeAllowedByService || modeAllowedByPackage;
+    final blockedByMode = (modeContext.blocksAll ||
+            modeBlockedByCategory ||
+            modeBlockedByService ||
+            modeBlockedByPackage) &&
+        !modeAllowed;
 
-    if (forceAllowByMode) {
-      return (
-        blocked: false,
-        status: 'Allowed by mode override',
-        color: Colors.green.shade700
-      );
-    }
-    if (forceBlockByMode) {
-      return (
-        blocked: true,
-        status: 'Blocked by mode',
-        color: Colors.deepOrange.shade700
-      );
-    }
+    final blocked =
+        categoryBlocked || serviceBlocked || packageBlocked || blockedByMode;
     if (categoryBlocked) {
       return (
         blocked: true,
         status: 'Blocked by category',
-        color: Colors.red.shade700
+        color: Colors.red.shade700,
       );
     }
-    if (serviceBlocked) {
-      return (
-        blocked: true,
-        status: 'Blocked by service toggle',
-        color: Colors.red.shade700
-      );
-    }
-    if (packageBlocked) {
+    if (serviceBlocked || packageBlocked) {
       return (
         blocked: true,
         status: 'Blocked individually',
-        color: Colors.red.shade700
+        color: Colors.red.shade700,
       );
     }
-    return (blocked: false, status: 'Allowed', color: Colors.green.shade700);
+    if (blockedByMode) {
+      final modeLabel = modeContext.modeLabel ?? 'active mode';
+      return (
+        blocked: true,
+        status: 'Blocked from $modeLabel',
+        color: Colors.deepOrange.shade700,
+      );
+    }
+    if (modeAllowed) {
+      return (
+        blocked: false,
+        status: 'Allowed by manual override',
+        color: Colors.green.shade700,
+      );
+    }
+    return (blocked: blocked, status: 'Allowed', color: Colors.green.shade700);
+  }
+
+  ({String? serviceId, String? categoryId}) _serviceMatchForPackage(
+    String packageName,
+  ) {
+    for (final service in ServiceDefinitions.all) {
+      final packages = service.androidPackages
+          .map((pkg) => pkg.trim().toLowerCase())
+          .toSet();
+      if (packages.contains(packageName)) {
+        return (serviceId: service.serviceId, categoryId: service.categoryId);
+      }
+    }
+    return (serviceId: null, categoryId: null);
+  }
+
+  ({
+    String? modeKey,
+    String? modeLabel,
+    bool blocksAll,
+    Set<String> blockedCategories,
+    ModeOverrideSet? overrideSet,
+  }) _activeModeContext() {
+    final modeKey = _activeModeOverrideKeyForParent();
+    final blockedCategories = <String>{};
+    var blocksAll = false;
+    String? modeLabel;
+    switch (modeKey) {
+      case 'homework':
+      case 'focus':
+        blockedCategories.addAll(_homeworkModeBlockedCategories);
+        modeLabel = 'Homework Mode';
+        break;
+      case 'bedtime':
+        blocksAll = true;
+        modeLabel = 'Bedtime Mode';
+        break;
+      case 'free':
+        modeLabel = 'Free Play';
+        break;
+    }
+    final overrideSet = !RolloutFlags.modeAppOverrides || modeKey == null
+        ? null
+        : _modeOverrides[modeKey];
+    return (
+      modeKey: modeKey,
+      modeLabel: modeLabel,
+      blocksAll: blocksAll,
+      blockedCategories: blockedCategories,
+      overrideSet: overrideSet,
+    );
   }
 
   String? _activeModeOverrideKeyForParent() {
@@ -1035,11 +1102,38 @@ class _BlockCategoriesScreenState extends State<BlockCategoriesScreen> {
     if (!allowed || !mounted) {
       return;
     }
+    final modeContext = _activeModeContext();
+    final activeModeKey = modeContext.modeKey;
+    final serviceMatch = _serviceMatchForPackage(packageName);
+    final modeBlockingPackage = _isModeBlockingPackage(
+      packageName: packageName,
+      serviceId: serviceMatch.serviceId,
+      categoryId: serviceMatch.categoryId,
+    );
     setState(() {
       if (enabled) {
         _blockedPackages.add(packageName);
+        if (activeModeKey != null && RolloutFlags.modeAppOverrides) {
+          _removeModePackageAllowOverride(
+            modeKey: activeModeKey,
+            packageName: packageName,
+          );
+        }
       } else {
         _blockedPackages.remove(packageName);
+        if (activeModeKey != null && RolloutFlags.modeAppOverrides) {
+          if (modeBlockingPackage) {
+            _addModePackageAllowOverride(
+              modeKey: activeModeKey,
+              packageName: packageName,
+            );
+          } else {
+            _removeModePackageAllowOverride(
+              modeKey: activeModeKey,
+              packageName: packageName,
+            );
+          }
+        }
       }
     });
     unawaited(
@@ -1050,17 +1144,137 @@ class _BlockCategoriesScreenState extends State<BlockCategoriesScreen> {
           'targetId': packageName,
           'targetLabel': appName,
           'enabled': enabled,
-          'effectiveBlockedAfterTap': _blockedPackages.contains(packageName),
+          'effectiveBlockedAfterTap': _effectiveInstalledPackageState(
+            InstalledAppInfo(
+              packageName: packageName,
+              appName: appName,
+              isSystemApp: false,
+            ),
+          ).blocked,
         },
       ),
     );
     await _autoSaveToggleChanges();
+    if (!enabled &&
+        modeBlockingPackage &&
+        modeContext.modeLabel != null &&
+        mounted) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text(
+            '$appName is now allowed for ${modeContext.modeLabel}.',
+          ),
+        ),
+      );
+    }
+  }
+
+  bool _isModeBlockingPackage({
+    required String packageName,
+    required String? serviceId,
+    required String? categoryId,
+  }) {
+    final modeContext = _activeModeContext();
+    final modeOverride = modeContext.overrideSet;
+    final normalizedPackage = packageName.trim().toLowerCase();
+    final normalizedService = serviceId?.trim().toLowerCase();
+    final normalizedCategory =
+        categoryId == null ? null : normalizeCategoryId(categoryId);
+    final modeBlockedByCategory = normalizedCategory != null &&
+        modeContext.blockedCategories.contains(normalizedCategory);
+    final modeBlockedByService = normalizedService != null &&
+        (modeOverride?.forceBlockServices
+                .map((value) => value.trim().toLowerCase())
+                .contains(normalizedService) ==
+            true);
+    final modeBlockedByPackage = modeOverride?.forceBlockPackages
+            .map((value) => value.trim().toLowerCase())
+            .contains(normalizedPackage) ==
+        true;
+    final modeAllowedByService = normalizedService != null &&
+        (modeOverride?.forceAllowServices
+                .map((value) => value.trim().toLowerCase())
+                .contains(normalizedService) ==
+            true);
+    final modeAllowedByPackage = modeOverride?.forceAllowPackages
+            .map((value) => value.trim().toLowerCase())
+            .contains(normalizedPackage) ==
+        true;
+    final modeAllowed = modeAllowedByService || modeAllowedByPackage;
+    return (modeContext.blocksAll ||
+            modeBlockedByCategory ||
+            modeBlockedByService ||
+            modeBlockedByPackage) &&
+        !modeAllowed;
+  }
+
+  void _addModePackageAllowOverride({
+    required String modeKey,
+    required String packageName,
+  }) {
+    final normalizedMode = modeKey.trim().toLowerCase();
+    final normalizedPackage = packageName.trim().toLowerCase();
+    final current = _modeOverrides[normalizedMode] ?? const ModeOverrideSet();
+    final nextAllowPackages = <String>{
+      ...current.forceAllowPackages
+          .map((value) => value.trim().toLowerCase())
+          .where((value) => value.isNotEmpty),
+      normalizedPackage,
+    }.toList()
+      ..sort();
+    final nextBlockPackages = current.forceBlockPackages
+        .map((value) => value.trim().toLowerCase())
+        .where(
+          (value) => value.isNotEmpty && value != normalizedPackage,
+        )
+        .toSet()
+        .toList()
+      ..sort();
+    final updated = current.copyWith(
+      forceAllowPackages: nextAllowPackages,
+      forceBlockPackages: nextBlockPackages,
+    );
+    if (updated.isEmpty) {
+      _modeOverrides.remove(normalizedMode);
+    } else {
+      _modeOverrides[normalizedMode] = updated;
+    }
+  }
+
+  void _removeModePackageAllowOverride({
+    required String modeKey,
+    required String packageName,
+  }) {
+    final normalizedMode = modeKey.trim().toLowerCase();
+    final normalizedPackage = packageName.trim().toLowerCase();
+    final current = _modeOverrides[normalizedMode];
+    if (current == null) {
+      return;
+    }
+    final nextAllowPackages = current.forceAllowPackages
+        .map((value) => value.trim().toLowerCase())
+        .where(
+          (value) => value.isNotEmpty && value != normalizedPackage,
+        )
+        .toSet()
+        .toList()
+      ..sort();
+    final updated = current.copyWith(forceAllowPackages: nextAllowPackages);
+    if (updated.isEmpty) {
+      _modeOverrides.remove(normalizedMode);
+    } else {
+      _modeOverrides[normalizedMode] = updated;
+    }
   }
 
   Widget _buildCategoryCard(ContentCategory category) {
-    final isBlocked = _isCategoryBlocked(category.id);
+    final categoryState = _effectiveCategoryState(category.id);
+    final isBlocked = categoryState.blocked;
     final iconColor = _categoryColor(category.id);
     final enforcementBadge = _buildEnforcementBadgeForCategory(category.id);
+    final modeSourceBadge = categoryState.blockedByMode
+        ? _buildModeSourceBadge(categoryState.modeLabel)
+        : null;
     final appKeys = _visibleAppsForCategory(category.id);
     final hasApps = appKeys.isNotEmpty;
     final isExpanded = _expandedCategoryIds.contains(category.id);
@@ -1107,6 +1321,10 @@ class _BlockCategoriesScreenState extends State<BlockCategoriesScreen> {
                             ),
                           ),
                           if (enforcementBadge != null) enforcementBadge,
+                          if (modeSourceBadge != null) ...[
+                            const SizedBox(width: 6),
+                            modeSourceBadge,
+                          ],
                         ],
                       ),
                       const SizedBox(height: 2),
@@ -1115,6 +1333,15 @@ class _BlockCategoriesScreenState extends State<BlockCategoriesScreen> {
                         style: TextStyle(
                           color: Colors.grey[600],
                           fontSize: 12,
+                        ),
+                      ),
+                      const SizedBox(height: 5),
+                      Text(
+                        categoryState.status,
+                        style: TextStyle(
+                          color: categoryState.color,
+                          fontSize: 12,
+                          fontWeight: FontWeight.w600,
                         ),
                       ),
                       if (hasApps) ...[
@@ -1234,17 +1461,13 @@ class _BlockCategoriesScreenState extends State<BlockCategoriesScreen> {
     required String categoryId,
     required String appKey,
   }) {
-    final categoryBlocked = _isCategoryBlocked(categoryId);
-    final explicitBlocked = _isAppExplicitlyBlocked(appKey);
-    final effectiveBlocked = categoryBlocked || explicitBlocked;
-    final statusText = switch ((categoryBlocked, explicitBlocked)) {
-      (true, true) => 'Blocked by category + app override',
-      (true, false) => 'Blocked by category',
-      (false, true) => 'Blocked individually',
-      (false, false) => 'Allowed',
-    };
-    final statusColor =
-        effectiveBlocked ? Colors.red.shade700 : Colors.green.shade700;
+    final effectiveState = _effectiveServiceState(
+      appKey: appKey,
+      categoryId: categoryId,
+    );
+    final effectiveBlocked = effectiveState.blocked;
+    final statusText = effectiveState.status;
+    final statusColor = effectiveState.color;
 
     return Container(
       key: Key('block_app_row_${categoryId}_$appKey'),
@@ -1296,7 +1519,7 @@ class _BlockCategoriesScreenState extends State<BlockCategoriesScreen> {
           ),
           Switch(
             key: Key('block_app_switch_${categoryId}_$appKey'),
-            value: explicitBlocked,
+            value: effectiveBlocked,
             onChanged: _isLoading || _isSyncingNextDns
                 ? null
                 : (enabled) => _toggleAppWithPin(
@@ -1516,6 +1739,7 @@ class _BlockCategoriesScreenState extends State<BlockCategoriesScreen> {
         blockedServices: _orderedBlockedServices(_blockedServices),
         blockedDomains: _orderedBlockedDomains(_blockedDomains),
         blockedPackages: _orderedBlockedPackages(_blockedPackages),
+        modeOverrides: _cloneModeOverrides(_modeOverrides),
       );
       final updatedChild = widget.child.copyWith(
         policy: updatedPolicy,
@@ -1607,6 +1831,7 @@ class _BlockCategoriesScreenState extends State<BlockCategoriesScreen> {
           _initialBlockedServices = Set<String>.from(_blockedServices);
           _initialBlockedDomains = Set<String>.from(_blockedDomains);
           _initialBlockedPackages = Set<String>.from(_blockedPackages);
+          _initialModeOverrides = _cloneModeOverrides(_modeOverrides);
         });
       }
     } catch (error) {
@@ -1700,23 +1925,333 @@ class _BlockCategoriesScreenState extends State<BlockCategoriesScreen> {
     String appKey, {
     String? categoryId,
   }) {
-    final explicit = _isAppExplicitlyBlocked(appKey);
-    if (explicit) {
-      return true;
+    return _effectiveServiceState(
+      appKey: appKey,
+      categoryId: categoryId,
+    ).blocked;
+  }
+
+  ({
+    bool blocked,
+    String status,
+    Color color,
+  }) _effectiveServiceState({
+    required String appKey,
+    String? categoryId,
+  }) {
+    final normalizedApp = appKey.trim().toLowerCase();
+    final resolvedCategory = categoryId == null || categoryId.trim().isEmpty
+        ? _categoryIdForService(normalizedApp)
+        : normalizeCategoryId(categoryId);
+    final categoryBlocked =
+        resolvedCategory != null && _isCategoryBlocked(resolvedCategory);
+    final explicitBlocked = _blockedServices.contains(normalizedApp);
+
+    final modeContext = _activeModeContext();
+    final modeOverride = modeContext.overrideSet;
+    final modeBlockedByCategory = resolvedCategory != null &&
+        modeContext.blockedCategories.contains(resolvedCategory);
+    final modeBlockedByOverride = modeOverride?.forceBlockServices
+            .map((value) => value.trim().toLowerCase())
+            .contains(normalizedApp) ==
+        true;
+    final modeAllowedByOverride = modeOverride?.forceAllowServices
+            .map((value) => value.trim().toLowerCase())
+            .contains(normalizedApp) ==
+        true;
+    final blockedByMode = (modeContext.blocksAll ||
+            modeBlockedByCategory ||
+            modeBlockedByOverride) &&
+        !modeAllowedByOverride;
+    final blocked = categoryBlocked || explicitBlocked || blockedByMode;
+
+    if (categoryBlocked) {
+      return (
+        blocked: true,
+        status: 'Blocked by category',
+        color: Colors.red.shade700,
+      );
     }
-    if (categoryId != null && _isCategoryBlocked(categoryId)) {
-      return true;
+    if (explicitBlocked) {
+      return (
+        blocked: true,
+        status: 'Blocked individually',
+        color: Colors.red.shade700,
+      );
     }
-    final fallbackCategory = _serviceOrderByCategory.entries
-        .firstWhere(
-          (entry) => entry.value.contains(appKey),
-          orElse: () => const MapEntry<String, List<String>>('', <String>[]),
+    if (blockedByMode) {
+      final modeLabel = modeContext.modeLabel ?? 'active mode';
+      return (
+        blocked: true,
+        status: 'Blocked from $modeLabel',
+        color: Colors.deepOrange.shade700,
+      );
+    }
+    if (modeAllowedByOverride) {
+      return (
+        blocked: false,
+        status: 'Allowed by manual override',
+        color: Colors.green.shade700,
+      );
+    }
+    return (blocked: blocked, status: 'Allowed', color: Colors.green.shade700);
+  }
+
+  ({
+    bool blocked,
+    bool blockedByMode,
+    bool blockedManually,
+    bool allowedByManualOverride,
+    String status,
+    Color color,
+    String? modeLabel,
+  }) _effectiveCategoryState(String categoryId) {
+    final normalizedCategory = normalizeCategoryId(categoryId);
+    final blockedManually = _blockedCategories.contains(normalizedCategory);
+    final modeContext = _activeModeContext();
+    final modeOverride = modeContext.overrideSet;
+    final modeLabel = modeContext.modeLabel;
+    final servicesForCategory = _serviceIdsForCategory(normalizedCategory);
+    final modeBlockedByCategory = modeContext.blocksAll ||
+        modeContext.blockedCategories.contains(normalizedCategory);
+    final modeBlockedByService = servicesForCategory.any(
+      (serviceId) =>
+          modeOverride?.forceBlockServices
+              .map((value) => value.trim().toLowerCase())
+              .contains(serviceId) ==
+          true,
+    );
+    final modeForceAllowedServices = servicesForCategory
+        .where(
+          (serviceId) =>
+              modeOverride?.forceAllowServices
+                  .map((value) => value.trim().toLowerCase())
+                  .contains(serviceId) ==
+              true,
         )
-        .key;
-    if (fallbackCategory.isEmpty) {
-      return false;
+        .toSet();
+    final modeAllowsAllKnownServices = servicesForCategory.isNotEmpty &&
+        modeForceAllowedServices.length == servicesForCategory.length;
+    final modeWouldBlock = modeBlockedByCategory || modeBlockedByService;
+    final blockedByMode = modeWouldBlock && !modeAllowsAllKnownServices;
+    final allowedByManualOverride =
+        modeWouldBlock && !blockedManually && modeAllowsAllKnownServices;
+    final blocked = blockedManually || blockedByMode;
+
+    if (blockedManually) {
+      return (
+        blocked: true,
+        blockedByMode: false,
+        blockedManually: true,
+        allowedByManualOverride: false,
+        status: 'Blocked manually',
+        color: Colors.red.shade700,
+        modeLabel: null,
+      );
     }
-    return _isCategoryBlocked(fallbackCategory);
+    if (blockedByMode) {
+      return (
+        blocked: true,
+        blockedByMode: true,
+        blockedManually: false,
+        allowedByManualOverride: false,
+        status: 'Blocked from ${modeLabel ?? 'current mode'}',
+        color: Colors.deepOrange.shade700,
+        modeLabel: modeLabel,
+      );
+    }
+    if (allowedByManualOverride) {
+      return (
+        blocked: false,
+        blockedByMode: false,
+        blockedManually: false,
+        allowedByManualOverride: true,
+        status: 'Allowed by manual override',
+        color: Colors.green.shade700,
+        modeLabel: null,
+      );
+    }
+    return (
+      blocked: blocked,
+      blockedByMode: false,
+      blockedManually: false,
+      allowedByManualOverride: false,
+      status: 'Allowed',
+      color: Colors.green.shade700,
+      modeLabel: null,
+    );
+  }
+
+  Set<String> _serviceIdsForCategory(String categoryId) {
+    return ServiceDefinitions.servicesForCategory(categoryId)
+        .map((serviceId) => serviceId.trim().toLowerCase())
+        .where((serviceId) => serviceId.isNotEmpty)
+        .toSet();
+  }
+
+  void _addModeCategoryAllowOverrides({
+    required String modeKey,
+    required String categoryId,
+  }) {
+    final normalizedMode = modeKey.trim().toLowerCase();
+    final services = _serviceIdsForCategory(categoryId);
+    if (services.isEmpty) {
+      return;
+    }
+    final current = _modeOverrides[normalizedMode] ?? const ModeOverrideSet();
+    final nextAllowServices = <String>{
+      ...current.forceAllowServices
+          .map((value) => value.trim().toLowerCase())
+          .where((value) => value.isNotEmpty),
+      ...services,
+    }.toList()
+      ..sort();
+    final nextBlockServices = current.forceBlockServices
+        .map((value) => value.trim().toLowerCase())
+        .where(
+          (value) => value.isNotEmpty && !services.contains(value),
+        )
+        .toSet()
+        .toList()
+      ..sort();
+    final updated = current.copyWith(
+      forceAllowServices: nextAllowServices,
+      forceBlockServices: nextBlockServices,
+    );
+    if (updated.isEmpty) {
+      _modeOverrides.remove(normalizedMode);
+    } else {
+      _modeOverrides[normalizedMode] = updated;
+    }
+  }
+
+  void _removeModeCategoryAllowOverrides({
+    required String modeKey,
+    required String categoryId,
+  }) {
+    final normalizedMode = modeKey.trim().toLowerCase();
+    final services = _serviceIdsForCategory(categoryId);
+    if (services.isEmpty) {
+      return;
+    }
+    final current = _modeOverrides[normalizedMode];
+    if (current == null) {
+      return;
+    }
+    final nextAllowServices = current.forceAllowServices
+        .map((value) => value.trim().toLowerCase())
+        .where(
+          (value) => value.isNotEmpty && !services.contains(value),
+        )
+        .toSet()
+        .toList()
+      ..sort();
+    final updated = current.copyWith(forceAllowServices: nextAllowServices);
+    if (updated.isEmpty) {
+      _modeOverrides.remove(normalizedMode);
+    } else {
+      _modeOverrides[normalizedMode] = updated;
+    }
+  }
+
+  String? _categoryIdForService(String appKey) {
+    final normalized = appKey.trim().toLowerCase();
+    final service = ServiceDefinitions.byId[normalized];
+    final serviceCategory = service?.categoryId.trim();
+    if (serviceCategory != null && serviceCategory.isNotEmpty) {
+      return normalizeCategoryId(serviceCategory);
+    }
+    for (final entry in _serviceOrderByCategory.entries) {
+      if (entry.value.contains(normalized)) {
+        return normalizeCategoryId(entry.key);
+      }
+    }
+    return null;
+  }
+
+  bool _isModeBlockingService(
+    String appKey, {
+    String? categoryId,
+  }) {
+    final normalized = appKey.trim().toLowerCase();
+    final modeContext = _activeModeContext();
+    final modeOverride = modeContext.overrideSet;
+    final resolvedCategory = categoryId == null || categoryId.trim().isEmpty
+        ? _categoryIdForService(normalized)
+        : normalizeCategoryId(categoryId);
+    final modeBlockedByCategory = resolvedCategory != null &&
+        modeContext.blockedCategories.contains(resolvedCategory);
+    final modeBlockedByOverride = modeOverride?.forceBlockServices
+            .map((value) => value.trim().toLowerCase())
+            .contains(normalized) ==
+        true;
+    final modeAllowedByOverride = modeOverride?.forceAllowServices
+            .map((value) => value.trim().toLowerCase())
+            .contains(normalized) ==
+        true;
+    return (modeContext.blocksAll ||
+            modeBlockedByCategory ||
+            modeBlockedByOverride) &&
+        !modeAllowedByOverride;
+  }
+
+  void _addModeServiceAllowOverride({
+    required String modeKey,
+    required String serviceId,
+  }) {
+    final normalizedMode = modeKey.trim().toLowerCase();
+    final normalizedService = serviceId.trim().toLowerCase();
+    final current = _modeOverrides[normalizedMode] ?? const ModeOverrideSet();
+    final nextAllowServices = <String>{
+      ...current.forceAllowServices
+          .map((value) => value.trim().toLowerCase())
+          .where((value) => value.isNotEmpty),
+      normalizedService,
+    }.toList()
+      ..sort();
+    final nextBlockServices = current.forceBlockServices
+        .map((value) => value.trim().toLowerCase())
+        .where(
+          (value) => value.isNotEmpty && value != normalizedService,
+        )
+        .toSet()
+        .toList()
+      ..sort();
+    final updated = current.copyWith(
+      forceAllowServices: nextAllowServices,
+      forceBlockServices: nextBlockServices,
+    );
+    if (updated.isEmpty) {
+      _modeOverrides.remove(normalizedMode);
+    } else {
+      _modeOverrides[normalizedMode] = updated;
+    }
+  }
+
+  void _removeModeServiceAllowOverride({
+    required String modeKey,
+    required String serviceId,
+  }) {
+    final normalizedMode = modeKey.trim().toLowerCase();
+    final normalizedService = serviceId.trim().toLowerCase();
+    final current = _modeOverrides[normalizedMode];
+    if (current == null) {
+      return;
+    }
+    final nextAllowServices = current.forceAllowServices
+        .map((value) => value.trim().toLowerCase())
+        .where(
+          (value) => value.isNotEmpty && value != normalizedService,
+        )
+        .toSet()
+        .toList()
+      ..sort();
+    final updated = current.copyWith(forceAllowServices: nextAllowServices);
+    if (updated.isEmpty) {
+      _modeOverrides.remove(normalizedMode);
+    } else {
+      _modeOverrides[normalizedMode] = updated;
+    }
   }
 
   Future<void> _toggleAppWithPin({
@@ -1740,13 +2275,20 @@ class _BlockCategoriesScreenState extends State<BlockCategoriesScreen> {
       return;
     }
 
-    final service = ServiceDefinitions.byId[appKey];
+    final normalizedServiceId = appKey.trim().toLowerCase();
+    final service = ServiceDefinitions.byId[normalizedServiceId];
     if (service == null) {
       return;
     }
 
     final categoryBlocked =
         categoryId != null && _isCategoryBlocked(categoryId);
+    final modeContext = _activeModeContext();
+    final activeModeKey = modeContext.modeKey;
+    final modeBlockingThisService = _isModeBlockingService(
+      normalizedServiceId,
+      categoryId: categoryId,
+    );
     if (enabled && categoryBlocked && !_isAppExplicitlyBlocked(appKey)) {
       if (!mounted) {
         return;
@@ -1779,9 +2321,28 @@ class _BlockCategoriesScreenState extends State<BlockCategoriesScreen> {
 
     setState(() {
       if (enabled) {
-        _blockedServices.add(appKey.trim().toLowerCase());
+        _blockedServices.add(normalizedServiceId);
+        if (activeModeKey != null && RolloutFlags.modeAppOverrides) {
+          _removeModeServiceAllowOverride(
+            modeKey: activeModeKey,
+            serviceId: normalizedServiceId,
+          );
+        }
       } else {
-        _blockedServices.remove(appKey.trim().toLowerCase());
+        _blockedServices.remove(normalizedServiceId);
+        if (activeModeKey != null && RolloutFlags.modeAppOverrides) {
+          if (modeBlockingThisService) {
+            _addModeServiceAllowOverride(
+              modeKey: activeModeKey,
+              serviceId: normalizedServiceId,
+            );
+          } else {
+            _removeModeServiceAllowOverride(
+              modeKey: activeModeKey,
+              serviceId: normalizedServiceId,
+            );
+          }
+        }
       }
     });
     unawaited(
@@ -1803,11 +2364,22 @@ class _BlockCategoriesScreenState extends State<BlockCategoriesScreen> {
     if (_nextDnsServiceToggles.containsKey(service.serviceId)) {
       await _toggleNextDnsService(service.serviceId, enabled);
     }
-    if (!enabled && categoryBlocked && mounted) {
+    if (!enabled && categoryBlocked && !modeBlockingThisService && mounted) {
       ScaffoldMessenger.of(context).showSnackBar(
         SnackBar(
           content: Text(
             '${_appLabel(appKey)} is still blocked because ${_prettyLabel(categoryId)} is ON.',
+          ),
+        ),
+      );
+    } else if (!enabled &&
+        modeBlockingThisService &&
+        modeContext.modeLabel != null &&
+        mounted) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text(
+            '${_appLabel(appKey)} is now allowed for ${modeContext.modeLabel}.',
           ),
         ),
       );
@@ -1856,13 +2428,37 @@ class _BlockCategoriesScreenState extends State<BlockCategoriesScreen> {
       return;
     }
 
+    final normalizedCategoryId = normalizeCategoryId(categoryId);
+    final modeContext = _activeModeContext();
+    final activeModeKey = modeContext.modeKey;
+    final blockedByModeBeforeToggle =
+        _effectiveCategoryState(normalizedCategoryId).blockedByMode;
+
     setState(() {
-      final normalizedCategoryId = normalizeCategoryId(categoryId);
       if (enabled) {
         _blockedCategories.add(normalizedCategoryId);
         _expandedCategoryIds.add(normalizedCategoryId);
+        if (activeModeKey != null && RolloutFlags.modeAppOverrides) {
+          _removeModeCategoryAllowOverrides(
+            modeKey: activeModeKey,
+            categoryId: normalizedCategoryId,
+          );
+        }
       } else {
         removeCategoryAndAliases(_blockedCategories, normalizedCategoryId);
+        if (activeModeKey != null && RolloutFlags.modeAppOverrides) {
+          if (blockedByModeBeforeToggle) {
+            _addModeCategoryAllowOverrides(
+              modeKey: activeModeKey,
+              categoryId: normalizedCategoryId,
+            );
+          } else {
+            _removeModeCategoryAllowOverrides(
+              modeKey: activeModeKey,
+              categoryId: normalizedCategoryId,
+            );
+          }
+        }
       }
     });
     unawaited(
@@ -1870,10 +2466,11 @@ class _BlockCategoriesScreenState extends State<BlockCategoriesScreen> {
         eventType: 'toggle_tapped',
         payload: <String, dynamic>{
           'targetType': 'category',
-          'targetId': normalizeCategoryId(categoryId),
-          'targetLabel': _prettyLabel(normalizeCategoryId(categoryId)),
+          'targetId': normalizedCategoryId,
+          'targetLabel': _prettyLabel(normalizedCategoryId),
           'enabled': enabled,
-          'effectiveBlockedAfterTap': _isCategoryBlocked(categoryId),
+          'effectiveBlockedAfterTap':
+              _effectiveCategoryState(normalizedCategoryId).blocked,
         },
       ),
     );
@@ -1882,6 +2479,18 @@ class _BlockCategoriesScreenState extends State<BlockCategoriesScreen> {
       localCategoryId: normalizeCategoryId(categoryId),
       blocked: enabled,
     );
+    if (!enabled &&
+        blockedByModeBeforeToggle &&
+        modeContext.modeLabel != null &&
+        mounted) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text(
+            '${_prettyLabel(normalizedCategoryId)} is now allowed for ${modeContext.modeLabel}.',
+          ),
+        ),
+      );
+    }
   }
 
   bool _isProOnlyCategory(String categoryId) {
@@ -1948,7 +2557,7 @@ class _BlockCategoriesScreenState extends State<BlockCategoriesScreen> {
         return 'Amazon, Flipkart, Myntra';
       default:
         final category = ContentCategories.findById(categoryId);
-        return category?.description ?? 'Restricted by policy';
+        return category?.description ?? 'Restricted by current controls';
     }
   }
 
@@ -2219,6 +2828,108 @@ class _BlockCategoriesScreenState extends State<BlockCategoriesScreen> {
     return true;
   }
 
+  Map<String, ModeOverrideSet> _normalizeModeOverrideSets(
+    Map<String, ModeOverrideSet> source,
+  ) {
+    final normalized = <String, ModeOverrideSet>{};
+    for (final entry in source.entries) {
+      final modeKey = entry.key.trim().toLowerCase();
+      if (modeKey.isEmpty) {
+        continue;
+      }
+      final value = entry.value;
+      final normalizedValue = ModeOverrideSet(
+        forceBlockServices: value.forceBlockServices
+            .map((item) => item.trim().toLowerCase())
+            .where((item) => item.isNotEmpty)
+            .toSet()
+            .toList()
+          ..sort(),
+        forceAllowServices: value.forceAllowServices
+            .map((item) => item.trim().toLowerCase())
+            .where((item) => item.isNotEmpty)
+            .toSet()
+            .toList()
+          ..sort(),
+        forceBlockPackages: value.forceBlockPackages
+            .map((item) => item.trim().toLowerCase())
+            .where((item) => item.isNotEmpty)
+            .toSet()
+            .toList()
+          ..sort(),
+        forceAllowPackages: value.forceAllowPackages
+            .map((item) => item.trim().toLowerCase())
+            .where((item) => item.isNotEmpty)
+            .toSet()
+            .toList()
+          ..sort(),
+        forceBlockDomains: value.forceBlockDomains
+            .map((item) => item.trim().toLowerCase())
+            .where((item) => item.isNotEmpty)
+            .toSet()
+            .toList()
+          ..sort(),
+        forceAllowDomains: value.forceAllowDomains
+            .map((item) => item.trim().toLowerCase())
+            .where((item) => item.isNotEmpty)
+            .toSet()
+            .toList()
+          ..sort(),
+      );
+      if (normalizedValue.isEmpty) {
+        continue;
+      }
+      normalized[modeKey] = normalizedValue;
+    }
+    return normalized;
+  }
+
+  Map<String, ModeOverrideSet> _cloneModeOverrides(
+    Map<String, ModeOverrideSet> source,
+  ) {
+    return _normalizeModeOverrideSets(source);
+  }
+
+  bool _sameModeOverrides(
+    Map<String, ModeOverrideSet> left,
+    Map<String, ModeOverrideSet> right,
+  ) {
+    if (left.length != right.length) {
+      return false;
+    }
+    for (final entry in left.entries) {
+      final rightValue = right[entry.key];
+      if (rightValue == null) {
+        return false;
+      }
+      if (!_sameModeOverrideSet(entry.value, rightValue)) {
+        return false;
+      }
+    }
+    return true;
+  }
+
+  bool _sameModeOverrideSet(ModeOverrideSet left, ModeOverrideSet right) {
+    bool sameList(List<String> a, List<String> b) {
+      final setA = a
+          .map((value) => value.trim().toLowerCase())
+          .where((value) => value.isNotEmpty)
+          .toSet();
+      final setB = b
+          .map((value) => value.trim().toLowerCase())
+          .where((value) => value.isNotEmpty)
+          .toSet();
+      return _setEquals(setA, setB);
+    }
+
+    return sameList(left.forceBlockServices, right.forceBlockServices) &&
+        sameList(left.forceAllowServices, right.forceAllowServices) &&
+        sameList(left.forceBlockPackages, right.forceBlockPackages) &&
+        sameList(left.forceAllowPackages, right.forceAllowPackages) &&
+        sameList(left.forceBlockDomains, right.forceBlockDomains) &&
+        sameList(left.forceAllowDomains, right.forceAllowDomains);
+  }
+
   void _hydrateNextDnsControls() {
     final controls = widget.child.nextDnsControls;
     final services = controls['services'];
@@ -2292,7 +3003,7 @@ class _BlockCategoriesScreenState extends State<BlockCategoriesScreen> {
       ScaffoldMessenger.of(context).showSnackBar(
         SnackBar(
           content: Text(
-            'NextDNS category sync failed for $_prettyLabel(localCategoryId): $error',
+            'Could not update ${_prettyLabel(localCategoryId)} right now.',
           ),
         ),
       );
@@ -2332,8 +3043,8 @@ class _BlockCategoriesScreenState extends State<BlockCategoriesScreen> {
         SnackBar(
           content: Text(
             blocked
-                ? 'NextDNS denylist add failed for $domain: $error'
-                : 'NextDNS denylist remove failed for $domain: $error',
+                ? 'Could not block $domain right now.'
+                : 'Could not unblock $domain right now.',
           ),
         ),
       );
@@ -2370,7 +3081,8 @@ class _BlockCategoriesScreenState extends State<BlockCategoriesScreen> {
         _nextDnsServiceToggles[serviceId] = previous;
       });
       ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(content: Text('NextDNS service sync failed: $error')),
+        const SnackBar(
+            content: Text('Could not update app control right now.')),
       );
     } finally {
       if (mounted) {
@@ -2407,8 +3119,8 @@ class _BlockCategoriesScreenState extends State<BlockCategoriesScreen> {
       }
       rollback();
       ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(
-            content: Text('NextDNS parental controls sync failed: $error')),
+        const SnackBar(
+            content: Text('Could not update web controls right now.')),
       );
     } finally {
       if (mounted) {
@@ -2450,7 +3162,7 @@ class _BlockCategoriesScreenState extends State<BlockCategoriesScreen> {
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
             Text(
-              'NEXTDNS LIVE CONTROLS',
+              'ADVANCED WEB CONTROLS',
               style: Theme.of(context).textTheme.titleSmall?.copyWith(
                     fontWeight: FontWeight.w800,
                     letterSpacing: 0.5,
@@ -2458,7 +3170,7 @@ class _BlockCategoriesScreenState extends State<BlockCategoriesScreen> {
             ),
             const SizedBox(height: 6),
             Text(
-              'Profile: $profileId',
+              'Connected profile: $profileId',
               style: Theme.of(context).textTheme.bodySmall?.copyWith(
                     color: Colors.grey[600],
                   ),
@@ -2530,7 +3242,7 @@ class _BlockCategoriesScreenState extends State<BlockCategoriesScreen> {
               contentPadding: EdgeInsets.zero,
               dense: true,
               title: const Text('Block Bypass'),
-              subtitle: const Text('Prevent simple DNS bypass tricks'),
+              subtitle: const Text('Reduce easy bypass tricks'),
               value: _nextDnsBlockBypassEnabled,
               onChanged: _isLoading || _isSyncingNextDns
                   ? null
@@ -2573,6 +3285,27 @@ class _BlockCategoriesScreenState extends State<BlockCategoriesScreen> {
     return null;
   }
 
+  Widget _buildModeSourceBadge(String? modeLabel) {
+    final label = modeLabel?.trim().isNotEmpty == true
+        ? modeLabel!.trim()
+        : 'current mode';
+    return Container(
+      padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
+      decoration: BoxDecoration(
+        color: Colors.deepOrange.withValues(alpha: 0.14),
+        borderRadius: BorderRadius.circular(999),
+      ),
+      child: Text(
+        'from $label',
+        style: TextStyle(
+          color: Colors.deepOrange.shade700,
+          fontSize: 11,
+          fontWeight: FontWeight.w700,
+        ),
+      ),
+    );
+  }
+
   bool _isInstantCategory(String categoryId) {
     return categoryId == 'social-networks';
   }
@@ -2613,7 +3346,7 @@ class _BlockCategoriesScreenState extends State<BlockCategoriesScreen> {
         borderRadius: BorderRadius.circular(999),
       ),
       child: Text(
-        '\u2601\ufe0f NextDNS',
+        'Advanced',
         style: TextStyle(
           color: enabled ? Colors.blue.shade700 : Colors.blueGrey,
           fontSize: 11,

@@ -923,6 +923,11 @@ service cloud.firestore {
               'parentId' in resource.data &&
               resource.data.parentId is string &&
               resource.data.parentId == request.auth.uid
+            ) ||
+            (
+              'childId' in resource.data &&
+              resource.data.childId is string &&
+              childParentMatches(resource.data.childId, request.auth.uid)
             )
           );
 
