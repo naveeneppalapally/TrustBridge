@@ -546,39 +546,40 @@ class _BlockCategoriesScreenState extends State<BlockCategoriesScreen> {
           .map((id) => id.trim())
           .where((id) => id.isNotEmpty),
     };
-    final scoped = linkedDeviceIds.isEmpty
-        ? candidates
-        : candidates
-            .where((snapshot) => linkedDeviceIds.contains(snapshot.deviceId))
-            .toList(growable: false);
-    final eligible = scoped.isEmpty ? candidates : scoped;
     final effectiveVersion = _latestEffectivePolicyVersion;
-
-    _PolicyApplyAckSnapshot best = eligible.first;
-    var bestPriority = _policyAckPriority(best, effectiveVersion);
-    for (var i = 1; i < eligible.length; i++) {
-      final candidate = eligible[i];
-      final candidatePriority = _policyAckPriority(candidate, effectiveVersion);
-      if (candidatePriority > bestPriority) {
+    _PolicyApplyAckSnapshot best = candidates.first;
+    var bestPriority = _policyAckPriority(
+      best,
+      effectiveVersion,
+      linkedToChild: linkedDeviceIds.isEmpty ||
+          linkedDeviceIds.contains(best.deviceId.trim()),
+    );
+    for (var i = 1; i < candidates.length; i++) {
+      final candidate = candidates[i];
+      final candidatePriority = _policyAckPriority(
+        candidate,
+        effectiveVersion,
+        linkedToChild: linkedDeviceIds.isEmpty ||
+            linkedDeviceIds.contains(candidate.deviceId.trim()),
+      );
+      if (candidatePriority > bestPriority ||
+          (candidatePriority == bestPriority &&
+              candidate.sortTime.isAfter(best.sortTime))) {
         best = candidate;
         bestPriority = candidatePriority;
-        continue;
-      }
-      if (candidatePriority < bestPriority) {
-        continue;
-      }
-      if (candidate.sortTime.isAfter(best.sortTime)) {
-        best = candidate;
       }
     }
     return best;
   }
 
   int _policyAckPriority(
-    _PolicyApplyAckSnapshot snapshot,
-    int? effectiveVersion,
-  ) {
+      _PolicyApplyAckSnapshot snapshot, int? effectiveVersion,
+      {required bool linkedToChild}) {
     var priority = 0;
+    if (linkedToChild) {
+      // Prefer linked devices, but never at the expense of obviously stale acks.
+      priority += 25;
+    }
     if (snapshot.appliedVersion != null) {
       priority += 50;
     }
@@ -696,11 +697,6 @@ class _BlockCategoriesScreenState extends State<BlockCategoriesScreen> {
             _buildTelemetryLine(
                 label: 'Apply freshness', value: freshnessLabel),
             _buildTelemetryLine(label: 'Apply delay', value: applyDelayLabel),
-            if (_latestPolicyApplyAck?.deviceId != null)
-              _buildTelemetryLine(
-                label: 'Ack device',
-                value: _latestPolicyApplyAck!.deviceId,
-              ),
             if ((_latestPolicyApplyAck?.applyStatus ?? '').isNotEmpty)
               _buildTelemetryLine(
                 label: 'Child apply status',

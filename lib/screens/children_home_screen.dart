@@ -80,7 +80,8 @@ class _ChildrenHomeScreenState extends State<ChildrenHomeScreen> {
             );
           }
 
-          final children = snapshot.data ?? const <ChildProfile>[];
+          final rawChildren = snapshot.data ?? const <ChildProfile>[];
+          final children = _dedupeChildren(rawChildren);
           if (children.isEmpty) {
             return Center(
               child: Padding(
@@ -214,6 +215,41 @@ class _ChildrenHomeScreenState extends State<ChildrenHomeScreen> {
       modeLabel: _modeLabelForNow(child, now),
       statusLabel: statusLabel,
     );
+  }
+
+  List<ChildProfile> _dedupeChildren(List<ChildProfile> children) {
+    if (children.length <= 1) {
+      return children;
+    }
+
+    final bestByKey = <String, ChildProfile>{};
+    for (final child in children) {
+      final key =
+          '${child.nickname.trim().toLowerCase()}::${child.ageBand.value}';
+      final existing = bestByKey[key];
+      if (existing == null) {
+        bestByKey[key] = child;
+        continue;
+      }
+      if (_childIdentityPriority(child) > _childIdentityPriority(existing)) {
+        bestByKey[key] = child;
+      }
+    }
+
+    final deduped = bestByKey.values.toList(growable: false)
+      ..sort((a, b) => b.updatedAt.compareTo(a.updatedAt));
+    return deduped;
+  }
+
+  int _childIdentityPriority(ChildProfile child) {
+    final linkedDeviceCount = child.deviceIds
+        .map((id) => id.trim())
+        .where((id) => id.isNotEmpty)
+        .length;
+    var score = linkedDeviceCount * 1000000;
+    score += child.protectionEnabled ? 100000 : 0;
+    score += child.updatedAt.millisecondsSinceEpoch ~/ 1000;
+    return score;
   }
 
   String _modeLabelForNow(ChildProfile child, DateTime now) {

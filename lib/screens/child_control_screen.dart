@@ -136,6 +136,7 @@ class _ChildControlScreenState extends State<ChildControlScreen> {
               _buildBlockedSection(
                 child: child,
                 parentId: parentId,
+                activeMode: activeMode,
               ),
               const SizedBox(height: 14),
               _buildScheduleSection(
@@ -267,9 +268,12 @@ class _ChildControlScreenState extends State<ChildControlScreen> {
   Widget _buildBlockedSection({
     required ChildProfile child,
     required String parentId,
+    required _ModeType activeMode,
   }) {
     final blockedCategories =
         normalizeCategoryIds(child.policy.blockedCategories).toSet();
+    final modeForcedCategories = _modeForcedCategories(activeMode);
+    final protectionEnabled = child.protectionEnabled;
 
     return Card(
       child: Padding(
@@ -284,14 +288,41 @@ class _ChildControlScreenState extends State<ChildControlScreen> {
                   ),
             ),
             const SizedBox(height: 8),
+            if (!protectionEnabled)
+              Padding(
+                padding: const EdgeInsets.only(bottom: 8),
+                child: Text(
+                  'Protection is off. No categories are enforced right now.',
+                  style: Theme.of(context).textTheme.bodySmall?.copyWith(
+                        color: Theme.of(context).colorScheme.onSurfaceVariant,
+                      ),
+                ),
+              )
+            else if (modeForcedCategories.isNotEmpty)
+              Padding(
+                padding: const EdgeInsets.only(bottom: 8),
+                child: Text(
+                  'Some categories are locked by ${_modeLabel(activeMode)} mode.',
+                  style: Theme.of(context).textTheme.bodySmall?.copyWith(
+                        color: Theme.of(context).colorScheme.onSurfaceVariant,
+                      ),
+                ),
+              ),
             ..._simpleToggles.map((toggle) {
-              final enabled = blockedCategories.contains(toggle.id);
+              final blockedByToggle = blockedCategories.contains(toggle.id);
+              final blockedByMode = modeForcedCategories.contains(toggle.id);
+              final enabled =
+                  protectionEnabled && (blockedByToggle || blockedByMode);
+              final subtitle = blockedByMode
+                  ? 'Blocked by ${_modeLabel(activeMode)} mode'
+                  : null;
               return SwitchListTile(
                 dense: true,
                 contentPadding: EdgeInsets.zero,
                 title: Text(toggle.label),
+                subtitle: subtitle == null ? null : Text(subtitle),
                 value: enabled,
-                onChanged: _saving
+                onChanged: _saving || !protectionEnabled || blockedByMode
                     ? null
                     : (value) => _setSimpleCategory(
                           parentId: parentId,
@@ -707,6 +738,23 @@ class _ChildControlScreenState extends State<ChildControlScreen> {
         return 'During Bedtime Mode: internet is heavily restricted for sleep hours.';
       case _ModeType.lockdown:
         return 'During Lockdown: internet is paused immediately on the child device.';
+    }
+  }
+
+  Set<String> _modeForcedCategories(_ModeType mode) {
+    switch (mode) {
+      case _ModeType.freePlay:
+        return const <String>{};
+      case _ModeType.homework:
+        return const <String>{
+          'social-networks',
+          'games',
+          'streaming',
+          'chat',
+        };
+      case _ModeType.bedtime:
+      case _ModeType.lockdown:
+        return _simpleToggles.map((toggle) => toggle.id).toSet();
     }
   }
 

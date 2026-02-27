@@ -22,7 +22,14 @@ service cloud.firestore {
     function isChildDevice(childId) {
       return isChildParent(childId) || (
         isAuthed() &&
-        exists(/databases/$(database)/documents/children/$(childId)/devices/$(request.auth.uid))
+        (
+          exists(/databases/$(database)/documents/children/$(childId)/devices/$(request.auth.uid)) ||
+          (
+            exists(/databases/$(database)/documents/children/$(childId)) &&
+            get(/databases/$(database)/documents/children/$(childId)).data.deviceIds is list &&
+            get(/databases/$(database)/documents/children/$(childId)).data.deviceIds.hasAny([request.auth.uid])
+          )
+        )
       );
     }
 
@@ -36,7 +43,14 @@ service cloud.firestore {
     function isRegisteredChildDevice(childId, deviceId) {
       return childId is string &&
         deviceId is string &&
-        exists(/databases/$(database)/documents/children/$(childId)/devices/$(deviceId));
+        (
+          exists(/databases/$(database)/documents/children/$(childId)/devices/$(deviceId)) ||
+          (
+            exists(/databases/$(database)/documents/children/$(childId)) &&
+            get(/databases/$(database)/documents/children/$(childId)).data.deviceIds is list &&
+            get(/databases/$(database)/documents/children/$(childId)).data.deviceIds.hasAny([deviceId])
+          )
+        );
     }
 
     function parentOwnsRootDevice(deviceId) {
@@ -578,11 +592,12 @@ service cloud.firestore {
               'lastBypassSignalAtEpochMs',
               'lastBypassSignalReasonCode',
               'lastBypassSignalForegroundPackage',
-               'packetCounters',
-               'lastDnsQuery',
-               'lastBlockedDnsQuery',
-               'policySync',
-               'updatedAt'
+              'packetCounters',
+              'lastDnsQuery',
+              'lastBlockedDnsQuery',
+              'recentQueries',
+              'policySync',
+              'updatedAt'
              ]
            ) &&
           isRequiredString(request.resource.data, 'parentId', 128) &&
@@ -611,6 +626,10 @@ service cloud.firestore {
            (!('lastBlockedDnsQuery' in request.resource.data) ||
              request.resource.data.lastBlockedDnsQuery == null ||
              request.resource.data.lastBlockedDnsQuery is map) &&
+           (
+             !('recentQueries' in request.resource.data) ||
+             request.resource.data.recentQueries is list
+           ) &&
            (
              !('policySync' in request.resource.data) ||
              (
@@ -806,13 +825,16 @@ service cloud.firestore {
         isRequiredString(request.resource.data, 'deviceId', 128) &&
         request.resource.data.deviceId == deviceId &&
         isRequiredString(request.resource.data, 'parentId', 128) &&
-        request.resource.data.parentId == request.auth.uid &&
         isRequiredString(request.resource.data, 'childId', 128) &&
         childParentMatches(
           request.resource.data.childId,
           request.resource.data.parentId
         ) &&
         isRegisteredChildDevice(request.resource.data.childId, deviceId) &&
+        (
+          request.resource.data.parentId == request.auth.uid ||
+          request.auth.uid == deviceId
+        ) &&
         isOptionalTimestamp(request.resource.data, 'lastSeen') &&
         isOptionalInt(request.resource.data, 'lastSeenEpochMs', 0, 4102444800000) &&
         isOptionalBool(request.resource.data, 'vpnActive') &&
