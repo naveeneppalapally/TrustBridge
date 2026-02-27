@@ -234,6 +234,18 @@ class MainActivity : FlutterFragmentActivity() {
                 result.success(true)
             }
 
+            "flushDnsCache" -> {
+                if (!DnsVpnService.isRunning) {
+                    result.success(false)
+                    return
+                }
+                val serviceIntent = Intent(this, DnsVpnService::class.java).apply {
+                    action = DnsVpnService.ACTION_FLUSH_DNS_CACHE
+                }
+                startServiceCompat(serviceIntent)
+                result.success(true)
+            }
+
             "getRuleCacheSnapshot" -> {
                 val sampleLimit = call.argument<Int>("sampleLimit") ?: 5
                 val metadata = blocklistStore.loadMetadata(sampleLimit = sampleLimit)

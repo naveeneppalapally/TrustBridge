@@ -34,6 +34,7 @@ import com.google.firebase.firestore.SetOptions
 import com.google.android.gms.tasks.Tasks
 import java.io.FileInputStream
 import java.io.FileOutputStream
+import java.net.InetAddress
 import java.util.concurrent.Executors
 import java.util.concurrent.TimeUnit
 import kotlin.concurrent.thread
@@ -102,6 +103,7 @@ class DnsVpnService : VpnService() {
         const val ACTION_UPDATE_RULES = "com.navee.trustbridge.vpn.UPDATE_RULES"
         const val ACTION_SET_UPSTREAM_DNS = "com.navee.trustbridge.vpn.SET_UPSTREAM_DNS"
         const val ACTION_CLEAR_QUERY_LOGS = "com.navee.trustbridge.vpn.CLEAR_QUERY_LOGS"
+        const val ACTION_FLUSH_DNS_CACHE = "com.navee.trustbridge.vpn.FLUSH_DNS_CACHE"
         const val EXTRA_BLOCKED_CATEGORIES = "blockedCategories"
         const val EXTRA_BLOCKED_DOMAINS = "blockedDomains"
         const val EXTRA_BLOCKED_PACKAGES = "blockedPackages"
@@ -472,6 +474,7 @@ class DnsVpnService : VpnService() {
                     )
                 }
                 startEffectivePolicyListenerIfConfigured()
+                flushDnsCacheBestEffort()
                 scheduleWatchdogPing()
                 START_STICKY
             }
@@ -543,6 +546,11 @@ class DnsVpnService : VpnService() {
             ACTION_CLEAR_QUERY_LOGS -> {
                 clearRecentQueryLogs()
                 packetHandler?.clearRecentQueries()
+                START_STICKY
+            }
+
+            ACTION_FLUSH_DNS_CACHE -> {
+                flushDnsCacheBestEffort()
                 START_STICKY
             }
 
@@ -1033,6 +1041,57 @@ class DnsVpnService : VpnService() {
             }
             Log.d(TAG, "Packet processing loop ended")
         }
+    }
+
+    private fun flushDnsCacheBestEffort(): Boolean {
+        var flushed = false
+
+        try {
+            val clearMethod = InetAddress::class.java.getDeclaredMethod("clearDnsCache")
+            clearMethod.isAccessible = true
+            clearMethod.invoke(null)
+            flushed = true
+            Log.d(TAG, "DNS cache flush via InetAddress.clearDnsCache()")
+        } catch (_: Exception) {
+            // Hidden API on many builds; ignore and continue best-effort.
+        }
+
+        try {
+            val dispatcherClass = Class.forName("libcore.net.event.NetworkEventDispatcher")
+            val dispatcher = dispatcherClass.getMethod("getInstance").invoke(null)
+            dispatcherClass.getMethod("onNetworkConfigurationChanged").invoke(dispatcher)
+            flushed = true
+            Log.d(TAG, "DNS cache flush via NetworkEventDispatcher")
+        } catch (_: Exception) {
+            // Optional fallback.
+        }
+
+        val commandCandidates = listOf(
+            listOf("cmd", "connectivity", "flush-dns-cache"),
+            listOf("ndc", "resolver", "flushdefaultif"),
+            listOf("su", "-c", "cmd connectivity flush-dns-cache"),
+            listOf("su", "-c", "ndc resolver flushdefaultif")
+        )
+        for (command in commandCandidates) {
+            try {
+                val process = ProcessBuilder(command)
+                    .redirectErrorStream(true)
+                    .start()
+                val completed = process.waitFor(2, TimeUnit.SECONDS)
+                if (completed && process.exitValue() == 0) {
+                    flushed = true
+                    Log.d(TAG, "DNS cache flush command succeeded: ${command.joinToString(" ")}")
+                    break
+                }
+            } catch (_: Exception) {
+                // Best-effort shell/root command fallback.
+            }
+        }
+
+        if (!flushed) {
+            Log.w(TAG, "DNS cache flush unavailable on this device/build")
+        }
+        return flushed
     }
 
     private fun collectDnsCaptureRoutes(network: Network?): Set<String> {
