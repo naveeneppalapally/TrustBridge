@@ -29,6 +29,8 @@ class _ChildrenHomeScreenState extends State<ChildrenHomeScreen> {
   AuthService? _authService;
   FirestoreService? _firestoreService;
   bool _updatingPause = false;
+  final Map<String, String> _statusReadLogSignatureByChildId =
+      <String, String>{};
 
   AuthService get _resolvedAuthService {
     _authService ??= widget.authService ?? AuthService();
@@ -204,16 +206,47 @@ class _ChildrenHomeScreenState extends State<ChildrenHomeScreen> {
     final now = DateTime.now();
     final online =
         freshestSeen != null && now.difference(freshestSeen).inMinutes <= 10;
-    final protectedNow = child.protectionEnabled && vpnActive;
+    final protectedNow = online && vpnActive;
 
     final statusLabel = !online
         ? 'Offline'
-        : (protectedNow ? 'Protected right now' : 'Not protected right now');
+        : (vpnActive ? 'Protected right now' : 'Not protected right now');
+
+    _logProtectionStatusRead(
+      child: child,
+      freshestSeen: freshestSeen,
+      online: online,
+      vpnActive: vpnActive,
+      statusLabel: statusLabel,
+    );
 
     return _ChildLiveStatus(
       protectedNow: protectedNow,
       modeLabel: _modeLabelForNow(child, now),
       statusLabel: statusLabel,
+    );
+  }
+
+  void _logProtectionStatusRead({
+    required ChildProfile child,
+    required DateTime? freshestSeen,
+    required bool online,
+    required bool vpnActive,
+    required String statusLabel,
+  }) {
+    final signature =
+        '${freshestSeen?.millisecondsSinceEpoch ?? 0}|$online|$vpnActive|$statusLabel';
+    if (_statusReadLogSignatureByChildId[child.id] == signature) {
+      return;
+    }
+    _statusReadLogSignatureByChildId[child.id] = signature;
+    final ageSeconds = freshestSeen == null
+        ? -1
+        : DateTime.now().difference(freshestSeen).inSeconds;
+    debugPrint(
+      '[ProtectionStatusRead] childId=${child.id} name=${child.nickname} '
+      'online=$online vpnActive=$vpnActive lastSeenAgeSec=$ageSeconds '
+      'dashboardStatus="$statusLabel"',
     );
   }
 
