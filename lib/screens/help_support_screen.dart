@@ -27,7 +27,7 @@ class _HelpSupportScreenState extends State<HelpSupportScreen> {
   );
 
   static const List<String> _topics = [
-    'Policy Question',
+    'Blocking Question',
     'Child Profile Issue',
     'Account & Security',
     'Billing & Subscription',
@@ -326,19 +326,19 @@ class _HelpSupportScreenState extends State<HelpSupportScreen> {
     const faqs = <(String, String)>[
       (
         'How do age presets work?',
-        'Age presets apply recommended category blocks and schedule defaults for each age band. You can customize each rule anytime in Policy Overview.',
+        'Age presets apply recommended category blocks and schedule defaults for each age band. You can customize each rule anytime.',
       ),
       (
         'What does Pause Internet do?',
         'Pause Internet temporarily blocks access for that child. It auto-resumes when the selected duration ends or when you manually resume.',
       ),
       (
-        'How quickly do policy changes apply?',
-        'Policy changes sync immediately to Firestore. Dashboard and detail views update in real time in the parent app.',
+        'How quickly do updates apply?',
+        'Most changes apply in a few seconds. If needed, refresh once after making a change.',
       ),
       (
         'Can I restore deleted child profiles?',
-        'No. Child profile deletion is permanent in the current version. Please review before confirming delete.',
+        'No. Child profile deletion is permanent in this app. Please review before confirming delete.',
       ),
     ];
 

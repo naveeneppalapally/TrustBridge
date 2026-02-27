@@ -163,6 +163,7 @@ class PairingService {
 
     final code = await _generateUniqueSixDigitCode();
     final expiresAt = _nowProvider().add(_expiryWindow);
+    final createdAt = Timestamp.fromDate(_nowProvider());
 
     await _firestore
         .collection('pairing_codes')
@@ -171,7 +172,7 @@ class PairingService {
       'code': code,
       'childId': trimmedChildId,
       'parentId': parentId,
-      'createdAt': FieldValue.serverTimestamp(),
+      'createdAt': createdAt,
       'expiresAt': Timestamp.fromDate(expiresAt),
       'used': false,
     });
@@ -221,10 +222,11 @@ class PairingService {
 
         childId = resolvedChildId;
         parentId = resolvedParentId;
+        final usedAt = Timestamp.fromDate(_nowProvider());
 
         transaction.update(codeRef, <String, dynamic>{
           'used': true,
-          'usedAt': FieldValue.serverTimestamp(),
+          'usedAt': usedAt,
           'usedByDeviceId': normalizedDeviceId,
         });
       });
@@ -249,11 +251,12 @@ class PairingService {
 
       final childRef = _firestore.collection('children').doc(childId);
       try {
+        final updatedAt = Timestamp.fromDate(_nowProvider());
         await childRef.set(
           <String, dynamic>{
             'parentId': parentId,
             'deviceIds': FieldValue.arrayUnion(<String>[normalizedDeviceId]),
-            'updatedAt': FieldValue.serverTimestamp(),
+            'updatedAt': updatedAt,
           },
           SetOptions(merge: true),
         );
@@ -407,7 +410,8 @@ class PairingService {
       final childDocRef = deviceDoc.reference.parent.parent;
       final childId = childDocRef?.id.trim();
       var parentId = (deviceDoc.data()['parentId'] as String?)?.trim();
-      final childSnapshot = childDocRef == null ? null : await childDocRef.get();
+      final childSnapshot =
+          childDocRef == null ? null : await childDocRef.get();
 
       if (childSnapshot == null || !childSnapshot.exists) {
         return null;
@@ -482,7 +486,7 @@ class PairingService {
       'model': _deviceModelProvider?.call() ?? _deviceModel(),
       'osVersion': Platform.operatingSystemVersion,
       'fcmToken': fcmToken,
-      'pairedAt': FieldValue.serverTimestamp(),
+      'pairedAt': Timestamp.fromDate(_nowProvider()),
     };
 
     await _firestore

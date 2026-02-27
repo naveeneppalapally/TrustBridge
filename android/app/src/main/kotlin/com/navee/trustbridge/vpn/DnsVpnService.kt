@@ -23,10 +23,13 @@ import android.util.Log
 import androidx.core.app.NotificationCompat
 import com.navee.trustbridge.MainActivity
 import com.navee.trustbridge.R
+import com.google.firebase.auth.FirebaseAuth
 import com.google.firebase.firestore.FieldValue
 import com.google.firebase.Timestamp
 import com.google.firebase.firestore.FirebaseFirestore
+import com.google.firebase.firestore.FirebaseFirestoreException
 import com.google.firebase.firestore.ListenerRegistration
+import com.google.firebase.firestore.SetOptions
 import com.google.android.gms.tasks.Tasks
 import java.io.FileInputStream
 import java.io.FileOutputStream
@@ -48,7 +51,7 @@ class DnsVpnService : VpnService() {
         private const val MAX_BOOT_RESTORE_RETRY_ATTEMPTS = 4
         private const val MAX_TRANSIENT_START_RETRY_ATTEMPTS = 3
         private const val WATCHDOG_REQUEST_CODE = 4100
-        private const val WATCHDOG_INTERVAL_MS = 60_000L
+        private const val WATCHDOG_INTERVAL_MS = 30_000L
         private val BOOT_RESTORE_RETRY_DELAYS_MS = longArrayOf(
             15_000L,
             30_000L,
@@ -62,7 +65,7 @@ class DnsVpnService : VpnService() {
         )
         private const val APP_GUARD_POLL_INTERVAL_MS = 1_200L
         private const val APP_GUARD_COOLDOWN_MS = 1_500L
-        private const val EFFECTIVE_POLICY_POLL_INTERVAL_MS = 15_000L
+        private const val EFFECTIVE_POLICY_POLL_INTERVAL_MS = 5_000L
         private const val EFFECTIVE_POLICY_POLL_TIMEOUT_MS = 6_000L
         private const val WEB_DIAGNOSTICS_WRITE_MIN_INTERVAL_MS = 5_000L
         private const val WEB_DIAGNOSTICS_RECENT_DNS_WINDOW_MS = 20_000L
@@ -328,6 +331,10 @@ class DnsVpnService : VpnService() {
     @Volatile
     private var lastPolicyPollSuccessAtEpochMs: Long = 0L
     @Volatile
+    private var policySyncAuthBootstrapInFlight: Boolean = false
+    @Volatile
+    private var lastPolicySyncAuthBootstrapAtEpochMs: Long = 0L
+    @Volatile
     private var cachedPolicyAckDeviceId: String? = null
     private val policyApplyExecutor = Executors.newSingleThreadExecutor()
     private val webDiagnosticsExecutor = Executors.newSingleThreadExecutor()
@@ -371,6 +378,11 @@ class DnsVpnService : VpnService() {
     override fun onStartCommand(intent: Intent?, flags: Int, startId: Int): Int {
         val action = intent?.action ?: ACTION_START
         Log.d(TAG, "onStartCommand action=$action")
+        if (action != ACTION_STOP) {
+            // Keep notification pinned whenever protection is enabled so OEM
+            // battery managers are less likely to reclaim the service.
+            ensureForegroundStarted()
+        }
 
         return when (action) {
             ACTION_START -> {
@@ -871,11 +883,21 @@ class DnsVpnService : VpnService() {
         val triggerAtMs = System.currentTimeMillis() + WATCHDOG_INTERVAL_MS
         try {
             if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.M) {
-                alarmManager.setAndAllowWhileIdle(
-                    AlarmManager.RTC_WAKEUP,
-                    triggerAtMs,
-                    pendingIntent
-                )
+                val canUseExact = Build.VERSION.SDK_INT < Build.VERSION_CODES.S ||
+                    alarmManager.canScheduleExactAlarms()
+                if (canUseExact) {
+                    alarmManager.setExactAndAllowWhileIdle(
+                        AlarmManager.RTC_WAKEUP,
+                        triggerAtMs,
+                        pendingIntent
+                    )
+                } else {
+                    alarmManager.setAndAllowWhileIdle(
+                        AlarmManager.RTC_WAKEUP,
+                        triggerAtMs,
+                        pendingIntent
+                    )
+                }
             } else {
                 alarmManager.set(AlarmManager.RTC_WAKEUP, triggerAtMs, pendingIntent)
             }
@@ -1075,6 +1097,122 @@ class DnsVpnService : VpnService() {
         appGuardThread = null
     }
 
+    private fun firestoreAuthReadyForPolicySync(): Boolean {
+        return try {
+            FirebaseAuth.getInstance().currentUser != null
+        } catch (_: Exception) {
+            false
+        }
+    }
+
+    private fun maybeBootstrapPolicySyncAuth(reason: String): Boolean {
+        if (firestoreAuthReadyForPolicySync()) {
+            return true
+        }
+
+        val now = System.currentTimeMillis()
+        if (policySyncAuthBootstrapInFlight) {
+            return false
+        }
+        if (now - lastPolicySyncAuthBootstrapAtEpochMs < 8_000L) {
+            return false
+        }
+
+        lastPolicySyncAuthBootstrapAtEpochMs = now
+        policySyncAuthBootstrapInFlight = true
+        val auth = try {
+            FirebaseAuth.getInstance()
+        } catch (error: Exception) {
+            policySyncAuthBootstrapInFlight = false
+            Log.w(TAG, "Policy sync auth bootstrap unavailable", error)
+            return false
+        }
+
+        Log.w(TAG, "Policy sync auth missing. Bootstrapping anonymous auth ($reason)")
+        auth.signInAnonymously()
+            .addOnSuccessListener {
+                policySyncAuthBootstrapInFlight = false
+                Log.i(TAG, "Policy sync auth bootstrap succeeded ($reason)")
+                if (serviceRunning) {
+                    ensurePolicySyncDeviceRegistration()
+                    startEffectivePolicyListenerIfConfigured()
+                }
+            }
+            .addOnFailureListener { error ->
+                policySyncAuthBootstrapInFlight = false
+                Log.w(TAG, "Policy sync auth bootstrap failed ($reason)", error)
+            }
+        return false
+    }
+
+    private fun ensurePolicySyncDeviceRegistration() {
+        val authUid = try {
+            FirebaseAuth.getInstance().currentUser?.uid?.trim().orEmpty()
+        } catch (_: Exception) {
+            ""
+        }
+        if (authUid.isEmpty()) {
+            return
+        }
+
+        val config = try {
+            vpnPreferencesStore.loadConfig()
+        } catch (_: Exception) {
+            return
+        }
+        val childId = config.childId?.trim().orEmpty()
+        val parentId = config.parentId?.trim().orEmpty()
+        if (childId.isEmpty() || parentId.isEmpty()) {
+            return
+        }
+
+        cachedPolicyAckDeviceId = authUid
+        val firestore = FirebaseFirestore.getInstance()
+        firestore.collection("children")
+            .document(childId)
+            .collection("devices")
+            .document(authUid)
+            .set(
+                mapOf(
+                    "parentId" to parentId,
+                    "pairedAt" to Timestamp.now()
+                ),
+                SetOptions.merge()
+            )
+            .addOnSuccessListener {
+                firestore.collection("children")
+                    .document(childId)
+                    .update(
+                        mapOf(
+                            "deviceIds" to FieldValue.arrayUnion(authUid),
+                            "updatedAt" to Timestamp.now()
+                        )
+                    )
+                    .addOnFailureListener { error ->
+                        Log.w(TAG, "Failed to refresh child deviceIds for policy sync auth", error)
+                    }
+            }
+            .addOnFailureListener { error ->
+                Log.w(TAG, "Failed to upsert child device record for policy sync auth", error)
+            }
+    }
+
+    private fun extractFirestoreException(error: Throwable?): FirebaseFirestoreException? {
+        if (error == null) {
+            return null
+        }
+        if (error is FirebaseFirestoreException) {
+            return error
+        }
+        return extractFirestoreException(error.cause)
+    }
+
+    private fun isPolicySyncAuthError(error: Throwable?): Boolean {
+        val firestoreError = extractFirestoreException(error) ?: return false
+        return firestoreError.code == FirebaseFirestoreException.Code.UNAUTHENTICATED ||
+            firestoreError.code == FirebaseFirestoreException.Code.PERMISSION_DENIED
+    }
+
     private fun startEffectivePolicyListenerIfConfigured() {
         if (!serviceRunning) {
             return
@@ -1085,6 +1223,10 @@ class DnsVpnService : VpnService() {
             stopEffectivePolicyListener()
             return
         }
+        if (!maybeBootstrapPolicySyncAuth("listener_start")) {
+            return
+        }
+        ensurePolicySyncDeviceRegistration()
         if (effectivePolicyListener != null && effectivePolicyChildId == childId) {
             startEffectivePolicyPollingFallback(
                 childId = childId,
@@ -1104,6 +1246,9 @@ class DnsVpnService : VpnService() {
             .addSnapshotListener { snapshot, error ->
                 if (error != null) {
                     Log.w(TAG, "effective_policy listener error", error)
+                    if (isPolicySyncAuthError(error)) {
+                        maybeBootstrapPolicySyncAuth("listener_error")
+                    }
                     return@addSnapshotListener
                 }
                 val data = snapshot?.data ?: return@addSnapshotListener
@@ -1250,6 +1395,9 @@ class DnsVpnService : VpnService() {
             )
         } catch (error: Exception) {
             Log.w(TAG, "effective_policy poll get failed childId=$childId", error)
+            if (isPolicySyncAuthError(error)) {
+                maybeBootstrapPolicySyncAuth("poll_get")
+            }
             return
         }
         val data = snapshot.data ?: return
@@ -1617,7 +1765,7 @@ class DnsVpnService : VpnService() {
             "childId" to childId,
             "deviceId" to deviceId,
             "appliedVersion" to appliedVersion,
-            "appliedAt" to FieldValue.serverTimestamp(),
+            "appliedAt" to Timestamp.now(),
             "vpnRunning" to serviceRunning,
             "appliedBlockedDomainsCount" to lastAppliedDomains.size,
             "appliedBlockedPackagesCount" to lastAppliedBlockedPackages.size,
@@ -1633,7 +1781,7 @@ class DnsVpnService : VpnService() {
             ),
             "applyStatus" to applyStatus,
             "error" to errorMessage,
-            "updatedAt" to FieldValue.serverTimestamp()
+            "updatedAt" to Timestamp.now()
         )
 
         FirebaseFirestore.getInstance()
@@ -1684,6 +1832,10 @@ class DnsVpnService : VpnService() {
         if (childId.isEmpty() || parentId.isEmpty()) {
             return
         }
+        if (!maybeBootstrapPolicySyncAuth("web_diagnostics_write")) {
+            return
+        }
+        ensurePolicySyncDeviceRegistration()
 
         val now = System.currentTimeMillis()
         val usageAccessGranted = hasUsageStatsPermissionForGuard()
@@ -1824,7 +1976,7 @@ class DnsVpnService : VpnService() {
                     if (lastPolicyPollSuccessAtEpochMs > 0L) lastPolicyPollSuccessAtEpochMs else null
                     )
             ),
-            "updatedAt" to FieldValue.serverTimestamp()
+            "updatedAt" to Timestamp.now()
         )
 
         FirebaseFirestore.getInstance()

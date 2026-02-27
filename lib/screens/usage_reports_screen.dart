@@ -189,6 +189,14 @@ class _UsageReportsScreenState extends State<UsageReportsScreen> {
         ),
       );
     }
+    if (!_usageAccessGranted) {
+      return ListView(
+        padding: const EdgeInsets.fromLTRB(16, 12, 16, 24),
+        children: [
+          _buildUsageAccessRequiredCard(),
+        ],
+      );
+    }
 
     final report = _report;
     if (report == null || !report.hasData) {
@@ -233,35 +241,7 @@ class _UsageReportsScreenState extends State<UsageReportsScreen> {
   Widget _buildChildUsagePendingCard() {
     final hasChildren = _children.isNotEmpty;
     if (!_usageAccessGranted) {
-      return Card(
-        child: Padding(
-          padding: const EdgeInsets.all(20),
-          child: Column(
-            mainAxisSize: MainAxisSize.min,
-            children: [
-              const Icon(Icons.bar_chart_outlined, size: 48),
-              const SizedBox(height: 12),
-              const Text(
-                'Usage access required',
-                style: TextStyle(
-                  fontSize: 18,
-                  fontWeight: FontWeight.w700,
-                ),
-              ),
-              const SizedBox(height: 8),
-              const Text(
-                'To see which apps your child uses, tap here to grant access.',
-                textAlign: TextAlign.center,
-              ),
-              const SizedBox(height: 14),
-              FilledButton(
-                onPressed: _openUsageAccessSettings,
-                child: const Text('Grant Access'),
-              ),
-            ],
-          ),
-        ),
-      );
+      return _buildUsageAccessRequiredCard();
     }
 
     return Card(
@@ -300,6 +280,38 @@ class _UsageReportsScreenState extends State<UsageReportsScreen> {
     );
   }
 
+  Widget _buildUsageAccessRequiredCard() {
+    return Card(
+      child: Padding(
+        padding: const EdgeInsets.all(20),
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            const Icon(Icons.bar_chart_outlined, size: 48),
+            const SizedBox(height: 12),
+            const Text(
+              'Usage access required',
+              style: TextStyle(
+                fontSize: 18,
+                fontWeight: FontWeight.w700,
+              ),
+            ),
+            const SizedBox(height: 8),
+            const Text(
+              'To see which apps your child uses, tap here to grant access.',
+              textAlign: TextAlign.center,
+            ),
+            const SizedBox(height: 14),
+            FilledButton(
+              onPressed: _openUsageAccessSettings,
+              child: const Text('Grant Access'),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+
   Future<void> _openUsageAccessSettings() async {
     final opened = await _resolvedAppUsageService.openUsageAccessSettings();
     if (!opened || !mounted) {
@@ -329,7 +341,7 @@ class _UsageReportsScreenState extends State<UsageReportsScreen> {
             ),
             const SizedBox(height: 6),
             const Text(
-              'Quick snapshot from child profiles and protection policy.',
+              'Quick snapshot from child profiles and active controls.',
             ),
             const SizedBox(height: 12),
             ..._children.map((child) {
@@ -888,11 +900,11 @@ class _UsageReportsScreenState extends State<UsageReportsScreen> {
             crossAxisAlignment: CrossAxisAlignment.start,
             children: [
               Text(
-                'NextDNS Analytics',
+                'Web Protection Analytics',
                 style: TextStyle(fontSize: 16, fontWeight: FontWeight.w800),
               ),
               SizedBox(height: 8),
-              Text('Connect NextDNS profile to view blocked domain insights.'),
+              Text('Connect web profile to view blocked domain insights.'),
             ],
           ),
         ),
@@ -910,7 +922,7 @@ class _UsageReportsScreenState extends State<UsageReportsScreen> {
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
             const Text(
-              'NextDNS Analytics',
+              'Web Protection Analytics',
               style: TextStyle(fontSize: 16, fontWeight: FontWeight.w800),
             ),
             const SizedBox(height: 8),
@@ -1445,7 +1457,7 @@ class _ChildRemoteUsageRow extends StatelessWidget {
       builder: (context, snapshot) {
         if (snapshot.connectionState == ConnectionState.waiting) {
           return Text(
-            'Loading screen time…',
+            'Loading screen time...',
             style: TextStyle(
               fontSize: 12,
               color: Colors.grey[500],
@@ -1485,7 +1497,7 @@ class _ChildRemoteUsageRow extends StatelessWidget {
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
             Text(
-              '📱 Screen time (7d): ${_formatDuration(totalDuration)}',
+              'Screen time (7d): ${_formatDuration(totalDuration)}',
               style: const TextStyle(fontSize: 12, fontWeight: FontWeight.w600),
             ),
             if (topAppLabels.isNotEmpty) ...[

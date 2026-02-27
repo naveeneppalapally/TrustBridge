@@ -338,6 +338,11 @@ class MainActivity : FlutterFragmentActivity() {
                 result.success(true)
             }
 
+            "savePolicyContext" -> {
+                persistPolicyContext(call)
+                result.success(true)
+            }
+
             "setUpstreamDns" -> {
                 val upstreamDns = call.argument<String>("upstreamDns")
                     ?.trim()

@@ -6,6 +6,7 @@ import 'package:firebase_auth/firebase_auth.dart';
 import 'package:firebase_core/firebase_core.dart';
 import 'package:flutter/material.dart';
 import 'package:intl/intl.dart';
+import 'package:shared_preferences/shared_preferences.dart';
 
 import '../../config/category_ids.dart';
 import '../../config/rollout_flags.dart';
@@ -51,6 +52,8 @@ class ChildStatusScreen extends StatefulWidget {
 
 class _ChildStatusScreenState extends State<ChildStatusScreen>
     with WidgetsBindingObserver {
+  static const String _batteryPromptShownPrefKey =
+      'child_battery_unrestricted_prompt_shown_v1';
   static const String _blockAllCategory = '__block_all__';
   static const Set<String> _distractingCategories = <String>{
     'social-networks',
@@ -191,6 +194,7 @@ class _ChildStatusScreenState extends State<ChildStatusScreen>
   bool _showingBlockedPackageOverlay = false;
   bool? _usageAccessPermissionGrantedForBlocking;
   bool _policyApplyAckSupportsUsageAccess = true;
+  bool _batteryPromptHandledThisSession = false;
   BrowserDnsBypassAssessment? _browserDnsBypassAssessment;
   DateTime? _browserDnsBypassDetectedAt;
   DateTime? _lastBrowserDnsBypassSignalAt;
@@ -236,6 +240,10 @@ class _ChildStatusScreenState extends State<ChildStatusScreen>
         _parentId = resolved.parentId;
         _childId = resolved.childId;
       }
+      await _persistNativePolicyContext(
+        parentId: _parentId,
+        childId: _childId,
+      );
       await _ensureChildAuthAndPrimeHeartbeat(
         parentId: _parentId,
         childId: _childId,
@@ -270,6 +278,10 @@ class _ChildStatusScreenState extends State<ChildStatusScreen>
     );
     final resolvedParentId = _parentId ?? resolved?.parentId ?? parentId;
     final resolvedChildId = _childId ?? resolved?.childId ?? childId;
+    await _persistNativePolicyContext(
+      parentId: resolvedParentId,
+      childId: resolvedChildId,
+    );
     await _ensureChildAuthAndPrimeHeartbeat(
       parentId: resolvedParentId,
       childId: resolvedChildId,
@@ -1783,6 +1795,9 @@ class _ChildStatusScreenState extends State<ChildStatusScreen>
           ),
         );
       }
+      if (vpnRunning) {
+        unawaited(_maybePromptForUnrestrictedBattery());
+      }
       _lastAppliedPolicySignature = signature;
       if (next.policyVersion != null && next.policyVersion! > 0) {
         _lastAppliedPolicyVersion = next.policyVersion;
@@ -1832,6 +1847,108 @@ class _ChildStatusScreenState extends State<ChildStatusScreen>
       parentId: parentId,
       childId: childId,
     );
+  }
+
+  Future<void> _maybePromptForUnrestrictedBattery() async {
+    if (!mounted || _batteryPromptHandledThisSession) {
+      return;
+    }
+    _batteryPromptHandledThisSession = true;
+
+    final prefs = await SharedPreferences.getInstance();
+    final promptCompleted = prefs.getBool(_batteryPromptShownPrefKey) ?? false;
+
+    bool vpnRunning;
+    try {
+      vpnRunning = await _vpnService.isVpnRunning();
+    } catch (_) {
+      return;
+    }
+    if (!vpnRunning) {
+      return;
+    }
+
+    bool ignoringBatteryOptimizations;
+    try {
+      ignoringBatteryOptimizations =
+          await _vpnService.isIgnoringBatteryOptimizations();
+    } catch (_) {
+      return;
+    }
+    if (ignoringBatteryOptimizations) {
+      if (!promptCompleted) {
+        await prefs.setBool(_batteryPromptShownPrefKey, true);
+      }
+      return;
+    }
+    if (promptCompleted) {
+      // Device setting changed back to optimized mode; prompt again.
+      await prefs.setBool(_batteryPromptShownPrefKey, false);
+    }
+
+    if (!mounted) {
+      return;
+    }
+
+    final openNow = await showDialog<bool>(
+          context: context,
+          builder: (dialogContext) => AlertDialog(
+            title: const Text('Keep protection on'),
+            content: const Text(
+              'On many phones, battery saver can stop protection in the background. '
+              'Open battery settings now and set TrustBridge to Unrestricted.',
+            ),
+            actions: [
+              TextButton(
+                onPressed: () => Navigator.of(dialogContext).pop(false),
+                child: const Text('Later'),
+              ),
+              FilledButton(
+                onPressed: () => Navigator.of(dialogContext).pop(true),
+                child: const Text('Open Settings'),
+              ),
+            ],
+          ),
+        ) ??
+        false;
+    if (!mounted || !openNow) {
+      return;
+    }
+
+    final opened = await _vpnService.openBatteryOptimizationSettings();
+    if (!opened || !mounted) {
+      return;
+    }
+
+    await Future<void>.delayed(const Duration(milliseconds: 800));
+    try {
+      final nowIgnoring = await _vpnService.isIgnoringBatteryOptimizations();
+      await prefs.setBool(_batteryPromptShownPrefKey, nowIgnoring);
+    } catch (_) {
+      // Keep prompting in later sessions until confirmed.
+    }
+  }
+
+  Future<void> _persistNativePolicyContext({
+    required String? parentId,
+    required String? childId,
+  }) async {
+    final normalizedParentId = parentId?.trim();
+    final normalizedChildId = childId?.trim();
+    if (normalizedParentId == null ||
+        normalizedParentId.isEmpty ||
+        normalizedChildId == null ||
+        normalizedChildId.isEmpty) {
+      return;
+    }
+    try {
+      await _vpnService.savePolicyContext(
+        parentId: normalizedParentId,
+        childId: normalizedChildId,
+      );
+    } catch (_) {
+      // Best-effort context persistence for background policy sync.
+    }
   }
 
   bool _isQueuedApplyStale(_QueuedProtectionApply next) {

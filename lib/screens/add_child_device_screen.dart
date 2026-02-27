@@ -136,7 +136,14 @@ class _AddChildDeviceScreenState extends State<AddChildDeviceScreen> {
     }
 
     if (error is StateError) {
-      return error.message;
+      final message = error.message.toString().toLowerCase();
+      if (message.contains('signed in')) {
+        return 'Please sign in again, then try generating a code.';
+      }
+      if (message.contains('own child profiles')) {
+        return 'This child profile is not linked to your account.';
+      }
+      return 'Could not generate code. Please try again.';
     }
 
     return 'Could not generate code. Please try again.';
