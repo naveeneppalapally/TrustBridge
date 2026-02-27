@@ -2894,6 +2894,83 @@ class FirestoreService {
       final normalizedDomains = _normalizeStringIterable(blockedDomains);
       final normalizedPackages = _normalizePackageIds(blockedPackages);
       final normalizedModeOverrides = _normalizeModeOverridesMap(modeOverrides);
+      final normalizedManualMode =
+          protectionEnabled ? _normalizeManualModeMap(manualMode) : null;
+      final effectivePausedUntil = protectionEnabled ? pausedUntil : null;
+      final activeModeKey = protectionEnabled
+          ? _activeModeOverrideKey(
+              pausedUntil: effectivePausedUntil,
+              manualMode: normalizedManualMode,
+              now: sourceUpdatedAt,
+            )
+          : null;
+      final activeModeOverride = activeModeKey == null
+          ? const <String, dynamic>{}
+          : _dynamicMap(normalizedModeOverrides[activeModeKey]);
+      final modeForceBlockServices = _normalizeServiceIds(
+        _dynamicStringList(activeModeOverride['forceBlockServices']),
+      );
+      final modeForceAllowServices = _normalizeServiceIds(
+        _dynamicStringList(activeModeOverride['forceAllowServices']),
+      );
+      final modeForceBlockPackages = _normalizePackageIds(
+        _dynamicStringList(activeModeOverride['forceBlockPackages']),
+      );
+      final modeForceAllowPackages = _normalizePackageIds(
+        _dynamicStringList(activeModeOverride['forceAllowPackages']),
+      );
+      final modeForceBlockDomains = _normalizeStringIterable(
+        _dynamicStringList(activeModeOverride['forceBlockDomains']),
+      );
+      final modeForceAllowDomains = _normalizeStringIterable(
+        _dynamicStringList(activeModeOverride['forceAllowDomains']),
+      );
+      final modeBlockedPackages = protectionEnabled
+          ? (<String>{
+              ...ServiceDefinitions.resolvePackages(
+                blockedCategories: const <String>[],
+                blockedServices: modeForceBlockServices,
+              ),
+              ...modeForceBlockPackages,
+            }.toList()
+            ..sort())
+          : <String>[];
+      final modeAllowedPackages = protectionEnabled
+          ? (<String>{
+              ...ServiceDefinitions.resolvePackages(
+                blockedCategories: const <String>[],
+                blockedServices: modeForceAllowServices,
+              ),
+              ...modeForceAllowPackages,
+            }.toList()
+            ..sort())
+          : <String>[];
+      final modeBlockedDomains = protectionEnabled
+          ? (<String>{
+              ...ServiceDefinitions.resolveDomains(
+                blockedCategories: const <String>[],
+                blockedServices: modeForceBlockServices,
+                customBlockedDomains: modeForceBlockDomains,
+              ),
+              ...ServiceDefinitions.resolveDomainsForPackages(
+                modeBlockedPackages,
+              ),
+            }.toList()
+            ..sort())
+          : <String>[];
+      final modeAllowedDomains = protectionEnabled
+          ? (<String>{
+              ...ServiceDefinitions.resolveDomains(
+                blockedCategories: const <String>[],
+                blockedServices: modeForceAllowServices,
+                customBlockedDomains: modeForceAllowDomains,
+              ),
+              ...ServiceDefinitions.resolveDomainsForPackages(
+                modeAllowedPackages,
+              ),
+            }.toList()
+            ..sort())
+          : <String>[];
       final resolvedPackages = protectionEnabled
           ? (<String>{
               ...ServiceDefinitions.resolvePackages(
@@ -2901,7 +2978,9 @@ class FirestoreService {
                 blockedServices: normalizedServices,
               ),
               ...normalizedPackages,
+              ...modeBlockedPackages,
             }.toList()
+            ..removeWhere(modeAllowedPackages.contains)
             ..sort())
           : <String>[];
       final resolvedDomains = protectionEnabled
@@ -2911,12 +2990,14 @@ class FirestoreService {
                 blockedServices: normalizedServices,
                 customBlockedDomains: normalizedDomains,
               ),
+              ...modeBlockedDomains,
               ...ServiceDefinitions.resolveDomainsForPackages(resolvedPackages),
             }.toList()
+            ..removeWhere(modeAllowedDomains.contains)
             ..sort())
           : <String>[];
-      final normalizedManualMode =
-          protectionEnabled ? _normalizeManualModeMap(manualMode) : null;
+      final temporaryAllowedDomainsResolved =
+          protectionEnabled ? modeAllowedDomains : <String>[];
       final effectiveCategories =
           protectionEnabled ? canonicalCategories : <String>[];
       final effectiveServices =
@@ -2925,7 +3006,6 @@ class FirestoreService {
           protectionEnabled ? normalizedDomains : <String>[];
       final effectivePackages =
           protectionEnabled ? normalizedPackages : <String>[];
-      final effectivePausedUntil = protectionEnabled ? pausedUntil : null;
       final version = _nextPolicyEventEpochMs();
 
       await _firestore
@@ -2942,8 +3022,14 @@ class FirestoreService {
         'blockedPackages': effectivePackages,
         'blockedDomainsResolved': resolvedDomains,
         'blockedPackagesResolved': resolvedPackages,
+        'temporaryAllowedDomainsResolved': temporaryAllowedDomainsResolved,
         'modeOverrides': normalizedModeOverrides,
         'modeOverridesResolved': normalizedModeOverrides,
+        'activeModeKey': activeModeKey,
+        'modeBlockedDomainsResolved': modeBlockedDomains,
+        'modeAllowedDomainsResolved': modeAllowedDomains,
+        'modeBlockedPackagesResolved': modeBlockedPackages,
+        'modeAllowedPackagesResolved': modeAllowedPackages,
         'policySchemaVersion':
             policySchemaVersion <= 0 ? 2 : policySchemaVersion,
         'manualMode': normalizedManualMode,
@@ -2964,7 +3050,13 @@ class FirestoreService {
         blockedPackages: effectivePackages,
         blockedDomainsResolved: resolvedDomains,
         blockedPackagesResolved: resolvedPackages,
+        temporaryAllowedDomainsResolved: temporaryAllowedDomainsResolved,
         modeOverridesResolved: normalizedModeOverrides,
+        activeModeKey: activeModeKey,
+        modeBlockedDomainsResolved: modeBlockedDomains,
+        modeAllowedDomainsResolved: modeAllowedDomains,
+        modeBlockedPackagesResolved: modeBlockedPackages,
+        modeAllowedPackagesResolved: modeAllowedPackages,
         manualMode: normalizedManualMode,
         pausedUntil: effectivePausedUntil,
         protectionEnabled: protectionEnabled,
@@ -2992,7 +3084,13 @@ class FirestoreService {
     required List<String> blockedPackages,
     required List<String> blockedDomainsResolved,
     required List<String> blockedPackagesResolved,
+    required List<String> temporaryAllowedDomainsResolved,
     required Map<String, dynamic> modeOverridesResolved,
+    required String? activeModeKey,
+    required List<String> modeBlockedDomainsResolved,
+    required List<String> modeAllowedDomainsResolved,
+    required List<String> modeBlockedPackagesResolved,
+    required List<String> modeAllowedPackagesResolved,
     required Map<String, dynamic>? manualMode,
     required DateTime? pausedUntil,
     required bool protectionEnabled,
@@ -3017,7 +3115,13 @@ class FirestoreService {
         'blockedPackages': blockedPackages,
         'blockedDomainsResolved': blockedDomainsResolved,
         'blockedPackagesResolved': blockedPackagesResolved,
+        'temporaryAllowedDomainsResolved': temporaryAllowedDomainsResolved,
         'modeOverridesResolved': modeOverridesResolved,
+        'activeModeKey': activeModeKey,
+        'modeBlockedDomainsResolved': modeBlockedDomainsResolved,
+        'modeAllowedDomainsResolved': modeAllowedDomainsResolved,
+        'modeBlockedPackagesResolved': modeBlockedPackagesResolved,
+        'modeAllowedPackagesResolved': modeAllowedPackagesResolved,
         'policySchemaVersion':
             policySchemaVersion <= 0 ? 2 : policySchemaVersion,
         'manualMode': manualMode,
@@ -3160,6 +3264,37 @@ class FirestoreService {
       if (setAt != null) 'setAt': Timestamp.fromDate(setAt),
       if (expiresAt != null) 'expiresAt': Timestamp.fromDate(expiresAt),
     };
+  }
+
+  String? _activeModeOverrideKey({
+    required DateTime? pausedUntil,
+    required Map<String, dynamic>? manualMode,
+    required DateTime now,
+  }) {
+    if (pausedUntil != null && pausedUntil.isAfter(now)) {
+      return 'bedtime';
+    }
+    if (manualMode == null || manualMode.isEmpty) {
+      return null;
+    }
+    final mode = (manualMode['mode'] as String?)?.trim().toLowerCase();
+    if (mode == null || mode.isEmpty) {
+      return null;
+    }
+    final expiresAt = _dynamicDateTime(manualMode['expiresAt']);
+    if (expiresAt != null && !expiresAt.isAfter(now)) {
+      return null;
+    }
+    switch (mode) {
+      case 'homework':
+        return 'homework';
+      case 'bedtime':
+        return 'bedtime';
+      case 'free':
+        return 'free';
+      default:
+        return 'focus';
+    }
   }
 
   int _nextPolicyEventEpochMs() {
