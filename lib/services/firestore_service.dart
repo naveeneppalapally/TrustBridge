@@ -1341,10 +1341,16 @@ class FirestoreService {
 
     final normalizedParentId = parentId?.trim();
     Query<Map<String, dynamic>> rootQuery = _firestore.collection('devices');
-    if (normalizedParentId != null && normalizedParentId.isNotEmpty) {
+    final hasParentScope =
+        normalizedParentId != null && normalizedParentId.isNotEmpty;
+    if (hasParentScope) {
+      // Do not combine parent scope with __name__ in-filter. If any stale or
+      // unauthorized ID is present in queryIds, Firestore rejects the whole
+      // listen. Parent-scoped query remains rule-safe and we filter client-side.
       rootQuery = rootQuery.where('parentId', isEqualTo: normalizedParentId);
+    } else {
+      rootQuery = rootQuery.where(FieldPath.documentId, whereIn: queryIds);
     }
-    rootQuery = rootQuery.where(FieldPath.documentId, whereIn: queryIds);
     final childDeviceQuery = _firestore
         .collectionGroup('devices')
         .where(FieldPath.documentId, whereIn: queryIds);
@@ -1384,6 +1390,9 @@ class FirestoreService {
         (snapshot) {
           final next = <String, DeviceStatusSnapshot>{};
           for (final doc in snapshot.docs) {
+            if (!uniqueDeviceIds.contains(doc.id)) {
+              continue;
+            }
             next[doc.id] = DeviceStatusSnapshot.fromFirestore(doc);
           }
           rootStatusByDeviceId = next;
