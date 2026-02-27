@@ -151,7 +151,7 @@ class BlocklistSyncService {
     if (!forceRefresh &&
         lastSynced != null &&
         now.difference(lastSynced) < _minimumRefreshGap) {
-      final loadedCount = await _dbService.domainCountForSource(source.id);
+      final loadedCount = await _readDisplayDomainCount(source.id);
       final skippedResult = BlocklistSyncResult(
         sourceId: source.id,
         success: true,
@@ -259,7 +259,7 @@ class BlocklistSyncService {
 
     for (final source in BlocklistSources.all) {
       final lastSynced = await _dbService.getLastSynced(source.id);
-      final count = await _dbService.domainCountForSource(source.id);
+      final count = await _readDisplayDomainCount(source.id);
       final isStale =
           lastSynced == null || now.difference(lastSynced) > _staleAfter;
 
@@ -277,6 +277,14 @@ class BlocklistSyncService {
     }
 
     return statuses;
+  }
+
+  Future<int> _readDisplayDomainCount(String sourceId) async {
+    final fromMeta = await _dbService.getMetaDomainCount(sourceId);
+    if (fromMeta != null) {
+      return fromMeta;
+    }
+    return _dbService.domainCountForSource(sourceId);
   }
 
   /// Clears local domains for a disabled category source.

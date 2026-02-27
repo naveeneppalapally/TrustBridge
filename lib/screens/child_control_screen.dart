@@ -495,6 +495,20 @@ class _ChildControlScreenState extends State<ChildControlScreen> {
         parentId: parentId,
         child: updatedChild,
       );
+      if (!mounted) {
+        return;
+      }
+      final label = _simpleToggleLabel(categoryId);
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text(
+            enabled
+                ? '$label blocked. New blocks apply to new connections. '
+                    'If a site is already open, close and reopen the browser.'
+                : '$label unblocked.',
+          ),
+        ),
+      );
     } catch (_) {
       if (!mounted) {
         return;
@@ -509,6 +523,16 @@ class _ChildControlScreenState extends State<ChildControlScreen> {
         });
       }
     }
+  }
+
+  String _simpleToggleLabel(String categoryId) {
+    final normalized = normalizeCategoryId(categoryId);
+    for (final toggle in _simpleToggles) {
+      if (normalizeCategoryId(toggle.id) == normalized) {
+        return toggle.label;
+      }
+    }
+    return 'This category';
   }
 
   Future<void> _setMode({

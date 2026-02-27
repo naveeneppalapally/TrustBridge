@@ -234,6 +234,46 @@ class BlocklistDbService {
     }
   }
 
+  /// Returns last synced metadata domain count for a source, or null if absent.
+  Future<int?> getMetaDomainCount(String sourceId) async {
+    final normalizedSourceId = sourceId.trim();
+    if (normalizedSourceId.isEmpty) {
+      throw ArgumentError.value(
+        sourceId,
+        'sourceId',
+        'Source ID is required.',
+      );
+    }
+
+    try {
+      final db = await _openIfNeeded();
+      final rows = await db.query(
+        'blocklist_meta',
+        columns: const <String>['domain_count'],
+        where: 'source_id = ?',
+        whereArgs: <Object>[normalizedSourceId],
+        limit: 1,
+      );
+      if (rows.isEmpty) {
+        return null;
+      }
+      final rawValue = rows.first['domain_count'];
+      final count = rawValue is int
+          ? rawValue
+          : rawValue is num
+              ? rawValue.toInt()
+              : null;
+      if (count == null || count < 0) {
+        return null;
+      }
+      return count;
+    } catch (error) {
+      throw StateError(
+        'Failed reading metadata domain count for source "$normalizedSourceId": $error',
+      );
+    }
+  }
+
   /// Writes sync metadata for a source.
   Future<void> updateMeta(
     String sourceId,

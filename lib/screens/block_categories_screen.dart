@@ -2506,6 +2506,9 @@ class _BlockCategoriesScreenState extends State<BlockCategoriesScreen> {
       localCategoryId: normalizeCategoryId(categoryId),
       blocked: enabled,
     );
+    if (enabled && mounted) {
+      _showNewConnectionsHint();
+    }
     if (!enabled &&
         blockedByModeBeforeToggle &&
         modeContext.modeLabel != null &&
@@ -2518,6 +2521,20 @@ class _BlockCategoriesScreenState extends State<BlockCategoriesScreen> {
         ),
       );
     }
+  }
+
+  void _showNewConnectionsHint() {
+    if (!mounted) {
+      return;
+    }
+    ScaffoldMessenger.of(context).showSnackBar(
+      const SnackBar(
+        content: Text(
+          'New blocks apply to new connections. If a site is already open, '
+          'close and reopen the browser.',
+        ),
+      ),
+    );
   }
 
   bool _isProOnlyCategory(String categoryId) {

@@ -58,6 +58,12 @@ void main() {
     });
 
     test('HTTP 200 with valid hosts syncs and blocks domain', () async {
+      expect(
+        socialSource.url,
+        equals(
+          'https://raw.githubusercontent.com/StevenBlack/hosts/master/alternates/social/hosts',
+        ),
+      );
       when(() => mockClient.get(any())).thenAnswer(
         (_) async => http.Response(
           '0.0.0.0 instagram.com\n0.0.0.0 tiktok.com',
@@ -195,6 +201,35 @@ void main() {
 
       expect(results.length, 2);
       verify(() => mockClient.get(any())).called(2);
+    });
+
+    test('getStatus keeps source counts when sources overlap', () async {
+      when(() => mockClient.get(Uri.parse(socialSource.url))).thenAnswer(
+        (_) async => http.Response('0.0.0.0 overlap.test', 200),
+      );
+      when(() => mockClient.get(Uri.parse(malwareSource.url))).thenAnswer(
+        (_) async => http.Response('0.0.0.0 overlap.test', 200),
+      );
+
+      final results = await service.syncAll(
+        const <BlocklistCategory>[
+          BlocklistCategory.social,
+          BlocklistCategory.malware,
+        ],
+        forceRefresh: true,
+      );
+      expect(results.where((result) => result.success), hasLength(2));
+
+      final statuses = await service.getStatus();
+      final socialStatus = statuses.firstWhere(
+        (status) => status.source.id == socialSource.id,
+      );
+      final malwareStatus = statuses.firstWhere(
+        (status) => status.source.id == malwareSource.id,
+      );
+
+      expect(socialStatus.domainCount, equals(1));
+      expect(malwareStatus.domainCount, equals(1));
     });
 
     test('getStatus marks stale when last synced is older than 14 days',
