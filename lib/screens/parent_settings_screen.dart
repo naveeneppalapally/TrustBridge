@@ -976,18 +976,6 @@ class _ParentSettingsScreenState extends State<ParentSettingsScreen> {
   }
 
   Future<void> _openBypassAlerts(BuildContext context) async {
-    final gate = await _featureGateService.checkGate(AppFeature.bypassAlerts);
-    if (!gate.allowed) {
-      if (!context.mounted) {
-        return;
-      }
-      await UpgradeScreen.maybeShow(
-        context,
-        feature: AppFeature.bypassAlerts,
-        reason: gate.upgradeReason,
-      );
-      return;
-    }
     if (!context.mounted) {
       return;
     }
