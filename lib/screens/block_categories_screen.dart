@@ -18,7 +18,6 @@ import 'package:trustbridge_app/services/auth_service.dart';
 import 'package:trustbridge_app/services/feature_gate_service.dart';
 import 'package:trustbridge_app/services/firestore_service.dart';
 import 'package:trustbridge_app/services/nextdns_api_service.dart';
-import 'package:trustbridge_app/services/policy_apply_status.dart';
 import 'package:trustbridge_app/services/remote_command_service.dart';
 import 'package:trustbridge_app/services/vpn_service.dart';
 import 'package:trustbridge_app/utils/parent_pin_gate.dart';
@@ -124,7 +123,6 @@ class _BlockCategoriesScreenState extends State<BlockCategoriesScreen> {
   DateTime? _latestEffectivePolicyUpdatedAt;
   _PolicyApplyAckSnapshot? _latestPolicyApplyAck;
   _VpnDiagnosticsSnapshot? _latestVpnDiagnostics;
-  DateTime? _lastToggleTapAt;
 
   bool _isLoading = false;
   bool _isSyncingNextDns = false;
@@ -602,297 +600,6 @@ class _BlockCategoriesScreenState extends State<BlockCategoriesScreen> {
     return priority;
   }
 
-  Widget _buildPolicyApplyStatusCard(BuildContext context) {
-    final evaluation = PolicyApplyStatusEvaluator.evaluate(
-      effectiveVersion: _latestEffectivePolicyVersion,
-      effectiveUpdatedAt: _latestEffectivePolicyUpdatedAt,
-      appliedVersion: _latestPolicyApplyAck?.appliedVersion,
-      ackUpdatedAt: _latestPolicyApplyAck?.updatedAt,
-      applyStatus: _latestPolicyApplyAck?.applyStatus,
-    );
-    final diagnosticsUpdatedAt = _latestVpnDiagnostics?.updatedAt;
-    final diagnosticsCaughtUp = _latestEffectivePolicyUpdatedAt != null &&
-        diagnosticsUpdatedAt != null &&
-        !diagnosticsUpdatedAt.isBefore(
-          _latestEffectivePolicyUpdatedAt!.subtract(const Duration(seconds: 5)),
-        );
-    final diagnosticsBackedApplied =
-        evaluation.indicator == PolicyApplyIndicator.pending &&
-            diagnosticsCaughtUp &&
-            !evaluation.ackHasFailureStatus;
-    final effectiveIndicator = diagnosticsBackedApplied
-        ? PolicyApplyIndicator.applied
-        : evaluation.indicator;
-
-    final indicatorColor = switch (effectiveIndicator) {
-      PolicyApplyIndicator.applied => Colors.green.shade700,
-      PolicyApplyIndicator.pending => Colors.orange.shade700,
-      PolicyApplyIndicator.stale => Colors.red.shade700,
-      PolicyApplyIndicator.unknown => Colors.blueGrey,
-    };
-    final indicatorLabel = switch (effectiveIndicator) {
-      PolicyApplyIndicator.applied => 'Applied',
-      PolicyApplyIndicator.pending => 'Pending',
-      PolicyApplyIndicator.stale => 'Stale',
-      PolicyApplyIndicator.unknown => 'Unknown',
-    };
-
-    final lag = evaluation.versionLag;
-    final lagLabel = lag == null ? '—' : '$lag';
-    final applyDelayLabel = _formatDurationCompact(evaluation.applyDelay);
-    final freshnessLabel = switch (evaluation.ackAge) {
-      null => 'No recent ack',
-      final Duration age when age > PolicyApplyStatusEvaluator.staleAckWindow =>
-        'Stale (${_formatDurationCompact(age)} ago)',
-      final Duration age => 'Fresh (${_formatDurationCompact(age)} ago)',
-    };
-
-    return Card(
-      key: const Key('block_categories_policy_sync_card'),
-      child: Padding(
-        padding: const EdgeInsets.all(12),
-        child: Column(
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            Row(
-              children: [
-                const Expanded(
-                  child: Text(
-                    'POLICY APPLY STATUS',
-                    style: TextStyle(
-                      fontWeight: FontWeight.w800,
-                      letterSpacing: 0.5,
-                    ),
-                  ),
-                ),
-                Container(
-                  key: const Key('block_categories_policy_sync_indicator'),
-                  padding:
-                      const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
-                  decoration: BoxDecoration(
-                    color: indicatorColor.withValues(alpha: 0.14),
-                    borderRadius: BorderRadius.circular(999),
-                  ),
-                  child: Text(
-                    indicatorLabel,
-                    style: TextStyle(
-                      color: indicatorColor,
-                      fontWeight: FontWeight.w700,
-                      fontSize: 11,
-                    ),
-                  ),
-                ),
-              ],
-            ),
-            const SizedBox(height: 8),
-            _buildTelemetryLine(
-              label: 'Effective policy version',
-              value: _latestEffectivePolicyVersion?.toString() ?? '—',
-            ),
-            _buildTelemetryLine(
-              label: 'Child applied version',
-              value: _latestPolicyApplyAck?.appliedVersion?.toString() ?? '—',
-            ),
-            _buildTelemetryLine(label: 'Version lag', value: lagLabel),
-            _buildTelemetryLine(
-                label: 'Apply freshness', value: freshnessLabel),
-            _buildTelemetryLine(label: 'Apply delay', value: applyDelayLabel),
-            if ((_latestPolicyApplyAck?.applyStatus ?? '').isNotEmpty)
-              _buildTelemetryLine(
-                label: 'Child apply status',
-                value: _latestPolicyApplyAck!.applyStatus,
-              ),
-            if (_lastToggleTapAt != null)
-              _buildTelemetryLine(
-                label: 'Last parent toggle',
-                value:
-                    '${_formatDurationCompact(DateTime.now().difference(_lastToggleTapAt!))} ago',
-              ),
-            if (diagnosticsBackedApplied)
-              Padding(
-                padding: const EdgeInsets.only(top: 8),
-                child: Text(
-                  'Child diagnostics are newer than the latest policy update. Enforcement appears current even though apply version telemetry is lagging.',
-                  style: TextStyle(
-                    color: Colors.green.shade900,
-                    fontWeight: FontWeight.w600,
-                  ),
-                ),
-              ),
-            if (!diagnosticsBackedApplied &&
-                evaluation.indicator == PolicyApplyIndicator.pending)
-              Padding(
-                padding: const EdgeInsets.only(top: 8),
-                child: Text(
-                  'Child has not applied the latest effective policy yet. Keep this screen open until versions match.',
-                  style: TextStyle(
-                    color: Colors.orange.shade900,
-                    fontWeight: FontWeight.w600,
-                  ),
-                ),
-              ),
-            if (evaluation.indicator == PolicyApplyIndicator.stale)
-              Padding(
-                padding: const EdgeInsets.only(top: 8),
-                child: Text(
-                  evaluation.ackHasFailureStatus
-                      ? 'Child reported an apply failure. Check child diagnostics and retry once online.'
-                      : 'Child apply telemetry is stale. Open the child app to refresh policy status.',
-                  style: TextStyle(
-                    color: Colors.red.shade900,
-                    fontWeight: FontWeight.w600,
-                  ),
-                ),
-              ),
-          ],
-        ),
-      ),
-    );
-  }
-
-  Widget _buildWebValidationCard(BuildContext context) {
-    final diagnostics = _latestVpnDiagnostics;
-    final now = DateTime.now();
-    final lastBlocked = diagnostics?.lastBlockedDnsQuery;
-    final diagnosticsAge = diagnostics?.updatedAt == null
-        ? null
-        : now.difference(diagnostics!.updatedAt!);
-    final diagnosticsStale =
-        diagnosticsAge != null && diagnosticsAge > const Duration(minutes: 3);
-    final recentParentToggle = _lastToggleTapAt != null &&
-        now.difference(_lastToggleTapAt!) <= const Duration(minutes: 10);
-    final diagnosticsBehindEffectivePolicy =
-        _latestEffectivePolicyUpdatedAt != null &&
-            (diagnostics?.updatedAt == null ||
-                diagnostics!.updatedAt!.isBefore(
-                  _latestEffectivePolicyUpdatedAt!
-                      .subtract(const Duration(seconds: 5)),
-                ));
-    final shouldShowDiagnosticsWarning = diagnosticsBehindEffectivePolicy ||
-        (diagnosticsStale && recentParentToggle);
-    final blockedAge =
-        lastBlocked == null ? null : now.difference(lastBlocked.timestamp);
-    final blockedStale =
-        blockedAge != null && blockedAge > const Duration(minutes: 3);
-    final cacheBusterDomain = (lastBlocked?.domain ?? 'facebook.com').trim();
-    final cacheBusterUrl =
-        'https://$cacheBusterDomain/?tb=${DateTime.now().millisecondsSinceEpoch}';
-
-    return Card(
-      key: const Key('block_categories_web_validation_card'),
-      child: Padding(
-        padding: const EdgeInsets.all(12),
-        child: Column(
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            Text(
-              'WEB VALIDATION HINTS',
-              style: Theme.of(context).textTheme.titleSmall?.copyWith(
-                    fontWeight: FontWeight.w800,
-                    letterSpacing: 0.5,
-                  ),
-            ),
-            const SizedBox(height: 6),
-            const Text(
-              'TrustBridge website blocking is DNS-only. Browser cache and Secure DNS (DoH) can make unblock checks look inconsistent.',
-            ),
-            const SizedBox(height: 8),
-            _buildTelemetryLine(
-              label: 'Diagnostics updated',
-              value: diagnostics?.updatedAt == null
-                  ? 'No diagnostics document'
-                  : '${_formatDurationCompact(diagnosticsAge)} ago',
-            ),
-            _buildTelemetryLine(
-              label: 'Last blocked DNS',
-              value: lastBlocked == null
-                  ? 'No blocked DNS event captured'
-                  : '${lastBlocked.domain} (${_formatDiagReason(lastBlocked.reasonCode)})',
-            ),
-            if (lastBlocked != null)
-              _buildTelemetryLine(
-                label: 'Blocked evidence',
-                value: blockedStale
-                    ? 'Stale (${_formatDurationCompact(blockedAge)} ago)'
-                    : 'Fresh (${_formatDurationCompact(blockedAge)} ago)',
-              ),
-            if ((lastBlocked?.matchedRule ?? '').isNotEmpty)
-              _buildTelemetryLine(
-                label: 'Matched rule',
-                value: lastBlocked!.matchedRule!,
-              ),
-            if ((diagnostics?.bypassReasonCode ?? '').isNotEmpty)
-              _buildTelemetryLine(
-                label: 'Bypass signal',
-                value:
-                    '${diagnostics!.likelyDnsBypass ? 'Likely' : 'Not likely'} (${_formatDiagReason(diagnostics.bypassReasonCode)})',
-              ),
-            const SizedBox(height: 8),
-            const Text(
-              'Website unblock check: open a fresh tab and test with a cache-buster URL.',
-              style: TextStyle(fontWeight: FontWeight.w600),
-            ),
-            const SizedBox(height: 2),
-            SelectableText(
-              cacheBusterUrl,
-              style: TextStyle(color: Colors.blue.shade700),
-            ),
-            if (shouldShowDiagnosticsWarning)
-              Padding(
-                padding: const EdgeInsets.only(top: 8),
-                child: Text(
-                  diagnosticsBehindEffectivePolicy
-                      ? 'Child diagnostics are behind the latest policy update. Keep TrustBridge open on child device while re-testing.'
-                      : 'Child diagnostics are stale. Keep TrustBridge open on child device while re-testing.',
-                  style: TextStyle(
-                    color: Colors.orange.shade900,
-                    fontWeight: FontWeight.w600,
-                  ),
-                ),
-              ),
-          ],
-        ),
-      ),
-    );
-  }
-
-  Widget _buildTelemetryLine({
-    required String label,
-    required String value,
-  }) {
-    return Padding(
-      padding: const EdgeInsets.only(bottom: 3),
-      child: Text(
-        '$label: $value',
-        style: const TextStyle(
-          fontSize: 12,
-          fontWeight: FontWeight.w600,
-        ),
-      ),
-    );
-  }
-
-  String _formatDurationCompact(Duration? value) {
-    if (value == null) {
-      return '—';
-    }
-    if (value.inSeconds < 60) {
-      return '${value.inSeconds}s';
-    }
-    if (value.inMinutes < 60) {
-      return '${value.inMinutes}m';
-    }
-    return '${value.inHours}h';
-  }
-
-  String _formatDiagReason(String? value) {
-    final normalized = value?.trim();
-    if (normalized == null || normalized.isEmpty) {
-      return 'unknown';
-    }
-    return normalized.replaceAll('_', ' ');
-  }
-
   DateTime? _dynamicDateTime(Object? rawValue) {
     if (rawValue is Timestamp) {
       return rawValue.toDate();
@@ -969,14 +676,6 @@ class _BlockCategoriesScreenState extends State<BlockCategoriesScreen> {
               ),
             ),
           ),
-          const SizedBox(height: 12),
-        ],
-        if (RolloutFlags.parentPolicyApplyStatus) ...[
-          _buildPolicyApplyStatusCard(context),
-          const SizedBox(height: 12),
-        ],
-        if (RolloutFlags.parentWebValidationHints) ...[
-          _buildWebValidationCard(context),
           const SizedBox(height: 12),
         ],
         Text(
@@ -1342,7 +1041,6 @@ class _BlockCategoriesScreenState extends State<BlockCategoriesScreen> {
       } else {
         _blockedPackages.remove(packageName);
       }
-      _lastToggleTapAt = DateTime.now();
     });
     unawaited(
       _emitBlockAppsDebugEvent(
@@ -1767,7 +1465,6 @@ class _BlockCategoriesScreenState extends State<BlockCategoriesScreen> {
 
     setState(() {
       _blockedDomains.add(normalized);
-      _lastToggleTapAt = DateTime.now();
     });
     unawaited(
       _emitBlockAppsDebugEvent(
@@ -2086,7 +1783,6 @@ class _BlockCategoriesScreenState extends State<BlockCategoriesScreen> {
       } else {
         _blockedServices.remove(appKey.trim().toLowerCase());
       }
-      _lastToggleTapAt = DateTime.now();
     });
     unawaited(
       _emitBlockAppsDebugEvent(
@@ -2168,7 +1864,6 @@ class _BlockCategoriesScreenState extends State<BlockCategoriesScreen> {
       } else {
         removeCategoryAndAliases(_blockedCategories, normalizedCategoryId);
       }
-      _lastToggleTapAt = DateTime.now();
     });
     unawaited(
       _emitBlockAppsDebugEvent(
@@ -2725,7 +2420,6 @@ class _BlockCategoriesScreenState extends State<BlockCategoriesScreen> {
   Future<void> _removeDomain(String domain) async {
     setState(() {
       _blockedDomains.remove(domain);
-      _lastToggleTapAt = DateTime.now();
     });
     unawaited(
       _emitBlockAppsDebugEvent(

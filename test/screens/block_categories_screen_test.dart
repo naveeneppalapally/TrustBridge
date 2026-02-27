@@ -218,7 +218,7 @@ void main() {
           find.byKey(const Key('nextdns_safe_search_switch')), findsOneWidget);
     });
 
-    testWidgets('shows pending then applied policy sync indicator',
+    testWidgets('hides policy sync diagnostics for parent-facing UI',
         (tester) async {
       final fakeFirestore = FakeFirebaseFirestore();
       final firestoreService = FirestoreService(firestore: fakeFirestore);
@@ -275,35 +275,12 @@ void main() {
 
       expect(
         find.byKey(const Key('block_categories_policy_sync_card')),
-        findsOneWidget,
+        findsNothing,
       );
-      expect(find.text('Pending'), findsOneWidget);
-
-      await fakeFirestore
-          .collection('children')
-          .doc(child.id)
-          .collection('policy_apply_acks')
-          .doc('device-1')
-          .set({
-        'parentId': parentId,
-        'childId': child.id,
-        'deviceId': 'device-1',
-        'applyStatus': 'applied',
-        'appliedVersion': 200,
-        'updatedAt': Timestamp.now(),
-      });
-      await tester.pumpAndSettle();
-
-      expect(
-        find.descendant(
-          of: find.byKey(const Key('block_categories_policy_sync_indicator')),
-          matching: find.text('Applied'),
-        ),
-        findsOneWidget,
-      );
+      expect(find.text('APP CATEGORIES'), findsOneWidget);
     });
 
-    testWidgets('renders web validation hints with cache-buster guidance',
+    testWidgets('hides web validation diagnostics for parent-facing UI',
         (tester) async {
       final fakeFirestore = FakeFirebaseFirestore();
       final firestoreService = FirestoreService(firestore: fakeFirestore);
@@ -348,10 +325,9 @@ void main() {
 
       expect(
         find.byKey(const Key('block_categories_web_validation_card')),
-        findsOneWidget,
+        findsNothing,
       );
-      expect(find.textContaining('cache-buster URL'), findsOneWidget);
-      expect(find.textContaining('instagram.com'), findsWidgets);
+      expect(find.text('APP CATEGORIES'), findsOneWidget);
     });
   });
 }

@@ -46,6 +46,7 @@ class _UsageReportsScreenState extends State<UsageReportsScreen> {
   int? _nextDnsBlockedToday;
   List<NextDnsDomainStat> _nextDnsTopBlockedDomains = const [];
   bool _nextDnsConfigured = false;
+  bool _usageAccessGranted = true;
   bool _loading = true;
   String? _error;
   DateTime _selectedDay = DateTime.now();
@@ -115,6 +116,8 @@ class _UsageReportsScreenState extends State<UsageReportsScreen> {
         children,
         selectedDay: _selectedDay,
       );
+      final usageAccessGranted =
+          await _resolvedAppUsageService.hasUsageAccessPermission();
       if (report == null) {
         final localReport = await _resolvedAppUsageService.getUsageReport(
           pastDays: 7,
@@ -133,6 +136,7 @@ class _UsageReportsScreenState extends State<UsageReportsScreen> {
         _nextDnsConfigured = analytics.configured;
         _nextDnsBlockedToday = analytics.blockedToday;
         _nextDnsTopBlockedDomains = analytics.topBlockedDomains;
+        _usageAccessGranted = usageAccessGranted;
         _loading = false;
       });
     } catch (error) {
@@ -228,6 +232,38 @@ class _UsageReportsScreenState extends State<UsageReportsScreen> {
 
   Widget _buildChildUsagePendingCard() {
     final hasChildren = _children.isNotEmpty;
+    if (!_usageAccessGranted) {
+      return Card(
+        child: Padding(
+          padding: const EdgeInsets.all(20),
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              const Icon(Icons.bar_chart_outlined, size: 48),
+              const SizedBox(height: 12),
+              const Text(
+                'Usage access required',
+                style: TextStyle(
+                  fontSize: 18,
+                  fontWeight: FontWeight.w700,
+                ),
+              ),
+              const SizedBox(height: 8),
+              const Text(
+                'To see which apps your child uses, tap here to grant access.',
+                textAlign: TextAlign.center,
+              ),
+              const SizedBox(height: 14),
+              FilledButton(
+                onPressed: _openUsageAccessSettings,
+                child: const Text('Grant Access'),
+              ),
+            ],
+          ),
+        ),
+      );
+    }
+
     return Card(
       child: Padding(
         padding: const EdgeInsets.all(20),
@@ -262,6 +298,18 @@ class _UsageReportsScreenState extends State<UsageReportsScreen> {
         ),
       ),
     );
+  }
+
+  Future<void> _openUsageAccessSettings() async {
+    final opened = await _resolvedAppUsageService.openUsageAccessSettings();
+    if (!opened || !mounted) {
+      return;
+    }
+    await Future<void>.delayed(const Duration(milliseconds: 600));
+    if (!mounted) {
+      return;
+    }
+    await _load();
   }
 
   Widget _buildChildSummaryFallbackCard() {

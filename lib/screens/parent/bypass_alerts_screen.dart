@@ -37,6 +37,7 @@ class _BypassAlertsScreenState extends State<BypassAlertsScreen> {
   String _typeFilter = _allFilter;
   String _deviceFilter = _allFilter;
   bool _gateResolved = true;
+  List<_BypassAlertItem> _lastLoadedAlerts = const <_BypassAlertItem>[];
 
   static const String _allFilter = '__all__';
 
@@ -111,18 +112,13 @@ class _BypassAlertsScreenState extends State<BypassAlertsScreen> {
         title: const Text('Protection Alerts'),
         actions: [
           TextButton(
-            onPressed: () => _markAllRead(parentId),
+            onPressed: _markAllRead,
             child: const Text('Mark all read'),
           ),
         ],
       ),
-      body: StreamBuilder<QuerySnapshot<Map<String, dynamic>>>(
-        stream: _resolvedFirestore
-            .collectionGroup('events')
-            .where('parentId', isEqualTo: parentId)
-            .orderBy('timestampEpochMs', descending: true)
-            .limit(200)
-            .snapshots(),
+      body: StreamBuilder<List<_BypassAlertItem>>(
+        stream: _watchAlerts(parentId),
         builder: (context, snapshot) {
           if (snapshot.connectionState == ConnectionState.waiting &&
               !snapshot.hasData) {
@@ -142,15 +138,21 @@ class _BypassAlertsScreenState extends State<BypassAlertsScreen> {
             );
           }
 
-          final allAlerts = snapshot.data?.docs
-                  .map(_BypassAlertItem.fromDoc)
-                  .toList(growable: false) ??
-              const <_BypassAlertItem>[];
+          final allAlerts = snapshot.data ?? const <_BypassAlertItem>[];
+          _lastLoadedAlerts = allAlerts;
           final unreadCount = allAlerts.where((alert) => !alert.read).length;
           final filteredAlerts = _applyFilters(allAlerts);
 
           if (allAlerts.isEmpty) {
-            return const Center(child: Text('No alerts yet.'));
+            return const Center(
+              child: Padding(
+                padding: EdgeInsets.all(24),
+                child: Text(
+                  'No alerts yet - you\'ll be notified here if protection is turned off or bypassed.',
+                  textAlign: TextAlign.center,
+                ),
+              ),
+            );
           }
 
           final devices = <String>{
@@ -245,6 +247,84 @@ class _BypassAlertsScreenState extends State<BypassAlertsScreen> {
         },
       ),
     );
+  }
+
+  Stream<List<_BypassAlertItem>> _watchAlerts(String parentId) async* {
+    yield await _loadAlerts(parentId);
+    yield* Stream<List<_BypassAlertItem>>.periodic(
+      const Duration(seconds: 8),
+    ).asyncMap((_) => _loadAlerts(parentId));
+  }
+
+  Future<List<_BypassAlertItem>> _loadAlerts(String parentId) async {
+    final parentChildrenSnapshot = await _resolvedFirestore
+        .collection('children')
+        .where('parentId', isEqualTo: parentId)
+        .get();
+
+    final childNicknameById = <String, String>{};
+    final deviceIds = <String>{};
+
+    for (final childDoc in parentChildrenSnapshot.docs) {
+      final data = childDoc.data();
+      final nickname = (data['nickname'] as String?)?.trim();
+      if (nickname != null && nickname.isNotEmpty) {
+        childNicknameById[childDoc.id] = nickname;
+      }
+      final rawDeviceIds = data['deviceIds'];
+      if (rawDeviceIds is List) {
+        for (final raw in rawDeviceIds) {
+          final deviceId = raw?.toString().trim() ?? '';
+          if (deviceId.isNotEmpty) {
+            deviceIds.add(deviceId);
+          }
+        }
+      }
+
+      final rawDeviceMetadata = data['deviceMetadata'];
+      if (rawDeviceMetadata is Map) {
+        for (final entry in rawDeviceMetadata.entries) {
+          final deviceId = entry.key.toString().trim();
+          if (deviceId.isNotEmpty) {
+            deviceIds.add(deviceId);
+          }
+        }
+      }
+    }
+
+    if (deviceIds.isEmpty) {
+      return const <_BypassAlertItem>[];
+    }
+
+    final perDeviceSnapshots = await Future.wait(
+      deviceIds.map(
+        (deviceId) => _resolvedFirestore
+            .collection('bypass_events')
+            .doc(deviceId)
+            .collection('events')
+            .where('parentId', isEqualTo: parentId)
+            .limit(80)
+            .get(),
+      ),
+    );
+
+    final alerts = <_BypassAlertItem>[];
+    for (final snapshot in perDeviceSnapshots) {
+      for (final doc in snapshot.docs) {
+        alerts.add(
+          _BypassAlertItem.fromDoc(
+            doc,
+            childNicknameById,
+          ),
+        );
+      }
+    }
+
+    alerts.sort((a, b) => b.timestamp.compareTo(a.timestamp));
+    if (alerts.length > 200) {
+      return alerts.take(200).toList(growable: false);
+    }
+    return alerts;
   }
 
   String _friendlyLoadError(Object? error) {
@@ -525,23 +605,20 @@ class _BypassAlertsScreenState extends State<BypassAlertsScreen> {
     }
   }
 
-  Future<void> _markAllRead(String parentId) async {
+  Future<void> _markAllRead() async {
     try {
-      final unreadSnapshot = await _resolvedFirestore
-          .collectionGroup('events')
-          .where('parentId', isEqualTo: parentId)
-          .where('read', isEqualTo: false)
-          .limit(300)
-          .get();
-      if (unreadSnapshot.docs.isEmpty) {
+      final unreadAlerts = _lastLoadedAlerts
+          .where((alert) => !alert.read)
+          .toList(growable: false);
+      if (unreadAlerts.isEmpty) {
         return;
       }
 
       WriteBatch batch = _resolvedFirestore.batch();
       var batchCount = 0;
-      for (final doc in unreadSnapshot.docs) {
+      for (final alert in unreadAlerts) {
         batch.set(
-          doc.reference,
+          alert.reference,
           <String, dynamic>{
             'read': true,
             'readAt': FieldValue.serverTimestamp(),
@@ -626,9 +703,11 @@ class _BypassAlertItem {
     'device_offline_24h',
   ];
 
-  factory _BypassAlertItem.fromDoc(
-    QueryDocumentSnapshot<Map<String, dynamic>> doc,
-  ) {
+  static _BypassAlertItem fromDoc(
+    QueryDocumentSnapshot<Map<String, dynamic>> doc, [
+    Map<String, String>? fallbackChildLabelById,
+  ]) {
+    final fallbackLabels = fallbackChildLabelById ?? const <String, String>{};
     final data = doc.data();
     final type = (data['type'] as String?)?.trim();
     final timestamp = _readDateTime(data['timestamp']) ??
@@ -640,6 +719,7 @@ class _BypassAlertItem {
         : (doc.reference.parent.parent?.id ?? 'Unknown device');
     final childId = (data['childId'] as String?)?.trim() ?? '';
     final childNickname = (data['childNickname'] as String?)?.trim();
+    final fallbackChildLabel = fallbackLabels[childId]?.trim();
 
     return _BypassAlertItem(
       id: doc.id,
@@ -648,7 +728,9 @@ class _BypassAlertItem {
       childId: childId,
       childLabel: (childNickname != null && childNickname.isNotEmpty)
           ? childNickname
-          : 'Child device',
+          : (fallbackChildLabel != null && fallbackChildLabel.isNotEmpty)
+              ? fallbackChildLabel
+              : 'Child device',
       timestamp: timestamp,
       read: data['read'] == true,
       reference: doc.reference,

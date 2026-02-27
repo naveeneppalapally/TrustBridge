@@ -144,7 +144,7 @@ class _ModesScreenState extends State<ModesScreen> {
               ),
               const SizedBox(height: 6),
               Text(
-                'Rule order: Lockdown pause > Mode override > Category toggles > App toggles.',
+                'If settings conflict, the current mode takes priority.',
                 style: Theme.of(context).textTheme.bodySmall?.copyWith(
                       color: Theme.of(context).colorScheme.onSurfaceVariant,
                     ),

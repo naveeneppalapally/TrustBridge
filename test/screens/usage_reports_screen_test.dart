@@ -203,8 +203,8 @@ void main() {
         ),
       );
 
-      expect(find.text('No child devices paired'), findsOneWidget);
-      expect(find.text('Grant Access'), findsNothing);
+      expect(find.text('Usage access required'), findsOneWidget);
+      expect(find.text('Grant Access'), findsOneWidget);
       expect(
           find.byKey(const Key('usage_reports_nextdns_card')), findsOneWidget);
     });

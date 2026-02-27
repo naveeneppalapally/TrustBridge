@@ -2749,6 +2749,9 @@ class _ChildStatusScreenState extends State<ChildStatusScreen>
         SizedBox(
           height: 52,
           child: FilledButton.icon(
+            style: FilledButton.styleFrom(
+              foregroundColor: Colors.white,
+            ),
             onPressed: () {
               Navigator.of(context).push(
                 MaterialPageRoute(
