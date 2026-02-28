@@ -39,6 +39,15 @@ class MainActivity : FlutterFragmentActivity() {
         private const val DEVICE_ADMIN_PERMISSION_REQUEST_CODE = 44124
         private const val OEM_PREFS = "trustbridge_oem_prefs"
         private const val KEY_VIVO_AUTOSTART_PROMPTED = "vivo_autostart_prompted"
+        private val INFRASTRUCTURE_PACKAGES: Set<String> = setOf(
+            "com.android.vending",
+            "com.google.android.gms",
+            "com.google.android.gsf",
+            "com.google.android.googlequicksearchbox",
+            "com.google.android.ext.services",
+            "com.google.android.ext.shared",
+            "com.android.providers.downloads"
+        )
         private val CHANNEL_NAMES = listOf(
             "trustbridge/vpn",
             "com.navee.trustbridge/vpn"
@@ -833,10 +842,7 @@ class MainActivity : FlutterFragmentActivity() {
             } catch (_: Exception) {
                 null
             }
-            val isSystemApp = applicationInfo?.let {
-                it.flags and ApplicationInfo.FLAG_SYSTEM != 0
-            } ?: false
-            if (isSystemApp) {
+            if (!isParentControllableApp(packageName, applicationInfo)) {
                 return@forEach
             }
             val hasInternetPermission = try {
@@ -854,7 +860,7 @@ class MainActivity : FlutterFragmentActivity() {
             val appPayload = mutableMapOf<String, Any>(
                 "packageName" to packageName.lowercase(),
                 "appName" to (if (appName.isEmpty()) packageName else appName),
-                "isSystemApp" to isSystemApp,
+                "isSystemApp" to false,
                 "hasInternetPermission" to hasInternetPermission,
                 "isLaunchable" to true,
                 "firstSeenAt" to nowEpochMs,
@@ -867,6 +873,40 @@ class MainActivity : FlutterFragmentActivity() {
         }
 
         return apps.sortedBy { (it["appName"] as? String)?.lowercase().orEmpty() }
+    }
+
+    private fun isParentControllableApp(
+        packageName: String,
+        applicationInfo: ApplicationInfo?
+    ): Boolean {
+        val normalizedPackage = packageName.trim().lowercase()
+        if (normalizedPackage in INFRASTRUCTURE_PACKAGES ||
+            normalizedPackage.startsWith("com.vivo.") ||
+            normalizedPackage.startsWith("com.bbk.")
+        ) {
+            return false
+        }
+        applicationInfo ?: return false
+        val isSystem = applicationInfo.flags and ApplicationInfo.FLAG_SYSTEM != 0
+        if (!isSystem) {
+            return true
+        }
+        val isUpdatedSystem =
+            applicationInfo.flags and ApplicationInfo.FLAG_UPDATED_SYSTEM_APP != 0
+        if (!isUpdatedSystem) {
+            return false
+        }
+        val installer = try {
+            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.R) {
+                packageManager.getInstallSourceInfo(packageName).installingPackageName
+            } else {
+                @Suppress("DEPRECATION")
+                packageManager.getInstallerPackageName(packageName)
+            }
+        } catch (_: Exception) {
+            null
+        }?.trim()?.lowercase()
+        return installer == "com.android.vending"
     }
 
     private fun drawableToPngBase64(drawable: Drawable?): String? {

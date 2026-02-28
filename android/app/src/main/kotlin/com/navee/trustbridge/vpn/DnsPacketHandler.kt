@@ -67,6 +67,9 @@ class DnsPacketHandler(
     data class QueryObservation(
         val domain: String,
         val sourcePort: Int,
+        val sourceIp: String,
+        val destPort: Int,
+        val destIp: String,
         val blocked: Boolean,
         val reasonCode: String,
         val matchedRule: String?
@@ -95,6 +98,16 @@ class DnsPacketHandler(
 
             val sourceIp = packet.copyOfRange(12, 16)
             val destIp = packet.copyOfRange(16, 20)
+            val sourceIpText = try {
+                InetAddress.getByAddress(sourceIp).hostAddress ?: ""
+            } catch (_: Exception) {
+                ""
+            }
+            val destIpText = try {
+                InetAddress.getByAddress(destIp).hostAddress ?: ""
+            } catch (_: Exception) {
+                ""
+            }
 
             val udpOffset = ipHeaderLength
             val sourcePort = readUInt16(packet, udpOffset)
@@ -126,6 +139,9 @@ class DnsPacketHandler(
                     QueryObservation(
                         domain = normalizedDomain,
                         sourcePort = sourcePort,
+                        sourceIp = sourceIpText,
+                        destPort = destPort,
+                        destIp = destIpText,
                         blocked = isBlocked,
                         reasonCode = decision.reasonCode,
                         matchedRule = decision.matchedRule

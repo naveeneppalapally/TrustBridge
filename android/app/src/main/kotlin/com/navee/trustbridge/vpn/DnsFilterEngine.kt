@@ -155,7 +155,7 @@ class DnsFilterEngine(private val context: Context) {
         val normalizedDomain = normalizeDomain(domain)
         Log.d(
             TAG,
-            "shouldBlock($normalizedDomain) cats=$blockedCategories customDomains=${blockedDomains.size} allowed=${temporaryAllowedDomains.size}"
+            "evaluateBlockDecision($normalizedDomain) cats=$blockedCategories customDomains=${blockedDomains.size} allowed=${temporaryAllowedDomains.size}"
         )
 
         val controlPlaneAllowRule = findMatchingControlPlaneAllowRule(normalizedDomain)
@@ -255,7 +255,7 @@ class DnsFilterEngine(private val context: Context) {
 
         Log.d(
             TAG,
-            "Filter rules updated. categories=${blockedCategories.size}, domains=${blockedDomains.size}, temporaryAllowed=${temporaryAllowedDomains.size}"
+            "updateFilterRules categories=$blockedCategories domains=$blockedDomains temporaryAllowed=$temporaryAllowedDomains"
         )
     }
 

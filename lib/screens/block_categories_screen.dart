@@ -1821,26 +1821,31 @@ class _BlockCategoriesScreenState extends State<BlockCategoriesScreen> {
       if (parentId == null) {
         throw Exception('Not logged in');
       }
+      final saveBlockedCategories = Set<String>.from(_blockedCategories);
+      final saveBlockedServices = Set<String>.from(_blockedServices);
+      final saveBlockedDomains = Set<String>.from(_blockedDomains);
+      final saveBlockedPackages = Set<String>.from(_blockedPackages);
+      final saveModeOverrides = _cloneModeOverrides(_modeOverrides);
       unawaited(
         _emitBlockAppsDebugEvent(
           eventType: 'policy_save_started',
           payload: <String, dynamic>{
             'origin': debugOrigin,
-            'blockedCategoriesCount': _blockedCategories.length,
-            'blockedServicesCount': _blockedServices.length,
-            'blockedDomainsCount': _blockedDomains.length,
-            'blockedPackagesCount': _blockedPackages.length,
+            'blockedCategoriesCount': saveBlockedCategories.length,
+            'blockedServicesCount': saveBlockedServices.length,
+            'blockedDomainsCount': saveBlockedDomains.length,
+            'blockedPackagesCount': saveBlockedPackages.length,
           },
         ),
       );
 
       final sourceChild = _currentChildContext;
       final updatedPolicy = sourceChild.policy.copyWith(
-        blockedCategories: _orderedBlockedCategories(_blockedCategories),
-        blockedServices: _orderedBlockedServices(_blockedServices),
-        blockedDomains: _orderedBlockedDomains(_blockedDomains),
-        blockedPackages: _orderedBlockedPackages(_blockedPackages),
-        modeOverrides: _cloneModeOverrides(_modeOverrides),
+        blockedCategories: _orderedBlockedCategories(saveBlockedCategories),
+        blockedServices: _orderedBlockedServices(saveBlockedServices),
+        blockedDomains: _orderedBlockedDomains(saveBlockedDomains),
+        blockedPackages: _orderedBlockedPackages(saveBlockedPackages),
+        modeOverrides: saveModeOverrides,
       );
       final updatedChild = sourceChild.copyWith(
         policy: updatedPolicy,
@@ -1928,11 +1933,11 @@ class _BlockCategoriesScreenState extends State<BlockCategoriesScreen> {
         navigator.pop(updatedChild);
       } else {
         setState(() {
-          _initialBlockedCategories = Set<String>.from(_blockedCategories);
-          _initialBlockedServices = Set<String>.from(_blockedServices);
-          _initialBlockedDomains = Set<String>.from(_blockedDomains);
-          _initialBlockedPackages = Set<String>.from(_blockedPackages);
-          _initialModeOverrides = _cloneModeOverrides(_modeOverrides);
+          _initialBlockedCategories = Set<String>.from(saveBlockedCategories);
+          _initialBlockedServices = Set<String>.from(saveBlockedServices);
+          _initialBlockedDomains = Set<String>.from(saveBlockedDomains);
+          _initialBlockedPackages = Set<String>.from(saveBlockedPackages);
+          _initialModeOverrides = _cloneModeOverrides(saveModeOverrides);
         });
       }
     } catch (error) {
