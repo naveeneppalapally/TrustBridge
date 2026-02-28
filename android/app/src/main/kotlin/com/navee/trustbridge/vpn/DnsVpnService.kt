@@ -2271,6 +2271,10 @@ class DnsVpnService : VpnService() {
         if (!serviceRunning) {
             return
         }
+        if (lastAppliedBlockedPackages.isEmpty()) {
+            lastAppGuardedPackage = ""
+            return
+        }
         if (!hasUsageStatsPermissionForGuard()) {
             if (!appGuardPermissionWarningLogged) {
                 appGuardPermissionWarningLogged = true
@@ -2297,10 +2301,8 @@ class DnsVpnService : VpnService() {
         if (isGuardExemptPackage(normalizedForeground)) {
             return
         }
-        val blockAllActive = lastAppliedCategories.contains(BLOCK_ALL_CATEGORY_TOKEN)
         val explicitlyBlocked = lastAppliedBlockedPackages.contains(normalizedForeground)
-        val shouldBlockForeground = explicitlyBlocked || blockAllActive
-        if (!shouldBlockForeground) {
+        if (!explicitlyBlocked) {
             if (lastAppGuardedPackage == normalizedForeground) {
                 lastAppGuardedPackage = ""
             }
