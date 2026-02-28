@@ -11,6 +11,7 @@ import 'package:trustbridge_app/screens/beta_feedback_screen.dart';
 import 'package:trustbridge_app/screens/change_password_screen.dart';
 import 'package:trustbridge_app/screens/family_management_screen.dart';
 import 'package:trustbridge_app/screens/help_support_screen.dart';
+import 'package:trustbridge_app/screens/maximum_protection_screen.dart';
 import 'package:trustbridge_app/screens/modes_screen.dart';
 import 'package:trustbridge_app/screens/nextdns_setup_screen.dart';
 import 'package:trustbridge_app/screens/onboarding_screen.dart';
@@ -460,6 +461,15 @@ class _ParentSettingsScreenState extends State<ParentSettingsScreen> {
           ),
           const Divider(height: 1),
           ListTile(
+            key: const Key('settings_maximum_protection_tile'),
+            leading: const Icon(Icons.gpp_good_outlined),
+            title: const Text('Maximum Protection'),
+            subtitle: const Text('Device Owner hardening and setup'),
+            trailing: const Icon(Icons.chevron_right),
+            onTap: () => _openMaximumProtection(context),
+          ),
+          const Divider(height: 1),
+          ListTile(
             key: const Key('settings_modes_tile'),
             leading: const Icon(Icons.tune_rounded),
             title: const Text('Modes'),
@@ -842,6 +852,14 @@ class _ParentSettingsScreenState extends State<ParentSettingsScreen> {
           firestoreService: widget.firestoreService,
           parentIdOverride: widget.parentIdOverride,
         ),
+      ),
+    );
+  }
+
+  Future<void> _openMaximumProtection(BuildContext context) async {
+    await Navigator.of(context).push(
+      MaterialPageRoute(
+        builder: (_) => const MaximumProtectionScreen(),
       ),
     );
   }

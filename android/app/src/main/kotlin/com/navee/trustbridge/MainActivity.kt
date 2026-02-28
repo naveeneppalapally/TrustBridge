@@ -8,6 +8,8 @@ import android.app.usage.UsageStatsManager
 import android.app.usage.UsageEvents
 import android.os.Build
 import android.os.PowerManager
+import android.os.SystemClock
+import android.os.UserManager
 import android.net.Uri
 import android.provider.Settings
 import android.content.pm.ApplicationInfo
@@ -42,6 +44,9 @@ class MainActivity : FlutterFragmentActivity() {
             "com.navee.trustbridge/vpn"
         )
         private const val DEVICE_ADMIN_CHANNEL = "com.navee.trustbridge/device_admin"
+        private const val DEVICE_OWNER_SETUP_COMMAND =
+            "adb shell dpm set-device-owner com.navee.trustbridge/.TrustBridgeAdminReceiver"
+        private const val AUTO_RESTORE_MIN_INTERVAL_MS = 8_000L
         private val USAGE_CHANNEL_NAMES = listOf(
             "com.navee.trustbridge/usage_stats"
         )
@@ -50,6 +55,7 @@ class MainActivity : FlutterFragmentActivity() {
     private var pendingPermissionResult: MethodChannel.Result? = null
     private var pendingDeviceAdminResult: MethodChannel.Result? = null
     private var primaryVpnChannel: MethodChannel? = null
+    private var lastAutoRestoreAttemptElapsedMs: Long = 0L
     private val blocklistStore: BlocklistStore by lazy {
         BlocklistStore(applicationContext)
     }
@@ -89,6 +95,11 @@ class MainActivity : FlutterFragmentActivity() {
         ).setMethodCallHandler { call, result ->
             handleDeviceAdminMethodCall(call, result)
         }
+    }
+
+    override fun onResume() {
+        super.onResume()
+        maybeAutoRestoreVpnOnForegroundEntry()
     }
 
     private fun handleMethodCall(call: MethodCall, result: MethodChannel.Result) {
@@ -405,6 +416,8 @@ class MainActivity : FlutterFragmentActivity() {
         when (call.method) {
             "isDeviceAdminActive" -> result.success(isDeviceAdminActive())
 
+            "isDeviceOwnerActive" -> result.success(isDeviceOwnerActive())
+
             "requestDeviceAdmin" -> requestDeviceAdmin(result)
 
             "removeDeviceAdmin" -> {
@@ -414,8 +427,57 @@ class MainActivity : FlutterFragmentActivity() {
 
             "getPrivateDnsMode" -> result.success(getPrivateDnsMode())
 
+            "getDeviceOwnerSetupCommand" -> result.success(DEVICE_OWNER_SETUP_COMMAND)
+
+            "getMaximumProtectionStatus" -> result.success(buildMaximumProtectionStatus())
+
+            "applyMaximumProtectionPolicies" -> result.success(applyMaximumProtectionPolicies())
+
             else -> result.notImplemented()
         }
+    }
+
+    private fun maybeAutoRestoreVpnOnForegroundEntry() {
+        if (DnsVpnService.isRunning) {
+            return
+        }
+        if (!hasVpnPermission()) {
+            return
+        }
+        val config = try {
+            vpnPreferencesStore.loadConfig()
+        } catch (_: Exception) {
+            return
+        }
+        if (!config.enabled) {
+            return
+        }
+        val nowElapsed = SystemClock.elapsedRealtime()
+        if (nowElapsed - lastAutoRestoreAttemptElapsedMs < AUTO_RESTORE_MIN_INTERVAL_MS) {
+            return
+        }
+        lastAutoRestoreAttemptElapsedMs = nowElapsed
+        val serviceIntent = Intent(this, DnsVpnService::class.java).apply {
+            action = DnsVpnService.ACTION_START
+            putStringArrayListExtra(
+                DnsVpnService.EXTRA_BLOCKED_CATEGORIES,
+                ArrayList(config.blockedCategories)
+            )
+            putStringArrayListExtra(
+                DnsVpnService.EXTRA_BLOCKED_DOMAINS,
+                ArrayList(config.blockedDomains)
+            )
+            putStringArrayListExtra(
+                DnsVpnService.EXTRA_TEMP_ALLOWED_DOMAINS,
+                ArrayList(config.temporaryAllowedDomains)
+            )
+            putStringArrayListExtra(
+                DnsVpnService.EXTRA_BLOCKED_PACKAGES,
+                ArrayList(config.blockedPackages)
+            )
+            putExtra(DnsVpnService.EXTRA_UPSTREAM_DNS, config.upstreamDns)
+        }
+        startServiceCompat(serviceIntent)
     }
 
     private fun handleUsageMethodCall(call: MethodCall, result: MethodChannel.Result) {
@@ -439,6 +501,132 @@ class MainActivity : FlutterFragmentActivity() {
     private fun isDeviceAdminActive(): Boolean {
         val policyManager = getSystemService(DevicePolicyManager::class.java) ?: return false
         return policyManager.isAdminActive(deviceAdminComponent())
+    }
+
+    private fun isDeviceOwnerActive(): Boolean {
+        val policyManager = getSystemService(DevicePolicyManager::class.java) ?: return false
+        return try {
+            policyManager.isDeviceOwnerApp(packageName)
+        } catch (_: Exception) {
+            false
+        }
+    }
+
+    private fun buildMaximumProtectionStatus(): Map<String, Any> {
+        val policyManager = getSystemService(DevicePolicyManager::class.java)
+        val userManager = getSystemService(UserManager::class.java)
+        val adminActive = isDeviceAdminActive()
+        val ownerActive = isDeviceOwnerActive()
+
+        val alwaysOnPackage = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.N && policyManager != null) {
+            try {
+                policyManager.getAlwaysOnVpnPackage(deviceAdminComponent())
+            } catch (_: Exception) {
+                null
+            }
+        } else {
+            null
+        }
+
+        val lockdownEnabled =
+            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q &&
+                policyManager != null &&
+                adminActive
+            ) {
+                try {
+                    policyManager.isAlwaysOnVpnLockdownEnabled(deviceAdminComponent())
+                } catch (_: Exception) {
+                    false
+                }
+            } else {
+                false
+            }
+
+        val uninstallBlocked = if (policyManager != null && adminActive) {
+            try {
+                policyManager.isUninstallBlocked(deviceAdminComponent(), packageName)
+            } catch (_: Exception) {
+                false
+            }
+        } else {
+            false
+        }
+
+        val appsControlRestricted = if (userManager != null && Build.VERSION.SDK_INT >= Build.VERSION_CODES.LOLLIPOP) {
+            try {
+                userManager.hasUserRestriction(UserManager.DISALLOW_APPS_CONTROL)
+            } catch (_: Exception) {
+                false
+            }
+        } else {
+            false
+        }
+
+        return mapOf(
+            "vpnRunning" to DnsVpnService.isRunning,
+            "deviceAdminActive" to adminActive,
+            "deviceOwnerActive" to ownerActive,
+            "alwaysOnVpnPackage" to (alwaysOnPackage ?: ""),
+            "alwaysOnVpnEnabled" to (alwaysOnPackage == packageName),
+            "lockdownEnabled" to lockdownEnabled,
+            "uninstallBlocked" to uninstallBlocked,
+            "appsControlRestricted" to appsControlRestricted,
+            "setupCommand" to DEVICE_OWNER_SETUP_COMMAND
+        )
+    }
+
+    private fun applyMaximumProtectionPolicies(): Map<String, Any> {
+        val base = buildMaximumProtectionStatus().toMutableMap()
+        if (!isDeviceOwnerActive()) {
+            base["success"] = false
+            base["message"] = "Device Owner not active on this phone."
+            return base
+        }
+
+        val policyManager = getSystemService(DevicePolicyManager::class.java)
+        if (policyManager == null) {
+            base["success"] = false
+            base["message"] = "Device policy service unavailable."
+            return base
+        }
+
+        val admin = deviceAdminComponent()
+        val errors = mutableListOf<String>()
+
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.N) {
+            try {
+                policyManager.setAlwaysOnVpnPackage(admin, packageName, true)
+            } catch (error: Exception) {
+                errors.add("always_on_vpn:${error.javaClass.simpleName}")
+            }
+        } else {
+            errors.add("always_on_vpn:unsupported_sdk")
+        }
+
+        try {
+            policyManager.setUninstallBlocked(admin, packageName, true)
+        } catch (error: Exception) {
+            errors.add("uninstall_block:${error.javaClass.simpleName}")
+        }
+
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.LOLLIPOP) {
+            try {
+                policyManager.addUserRestriction(admin, UserManager.DISALLOW_APPS_CONTROL)
+                policyManager.addUserRestriction(admin, UserManager.DISALLOW_UNINSTALL_APPS)
+            } catch (error: Exception) {
+                errors.add("user_restrictions:${error.javaClass.simpleName}")
+            }
+        }
+
+        val refreshed = buildMaximumProtectionStatus().toMutableMap()
+        refreshed["success"] = errors.isEmpty()
+        refreshed["message"] = if (errors.isEmpty()) {
+            "Maximum protection policies applied."
+        } else {
+            "Applied with warnings: ${errors.joinToString(", ")}"
+        }
+        refreshed["errors"] = errors
+        return refreshed
     }
 
     private fun requestDeviceAdmin(result: MethodChannel.Result) {
