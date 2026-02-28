@@ -85,7 +85,7 @@ class DnsVpnService : VpnService() {
         private const val WEB_DIAGNOSTICS_WRITE_MIN_INTERVAL_MS = 5_000L
         private const val WEB_DIAGNOSTICS_RECENT_DNS_WINDOW_MS = 20_000L
         private const val APP_DOMAIN_USAGE_WRITE_MIN_INTERVAL_MS = 5_000L
-        private const val APP_INVENTORY_WRITE_MIN_INTERVAL_MS = 15 * 60 * 1000L
+        private const val APP_INVENTORY_WRITE_MIN_INTERVAL_MS = 2 * 60 * 1000L
         private const val APP_DOMAIN_USAGE_MAX_PACKAGES = 180
         private const val APP_DOMAIN_USAGE_MAX_DOMAINS_PER_PACKAGE = 120
         private const val PORT_UID_CACHE_TTL_MS = 15_000L
