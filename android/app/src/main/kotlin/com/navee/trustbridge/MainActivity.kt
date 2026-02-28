@@ -836,11 +836,26 @@ class MainActivity : FlutterFragmentActivity() {
             val isSystemApp = applicationInfo?.let {
                 it.flags and ApplicationInfo.FLAG_SYSTEM != 0
             } ?: false
+            if (isSystemApp) {
+                return@forEach
+            }
+            val hasInternetPermission = try {
+                packageManager.checkPermission(
+                    android.Manifest.permission.INTERNET,
+                    packageName
+                ) == PackageManager.PERMISSION_GRANTED
+            } catch (_: Exception) {
+                false
+            }
+            if (!hasInternetPermission) {
+                return@forEach
+            }
 
             val appPayload = mutableMapOf<String, Any>(
                 "packageName" to packageName.lowercase(),
                 "appName" to (if (appName.isEmpty()) packageName else appName),
                 "isSystemApp" to isSystemApp,
+                "hasInternetPermission" to hasInternetPermission,
                 "isLaunchable" to true,
                 "firstSeenAt" to nowEpochMs,
                 "lastSeenAt" to nowEpochMs

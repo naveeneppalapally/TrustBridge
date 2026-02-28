@@ -1271,6 +1271,32 @@ class FirestoreService {
     });
   }
 
+  Future<Map<String, List<String>>> getChildObservedAppDomainsOnce({
+    required String parentId,
+    required String childId,
+  }) async {
+    if (parentId.trim().isEmpty) {
+      throw ArgumentError.value(parentId, 'parentId', 'Parent ID is required.');
+    }
+    if (childId.trim().isEmpty) {
+      throw ArgumentError.value(childId, 'childId', 'Child ID is required.');
+    }
+
+    final childDoc = await _loadOwnedChildDoc(
+      parentId: parentId,
+      childId: childId,
+    );
+    if (!childDoc.exists) {
+      return const <String, List<String>>{};
+    }
+
+    final usageDoc = await childDoc.reference
+        .collection('app_domain_usage')
+        .doc('current')
+        .get();
+    return _observedAppDomainsFromSnapshot(usageDoc.data());
+  }
+
   List<InstalledAppInfo> _installedAppsFromSnapshot(
       Map<String, dynamic>? data) {
     if (data == null || data.isEmpty) {
@@ -1312,6 +1338,60 @@ class FirestoreService {
       (a, b) => a.appName.toLowerCase().compareTo(b.appName.toLowerCase()),
     );
     return apps;
+  }
+
+  Map<String, List<String>> _observedAppDomainsFromSnapshot(
+    Map<String, dynamic>? data,
+  ) {
+    if (data == null || data.isEmpty) {
+      return const <String, List<String>>{};
+    }
+    final result = <String, List<String>>{};
+    final packageDomainsRaw = data['packageDomains'];
+    if (packageDomainsRaw is Map) {
+      packageDomainsRaw.forEach((key, value) {
+        final packageName = key.toString().trim().toLowerCase();
+        if (packageName.isEmpty) {
+          return;
+        }
+        final domains = _dynamicStringList(value)
+            .map((domain) => domain.trim().toLowerCase())
+            .where((domain) => domain.isNotEmpty)
+            .toSet()
+            .toList()
+          ..sort();
+        if (domains.isNotEmpty) {
+          result[packageName] = domains;
+        }
+      });
+    }
+    final packagesRaw = data['packages'];
+    if (packagesRaw is List) {
+      for (final raw in packagesRaw) {
+        final packageMap = _dynamicMap(raw);
+        if (packageMap.isEmpty) {
+          continue;
+        }
+        final packageName =
+            (packageMap['packageName'] as String?)?.trim().toLowerCase();
+        if (packageName == null || packageName.isEmpty) {
+          continue;
+        }
+        final domains = _dynamicStringList(packageMap['domains'])
+            .map((domain) => domain.trim().toLowerCase())
+            .where((domain) => domain.isNotEmpty)
+            .toSet()
+            .toList()
+          ..sort();
+        if (domains.isEmpty) {
+          continue;
+        }
+        final existing = result[packageName] ?? const <String>[];
+        result[packageName] = <String>{...existing, ...domains}.toList()
+          ..sort();
+      }
+    }
+    return result;
   }
 
   /// Streams latest heartbeat timestamps for a set of device IDs.
@@ -2906,6 +2986,12 @@ class FirestoreService {
       final normalizedManualMode =
           protectionEnabled ? _normalizeManualModeMap(manualMode) : null;
       final effectivePausedUntil = protectionEnabled ? pausedUntil : null;
+      final observedPackageDomains = protectionEnabled
+          ? await getChildObservedAppDomainsOnce(
+              parentId: normalizedParentId,
+              childId: normalizedChildId,
+            )
+          : const <String, List<String>>{};
       final activeModeKey = protectionEnabled
           ? _activeModeOverrideKey(
               pausedUntil: effectivePausedUntil,
@@ -2961,8 +3047,9 @@ class FirestoreService {
                 blockedServices: modeForceBlockServices,
                 customBlockedDomains: modeForceBlockDomains,
               ),
-              ...ServiceDefinitions.resolveDomainsForPackages(
-                modeBlockedPackages,
+              ..._resolveDomainsForPackagesUsingObserved(
+                blockedPackages: modeBlockedPackages,
+                observedPackageDomains: observedPackageDomains,
               ),
             }.toList()
             ..sort())
@@ -2974,8 +3061,9 @@ class FirestoreService {
                 blockedServices: modeForceAllowServices,
                 customBlockedDomains: modeForceAllowDomains,
               ),
-              ...ServiceDefinitions.resolveDomainsForPackages(
-                modeAllowedPackages,
+              ..._resolveDomainsForPackagesUsingObserved(
+                blockedPackages: modeAllowedPackages,
+                observedPackageDomains: observedPackageDomains,
               ),
             }.toList()
             ..sort())
@@ -3000,7 +3088,10 @@ class FirestoreService {
                 customBlockedDomains: normalizedDomains,
               ),
               ...modeBlockedDomains,
-              ...ServiceDefinitions.resolveDomainsForPackages(resolvedPackages),
+              ..._resolveDomainsForPackagesUsingObserved(
+                blockedPackages: resolvedPackages,
+                observedPackageDomains: observedPackageDomains,
+              ),
             }.toList()
             ..removeWhere(modeAllowedDomains.contains)
             ..sort())
@@ -3178,6 +3269,28 @@ class FirestoreService {
     }
     final ordered = normalized.toList()..sort();
     return ordered;
+  }
+
+  Set<String> _resolveDomainsForPackagesUsingObserved({
+    required Iterable<String> blockedPackages,
+    required Map<String, List<String>> observedPackageDomains,
+  }) {
+    final result = <String>{};
+    for (final rawPackage in blockedPackages) {
+      final packageName = rawPackage.trim().toLowerCase();
+      if (packageName.isEmpty) {
+        continue;
+      }
+      final observed = observedPackageDomains[packageName];
+      if (observed != null && observed.isNotEmpty) {
+        result.addAll(
+          observed
+              .map((domain) => domain.trim().toLowerCase())
+              .where((domain) => domain.isNotEmpty),
+        );
+      }
+    }
+    return result;
   }
 
   Map<String, ModeOverrideSet> _normalizeModeOverridesModel(

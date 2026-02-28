@@ -141,6 +141,8 @@ class _BlockCategoriesScreenState extends State<BlockCategoriesScreen> {
   bool _autoSaveQueued = false;
   String _query = '';
   List<InstalledAppInfo> _installedApps = const <InstalledAppInfo>[];
+  Map<String, List<String>> _observedDomainsByPackage =
+      const <String, List<String>>{};
   final Map<String, Uint8List?> _installedAppIconBytesCache =
       <String, Uint8List?>{};
   ChildProfile? _liveChildContext;
@@ -241,7 +243,13 @@ class _BlockCategoriesScreenState extends State<BlockCategoriesScreen> {
     return sortedApps.where((app) {
       final appName = app.appName.toLowerCase();
       final packageName = app.packageName.toLowerCase();
-      return appName.contains(normalized) || packageName.contains(normalized);
+      final domains =
+          (_observedDomainsByPackage[packageName] ?? const <String>[])
+              .join(' ')
+              .toLowerCase();
+      return appName.contains(normalized) ||
+          packageName.contains(normalized) ||
+          domains.contains(normalized);
     }).toList(growable: false);
   }
 
@@ -431,15 +439,45 @@ class _BlockCategoriesScreenState extends State<BlockCategoriesScreen> {
       _isLoadingInstalledApps = true;
     });
     try {
-      final apps = await _resolvedFirestoreService.getChildInstalledAppsOnce(
+      final appsFuture = _resolvedFirestoreService.getChildInstalledAppsOnce(
         parentId: parentId,
         childId: widget.child.id,
       );
+      final observedDomainsFuture =
+          _resolvedFirestoreService.getChildObservedAppDomainsOnce(
+        parentId: parentId,
+        childId: widget.child.id,
+      );
+      final apps = await appsFuture;
+      final observedDomains = await observedDomainsFuture;
+      final appsByPackage = <String, InstalledAppInfo>{
+        for (final app in apps)
+          if (!app.isSystemApp) app.packageName.trim().toLowerCase(): app,
+      };
+      final visiblePackages = observedDomains.entries
+          .where((entry) => entry.value.isNotEmpty)
+          .map((entry) => entry.key.trim().toLowerCase())
+          .where((value) => value.isNotEmpty)
+          .toSet();
+      final mergedApps = <InstalledAppInfo>[
+        for (final packageName in visiblePackages)
+          if (appsByPackage.containsKey(packageName))
+            appsByPackage[packageName]!,
+      ];
+      mergedApps.sort((a, b) {
+        final rankA = _installedPackageRank(a.packageName);
+        final rankB = _installedPackageRank(b.packageName);
+        if (rankA != rankB) {
+          return rankA.compareTo(rankB);
+        }
+        return a.appName.toLowerCase().compareTo(b.appName.toLowerCase());
+      });
       if (!mounted) {
         return;
       }
       setState(() {
-        _installedApps = apps;
+        _installedApps = mergedApps;
+        _observedDomainsByPackage = observedDomains;
         _installedAppIconBytesCache.clear();
       });
     } catch (_) {
@@ -448,6 +486,7 @@ class _BlockCategoriesScreenState extends State<BlockCategoriesScreen> {
       }
       setState(() {
         _installedApps = const <InstalledAppInfo>[];
+        _observedDomainsByPackage = const <String, List<String>>{};
         _installedAppIconBytesCache.clear();
       });
     } finally {
@@ -855,7 +894,7 @@ class _BlockCategoriesScreenState extends State<BlockCategoriesScreen> {
             ),
           ),
           child: const Text(
-            'These are apps detected on your child device. '
+            'Only apps that actually used the internet on the child phone are shown here. '
             'Turn one ON to block that app.',
           ),
         ),
@@ -885,7 +924,7 @@ class _BlockCategoriesScreenState extends State<BlockCategoriesScreen> {
               child: Text(
                 _isLoadingInstalledApps
                     ? 'Loading app inventory from child device...'
-                    : 'No apps found yet. Open TrustBridge once on the child phone and come back here.',
+                    : 'No network apps found yet. Open Chrome or WhatsApp on the child phone, then tap refresh.',
                 style: Theme.of(context).textTheme.bodyMedium,
               ),
             ),
@@ -900,11 +939,9 @@ class _BlockCategoriesScreenState extends State<BlockCategoriesScreen> {
     final packageName = app.packageName.trim().toLowerCase();
     final effectiveState = _effectiveInstalledPackageState(app);
     final iconBytes = _installedAppIconBytes(app);
-    final subtitlePieces = <String>[
-      if (app.isSystemApp) 'System',
-      effectiveState.status,
-    ];
-    final subtitle = subtitlePieces.join(' - ');
+    final observedDomains =
+        _observedDomainsByPackage[packageName] ?? const <String>[];
+    final domainPreview = observedDomains.take(3).join(', ');
 
     return Card(
       key: Key('installed_app_row_$packageName'),
@@ -927,11 +964,27 @@ class _BlockCategoriesScreenState extends State<BlockCategoriesScreen> {
           maxLines: 1,
           overflow: TextOverflow.ellipsis,
         ),
-        subtitle: Text(
-          subtitle,
-          maxLines: 2,
-          overflow: TextOverflow.ellipsis,
-          style: TextStyle(color: effectiveState.color),
+        subtitle: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            Text(
+              effectiveState.status,
+              maxLines: 1,
+              overflow: TextOverflow.ellipsis,
+              style: TextStyle(
+                color: effectiveState.color,
+                fontWeight: FontWeight.w700,
+              ),
+            ),
+            if (domainPreview.isNotEmpty)
+              Text(
+                'Domains: $domainPreview${observedDomains.length > 3 ? ', ...' : ''}',
+                maxLines: 1,
+                overflow: TextOverflow.ellipsis,
+                style: Theme.of(context).textTheme.bodySmall,
+              ),
+          ],
         ),
         trailing: Switch.adaptive(
           key: Key('installed_app_switch_$packageName'),
@@ -995,34 +1048,8 @@ class _BlockCategoriesScreenState extends State<BlockCategoriesScreen> {
 
     final blocked =
         categoryBlocked || serviceBlocked || packageBlocked || blockedByMode;
-    if (categoryBlocked) {
-      return (
-        blocked: true,
-        status: 'Blocked by category',
-        color: Colors.red.shade700,
-      );
-    }
-    if (serviceBlocked || packageBlocked) {
-      return (
-        blocked: true,
-        status: 'Blocked individually',
-        color: Colors.red.shade700,
-      );
-    }
-    if (blockedByMode) {
-      final modeLabel = modeContext.modeLabel ?? 'active mode';
-      return (
-        blocked: true,
-        status: 'Blocked from $modeLabel',
-        color: Colors.deepOrange.shade700,
-      );
-    }
-    if (modeAllowed) {
-      return (
-        blocked: false,
-        status: 'Allowed by manual override',
-        color: Colors.green.shade700,
-      );
+    if (categoryBlocked || serviceBlocked || packageBlocked || blockedByMode) {
+      return (blocked: true, status: 'Blocked', color: Colors.red.shade700);
     }
     return (blocked: blocked, status: 'Allowed', color: Colors.green.shade700);
   }
