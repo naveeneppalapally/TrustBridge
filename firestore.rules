@@ -374,6 +374,37 @@ service cloud.firestore {
         allow delete: if false;
       }
 
+      // Observed app-to-domain usage learned from child DNS traffic.
+      match /app_domain_usage/{usageId} {
+        allow read: if isChildParent(childId) || isChildDevice(childId);
+
+        allow create, update: if isChildDevice(childId) &&
+          hasOnlyKeys(
+            request.resource.data,
+            [
+              'parentId',
+              'childId',
+              'deviceId',
+              'packages',
+              'packageDomains',
+              'updatedAt'
+            ]
+          ) &&
+          isRequiredString(request.resource.data, 'parentId', 128) &&
+          request.resource.data.parentId ==
+            get(/databases/$(database)/documents/children/$(childId)).data.parentId &&
+          isRequiredString(request.resource.data, 'childId', 128) &&
+          request.resource.data.childId == childId &&
+          isOptionalString(request.resource.data, 'deviceId', 128) &&
+          ('packages' in request.resource.data) &&
+          request.resource.data.packages is list &&
+          ('packageDomains' in request.resource.data) &&
+          request.resource.data.packageDomains is map &&
+          isRequiredTimestamp(request.resource.data, 'updatedAt');
+
+        allow delete: if false;
+      }
+
       // Optional policy documents used by diagnostics/experiments.
       match /policy/{policyDocId} {
         allow read: if isChildParent(childId) || isChildDevice(childId);

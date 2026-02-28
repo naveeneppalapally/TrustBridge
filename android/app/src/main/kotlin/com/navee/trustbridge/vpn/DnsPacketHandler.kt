@@ -14,7 +14,8 @@ class DnsPacketHandler(
     private val filterEngine: DnsFilterEngine,
     private val upstreamDns: String = "1.1.1.1",
     private val protectSocket: ((DatagramSocket) -> Unit)? = null,
-    private val onBlockedDomain: ((String) -> Unit)? = null
+    private val onBlockedDomain: ((String) -> Unit)? = null,
+    private val onQueryObserved: ((QueryObservation) -> Unit)? = null
 ) {
     companion object {
         private const val TAG = "DnsPacketHandler"
@@ -56,10 +57,19 @@ class DnsPacketHandler(
 
     data class QueryLogEntry(
         val domain: String,
+        val sourcePort: Int,
         val blocked: Boolean,
         val reasonCode: String,
         val matchedRule: String?,
         val timestampEpochMs: Long
+    )
+
+    data class QueryObservation(
+        val domain: String,
+        val sourcePort: Int,
+        val blocked: Boolean,
+        val reasonCode: String,
+        val matchedRule: String?
     )
 
     fun handlePacket(packet: ByteArray, length: Int): ByteArray? {
@@ -111,8 +121,20 @@ class DnsPacketHandler(
             } else {
                 incrementAllowedQuery()
             }
+            if (normalizedDomain != "<unknown>") {
+                onQueryObserved?.invoke(
+                    QueryObservation(
+                        domain = normalizedDomain,
+                        sourcePort = sourcePort,
+                        blocked = isBlocked,
+                        reasonCode = decision.reasonCode,
+                        matchedRule = decision.matchedRule
+                    )
+                )
+            }
             appendQueryLog(
                 domain = normalizedDomain,
+                sourcePort = sourcePort,
                 blocked = isBlocked,
                 reasonCode = decision.reasonCode,
                 matchedRule = decision.matchedRule
@@ -172,6 +194,7 @@ class DnsPacketHandler(
         return snapshot.map { entry ->
             buildMap<String, Any> {
                 put("domain", entry.domain)
+                put("sourcePort", entry.sourcePort)
                 put("blocked", entry.blocked)
                 put("reasonCode", entry.reasonCode)
                 if (!entry.matchedRule.isNullOrBlank()) {
@@ -479,6 +502,7 @@ class DnsPacketHandler(
     @Synchronized
     private fun appendQueryLog(
         domain: String,
+        sourcePort: Int,
         blocked: Boolean,
         reasonCode: String,
         matchedRule: String?
@@ -489,6 +513,7 @@ class DnsPacketHandler(
         recentQueries.addLast(
             QueryLogEntry(
                 domain = domain,
+                sourcePort = sourcePort,
                 blocked = blocked,
                 reasonCode = reasonCode,
                 matchedRule = matchedRule?.trim()?.takeIf { it.isNotEmpty() },

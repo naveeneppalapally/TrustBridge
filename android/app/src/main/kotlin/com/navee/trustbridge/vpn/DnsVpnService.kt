@@ -10,6 +10,7 @@ import android.app.usage.UsageEvents
 import android.app.usage.UsageStatsManager
 import android.content.Context
 import android.content.Intent
+import android.content.pm.ApplicationInfo
 import android.content.pm.PackageManager
 import android.net.ConnectivityManager
 import android.net.Network
@@ -34,7 +35,9 @@ import com.google.firebase.firestore.SetOptions
 import com.google.android.gms.tasks.Tasks
 import java.io.FileInputStream
 import java.io.FileOutputStream
+import java.io.File
 import java.net.InetAddress
+import java.util.LinkedHashMap
 import java.util.concurrent.Executors
 import java.util.concurrent.TimeUnit
 import kotlin.concurrent.thread
@@ -71,6 +74,11 @@ class DnsVpnService : VpnService() {
         private const val EFFECTIVE_POLICY_POLL_TIMEOUT_MS = 6_000L
         private const val WEB_DIAGNOSTICS_WRITE_MIN_INTERVAL_MS = 5_000L
         private const val WEB_DIAGNOSTICS_RECENT_DNS_WINDOW_MS = 20_000L
+        private const val APP_DOMAIN_USAGE_WRITE_MIN_INTERVAL_MS = 5_000L
+        private const val APP_DOMAIN_USAGE_MAX_PACKAGES = 180
+        private const val APP_DOMAIN_USAGE_MAX_DOMAINS_PER_PACKAGE = 120
+        private const val PORT_UID_CACHE_TTL_MS = 15_000L
+        private const val UID_PACKAGE_CACHE_TTL_MS = 60_000L
         private const val BLOCK_ALL_CATEGORY_TOKEN = "__block_all__"
         private val DISTRACTING_MODE_CATEGORIES = setOf(
             "social-networks",
@@ -114,58 +122,6 @@ class DnsVpnService : VpnService() {
         const val EXTRA_BOOT_RESTORE = "bootRestore"
         const val EXTRA_BOOT_RESTORE_ATTEMPT = "bootRestoreAttempt"
         const val EXTRA_TRANSIENT_RETRY_ATTEMPT = "transientRetryAttempt"
-
-        private val APP_BLOCK_RULES = listOf(
-            AppBlockRule(
-                categories = setOf("social", "social-networks"),
-                domainMarkers = setOf(
-                    "instagram.com",
-                    "tiktok.com",
-                    "facebook.com",
-                    "snapchat.com",
-                    "twitter.com",
-                    "x.com"
-                ),
-                packages = setOf(
-                    "com.instagram.android",
-                    "com.zhiliaoapp.musically",
-                    "com.facebook.katana",
-                    "com.facebook.lite",
-                    "com.snapchat.android",
-                    "com.twitter.android",
-                    "com.xcorp.android"
-                )
-            ),
-            AppBlockRule(
-                categories = setOf("streaming"),
-                domainMarkers = setOf("youtube.com", "m.youtube.com", "youtubei.googleapis.com"),
-                packages = setOf(
-                    "com.google.android.youtube",
-                    "app.revanced.android.youtube",
-                    "com.google.android.apps.youtube.music"
-                )
-            ),
-            AppBlockRule(
-                categories = setOf("forums"),
-                domainMarkers = setOf("reddit.com", "redd.it"),
-                packages = setOf("com.reddit.frontpage")
-            ),
-            AppBlockRule(
-                categories = setOf("games"),
-                domainMarkers = setOf("roblox.com"),
-                packages = setOf("com.roblox.client")
-            ),
-            AppBlockRule(
-                categories = setOf("chat"),
-                domainMarkers = setOf("whatsapp.com", "telegram.org", "discord.com"),
-                packages = setOf(
-                    "com.whatsapp",
-                    "com.whatsapp.w4b",
-                    "org.telegram.messenger",
-                    "com.discord"
-                )
-            )
-        )
 
         @Volatile
         var isRunning: Boolean = false
@@ -341,6 +297,16 @@ class DnsVpnService : VpnService() {
     private var cachedPolicyAckDeviceId: String? = null
     private val policyApplyExecutor = Executors.newSingleThreadExecutor()
     private val webDiagnosticsExecutor = Executors.newSingleThreadExecutor()
+    private val appDomainUsageExecutor = Executors.newSingleThreadExecutor()
+    private val appDomainUsageByPackage = linkedMapOf<String, LinkedHashMap<String, Long>>()
+    private val sourcePortUidCache = linkedMapOf<Int, Pair<Int, Long>>()
+    private val uidPackageCache = linkedMapOf<Int, Pair<String, Long>>()
+    @Volatile
+    private var appDomainUsageWriteQueued = false
+    @Volatile
+    private var appDomainUsageDirty = false
+    @Volatile
+    private var lastAppDomainUsageWriteEpochMs: Long = 0L
     @Volatile
     private var webDiagnosticsWriteQueued = false
     @Volatile
@@ -590,7 +556,7 @@ class DnsVpnService : VpnService() {
             // DNS-only VPN: route our synthetic DNS endpoint plus active network DNS
             // addresses into TUN so resolver traffic cannot bypass interception.
             val dnsCaptureRoutes = collectDnsCaptureRoutes(activeUnderlyingNetwork)
-            Log.e(TAG, "DNS capture routes=$dnsCaptureRoutes")
+            Log.d(TAG, "DNS capture routes=$dnsCaptureRoutes")
             dnsCaptureRoutes.forEach { dnsRoute ->
                 builder.addRoute(dnsRoute, 32)
             }
@@ -650,6 +616,12 @@ class DnsVpnService : VpnService() {
                     VpnEventDispatcher.notifyBlockedDomain(
                         domain = domain,
                         modeName = currentModeNameForBlockedEvent()
+                    )
+                },
+                onQueryObserved = { observation ->
+                    recordObservedAppDomain(
+                        sourcePort = observation.sourcePort,
+                        domain = observation.domain
                     )
                 }
             )
@@ -1135,6 +1107,7 @@ class DnsVpnService : VpnService() {
         }
 
         Log.d(TAG, "Stopping DNS VPN")
+        scheduleObservedAppDomainWrite(force = true)
         serviceRunning = false
         isRunning = false
         if (markDisabled) {
@@ -2446,7 +2419,6 @@ class DnsVpnService : VpnService() {
                 .sorted()
         } else {
             deriveBlockedPackages(
-                categories = normalizedCategories.toSet(),
                 domains = normalizedDomains.toSet(),
                 allowedDomains = normalizedAllowedDomains.toSet()
             )
@@ -2495,13 +2467,9 @@ class DnsVpnService : VpnService() {
     }
 
     private fun deriveBlockedPackages(
-        categories: Set<String>,
         domains: Set<String>,
         allowedDomains: Set<String>
     ): List<String> {
-        val normalizedCategories = categories
-            .map(::normalizeCategoryToken)
-            .toSet()
         val normalizedDomains = domains
             .map(::normalizeDomainToken)
             .filter { it.isNotEmpty() }
@@ -2510,24 +2478,30 @@ class DnsVpnService : VpnService() {
             .map(::normalizeDomainToken)
             .filter { it.isNotEmpty() }
             .toSet()
+        if (normalizedDomains.isEmpty()) {
+            return emptyList()
+        }
 
         val blockedPackages = linkedSetOf<String>()
-        for (rule in APP_BLOCK_RULES) {
-            val categoryHit = rule.categories.any { normalizedCategories.contains(it) }
-            val domainHit = rule.domainMarkers.any { marker ->
-                matchesDomainRule(marker, normalizedDomains)
-            }
-            if (!categoryHit && !domainHit) {
+        val observedSnapshot = synchronized(appDomainUsageByPackage) {
+            appDomainUsageByPackage.mapValues { entry -> entry.value.keys.toSet() }
+        }
+        for ((packageName, observedDomains) in observedSnapshot) {
+            if (packageName.isBlank() || observedDomains.isEmpty()) {
                 continue
             }
-
-            val explicitlyAllowed = rule.domainMarkers.any { marker ->
-                matchesDomainRule(marker, normalizedAllowedDomains)
+            val blockedHit = observedDomains.any { domain ->
+                matchesDomainRule(domain, normalizedDomains)
             }
-            if (explicitlyAllowed) {
+            if (!blockedHit) {
                 continue
             }
-            blockedPackages.addAll(rule.packages)
+            val explicitlyAllowed = observedDomains.any { domain ->
+                matchesDomainRule(domain, normalizedAllowedDomains)
+            }
+            if (!explicitlyAllowed) {
+                blockedPackages.add(packageName)
+            }
         }
         return blockedPackages.toList().sorted()
     }
@@ -2764,10 +2738,12 @@ class DnsVpnService : VpnService() {
     }
 
     override fun onDestroy() {
+        scheduleObservedAppDomainWrite(force = true)
         scheduleUnexpectedStopRecovery(reason = "onDestroy")
         stopVpn(stopService = false, markDisabled = false)
         policyApplyExecutor.shutdownNow()
         webDiagnosticsExecutor.shutdownNow()
+        appDomainUsageExecutor.shutdownNow()
         try {
             filterEngine.close()
         } catch (_: Exception) {
@@ -2825,6 +2801,248 @@ class DnsVpnService : VpnService() {
         }
     }
 
+    private fun recordObservedAppDomain(sourcePort: Int, domain: String) {
+        if (!serviceRunning) {
+            return
+        }
+        val normalizedDomain = normalizeDomainToken(domain)
+        if (normalizedDomain.isEmpty() || normalizedDomain == "<unknown>") {
+            return
+        }
+        val packageName = resolvePackageForSourcePort(sourcePort) ?: return
+        val now = System.currentTimeMillis()
+        synchronized(appDomainUsageByPackage) {
+            val domains =
+                appDomainUsageByPackage.getOrPut(packageName) { linkedMapOf() }
+            domains[normalizedDomain] = now
+            if (domains.size > APP_DOMAIN_USAGE_MAX_DOMAINS_PER_PACKAGE) {
+                val oldest = domains.entries.minByOrNull { it.value }?.key
+                if (oldest != null) {
+                    domains.remove(oldest)
+                }
+            }
+            if (appDomainUsageByPackage.size > APP_DOMAIN_USAGE_MAX_PACKAGES) {
+                val oldestPackage = appDomainUsageByPackage.entries
+                    .minByOrNull { entry ->
+                        entry.value.values.minOrNull() ?: Long.MAX_VALUE
+                    }
+                    ?.key
+                if (oldestPackage != null) {
+                    appDomainUsageByPackage.remove(oldestPackage)
+                }
+            }
+        }
+        appDomainUsageDirty = true
+        scheduleObservedAppDomainWrite()
+    }
+
+    private fun resolvePackageForSourcePort(sourcePort: Int): String? {
+        if (sourcePort <= 0) {
+            return null
+        }
+        val now = System.currentTimeMillis()
+        val cachedUid = synchronized(sourcePortUidCache) {
+            val cached = sourcePortUidCache[sourcePort]
+            if (cached != null && now - cached.second <= PORT_UID_CACHE_TTL_MS) {
+                cached.first
+            } else {
+                null
+            }
+        }
+        val uid = cachedUid ?: findUidForSourcePort(sourcePort)?.also { resolved ->
+            synchronized(sourcePortUidCache) {
+                sourcePortUidCache[sourcePort] = resolved to now
+                if (sourcePortUidCache.size > 512) {
+                    val oldestKey = sourcePortUidCache.entries
+                        .minByOrNull { it.value.second }
+                        ?.key
+                    if (oldestKey != null) {
+                        sourcePortUidCache.remove(oldestKey)
+                    }
+                }
+            }
+        } ?: return null
+
+        val cachedPackage = synchronized(uidPackageCache) {
+            val cached = uidPackageCache[uid]
+            if (cached != null && now - cached.second <= UID_PACKAGE_CACHE_TTL_MS) {
+                cached.first
+            } else {
+                null
+            }
+        }
+        if (!cachedPackage.isNullOrBlank()) {
+            return cachedPackage
+        }
+
+        val packages = try {
+            packageManager.getPackagesForUid(uid)
+        } catch (_: Exception) {
+            null
+        } ?: return null
+        val resolvedPackage = packages
+            .mapNotNull { it?.trim()?.lowercase()?.takeIf { value -> value.isNotEmpty() } }
+            .firstOrNull { packageName ->
+                packageName != this.packageName && !isSystemPackage(packageName)
+            } ?: return null
+
+        synchronized(uidPackageCache) {
+            uidPackageCache[uid] = resolvedPackage to now
+            if (uidPackageCache.size > 512) {
+                val oldestKey = uidPackageCache.entries
+                    .minByOrNull { it.value.second }
+                    ?.key
+                if (oldestKey != null) {
+                    uidPackageCache.remove(oldestKey)
+                }
+            }
+        }
+        return resolvedPackage
+    }
+
+    private fun findUidForSourcePort(sourcePort: Int): Int? {
+        return parseUidFromProcNet(path = "/proc/net/udp", sourcePort = sourcePort)
+            ?: parseUidFromProcNet(path = "/proc/net/udp6", sourcePort = sourcePort)
+    }
+
+    private fun parseUidFromProcNet(path: String, sourcePort: Int): Int? {
+        return try {
+            var matchedUid: Int? = null
+            File(path).useLines { lines ->
+                for (line in lines.drop(1)) {
+                    val fields = line.trim().split(Regex("\\s+"))
+                    if (fields.size < 8) {
+                        continue
+                    }
+                    val localAddress = fields[1]
+                    val localPortHex = localAddress.substringAfterLast(':', "")
+                    val localPort = localPortHex.toIntOrNull(16) ?: continue
+                    if (localPort != sourcePort) {
+                        continue
+                    }
+                    val uid = fields[7].toIntOrNull()
+                    if (uid != null && uid > 0) {
+                        matchedUid = uid
+                        break
+                    }
+                }
+            }
+            matchedUid
+        } catch (_: Exception) {
+            null
+        }
+    }
+
+    private fun isSystemPackage(packageName: String): Boolean {
+        return try {
+            val appInfo = packageManager.getApplicationInfo(packageName, 0)
+            appInfo.flags and ApplicationInfo.FLAG_SYSTEM != 0
+        } catch (_: Exception) {
+            false
+        }
+    }
+
+    private fun scheduleObservedAppDomainWrite(force: Boolean = false) {
+        if (!serviceRunning && !force) {
+            return
+        }
+        val now = System.currentTimeMillis()
+        if (!force &&
+            (appDomainUsageWriteQueued ||
+                !appDomainUsageDirty ||
+                now - lastAppDomainUsageWriteEpochMs < APP_DOMAIN_USAGE_WRITE_MIN_INTERVAL_MS)
+        ) {
+            return
+        }
+        appDomainUsageWriteQueued = true
+        appDomainUsageExecutor.execute {
+            try {
+                writeObservedAppDomainUsage(force = force)
+            } catch (error: Exception) {
+                Log.w(TAG, "app_domain_usage write failed", error)
+            } finally {
+                appDomainUsageWriteQueued = false
+            }
+        }
+    }
+
+    private fun writeObservedAppDomainUsage(force: Boolean) {
+        if (!force && !serviceRunning) {
+            return
+        }
+        if (!force && !appDomainUsageDirty) {
+            return
+        }
+        val config = try {
+            vpnPreferencesStore.loadConfig()
+        } catch (_: Exception) {
+            return
+        }
+        val childId = config.childId?.trim().orEmpty()
+        val parentId = config.parentId?.trim().orEmpty()
+        if (childId.isEmpty() || parentId.isEmpty()) {
+            return
+        }
+        if (!maybeBootstrapPolicySyncAuth("app_domain_usage_write")) {
+            return
+        }
+        ensurePolicySyncDeviceRegistration()
+
+        val snapshot = synchronized(appDomainUsageByPackage) {
+            appDomainUsageByPackage.mapValues { entry ->
+                entry.value.toMap()
+            }
+        }
+        if (snapshot.isEmpty()) {
+            return
+        }
+
+        val packageEntries = snapshot.entries
+            .map { (packageName, domains) ->
+                val sortedDomains = domains.entries
+                    .sortedByDescending { it.value }
+                    .map { it.key }
+                hashMapOf<String, Any>(
+                    "packageName" to packageName,
+                    "domains" to sortedDomains,
+                    "domainCount" to sortedDomains.size,
+                    "lastSeenAtEpochMs" to (domains.values.maxOrNull() ?: System.currentTimeMillis())
+                )
+            }
+            .sortedBy { (it["packageName"] as? String).orEmpty() }
+
+        val packageDomainMap = hashMapOf<String, Any>()
+        for ((packageName, domains) in snapshot) {
+            val sortedDomains = domains.entries
+                .sortedByDescending { it.value }
+                .map { it.key }
+            packageDomainMap[packageName] = sortedDomains
+        }
+
+        val payload = hashMapOf<String, Any?>(
+            "parentId" to parentId,
+            "childId" to childId,
+            "deviceId" to cachedPolicyAckDeviceId,
+            "packages" to packageEntries,
+            "packageDomains" to packageDomainMap,
+            "updatedAt" to Timestamp.now()
+        )
+
+        FirebaseFirestore.getInstance()
+            .collection("children")
+            .document(childId)
+            .collection("app_domain_usage")
+            .document("current")
+            .set(payload)
+            .addOnSuccessListener {
+                appDomainUsageDirty = false
+                lastAppDomainUsageWriteEpochMs = System.currentTimeMillis()
+            }
+            .addOnFailureListener { error ->
+                Log.w(TAG, "app_domain_usage/current write failed", error)
+            }
+    }
+
     private fun scheduleUnexpectedStopRecovery(reason: String) {
         val config = try {
             vpnPreferencesStore.loadConfig()
@@ -2877,9 +3095,4 @@ class DnsVpnService : VpnService() {
         )
     }
 
-    private data class AppBlockRule(
-        val categories: Set<String>,
-        val domainMarkers: Set<String>,
-        val packages: Set<String>
-    )
 }
