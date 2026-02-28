@@ -1,5 +1,6 @@
 package com.navee.trustbridge.vpn
 
+import android.Manifest
 import android.app.AlarmManager
 import android.app.AppOpsManager
 import android.app.Notification
@@ -20,6 +21,7 @@ import android.net.VpnService
 import android.os.Build
 import android.os.ParcelFileDescriptor
 import android.os.Process
+import android.system.OsConstants
 import android.provider.Settings
 import android.util.Log
 import androidx.core.app.NotificationCompat
@@ -37,6 +39,7 @@ import java.io.FileInputStream
 import java.io.FileOutputStream
 import java.io.File
 import java.net.InetAddress
+import java.net.InetSocketAddress
 import java.util.LinkedHashMap
 import java.util.concurrent.Executors
 import java.util.concurrent.TimeUnit
@@ -52,6 +55,7 @@ class DnsVpnService : VpnService() {
         private const val CHANNEL_ID = "dns_vpn_channel"
         private const val RECOVERY_NOTIFICATION_ID = 1002
         private const val RECOVERY_CHANNEL_ID = "dns_vpn_recovery_channel"
+        private const val ATTENTION_NOTIFICATION_THROTTLE_MS = 120_000L
         private const val MAX_RECONNECT_ATTEMPTS = 3
         private const val MAX_BOOT_RESTORE_RETRY_ATTEMPTS = 4
         private const val MAX_TRANSIENT_START_RETRY_ATTEMPTS = 3
@@ -103,6 +107,15 @@ class DnsVpnService : VpnService() {
             "com.heytap.browser",
             "com.mi.globalbrowser",
             "com.kiwibrowser.browser"
+        )
+        private val INFRASTRUCTURE_PACKAGES = setOf(
+            "com.android.vending",
+            "com.google.android.gms",
+            "com.google.android.gsf",
+            "com.google.android.googlequicksearchbox",
+            "com.google.android.ext.services",
+            "com.google.android.ext.shared",
+            "com.android.providers.downloads"
         )
 
         const val ACTION_START = "com.navee.trustbridge.vpn.START"
@@ -249,6 +262,10 @@ class DnsVpnService : VpnService() {
     private var serviceRunning: Boolean = false
     @Volatile
     private var foregroundActive: Boolean = false
+    @Volatile
+    private var lastAttentionNotificationMessage: String = ""
+    @Volatile
+    private var lastAttentionNotificationEpochMs: Long = 0L
     @Volatile
     private var appGuardRunning: Boolean = false
     private var appGuardThread: Thread? = null
@@ -621,6 +638,9 @@ class DnsVpnService : VpnService() {
                 onQueryObserved = { observation ->
                     recordObservedAppDomain(
                         sourcePort = observation.sourcePort,
+                        sourceIp = observation.sourceIp,
+                        destPort = observation.destPort,
+                        destIp = observation.destIp,
                         domain = observation.domain
                     )
                 }
@@ -1756,40 +1776,26 @@ class DnsVpnService : VpnService() {
                 allowedDomains == lastAppliedAllowedDomains
 
         val hasIncomingVersion = incomingVersion != null && incomingVersion > 0L
-        if (!hasIncomingVersion && lastEffectivePolicyVersion > 0L) {
+        val versionRegressedOrDuplicate =
+            hasIncomingVersion && incomingVersion!! <= lastEffectivePolicyVersion
+        if (versionRegressedOrDuplicate && stateUnchanged) {
             recordPolicyApplySkip(
                 source = source,
                 version = incomingVersion,
-                reason = "missing_version_after_initial_apply"
+                reason = "version_not_new_and_state_unchanged"
             )
             return
         }
-
-        val versionRegressedOrDuplicate =
-            hasIncomingVersion && incomingVersion!! <= lastEffectivePolicyVersion
-        if (versionRegressedOrDuplicate) {
-            if (!stateUnchanged) {
-                Log.w(
-                    TAG,
-                    "Ignoring effective_policy with non-increasing version " +
-                        "version=${incomingVersion ?: 0L} last=$lastEffectivePolicyVersion source=$source " +
-                        "(state changed)"
-                )
-            }
-            recordPolicyApplySkip(
-                source = source,
-                version = incomingVersion,
-                reason = if (stateUnchanged) {
-                    "version_not_new_and_state_unchanged"
-                } else {
-                    "version_not_new_state_changed_ignored"
-                }
+        if (versionRegressedOrDuplicate && !stateUnchanged) {
+            Log.w(
+                TAG,
+                "Applying effective_policy with non-increasing version because state changed " +
+                    "version=${incomingVersion ?: 0L} last=$lastEffectivePolicyVersion source=$source"
             )
-            return
         }
 
         if (stateUnchanged) {
-            if (incomingVersion != null && incomingVersion > 0L) {
+            if (incomingVersion != null && incomingVersion > lastEffectivePolicyVersion) {
                 lastEffectivePolicyVersion = incomingVersion
             }
             recordPolicyApplySuccess(source, incomingVersion)
@@ -1820,7 +1826,7 @@ class DnsVpnService : VpnService() {
             temporaryAllowedDomains = allowedDomains,
             blockedPackages = blockedPackages
         )
-        if (incomingVersion != null && incomingVersion > 0L) {
+        if (incomingVersion != null && incomingVersion > lastEffectivePolicyVersion) {
             lastEffectivePolicyVersion = incomingVersion
         }
         recordPolicyApplySuccess(source, incomingVersion)
@@ -2145,6 +2151,12 @@ class DnsVpnService : VpnService() {
                 Log.w(TAG, "vpn_diagnostics/current write failed", error)
             }
 
+        writeProtectionStatusSnapshot(
+            parentId = parentId,
+            childId = childId,
+            nowEpochMs = now
+        )
+
         lastWebDiagnosticsWriteEpochMs = now
         lastWebDiagnosticsSignature = signature
         Log.d(
@@ -2154,6 +2166,68 @@ class DnsVpnService : VpnService() {
                 "lastDns=${lastDnsQuery?.get("domain") ?: "-"} " +
                 "lastDnsReason=${lastDnsQuery?.get("reasonCode") ?: "-"}"
         )
+    }
+
+    private fun writeProtectionStatusSnapshot(
+        parentId: String,
+        childId: String,
+        nowEpochMs: Long
+    ) {
+        val deviceId = resolvePolicySyncDeviceId()
+        if (deviceId.isEmpty()) {
+            return
+        }
+
+        val payload = hashMapOf<String, Any?>(
+            "deviceId" to deviceId,
+            "parentId" to parentId,
+            "childId" to childId,
+            "lastSeen" to Timestamp.now(),
+            "lastSeenEpochMs" to nowEpochMs,
+            "vpnActive" to serviceRunning,
+            "queriesProcessed" to queriesProcessed.toInt().coerceAtLeast(0),
+            "queriesBlocked" to queriesBlocked.toInt().coerceAtLeast(0),
+            "queriesAllowed" to queriesAllowed.toInt().coerceAtLeast(0),
+            "upstreamFailureCount" to upstreamFailureCount.toInt().coerceAtLeast(0),
+            "fallbackQueryCount" to fallbackQueryCount.toInt().coerceAtLeast(0),
+            "blockedCategoryCount" to blockedCategoryCount,
+            "blockedDomainCount" to blockedDomainCount,
+            "vpnStatusUpdatedAt" to Timestamp.now(),
+            "updatedAt" to Timestamp.now()
+        )
+
+        val firestore = FirebaseFirestore.getInstance()
+        firestore.collection("devices")
+            .document(deviceId)
+            .set(payload, SetOptions.merge())
+            .addOnFailureListener { error ->
+                Log.w(TAG, "devices/$deviceId status write failed", error)
+            }
+
+        firestore.collection("children")
+            .document(childId)
+            .collection("devices")
+            .document(deviceId)
+            .set(payload, SetOptions.merge())
+            .addOnFailureListener { error ->
+                Log.w(TAG, "children/$childId/devices/$deviceId status write failed", error)
+            }
+    }
+
+    private fun resolvePolicySyncDeviceId(): String {
+        val cached = cachedPolicyAckDeviceId?.trim().orEmpty()
+        if (cached.isNotEmpty()) {
+            return cached
+        }
+        val authUid = try {
+            FirebaseAuth.getInstance().currentUser?.uid?.trim().orEmpty()
+        } catch (_: Exception) {
+            ""
+        }
+        if (authUid.isNotEmpty()) {
+            cachedPolicyAckDeviceId = authUid
+        }
+        return authUid
     }
 
     private fun queryLogMapForDiagnostics(entry: Map<String, Any>?): Map<String, Any>? {
@@ -2629,6 +2703,20 @@ class DnsVpnService : VpnService() {
     }
 
     private fun showProtectionAttentionNotification(message: String) {
+        if (serviceRunning && isRunning) {
+            // Avoid surfacing stale "protection off" alerts once protection has
+            // already recovered.
+            return
+        }
+        val now = System.currentTimeMillis()
+        if (message == lastAttentionNotificationMessage &&
+            now - lastAttentionNotificationEpochMs < ATTENTION_NOTIFICATION_THROTTLE_MS
+        ) {
+            return
+        }
+        lastAttentionNotificationMessage = message
+        lastAttentionNotificationEpochMs = now
+
         val manager = getSystemService(NotificationManager::class.java)
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
             val recoveryChannel = NotificationChannel(
@@ -2667,6 +2755,8 @@ class DnsVpnService : VpnService() {
     private fun dismissProtectionAttentionNotification() {
         val manager = getSystemService(NotificationManager::class.java)
         manager.cancel(RECOVERY_NOTIFICATION_ID)
+        lastAttentionNotificationMessage = ""
+        lastAttentionNotificationEpochMs = 0L
     }
 
     override fun onRevoke() {
@@ -2801,7 +2891,13 @@ class DnsVpnService : VpnService() {
         }
     }
 
-    private fun recordObservedAppDomain(sourcePort: Int, domain: String) {
+    private fun recordObservedAppDomain(
+        sourcePort: Int,
+        sourceIp: String,
+        destPort: Int,
+        destIp: String,
+        domain: String
+    ) {
         if (!serviceRunning) {
             return
         }
@@ -2809,7 +2905,20 @@ class DnsVpnService : VpnService() {
         if (normalizedDomain.isEmpty() || normalizedDomain == "<unknown>") {
             return
         }
-        val packageName = resolvePackageForSourcePort(sourcePort) ?: return
+        val packageName = resolvePackageForQuery(
+            sourcePort = sourcePort,
+            sourceIp = sourceIp,
+            destPort = destPort,
+            destIp = destIp
+        )
+        if (packageName.isNullOrEmpty()) {
+            Log.d(
+                TAG,
+                "App-domain observe skipped: no package for " +
+                    "src=$sourceIp:$sourcePort dst=$destIp:$destPort domain=$normalizedDomain"
+            )
+            return
+        }
         val now = System.currentTimeMillis()
         synchronized(appDomainUsageByPackage) {
             val domains =
@@ -2833,7 +2942,35 @@ class DnsVpnService : VpnService() {
             }
         }
         appDomainUsageDirty = true
+        Log.d(
+            TAG,
+            "App-domain observed package=$packageName domain=$normalizedDomain port=$sourcePort"
+        )
         scheduleObservedAppDomainWrite()
+    }
+
+    private fun resolvePackageForQuery(
+        sourcePort: Int,
+        sourceIp: String,
+        destPort: Int,
+        destIp: String
+    ): String? {
+        val connectivityUid = resolveUidForConnection(
+            sourcePort = sourcePort,
+            sourceIp = sourceIp,
+            destPort = destPort,
+            destIp = destIp
+        )
+        if (connectivityUid != null) {
+            val packageFromConnectivity = resolvePackageForUid(
+                uid = connectivityUid,
+                now = System.currentTimeMillis()
+            )
+            if (!packageFromConnectivity.isNullOrBlank()) {
+                return packageFromConnectivity
+            }
+        }
+        return resolvePackageForSourcePort(sourcePort)
     }
 
     private fun resolvePackageForSourcePort(sourcePort: Int): String? {
@@ -2863,6 +3000,44 @@ class DnsVpnService : VpnService() {
             }
         } ?: return null
 
+        return resolvePackageForUid(uid = uid, now = now)
+    }
+
+    private fun resolveUidForConnection(
+        sourcePort: Int,
+        sourceIp: String,
+        destPort: Int,
+        destIp: String
+    ): Int? {
+        if (Build.VERSION.SDK_INT < Build.VERSION_CODES.Q) {
+            return null
+        }
+        if (sourcePort <= 0 || destPort <= 0 || sourceIp.isBlank() || destIp.isBlank()) {
+            return null
+        }
+        val connectivityManager =
+            getSystemService(Context.CONNECTIVITY_SERVICE) as? ConnectivityManager
+                ?: return null
+        return try {
+            val uid = connectivityManager.getConnectionOwnerUid(
+                OsConstants.IPPROTO_UDP,
+                InetSocketAddress(sourceIp, sourcePort),
+                InetSocketAddress(destIp, destPort)
+            )
+            if (uid > 0) uid else null
+        } catch (_: SecurityException) {
+            null
+        } catch (_: IllegalArgumentException) {
+            null
+        } catch (_: Exception) {
+            null
+        }
+    }
+
+    private fun resolvePackageForUid(uid: Int, now: Long): String? {
+        if (uid <= 0) {
+            return null
+        }
         val cachedPackage = synchronized(uidPackageCache) {
             val cached = uidPackageCache[uid]
             if (cached != null && now - cached.second <= UID_PACKAGE_CACHE_TTL_MS) {
@@ -2883,7 +3058,9 @@ class DnsVpnService : VpnService() {
         val resolvedPackage = packages
             .mapNotNull { it?.trim()?.lowercase()?.takeIf { value -> value.isNotEmpty() } }
             .firstOrNull { packageName ->
-                packageName != this.packageName && !isSystemPackage(packageName)
+                packageName != this.packageName &&
+                    isParentControllablePackage(packageName) &&
+                    hasInternetPermission(packageName)
             } ?: return null
 
         synchronized(uidPackageCache) {
@@ -2933,10 +3110,45 @@ class DnsVpnService : VpnService() {
         }
     }
 
-    private fun isSystemPackage(packageName: String): Boolean {
+    private fun isParentControllablePackage(packageName: String): Boolean {
+        val normalizedPackage = packageName.trim().lowercase()
+        if (normalizedPackage in INFRASTRUCTURE_PACKAGES ||
+            normalizedPackage.startsWith("com.vivo.") ||
+            normalizedPackage.startsWith("com.bbk.")
+        ) {
+            return false
+        }
         return try {
             val appInfo = packageManager.getApplicationInfo(packageName, 0)
-            appInfo.flags and ApplicationInfo.FLAG_SYSTEM != 0
+            val isSystem = appInfo.flags and ApplicationInfo.FLAG_SYSTEM != 0
+            if (!isSystem) {
+                return true
+            }
+
+            val isUpdatedSystem =
+                appInfo.flags and ApplicationInfo.FLAG_UPDATED_SYSTEM_APP != 0
+            if (!isUpdatedSystem) {
+                return false
+            }
+
+            val installer = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.R) {
+                packageManager.getInstallSourceInfo(packageName).installingPackageName
+            } else {
+                @Suppress("DEPRECATION")
+                packageManager.getInstallerPackageName(packageName)
+            }?.trim()?.lowercase()
+            installer == "com.android.vending"
+        } catch (_: Exception) {
+            false
+        }
+    }
+
+    private fun hasInternetPermission(packageName: String): Boolean {
+        return try {
+            packageManager.checkPermission(
+                Manifest.permission.INTERNET,
+                packageName
+            ) == PackageManager.PERMISSION_GRANTED
         } catch (_: Exception) {
             false
         }
@@ -2981,9 +3193,11 @@ class DnsVpnService : VpnService() {
         val childId = config.childId?.trim().orEmpty()
         val parentId = config.parentId?.trim().orEmpty()
         if (childId.isEmpty() || parentId.isEmpty()) {
+            Log.d(TAG, "app_domain_usage write skipped: missing parent/child ids")
             return
         }
         if (!maybeBootstrapPolicySyncAuth("app_domain_usage_write")) {
+            Log.d(TAG, "app_domain_usage write skipped: auth bootstrap unavailable")
             return
         }
         ensurePolicySyncDeviceRegistration()
@@ -2994,6 +3208,7 @@ class DnsVpnService : VpnService() {
             }
         }
         if (snapshot.isEmpty()) {
+            Log.d(TAG, "app_domain_usage write skipped: snapshot empty")
             return
         }
 
@@ -3037,6 +3252,10 @@ class DnsVpnService : VpnService() {
             .addOnSuccessListener {
                 appDomainUsageDirty = false
                 lastAppDomainUsageWriteEpochMs = System.currentTimeMillis()
+                Log.d(
+                    TAG,
+                    "app_domain_usage/current write ok childId=$childId packages=${snapshot.size}"
+                )
             }
             .addOnFailureListener { error ->
                 Log.w(TAG, "app_domain_usage/current write failed", error)
