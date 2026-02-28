@@ -22,6 +22,7 @@ import '../../services/blocklist_sync_service.dart';
 import '../../services/browser_dns_bypass_heuristic.dart';
 import '../../services/child_app_inventory_sync_service.dart';
 import '../../services/child_usage_upload_service.dart';
+import '../../services/device_admin_service.dart';
 import '../../services/firestore_service.dart';
 import '../../services/heartbeat_service.dart';
 import '../../services/notification_service.dart';
@@ -105,6 +106,7 @@ class _ChildStatusScreenState extends State<ChildStatusScreen>
 
   late final FirebaseFirestore _firestore;
   final VpnService _vpnService = VpnService();
+  final DeviceAdminService _deviceAdminService = DeviceAdminService();
   BlocklistSyncService? _blocklistSyncService;
   BlocklistSyncService get _resolvedBlocklistSyncService {
     _blocklistSyncService ??= BlocklistSyncService(enableRemoteLogging: false);
@@ -199,6 +201,8 @@ class _ChildStatusScreenState extends State<ChildStatusScreen>
   DateTime? _browserDnsBypassDetectedAt;
   DateTime? _lastBrowserDnsBypassSignalAt;
   String? _lastBrowserDnsBypassSignalReasonCode;
+  bool _deviceAdminActive = true;
+  bool _requestingDeviceAdmin = false;
 
   @override
   void initState() {
@@ -209,6 +213,7 @@ class _ChildStatusScreenState extends State<ChildStatusScreen>
     _parentId = widget.parentId?.trim();
     _childId = widget.childId?.trim();
     unawaited(_refreshAppBlockingUsageAccessState());
+    unawaited(_refreshDeviceAdminState());
     unawaited(_resolveContext());
   }
 
@@ -222,6 +227,7 @@ class _ChildStatusScreenState extends State<ChildStatusScreen>
         unawaited(_ensureProtectionApplied(child, forceRecheck: true));
       }
       unawaited(_refreshAppBlockingUsageAccessState());
+      unawaited(_refreshDeviceAdminState());
       unawaited(_refreshBrowserDnsBypassDiagnostics());
       unawaited(_processPendingRemoteCommands());
       if (RolloutFlags.appInventory) {
@@ -308,6 +314,43 @@ class _ChildStatusScreenState extends State<ChildStatusScreen>
     if (RolloutFlags.appInventory) {
       _startAppInventorySyncLoop();
       unawaited(_syncInstalledAppInventory(force: true));
+    }
+  }
+
+  Future<void> _refreshDeviceAdminState() async {
+    bool active;
+    try {
+      active = await _deviceAdminService.isDeviceAdminActive();
+    } catch (_) {
+      active = false;
+    }
+    if (!mounted || _deviceAdminActive == active) {
+      return;
+    }
+    setState(() {
+      _deviceAdminActive = active;
+    });
+  }
+
+  Future<void> _requestDeviceAdminFromBanner() async {
+    if (_requestingDeviceAdmin) {
+      return;
+    }
+    setState(() {
+      _requestingDeviceAdmin = true;
+    });
+    try {
+      await _deviceAdminService.requestDeviceAdmin();
+    } catch (_) {
+      // Ignore and refresh final state below.
+    } finally {
+      final active = await _deviceAdminService.isDeviceAdminActive();
+      if (mounted) {
+        setState(() {
+          _deviceAdminActive = active;
+          _requestingDeviceAdmin = false;
+        });
+      }
     }
   }
 
@@ -998,10 +1041,6 @@ class _ChildStatusScreenState extends State<ChildStatusScreen>
         .limitToLast(500)
         .snapshots()
         .listen((snapshot) {
-      if (_lastEffectivePolicySnapshot != null) {
-        _pendingPolicyEvents.clear();
-        return;
-      }
       for (final change in snapshot.docChanges) {
         if (change.type == DocumentChangeType.removed) {
           continue;
@@ -1197,7 +1236,7 @@ class _ChildStatusScreenState extends State<ChildStatusScreen>
       nextChild,
       manualMode: snapshot.manualMode,
       policyVersion: snapshot.version,
-      forceRecheck: true,
+      forceRecheck: false,
     );
   }
 
@@ -1233,7 +1272,9 @@ class _ChildStatusScreenState extends State<ChildStatusScreen>
     ChildProfile baseChild,
     _PolicyEventSnapshot event,
   ) async {
-    if (_lastEffectivePolicySnapshot != null) {
+    final effectiveSnapshot = _lastEffectivePolicySnapshot;
+    if (effectiveSnapshot != null &&
+        event.eventEpochMs <= effectiveSnapshot.version) {
       return;
     }
     debugPrint(
@@ -1262,10 +1303,6 @@ class _ChildStatusScreenState extends State<ChildStatusScreen>
   }
 
   Future<void> _drainPendingPolicyEvents() async {
-    if (_lastEffectivePolicySnapshot != null) {
-      _pendingPolicyEvents.clear();
-      return;
-    }
     final baseChild = _lastKnownChild;
     if (baseChild == null || _pendingPolicyEvents.isEmpty) {
       return;
@@ -1276,6 +1313,11 @@ class _ChildStatusScreenState extends State<ChildStatusScreen>
     var current = baseChild;
     while (_pendingPolicyEvents.isNotEmpty) {
       final event = _pendingPolicyEvents.removeFirst();
+      final effectiveSnapshot = _lastEffectivePolicySnapshot;
+      if (effectiveSnapshot != null &&
+          event.eventEpochMs <= effectiveSnapshot.version) {
+        continue;
+      }
       final nextChild = current.copyWith(
         policy: current.policy.copyWith(
           blockedCategories: event.blockedCategories,
@@ -1449,16 +1491,14 @@ class _ChildStatusScreenState extends State<ChildStatusScreen>
       nextApprovedExceptionExpiry: _nextApprovedExceptionExpiry,
     );
 
-    final lastAppliedVersion = _lastAppliedPolicyVersion;
-    final hasSameVersion = sourcePolicyVersion != null &&
-        lastAppliedVersion != null &&
-        sourcePolicyVersion == lastAppliedVersion;
     if (!forceRecheck &&
-        hasSameVersion &&
         _lastAppliedPolicySignature != null &&
         _lastAppliedPolicySignature!.startsWith('$policySignature::') &&
         !_isApplyingProtectionRules &&
         _pendingProtectionApplies.isEmpty) {
+      if (sourcePolicyVersion != null && sourcePolicyVersion > 0) {
+        _lastAppliedPolicyVersion = sourcePolicyVersion;
+      }
       return;
     }
 
@@ -1685,7 +1725,7 @@ class _ChildStatusScreenState extends State<ChildStatusScreen>
       final temporaryAllowedDomains = _activeApprovedExceptionDomains.toList()
         ..sort();
       final signature =
-          '${next.policySignature}::v=${next.policyVersion ?? 0}::${temporaryAllowedDomains.join('|')}';
+          '${next.policySignature}::${temporaryAllowedDomains.join('|')}';
       _scheduleNextProtectionRecheck(
         child: next.child,
         manualMode: next.manualMode,
@@ -1693,6 +1733,9 @@ class _ChildStatusScreenState extends State<ChildStatusScreen>
         nextApprovedExceptionExpiry: _nextApprovedExceptionExpiry,
       );
       if (!next.forceRecheck && _lastAppliedPolicySignature == signature) {
+        if (next.policyVersion != null && next.policyVersion! > 0) {
+          _lastAppliedPolicyVersion = next.policyVersion;
+        }
         return true;
       }
       debugPrint(
@@ -2794,6 +2837,8 @@ class _ChildStatusScreenState extends State<ChildStatusScreen>
         ),
         const SizedBox(height: 14),
         if (!child.protectionEnabled) _buildProtectionOffNotice(context),
+        if (!_deviceAdminActive) _buildDeviceAdminWarningBanner(context),
+        if (!_deviceAdminActive) const SizedBox(height: 12),
         if (hasParentContext)
           _buildApprovalBanner(
             context: context,
@@ -2903,6 +2948,45 @@ class _ChildStatusScreenState extends State<ChildStatusScreen>
         style: Theme.of(context).textTheme.bodyMedium?.copyWith(
               fontWeight: FontWeight.w600,
             ),
+      ),
+    );
+  }
+
+  Widget _buildDeviceAdminWarningBanner(BuildContext context) {
+    final colorScheme = Theme.of(context).colorScheme;
+    return Material(
+      color: Colors.transparent,
+      child: InkWell(
+        borderRadius: BorderRadius.circular(12),
+        onTap: _requestingDeviceAdmin ? null : _requestDeviceAdminFromBanner,
+        child: Ink(
+          padding: const EdgeInsets.all(12),
+          decoration: BoxDecoration(
+            color: Colors.red.withValues(alpha: 0.12),
+            borderRadius: BorderRadius.circular(12),
+            border: Border.all(color: Colors.red.withValues(alpha: 0.35)),
+          ),
+          child: Row(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Icon(
+                Icons.admin_panel_settings_outlined,
+                color: colorScheme.error,
+              ),
+              const SizedBox(width: 10),
+              Expanded(
+                child: Text(
+                  _requestingDeviceAdmin
+                      ? 'Opening uninstall protection settings...'
+                      : 'Tap here to fully protect TrustBridge from being removed',
+                  style: Theme.of(context).textTheme.bodyMedium?.copyWith(
+                        fontWeight: FontWeight.w700,
+                      ),
+                ),
+              ),
+            ],
+          ),
+        ),
       ),
     );
   }

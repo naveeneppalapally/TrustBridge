@@ -35,6 +35,8 @@ class MainActivity : FlutterFragmentActivity() {
     companion object {
         private const val VPN_PERMISSION_REQUEST_CODE = 44123
         private const val DEVICE_ADMIN_PERMISSION_REQUEST_CODE = 44124
+        private const val OEM_PREFS = "trustbridge_oem_prefs"
+        private const val KEY_VIVO_AUTOSTART_PROMPTED = "vivo_autostart_prompted"
         private val CHANNEL_NAMES = listOf(
             "trustbridge/vpn",
             "com.navee.trustbridge/vpn"
@@ -243,6 +245,7 @@ class MainActivity : FlutterFragmentActivity() {
                     action = DnsVpnService.ACTION_FLUSH_DNS_CACHE
                 }
                 startServiceCompat(serviceIntent)
+                maybeHandleFirstVpnStartOemFlows()
                 result.success(true)
             }
 
@@ -456,7 +459,7 @@ class MainActivity : FlutterFragmentActivity() {
             putExtra(DevicePolicyManager.EXTRA_DEVICE_ADMIN, deviceAdminComponent())
             putExtra(
                 DevicePolicyManager.EXTRA_ADD_EXPLANATION,
-                "Keeps parental protection active on this device."
+                "This prevents your child from uninstalling TrustBridge."
             )
         }
         pendingDeviceAdminResult = result
@@ -852,6 +855,69 @@ class MainActivity : FlutterFragmentActivity() {
         } catch (_: Exception) {
             false
         }
+    }
+
+    private fun maybeHandleFirstVpnStartOemFlows() {
+        if (!isVivoDevice()) {
+            return
+        }
+        val prefs = getSharedPreferences(OEM_PREFS, MODE_PRIVATE)
+        if (prefs.getBoolean(KEY_VIVO_AUTOSTART_PROMPTED, false)) {
+            return
+        }
+        val launched = openVivoAutoStartSettings()
+        // Mark as prompted to avoid repeatedly stealing focus on every VPN start.
+        prefs.edit().putBoolean(KEY_VIVO_AUTOSTART_PROMPTED, true).apply()
+        if (!launched) {
+            android.util.Log.w(
+                "MainActivity",
+                "Vivo autostart settings intent unavailable on this build"
+            )
+        }
+    }
+
+    private fun isVivoDevice(): Boolean {
+        val manufacturer = Build.MANUFACTURER?.trim()?.lowercase().orEmpty()
+        val brand = Build.BRAND?.trim()?.lowercase().orEmpty()
+        return manufacturer.contains("vivo") || brand.contains("vivo") || brand.contains("iqoo")
+    }
+
+    private fun openVivoAutoStartSettings(): Boolean {
+        val intentCandidates = listOf(
+            Intent("com.vivo.permissionmanager").apply {
+                setPackage("com.vivo.permissionmanager")
+                addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
+            },
+            Intent().apply {
+                component = ComponentName(
+                    "com.vivo.permissionmanager",
+                    "com.vivo.permissionmanager.activity.BgStartUpManagerActivity"
+                )
+                addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
+            },
+            Intent().apply {
+                component = ComponentName(
+                    "com.iqoo.secure",
+                    "com.iqoo.secure.ui.phoneoptimize.BgStartUpManager"
+                )
+                addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
+            }
+        )
+
+        for (intent in intentCandidates) {
+            val resolved = intent.resolveActivity(packageManager) ?: continue
+            val launched = try {
+                intent.setClassName(resolved.packageName, resolved.className)
+                startActivity(intent)
+                true
+            } catch (_: Exception) {
+                false
+            }
+            if (launched) {
+                return true
+            }
+        }
+        return false
     }
 
     @Deprecated("Deprecated in Java")
