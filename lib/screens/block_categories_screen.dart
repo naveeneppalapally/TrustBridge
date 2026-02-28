@@ -459,11 +459,21 @@ class _BlockCategoriesScreenState extends State<BlockCategoriesScreen> {
           .map((entry) => entry.key.trim().toLowerCase())
           .where((value) => value.isNotEmpty)
           .toSet();
-      final mergedApps = <InstalledAppInfo>[
-        for (final packageName in visiblePackages)
-          if (appsByPackage.containsKey(packageName))
-            appsByPackage[packageName]!,
-      ];
+      final mergedAppsByPackage = <String, InstalledAppInfo>{};
+      for (final packageName in visiblePackages) {
+        final fromInventory = appsByPackage[packageName];
+        if (fromInventory != null) {
+          mergedAppsByPackage[packageName] = fromInventory;
+          continue;
+        }
+        mergedAppsByPackage[packageName] = InstalledAppInfo(
+          packageName: packageName,
+          appName: _fallbackObservedAppName(packageName),
+          isSystemApp: false,
+          isLaunchable: true,
+        );
+      }
+      final mergedApps = mergedAppsByPackage.values.toList(growable: false);
       mergedApps.sort((a, b) {
         final rankA = _installedPackageRank(a.packageName);
         final rankB = _installedPackageRank(b.packageName);
@@ -496,6 +506,35 @@ class _BlockCategoriesScreenState extends State<BlockCategoriesScreen> {
         });
       }
     }
+  }
+
+  String _fallbackObservedAppName(String packageName) {
+    final normalized = packageName.trim().toLowerCase();
+    for (final service in ServiceDefinitions.all) {
+      final matchesService = service.androidPackages.any(
+        (pkg) => pkg.trim().toLowerCase() == normalized,
+      );
+      if (matchesService) {
+        return service.displayName;
+      }
+    }
+    final lastSegment = normalized.split('.').lastWhere(
+          (segment) => segment.trim().isNotEmpty,
+          orElse: () => normalized,
+        );
+    final cleaned = lastSegment.replaceAll(RegExp(r'[^a-z0-9]+'), ' ').trim();
+    if (cleaned.isEmpty) {
+      return normalized;
+    }
+    return cleaned
+        .split(RegExp(r'\s+'))
+        .where((word) => word.isNotEmpty)
+        .map(
+          (word) => word.length == 1
+              ? word.toUpperCase()
+              : '${word[0].toUpperCase()}${word.substring(1)}',
+        )
+        .join(' ');
   }
 
   bool _isCategoryBlocked(String categoryId) {
@@ -1364,25 +1403,29 @@ class _BlockCategoriesScreenState extends State<BlockCategoriesScreen> {
                   child: Column(
                     crossAxisAlignment: CrossAxisAlignment.start,
                     children: [
-                      Row(
-                        children: [
-                          Expanded(
-                            child: Text(
-                              category.name,
-                              style:
-                                  const TextStyle(fontWeight: FontWeight.w700),
-                            ),
-                          ),
-                          if (enforcementBadge != null) enforcementBadge,
-                          if (modeSourceBadge != null) ...[
-                            const SizedBox(width: 6),
-                            modeSourceBadge,
-                          ],
-                        ],
+                      Text(
+                        category.name,
+                        maxLines: 2,
+                        overflow: TextOverflow.ellipsis,
+                        style: const TextStyle(fontWeight: FontWeight.w700),
                       ),
+                      if (enforcementBadge != null || modeSourceBadge != null)
+                        Padding(
+                          padding: const EdgeInsets.only(top: 4),
+                          child: Wrap(
+                            spacing: 6,
+                            runSpacing: 6,
+                            children: [
+                              if (enforcementBadge != null) enforcementBadge,
+                              if (modeSourceBadge != null) modeSourceBadge,
+                            ],
+                          ),
+                        ),
                       const SizedBox(height: 2),
                       Text(
                         _categoryExamples(category.id),
+                        maxLines: 2,
+                        overflow: TextOverflow.ellipsis,
                         style: TextStyle(
                           color: Colors.grey[600],
                           fontSize: 12,
