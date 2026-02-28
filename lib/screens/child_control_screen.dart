@@ -1,6 +1,5 @@
 import 'dart:async';
 
-import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:flutter/material.dart';
 
 import '../config/category_ids.dart';
@@ -8,6 +7,7 @@ import '../models/child_profile.dart';
 import '../models/schedule.dart';
 import '../services/auth_service.dart';
 import '../services/firestore_service.dart';
+import '../widgets/skeleton_loaders.dart';
 import 'block_categories_screen.dart';
 import 'schedule_creator_screen.dart';
 
@@ -15,12 +15,14 @@ class ChildControlScreen extends StatefulWidget {
   const ChildControlScreen({
     super.key,
     required this.childId,
+    this.initialChild,
     this.authService,
     this.firestoreService,
     this.parentIdOverride,
   });
 
   final String childId;
+  final ChildProfile? initialChild;
   final AuthService? authService;
   final FirestoreService? firestoreService;
   final String? parentIdOverride;
@@ -75,16 +77,17 @@ class _ChildControlScreenState extends State<ChildControlScreen> {
       appBar: AppBar(
         title: const Text('Child Controls'),
       ),
-      body: StreamBuilder<DocumentSnapshot<Map<String, dynamic>>>(
-        stream: _resolvedFirestoreService.firestore
-            .collection('children')
-            .doc(widget.childId)
-            .snapshots(),
+      body: StreamBuilder<ChildProfile?>(
+        stream: _resolvedFirestoreService.getChildStream(
+          parentId: parentId,
+          childId: widget.childId,
+        ),
+        initialData: widget.initialChild ??
+            _resolvedFirestoreService.getCachedChild(
+              parentId: parentId,
+              childId: widget.childId,
+            ),
         builder: (context, snapshot) {
-          if (snapshot.connectionState == ConnectionState.waiting &&
-              !snapshot.hasData) {
-            return const Center(child: CircularProgressIndicator());
-          }
           if (snapshot.hasError) {
             return const Center(
               child: Padding(
@@ -96,8 +99,21 @@ class _ChildControlScreenState extends State<ChildControlScreen> {
               ),
             );
           }
-          final doc = snapshot.data;
-          if (doc == null || !doc.exists) {
+          final child = snapshot.data;
+          if (child == null &&
+              snapshot.connectionState == ConnectionState.waiting) {
+            return ListView(
+              padding: const EdgeInsets.fromLTRB(16, 12, 16, 24),
+              children: const [
+                SkeletonCard(height: 220),
+                SizedBox(height: 14),
+                SkeletonCard(height: 280),
+                SizedBox(height: 14),
+                SkeletonCard(height: 180),
+              ],
+            );
+          }
+          if (child == null) {
             return const Center(
               child: Padding(
                 padding: EdgeInsets.all(24),
@@ -108,8 +124,6 @@ class _ChildControlScreenState extends State<ChildControlScreen> {
               ),
             );
           }
-
-          final child = ChildProfile.fromFirestore(doc);
           final now = DateTime.now();
           final activeMode = _activeMode(child, now);
           final modeSummary = _modeSummary(activeMode);

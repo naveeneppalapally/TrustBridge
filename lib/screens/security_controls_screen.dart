@@ -272,7 +272,7 @@ class _SecurityControlsScreenState extends State<SecurityControlsScreen> {
             subtitle: Text('Signed in on $activeSessions phone(s) right now'),
             trailing: const Icon(Icons.chevron_right),
             onTap: () =>
-                _showInfo('Login history details screen is coming soon.'),
+                _showInfo('Login history details are unavailable right now.'),
           ),
           const Divider(height: 1),
           ListTile(

@@ -1262,7 +1262,6 @@ class _BlockCategoriesScreenState extends State<BlockCategoriesScreen>
     }
     final modeContext = _activeModeContext();
     final activeModeKey = modeContext.modeKey;
-    final serviceMatch = _serviceMatchForPackage(packageName);
     final wasEffectivelyBlockedBeforeToggle = _effectiveInstalledPackageState(
       InstalledAppInfo(
         packageName: packageName,
@@ -1327,45 +1326,6 @@ class _BlockCategoriesScreenState extends State<BlockCategoriesScreen>
         ),
       );
     }
-  }
-
-  bool _isModeBlockingPackage({
-    required String packageName,
-    required String? serviceId,
-    required String? categoryId,
-  }) {
-    final modeContext = _activeModeContext();
-    final modeOverride = modeContext.overrideSet;
-    final normalizedPackage = packageName.trim().toLowerCase();
-    final normalizedService = serviceId?.trim().toLowerCase();
-    final normalizedCategory =
-        categoryId == null ? null : normalizeCategoryId(categoryId);
-    final modeBlockedByCategory = normalizedCategory != null &&
-        modeContext.blockedCategories.contains(normalizedCategory);
-    final modeBlockedByService = normalizedService != null &&
-        (modeOverride?.forceBlockServices
-                .map((value) => value.trim().toLowerCase())
-                .contains(normalizedService) ==
-            true);
-    final modeBlockedByPackage = modeOverride?.forceBlockPackages
-            .map((value) => value.trim().toLowerCase())
-            .contains(normalizedPackage) ==
-        true;
-    final modeAllowedByService = normalizedService != null &&
-        (modeOverride?.forceAllowServices
-                .map((value) => value.trim().toLowerCase())
-                .contains(normalizedService) ==
-            true);
-    final modeAllowedByPackage = modeOverride?.forceAllowPackages
-            .map((value) => value.trim().toLowerCase())
-            .contains(normalizedPackage) ==
-        true;
-    final modeAllowed = modeAllowedByService || modeAllowedByPackage;
-    return (modeContext.blocksAll ||
-            modeBlockedByCategory ||
-            modeBlockedByService ||
-            modeBlockedByPackage) &&
-        !modeAllowed;
   }
 
   void _addModePackageAllowOverride({

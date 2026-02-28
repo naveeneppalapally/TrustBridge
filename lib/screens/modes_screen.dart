@@ -4,6 +4,7 @@ import '../models/child_profile.dart';
 import '../models/schedule.dart';
 import '../services/auth_service.dart';
 import '../services/firestore_service.dart';
+import '../widgets/skeleton_loaders.dart';
 
 class ModesScreen extends StatefulWidget {
   const ModesScreen({
@@ -26,6 +27,7 @@ class _ModesScreenState extends State<ModesScreen> {
   FirestoreService? _firestoreService;
   String? _selectedChildId;
   bool _saving = false;
+  List<ChildProfile>? _lastChildrenSnapshot;
 
   AuthService get _resolvedAuthService {
     _authService ??= widget.authService ?? AuthService();
@@ -59,10 +61,27 @@ class _ModesScreenState extends State<ModesScreen> {
       appBar: AppBar(title: const Text('Modes')),
       body: StreamBuilder<List<ChildProfile>>(
         stream: _resolvedFirestoreService.getChildrenStream(parentId),
+        initialData: _lastChildrenSnapshot ??
+            _resolvedFirestoreService.getCachedChildren(parentId),
         builder: (context, snapshot) {
+          final children = snapshot.data ?? const <ChildProfile>[];
+          if (snapshot.hasData) {
+            _lastChildrenSnapshot = children;
+          }
           if (snapshot.connectionState == ConnectionState.waiting &&
-              !snapshot.hasData) {
-            return const Center(child: CircularProgressIndicator());
+              children.isEmpty) {
+            return ListView(
+              padding: const EdgeInsets.fromLTRB(16, 12, 16, 24),
+              children: const <Widget>[
+                SkeletonCard(height: 54),
+                SizedBox(height: 12),
+                SkeletonCard(height: 76),
+                SizedBox(height: 10),
+                SkeletonCard(height: 76),
+                SizedBox(height: 10),
+                SkeletonCard(height: 76),
+              ],
+            );
           }
           if (snapshot.hasError) {
             return const Center(
@@ -73,10 +92,9 @@ class _ModesScreenState extends State<ModesScreen> {
                   textAlign: TextAlign.center,
                 ),
               ),
-            );
+              );
           }
 
-          final children = snapshot.data ?? const <ChildProfile>[];
           if (children.isEmpty) {
             return const Center(child: Text('Add a child profile first.'));
           }

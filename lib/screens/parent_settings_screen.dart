@@ -225,7 +225,7 @@ class _ParentSettingsScreenState extends State<ParentSettingsScreen> {
         onTap: () {
           ScaffoldMessenger.of(context).showSnackBar(
             const SnackBar(
-              content: Text('Personal information editor is coming soon.'),
+              content: Text('Profile editing is unavailable right now.'),
             ),
           );
         },
@@ -294,7 +294,7 @@ class _ParentSettingsScreenState extends State<ParentSettingsScreen> {
             subtitle: Text(email),
             trailing: const Icon(Icons.chevron_right),
             onTap: () => ScaffoldMessenger.of(context).showSnackBar(
-              const SnackBar(content: Text('Email editor is coming soon.')),
+              const SnackBar(content: Text('Email editing is unavailable right now.')),
             ),
           ),
           const Divider(height: 1),
@@ -313,7 +313,7 @@ class _ParentSettingsScreenState extends State<ParentSettingsScreen> {
             subtitle: Text(phone),
             trailing: const Icon(Icons.chevron_right),
             onTap: () => ScaffoldMessenger.of(context).showSnackBar(
-              const SnackBar(content: Text('Phone linking is coming soon.')),
+              const SnackBar(content: Text('Phone linking is unavailable right now.')),
             ),
           ),
           const Divider(height: 1),

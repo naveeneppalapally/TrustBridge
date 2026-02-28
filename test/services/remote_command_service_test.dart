@@ -1,10 +1,79 @@
 import 'package:fake_cloud_firestore/fake_cloud_firestore.dart';
+import 'package:flutter/services.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:trustbridge_app/services/pairing_service.dart';
 import 'package:trustbridge_app/services/remote_command_service.dart';
 import 'package:trustbridge_app/services/vpn_service.dart';
 
 void main() {
+  TestWidgetsFlutterBinding.ensureInitialized();
+  const secureStorageChannel =
+      MethodChannel('plugins.it_nomads.com/flutter_secure_storage');
+  const firebaseMessagingChannel =
+      MethodChannel('plugins.flutter.io/firebase_messaging');
+  final secureStorageValues = <String, String>{};
+
+  setUpAll(() {
+    TestDefaultBinaryMessengerBinding.instance.defaultBinaryMessenger
+        .setMockMethodCallHandler(
+      secureStorageChannel,
+      (MethodCall call) async {
+        final args = (call.arguments as Map?)?.cast<String, dynamic>() ??
+            const <String, dynamic>{};
+        final key = args['key']?.toString();
+        switch (call.method) {
+          case 'read':
+            if (key == null) {
+              return null;
+            }
+            return secureStorageValues[key];
+          case 'write':
+            if (key != null) {
+              secureStorageValues[key] = args['value']?.toString() ?? '';
+            }
+            return null;
+          case 'delete':
+            if (key != null) {
+              secureStorageValues.remove(key);
+            }
+            return null;
+          case 'deleteAll':
+            secureStorageValues.clear();
+            return null;
+          case 'containsKey':
+            if (key == null) {
+              return false;
+            }
+            return secureStorageValues.containsKey(key);
+          case 'readAll':
+            return Map<String, String>.from(secureStorageValues);
+          default:
+            return null;
+        }
+      },
+    );
+    TestDefaultBinaryMessengerBinding.instance.defaultBinaryMessenger
+        .setMockMethodCallHandler(
+      firebaseMessagingChannel,
+      (MethodCall call) async {
+        return null;
+      },
+    );
+  });
+
+  tearDownAll(() {
+    TestDefaultBinaryMessengerBinding.instance.defaultBinaryMessenger
+        .setMockMethodCallHandler(
+      secureStorageChannel,
+      null,
+    );
+    TestDefaultBinaryMessengerBinding.instance.defaultBinaryMessenger
+        .setMockMethodCallHandler(
+      firebaseMessagingChannel,
+      null,
+    );
+  });
+
   group('RemoteCommandService', () {
     late FakeFirebaseFirestore firestore;
     late _FakePairingService pairingService;

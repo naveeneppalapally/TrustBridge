@@ -64,7 +64,7 @@ void main() {
       await tester.pumpAndSettle();
 
       expect(
-        find.text('Enter a valid domain like example.com'),
+        find.text('Enter a valid domain like domain.com'),
         findsOneWidget,
       );
     });

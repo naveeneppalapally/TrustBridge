@@ -148,7 +148,7 @@ class _CustomDomainsScreenState extends State<CustomDomainsScreen> {
               controller: _domainController,
               onSubmitted: (_) => _addDomainFromInput(),
               decoration: InputDecoration(
-                hintText: 'example.com',
+                hintText: 'domain.com',
                 helperText: 'Enter domain only (no http/https)',
                 errorText: _inputError,
                 prefixIcon: const Icon(Icons.public),
@@ -261,7 +261,7 @@ class _CustomDomainsScreenState extends State<CustomDomainsScreen> {
     final normalized = _normalizeDomain(_domainController.text);
     if (normalized == null) {
       setState(() {
-        _inputError = 'Enter a valid domain like example.com';
+        _inputError = 'Enter a valid domain like domain.com';
       });
       return;
     }

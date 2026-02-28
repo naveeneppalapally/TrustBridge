@@ -54,7 +54,7 @@ void main() {
       expect(find.byKey(const Key('family_admins_card')), findsOneWidget);
       expect(find.byKey(const Key('family_children_card')), findsOneWidget);
       expect(find.text('Leo'), findsOneWidget);
-      expect(find.text('Pixel 7 Pro'), findsOneWidget);
+      expect(find.text('child-a'), findsNothing);
     });
 
     testWidgets('shows leave family group button', (tester) async {

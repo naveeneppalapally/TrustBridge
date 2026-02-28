@@ -251,8 +251,6 @@ class _ChildHelpScreen extends StatelessWidget {
 }
 
 /// Locked child mode shell shown when device mode is configured as child.
-///
-/// TODO(day126): Replace placeholder content with full child status experience.
 class ChildModeShell extends StatelessWidget {
   const ChildModeShell({super.key});
 

@@ -21,7 +21,7 @@ void main() {
       await tester.pump();
 
       expect(buildCount, lessThanOrEqualTo(3));
-      expect(find.text('Welcome to TrustBridge'), findsOneWidget);
+      expect(find.text('Set up in one step'), findsOneWidget);
     });
 
     testWidgets('static widgets can be const', (WidgetTester tester) async {
