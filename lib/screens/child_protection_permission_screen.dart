@@ -30,6 +30,7 @@ class _ChildProtectionPermissionScreenState
   bool _isRequesting = false;
   bool _needsRetry = false;
   _SetupStep _step = _SetupStep.protectionPermission;
+  bool _autoPromptedDeviceAdmin = false;
 
   static const Duration _vpnPermissionTimeout = Duration(seconds: 30);
   static const Duration _vpnStartTimeout = Duration(seconds: 20);
@@ -71,6 +72,7 @@ class _ChildProtectionPermissionScreenState
           _isRequesting = false;
           _needsRetry = false;
         });
+        unawaited(_autoPromptDeviceAdminIfNeeded());
         return;
       }
 
@@ -121,6 +123,18 @@ class _ChildProtectionPermissionScreenState
     }
 
     await _finishSetup(deviceAdminActive: granted);
+  }
+
+  Future<void> _autoPromptDeviceAdminIfNeeded() async {
+    if (_autoPromptedDeviceAdmin || _step != _SetupStep.deviceAdmin) {
+      return;
+    }
+    _autoPromptedDeviceAdmin = true;
+    await Future<void>.delayed(const Duration(milliseconds: 300));
+    if (!mounted) {
+      return;
+    }
+    await _requestDeviceAdminAndFinish();
   }
 
   Future<void> _continueWithoutDeviceAdmin() async {
@@ -227,12 +241,12 @@ class _ChildProtectionPermissionScreenState
   Widget build(BuildContext context) {
     final isDeviceAdminStep = _step == _SetupStep.deviceAdmin;
     final title = isDeviceAdminStep
-        ? 'One more step'
+        ? 'Activate uninstall protection'
         : _needsRetry
             ? 'Protection needs this permission to work.'
             : 'Setting up protection for your phone';
     final subtitle = isDeviceAdminStep
-        ? 'To keep protection working, TrustBridge needs one more permission.'
+        ? 'This prevents your child from uninstalling TrustBridge.'
         : _needsRetry
             ? "Ask your parent if you're not sure."
             : 'We need one permission to keep you safe online.';
@@ -283,7 +297,7 @@ class _ChildProtectionPermissionScreenState
                         )
                       : Text(
                           isDeviceAdminStep
-                              ? 'Continue'
+                              ? 'Activate protection'
                               : (_needsRetry ? 'Try again' : 'Continue'),
                         ),
                 ),

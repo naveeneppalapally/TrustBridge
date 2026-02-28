@@ -30,6 +30,6 @@ class TrustBridgeAdminReceiver : DeviceAdminReceiver() {
             .edit()
             .putLong(KEY_DISABLE_REQUESTED_AT, System.currentTimeMillis())
             .apply()
-        return "Contact your parent to remove TrustBridge."
+        return "This prevents your child from uninstalling TrustBridge. Ask your parent before disabling it."
     }
 }
