@@ -403,6 +403,8 @@ class VpnService implements VpnServiceBase {
   final CrashlyticsService _crashlyticsService = CrashlyticsService();
   final PerformanceService _performanceService = PerformanceService();
   Future<dynamic> Function(MethodCall call)? _blockedHandler;
+  String? _lastRuleUpdateSignature;
+  bool _lastRuleUpdateSucceeded = false;
 
   bool get _supported => _forceSupported ?? Platform.isAndroid;
 
@@ -764,23 +766,63 @@ class VpnService implements VpnServiceBase {
       return false;
     }
 
+    final normalizedCategories = blockedCategories
+        .map((value) => value.trim().toLowerCase())
+        .where((value) => value.isNotEmpty)
+        .toSet()
+        .toList()
+      ..sort();
+    final normalizedDomains = blockedDomains
+        .map((value) => value.trim().toLowerCase())
+        .where((value) => value.isNotEmpty)
+        .toSet()
+        .toList()
+      ..sort();
+    final normalizedAllowedDomains = temporaryAllowedDomains
+        .map((value) => value.trim().toLowerCase())
+        .where((value) => value.isNotEmpty)
+        .toSet()
+        .toList()
+      ..sort();
+    final normalizedParentId = parentId?.trim();
+    final normalizedChildId = childId?.trim();
+    final signature = <String>[
+      normalizedCategories.join(','),
+      normalizedDomains.join(','),
+      normalizedAllowedDomains.join(','),
+      normalizedParentId == null || normalizedParentId.isEmpty
+          ? ''
+          : normalizedParentId,
+      normalizedChildId == null || normalizedChildId.isEmpty
+          ? ''
+          : normalizedChildId,
+    ].join('||');
+    if (_lastRuleUpdateSucceeded && _lastRuleUpdateSignature == signature) {
+      return true;
+    }
+
     try {
-      return await _channel.invokeMethod<bool>(
+      final updated = await _channel.invokeMethod<bool>(
             'updateFilterRules',
             {
-              'blockedCategories': blockedCategories,
-              'blockedDomains': blockedDomains,
-              'temporaryAllowedDomains': temporaryAllowedDomains,
-              if (parentId != null && parentId.trim().isNotEmpty)
-                'parentId': parentId.trim(),
-              if (childId != null && childId.trim().isNotEmpty)
-                'childId': childId.trim(),
+              'blockedCategories': normalizedCategories,
+              'blockedDomains': normalizedDomains,
+              'temporaryAllowedDomains': normalizedAllowedDomains,
+              if (normalizedParentId != null && normalizedParentId.isNotEmpty)
+                'parentId': normalizedParentId,
+              if (normalizedChildId != null && normalizedChildId.isNotEmpty)
+                'childId': normalizedChildId,
             },
           ) ??
           false;
+      _lastRuleUpdateSignature = signature;
+      _lastRuleUpdateSucceeded = updated;
+      return updated;
     } on PlatformException {
+      _lastRuleUpdateSucceeded = false;
       return false;
     } on MissingPluginException {
+      _lastRuleUpdateSucceeded = false;
       return false;
     }
   }

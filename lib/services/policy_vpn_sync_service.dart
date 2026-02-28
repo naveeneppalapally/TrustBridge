@@ -84,6 +84,7 @@ class PolicyVpnSyncService extends ChangeNotifier {
   SyncResult? _lastSyncResult;
   bool _isSyncing = false;
   String? _listeningParentId;
+  String? _lastAppliedRuleSignature;
   DateTime? _nextExceptionRefreshAt;
   final Queue<List<ChildProfile>> _pendingSyncChildren =
       Queue<List<ChildProfile>>();
@@ -227,6 +228,7 @@ class PolicyVpnSyncService extends ChangeNotifier {
     _accessRequestsSubscription = null;
     _didReceiveInitialAccessRequestsSnapshot = false;
     _listeningParentId = null;
+    _lastAppliedRuleSignature = null;
     _clearExceptionRefreshSchedule();
     _pendingSyncChildren.clear();
   }
@@ -365,11 +367,36 @@ class PolicyVpnSyncService extends ChangeNotifier {
       _scheduleExceptionRefresh(nextExceptionExpiry);
 
       if (children.isEmpty) {
+        final ruleSignature = _ruleSignature(
+          blockedCategories: const <String>[],
+          blockedDomains: const <String>[],
+          temporaryAllowedDomains: temporaryAllowedDomains,
+        );
+        if (_lastAppliedRuleSignature == ruleSignature) {
+          result = SyncResult(
+            success: true,
+            childrenSynced: 0,
+            totalDomains: 0,
+            totalCategories: 0,
+            timestamp: DateTime.now(),
+          );
+          _lastSyncResult = result;
+          _isSyncing = false;
+          notifyListeners();
+          if (_pendingSyncChildren.isNotEmpty) {
+            final nextChildren = _pendingSyncChildren.removeFirst();
+            unawaited(_syncToVpn(nextChildren));
+          }
+          return result;
+        }
         final cleared = await _replaceVpnRules(
           blockedCategories: const <String>[],
           blockedDomains: const <String>[],
           temporaryAllowedDomains: temporaryAllowedDomains,
         );
+        if (cleared) {
+          _lastAppliedRuleSignature = ruleSignature;
+        }
         result = SyncResult(
           success: cleared,
           childrenSynced: 0,
@@ -395,12 +422,37 @@ class PolicyVpnSyncService extends ChangeNotifier {
 
         final categories = mergedCategories.toList()..sort();
         final domains = mergedDomains.toList()..sort();
+        final ruleSignature = _ruleSignature(
+          blockedCategories: categories,
+          blockedDomains: domains,
+          temporaryAllowedDomains: temporaryAllowedDomains,
+        );
+        if (_lastAppliedRuleSignature == ruleSignature) {
+          result = SyncResult(
+            success: true,
+            childrenSynced: children.length,
+            totalDomains: domains.length,
+            totalCategories: categories.length,
+            timestamp: DateTime.now(),
+          );
+          _lastSyncResult = result;
+          _isSyncing = false;
+          notifyListeners();
+          if (_pendingSyncChildren.isNotEmpty) {
+            final nextChildren = _pendingSyncChildren.removeFirst();
+            unawaited(_syncToVpn(nextChildren));
+          }
+          return result;
+        }
 
         final updated = await _replaceVpnRules(
           blockedCategories: categories,
           blockedDomains: domains,
           temporaryAllowedDomains: temporaryAllowedDomains,
         );
+        if (updated) {
+          _lastAppliedRuleSignature = ruleSignature;
+        }
 
         result = SyncResult(
           success: updated,
@@ -430,19 +482,41 @@ class PolicyVpnSyncService extends ChangeNotifier {
     required List<String> blockedDomains,
     required List<String> temporaryAllowedDomains,
   }) async {
-    final cleared = await _vpnService.updateFilterRules(
-      blockedCategories: const <String>[],
-      blockedDomains: const <String>[],
-      temporaryAllowedDomains: const <String>[],
-    );
-    if (!cleared) {
-      return false;
-    }
     return _vpnService.updateFilterRules(
       blockedCategories: blockedCategories,
       blockedDomains: blockedDomains,
       temporaryAllowedDomains: temporaryAllowedDomains,
     );
+  }
+
+  String _ruleSignature({
+    required List<String> blockedCategories,
+    required List<String> blockedDomains,
+    required List<String> temporaryAllowedDomains,
+  }) {
+    final categories = blockedCategories
+        .map((value) => value.trim().toLowerCase())
+        .where((value) => value.isNotEmpty)
+        .toSet()
+        .toList()
+      ..sort();
+    final domains = blockedDomains
+        .map((value) => value.trim().toLowerCase())
+        .where((value) => value.isNotEmpty)
+        .toSet()
+        .toList()
+      ..sort();
+    final allowed = temporaryAllowedDomains
+        .map((value) => value.trim().toLowerCase())
+        .where((value) => value.isNotEmpty)
+        .toSet()
+        .toList()
+      ..sort();
+    return <String>[
+      categories.join(','),
+      domains.join(','),
+      allowed.join(','),
+    ].join('||');
   }
 
   void _enqueuePendingSync(List<ChildProfile> children) {
