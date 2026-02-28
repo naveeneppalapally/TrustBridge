@@ -454,13 +454,17 @@ class _BlockCategoriesScreenState extends State<BlockCategoriesScreen> {
         for (final app in apps)
           if (!app.isSystemApp) app.packageName.trim().toLowerCase(): app,
       };
-      final visiblePackages = observedDomains.entries
+      // Show full installed inventory first, then backfill observed-only
+      // packages that may not have synced into inventory yet.
+      final mergedAppsByPackage = <String, InstalledAppInfo>{
+        ...appsByPackage,
+      };
+      final observedPackages = observedDomains.entries
           .where((entry) => entry.value.isNotEmpty)
           .map((entry) => entry.key.trim().toLowerCase())
           .where((value) => value.isNotEmpty)
           .toSet();
-      final mergedAppsByPackage = <String, InstalledAppInfo>{};
-      for (final packageName in visiblePackages) {
+      for (final packageName in observedPackages) {
         final fromInventory = appsByPackage[packageName];
         if (fromInventory != null) {
           mergedAppsByPackage[packageName] = fromInventory;
