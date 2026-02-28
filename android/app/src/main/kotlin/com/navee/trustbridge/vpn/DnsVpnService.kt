@@ -3,6 +3,7 @@ package com.navee.trustbridge.vpn
 import android.Manifest
 import android.app.AlarmManager
 import android.app.AppOpsManager
+import android.app.ActivityManager
 import android.app.Notification
 import android.app.NotificationChannel
 import android.app.NotificationManager
@@ -20,6 +21,7 @@ import android.net.NetworkRequest
 import android.net.VpnService
 import android.os.Build
 import android.os.ParcelFileDescriptor
+import android.os.PowerManager
 import android.os.Process
 import android.system.OsConstants
 import android.provider.Settings
@@ -73,14 +75,17 @@ class DnsVpnService : VpnService() {
             30_000L
         )
         private const val APP_GUARD_POLL_INTERVAL_MS = 350L
-        private const val APP_GUARD_COOLDOWN_MS = 450L
+        private const val APP_GUARD_COOLDOWN_MS = 5_000L
         private const val APP_GUARD_ENFORCE_RETRIES = 4
         private const val APP_GUARD_ENFORCE_RETRY_DELAY_MS = 180L
+        private const val APP_GUARD_EVENT_LOOKBACK_MS = 30_000L
+        private const val APP_GUARD_BLOCKED_EVENT_WINDOW_MS = 4_000L
         private const val EFFECTIVE_POLICY_POLL_INTERVAL_MS = 5_000L
         private const val EFFECTIVE_POLICY_POLL_TIMEOUT_MS = 6_000L
         private const val WEB_DIAGNOSTICS_WRITE_MIN_INTERVAL_MS = 5_000L
         private const val WEB_DIAGNOSTICS_RECENT_DNS_WINDOW_MS = 20_000L
         private const val APP_DOMAIN_USAGE_WRITE_MIN_INTERVAL_MS = 5_000L
+        private const val APP_INVENTORY_WRITE_MIN_INTERVAL_MS = 15 * 60 * 1000L
         private const val APP_DOMAIN_USAGE_MAX_PACKAGES = 180
         private const val APP_DOMAIN_USAGE_MAX_DOMAINS_PER_PACKAGE = 120
         private const val PORT_UID_CACHE_TTL_MS = 15_000L
@@ -329,6 +334,12 @@ class DnsVpnService : VpnService() {
     @Volatile
     private var lastAppDomainUsageWriteEpochMs: Long = 0L
     @Volatile
+    private var appInventoryWriteQueued = false
+    @Volatile
+    private var lastAppInventoryWriteEpochMs: Long = 0L
+    @Volatile
+    private var lastAppInventoryHash: String = ""
+    @Volatile
     private var webDiagnosticsWriteQueued = false
     @Volatile
     private var lastWebDiagnosticsWriteEpochMs: Long = 0L
@@ -383,6 +394,7 @@ class DnsVpnService : VpnService() {
                     vpnPreferencesStore.setEnabled(true)
                     startEffectivePolicyListenerIfConfigured()
                     maybeWriteWebDiagnosticsTelemetry(force = true)
+                    scheduleInstalledAppInventoryWrite()
                     scheduleWatchdogPing()
                     return START_STICKY
                 }
@@ -462,6 +474,7 @@ class DnsVpnService : VpnService() {
                 }
                 startEffectivePolicyListenerIfConfigured()
                 flushDnsCacheBestEffort()
+                scheduleInstalledAppInventoryWrite()
                 scheduleWatchdogPing()
                 START_STICKY
             }
@@ -675,6 +688,7 @@ class DnsVpnService : VpnService() {
             startPacketProcessing()
             startBlockedAppGuardLoop()
             startEffectivePolicyListenerIfConfigured()
+            scheduleInstalledAppInventoryWrite(force = true)
             Log.d(TAG, "DNS VPN started (upstream=$lastAppliedUpstreamDns, privateDns=$privateDnsMode)")
         } catch (error: Exception) {
             Log.e(TAG, "Failed to start VPN", error)
@@ -1241,6 +1255,7 @@ class DnsVpnService : VpnService() {
                 if (serviceRunning) {
                     ensurePolicySyncDeviceRegistration()
                     startEffectivePolicyListenerIfConfigured()
+                    scheduleInstalledAppInventoryWrite(force = true)
                 }
             }
             .addOnFailureListener { error ->
@@ -2293,17 +2308,35 @@ class DnsVpnService : VpnService() {
             appGuardPermissionAlertShown = false
         }
 
-        val foregroundPackage = currentForegroundPackageFromUsageStats() ?: return
-        val normalizedForeground = foregroundPackage.trim().lowercase()
-        if (normalizedForeground.isEmpty()) {
+        val blockedSet = lastAppliedBlockedPackages
+            .map { it.trim().lowercase() }
+            .filter { it.isNotEmpty() }
+            .toSet()
+        if (blockedSet.isEmpty()) {
+            lastAppGuardedPackage = ""
             return
         }
-        if (isGuardExemptPackage(normalizedForeground)) {
-            return
+
+        val usageForegroundPackage = currentForegroundPackageFromUsageStats()
+            ?.trim()
+            ?.lowercase()
+            ?.takeIf { it.isNotEmpty() }
+        val blockedForegroundFromProcess = blockedSet.firstOrNull { blockedPackage ->
+            !isGuardExemptPackage(blockedPackage) && isPackageLikelyForeground(blockedPackage)
         }
-        val explicitlyBlocked = lastAppliedBlockedPackages.contains(normalizedForeground)
-        if (!explicitlyBlocked) {
-            if (lastAppGuardedPackage == normalizedForeground) {
+        val packageToGuard = when {
+            usageForegroundPackage != null &&
+                !isGuardExemptPackage(usageForegroundPackage) &&
+                blockedSet.contains(usageForegroundPackage) -> {
+                usageForegroundPackage
+            }
+            blockedForegroundFromProcess != null -> blockedForegroundFromProcess
+            else -> recentBlockedForegroundPackageFromUsageEvents(blockedSet)
+        }
+        if (packageToGuard == null) {
+            if (usageForegroundPackage != null &&
+                lastAppGuardedPackage == usageForegroundPackage
+            ) {
                 lastAppGuardedPackage = ""
             }
             return
@@ -2311,17 +2344,68 @@ class DnsVpnService : VpnService() {
 
         val now = System.currentTimeMillis()
         if (now - lastAppGuardActionEpochMs < APP_GUARD_COOLDOWN_MS &&
-            normalizedForeground == lastAppGuardedPackage
+            packageToGuard == lastAppGuardedPackage
         ) {
             return
         }
         lastAppGuardActionEpochMs = now
-        lastAppGuardedPackage = normalizedForeground
-        Log.w(TAG, "Blocked foreground app detected package=$normalizedForeground")
+        lastAppGuardedPackage = packageToGuard
+        Log.w(TAG, "Blocked foreground app detected package=$packageToGuard")
         showProtectionAttentionNotification(
             "Blocked app detected. Open TrustBridge to review active limits."
         )
-        pushBlockedAppToHomeStrict(blockedPackage = normalizedForeground)
+        pushBlockedAppToHomeStrict(blockedPackage = packageToGuard)
+    }
+
+    private fun recentBlockedForegroundPackageFromUsageEvents(
+        blockedPackages: Set<String>
+    ): String? {
+        if (blockedPackages.isEmpty()) {
+            return null
+        }
+        val usageStatsManager = getSystemService(UsageStatsManager::class.java) ?: return null
+        val endTime = System.currentTimeMillis()
+        val startTime = endTime - APP_GUARD_EVENT_LOOKBACK_MS
+        val usageEvents = usageStatsManager.queryEvents(startTime, endTime)
+        val event = UsageEvents.Event()
+        var latestBlockedPackage: String? = null
+        var latestTimestamp = 0L
+
+        while (usageEvents.hasNextEvent()) {
+            usageEvents.getNextEvent(event)
+            val isForegroundEvent = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) {
+                event.eventType == UsageEvents.Event.ACTIVITY_RESUMED ||
+                    event.eventType == UsageEvents.Event.MOVE_TO_FOREGROUND
+            } else {
+                event.eventType == UsageEvents.Event.MOVE_TO_FOREGROUND
+            }
+            if (!isForegroundEvent) {
+                continue
+            }
+            val packageName = event.packageName
+                ?.trim()
+                ?.lowercase()
+                ?.takeIf { it.isNotEmpty() }
+                ?: continue
+            if (!blockedPackages.contains(packageName)) {
+                continue
+            }
+            if (event.timeStamp >= latestTimestamp) {
+                latestTimestamp = event.timeStamp
+                latestBlockedPackage = packageName
+            }
+        }
+
+        if (latestBlockedPackage == null) {
+            return null
+        }
+        if (endTime - latestTimestamp > APP_GUARD_BLOCKED_EVENT_WINDOW_MS) {
+            return null
+        }
+        if (!isPackageLikelyForeground(latestBlockedPackage)) {
+            return null
+        }
+        return latestBlockedPackage
     }
 
     private fun isGuardExemptPackage(normalizedPackage: String): Boolean {
@@ -2444,7 +2528,46 @@ class DnsVpnService : VpnService() {
                 latestPackage = packageName
             }
         }
-        return latestPackage
+        val eventPackage = latestPackage
+            ?.trim()
+            ?.lowercase()
+            ?.takeIf { it.isNotEmpty() }
+        if (eventPackage != null) {
+            return eventPackage
+        }
+
+        // Fallback for OEM builds that provide sparse usage events.
+        return try {
+            val statsWindowStart = endTime - 120_000L
+            val usageStats = usageStatsManager.queryUsageStats(
+                UsageStatsManager.INTERVAL_DAILY,
+                statsWindowStart,
+                endTime
+            )
+            val best = usageStats
+                .asSequence()
+                .mapNotNull { stat ->
+                    val pkg = stat.packageName?.trim()?.lowercase().orEmpty()
+                    if (pkg.isEmpty()) {
+                        return@mapNotNull null
+                    }
+                    if (pkg == packageName ||
+                        pkg.startsWith("$packageName.") ||
+                        pkg == "com.android.systemui"
+                    ) {
+                        return@mapNotNull null
+                    }
+                    val lastUsed = maxOf(stat.lastTimeUsed, stat.lastTimeVisible)
+                    if (lastUsed <= 0L || lastUsed < statsWindowStart) {
+                        return@mapNotNull null
+                    }
+                    pkg to lastUsed
+                }
+                .maxByOrNull { it.second }
+            best?.first
+        } catch (_: Exception) {
+            null
+        }
     }
 
     private fun setInitialUnderlyingNetwork(builder: Builder) {
@@ -2900,6 +3023,7 @@ class DnsVpnService : VpnService() {
 
     override fun onDestroy() {
         scheduleObservedAppDomainWrite(force = true)
+        scheduleInstalledAppInventoryWrite(force = true)
         scheduleUnexpectedStopRecovery(reason = "onDestroy")
         stopVpn(stopService = false, markDisabled = false)
         policyApplyExecutor.shutdownNow()
@@ -3017,7 +3141,118 @@ class DnsVpnService : VpnService() {
             TAG,
             "App-domain observed package=$packageName domain=$normalizedDomain port=$sourcePort"
         )
+        maybeEnforceBlockedObservedPackage(packageName)
         scheduleObservedAppDomainWrite()
+        scheduleInstalledAppInventoryWrite()
+    }
+
+    private fun maybeEnforceBlockedObservedPackage(packageName: String) {
+        if (!serviceRunning) {
+            return
+        }
+        val normalizedPackage = packageName.trim().lowercase()
+        if (normalizedPackage.isEmpty() || isGuardExemptPackage(normalizedPackage)) {
+            return
+        }
+        if (!lastAppliedBlockedPackages.contains(normalizedPackage)) {
+            return
+        }
+        val likelyForeground = isPackageLikelyForeground(normalizedPackage)
+        val hasRecentDnsBurst = hasRecentDnsBurstForPackage(
+            packageName = normalizedPackage,
+            minHits = 4,
+            windowMs = 2_500L
+        )
+        if (!likelyForeground && !hasRecentDnsBurst) {
+            return
+        }
+        if (!likelyForeground && hasRecentDnsBurst) {
+            val powerManager = getSystemService(PowerManager::class.java)
+            if (powerManager?.isInteractive != true) {
+                return
+            }
+        }
+        val now = System.currentTimeMillis()
+        if (now - lastAppGuardActionEpochMs < APP_GUARD_COOLDOWN_MS &&
+            normalizedPackage == lastAppGuardedPackage
+        ) {
+            return
+        }
+        lastAppGuardActionEpochMs = now
+        lastAppGuardedPackage = normalizedPackage
+        Log.w(
+            TAG,
+            "Blocked app traffic detected from foreground package=$normalizedPackage"
+        )
+        showProtectionAttentionNotification(
+            "Blocked app detected. Open TrustBridge to review active limits."
+        )
+        pushBlockedAppToHomeStrict(blockedPackage = normalizedPackage)
+    }
+
+    private fun hasRecentDnsBurstForPackage(
+        packageName: String,
+        minHits: Int,
+        windowMs: Long
+    ): Boolean {
+        if (packageName.isBlank() || minHits <= 0 || windowMs <= 0L) {
+            return false
+        }
+        val now = System.currentTimeMillis()
+        val cutoff = now - windowMs
+        val timestamps = synchronized(appDomainUsageByPackage) {
+            appDomainUsageByPackage[packageName]?.values?.toList()
+        } ?: return false
+        var hits = 0
+        for (ts in timestamps) {
+            if (ts >= cutoff) {
+                hits += 1
+                if (hits >= minHits) {
+                    return true
+                }
+            }
+        }
+        return false
+    }
+
+    private fun isPackageLikelyForeground(packageName: String): Boolean {
+        val normalizedPackage = packageName.trim().lowercase()
+        if (normalizedPackage.isEmpty()) {
+            return false
+        }
+        val usageForeground = currentForegroundPackageFromUsageStats()
+            ?.trim()
+            ?.lowercase()
+            ?.takeIf { it.isNotEmpty() }
+        if (usageForeground == normalizedPackage) {
+            return true
+        }
+
+        val activityManager = getSystemService(Context.ACTIVITY_SERVICE) as? ActivityManager
+            ?: return false
+        val runningProcesses = activityManager.runningAppProcesses ?: return false
+        for (processInfo in runningProcesses) {
+            val importance = processInfo.importance
+            val isForegroundImportance =
+                importance == ActivityManager.RunningAppProcessInfo.IMPORTANCE_FOREGROUND ||
+                    importance == ActivityManager.RunningAppProcessInfo.IMPORTANCE_VISIBLE ||
+                    importance == ActivityManager.RunningAppProcessInfo.IMPORTANCE_PERCEPTIBLE
+            if (!isForegroundImportance) {
+                continue
+            }
+            val processName = processInfo.processName?.trim()?.lowercase().orEmpty()
+            if (processName == normalizedPackage) {
+                return true
+            }
+            val packageList = processInfo.pkgList ?: emptyArray()
+            if (packageList.any { pkg ->
+                    pkg.trim().lowercase() == normalizedPackage
+                }
+            ) {
+                return true
+            }
+        }
+        return false
     }
 
     private fun resolvePackageForQuery(
@@ -3249,6 +3484,29 @@ class DnsVpnService : VpnService() {
         }
     }
 
+    private fun scheduleInstalledAppInventoryWrite(force: Boolean = false) {
+        if (!serviceRunning && !force) {
+            return
+        }
+        val now = System.currentTimeMillis()
+        if (!force &&
+            (appInventoryWriteQueued ||
+                now - lastAppInventoryWriteEpochMs < APP_INVENTORY_WRITE_MIN_INTERVAL_MS)
+        ) {
+            return
+        }
+        appInventoryWriteQueued = true
+        appDomainUsageExecutor.execute {
+            try {
+                writeInstalledAppInventory(force = force)
+            } catch (error: Exception) {
+                Log.w(TAG, "app_inventory write failed", error)
+            } finally {
+                appInventoryWriteQueued = false
+            }
+        }
+    }
+
     private fun writeObservedAppDomainUsage(force: Boolean) {
         if (!force && !serviceRunning) {
             return
@@ -3331,6 +3589,135 @@ class DnsVpnService : VpnService() {
             .addOnFailureListener { error ->
                 Log.w(TAG, "app_domain_usage/current write failed", error)
             }
+    }
+
+    private fun writeInstalledAppInventory(force: Boolean) {
+        if (!force && !serviceRunning) {
+            return
+        }
+        val config = try {
+            vpnPreferencesStore.loadConfig()
+        } catch (_: Exception) {
+            return
+        }
+        val childId = config.childId?.trim().orEmpty()
+        val parentId = config.parentId?.trim().orEmpty()
+        if (childId.isEmpty() || parentId.isEmpty()) {
+            return
+        }
+        if (!maybeBootstrapPolicySyncAuth("app_inventory_write")) {
+            return
+        }
+        ensurePolicySyncDeviceRegistration()
+
+        val nowEpochMs = System.currentTimeMillis()
+        val appEntries = collectParentControllableInstalledApps(nowEpochMs)
+        val inventoryHash = appEntries.joinToString(separator = "\n") { entry ->
+            val pkg = (entry["packageName"] as? String).orEmpty()
+            val name = (entry["appName"] as? String).orEmpty().lowercase()
+            val launchable = if (entry["isLaunchable"] == true) "1" else "0"
+            "$pkg|$name|$launchable"
+        }
+        if (!force &&
+            inventoryHash == lastAppInventoryHash &&
+            nowEpochMs - lastAppInventoryWriteEpochMs < APP_INVENTORY_WRITE_MIN_INTERVAL_MS
+        ) {
+            return
+        }
+
+        val deviceId = cachedPolicyAckDeviceId?.trim().orEmpty().ifEmpty {
+            try {
+                FirebaseAuth.getInstance().currentUser?.uid?.trim().orEmpty()
+            } catch (_: Exception) {
+                ""
+            }
+        }
+
+        val payload = hashMapOf<String, Any>(
+            "version" to nowEpochMs,
+            "hash" to inventoryHash,
+            "capturedAt" to FieldValue.serverTimestamp(),
+            "apps" to appEntries,
+            "inventoryStatus" to hashMapOf<String, Any>(
+                "source" to "vpn_service",
+                "appCount" to appEntries.size,
+                "updatedAtEpochMs" to nowEpochMs
+            )
+        )
+        if (deviceId.isNotEmpty()) {
+            payload["deviceId"] = deviceId
+        }
+
+        // Mark this snapshot before dispatching the write so watchdog/start bursts
+        // do not enqueue duplicate uploads for the same inventory.
+        lastAppInventoryWriteEpochMs = nowEpochMs
+        lastAppInventoryHash = inventoryHash
+
+        FirebaseFirestore.getInstance()
+            .collection("children")
+            .document(childId)
+            .collection("app_inventory")
+            .document("current")
+            .set(payload, SetOptions.merge())
+            .addOnSuccessListener {
+                Log.d(TAG, "app_inventory/current write ok childId=$childId apps=${appEntries.size}")
+            }
+            .addOnFailureListener { error ->
+                lastAppInventoryWriteEpochMs = 0L
+                lastAppInventoryHash = ""
+                Log.w(TAG, "app_inventory/current write failed childId=$childId", error)
+            }
+    }
+
+    private fun collectParentControllableInstalledApps(nowEpochMs: Long): List<HashMap<String, Any>> {
+        val results = mutableListOf<HashMap<String, Any>>()
+        val seen = linkedSetOf<String>()
+        val installedApps = try {
+            packageManager.getInstalledApplications(PackageManager.GET_META_DATA)
+        } catch (_: Exception) {
+            emptyList<ApplicationInfo>()
+        }
+        for (appInfo in installedApps) {
+            val packageName = appInfo.packageName?.trim()?.lowercase().orEmpty()
+            if (packageName.isEmpty() || packageName == this.packageName) {
+                continue
+            }
+            if (!seen.add(packageName)) {
+                continue
+            }
+            if (!isParentControllablePackage(packageName)) {
+                continue
+            }
+            if (!hasInternetPermission(packageName)) {
+                continue
+            }
+            val appName = try {
+                packageManager.getApplicationLabel(appInfo)?.toString()?.trim().orEmpty()
+            } catch (_: Exception) {
+                ""
+            }.ifEmpty { packageName }
+            val launchIntent = try {
+                packageManager.getLaunchIntentForPackage(packageName)
+            } catch (_: Exception) {
+                null
+            }
+            val packageInfo = try {
+                packageManager.getPackageInfo(packageName, 0)
+            } catch (_: Exception) {
+                null
+            }
+            results.add(
+                hashMapOf<String, Any>(
+                    "packageName" to packageName,
+                    "appName" to appName,
+                    "isSystemApp" to false,
+                    "isLaunchable" to (launchIntent != null),
+                    "firstSeenAtEpochMs" to (packageInfo?.firstInstallTime ?: nowEpochMs),
+                    "lastSeenAtEpochMs" to (packageInfo?.lastUpdateTime ?: nowEpochMs)
+                )
+            )
+        }
+        return results.sortedBy { (it["appName"] as? String)?.lowercase().orEmpty() }
     }
 
     private fun scheduleUnexpectedStopRecovery(reason: String) {
