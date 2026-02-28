@@ -85,6 +85,8 @@ class DeviceStatusSnapshot {
 }
 
 class FirestoreService {
+  static const Duration _vpnStateFreshnessWindow = Duration(seconds: 30);
+
   FirestoreService({
     FirebaseFirestore? firestore,
     NextDnsApiService? nextDnsApiService,
@@ -1454,13 +1456,21 @@ class FirestoreService {
       }
 
       void emitMerged() {
-        final merged = <String, DeviceStatusSnapshot>{
-          ...childStatusByDeviceId,
+        final merged = <String, DeviceStatusSnapshot>{};
+        final allDeviceIds = <String>{
+          ...childStatusByDeviceId.keys,
+          ...rootStatusByDeviceId.keys,
         };
-        for (final entry in rootStatusByDeviceId.entries) {
-          final existing = merged[entry.key];
-          if (_isNewerStatusSnapshot(entry.value, existing)) {
-            merged[entry.key] = entry.value;
+        for (final deviceId in allDeviceIds) {
+          final childSnapshot = childStatusByDeviceId[deviceId];
+          final rootSnapshot = rootStatusByDeviceId[deviceId];
+          final mergedSnapshot = _mergeStatusSnapshots(
+            deviceId: deviceId,
+            childSnapshot: childSnapshot,
+            rootSnapshot: rootSnapshot,
+          );
+          if (mergedSnapshot != null) {
+            merged[deviceId] = mergedSnapshot;
           }
         }
         controller.add(merged);
@@ -1575,6 +1585,84 @@ class FirestoreService {
       return true;
     }
     return candidateSeen.isAfter(existingSeen);
+  }
+
+  DeviceStatusSnapshot? _mergeStatusSnapshots({
+    required String deviceId,
+    required DeviceStatusSnapshot? childSnapshot,
+    required DeviceStatusSnapshot? rootSnapshot,
+  }) {
+    if (childSnapshot == null) {
+      return rootSnapshot;
+    }
+    if (rootSnapshot == null) {
+      return childSnapshot;
+    }
+
+    final childSeen = _snapshotSeenAt(childSnapshot);
+    final rootSeen = _snapshotSeenAt(rootSnapshot);
+    final freshestSeen = _maxDateTime(childSeen, rootSeen);
+    final freshestUpdated = _maxDateTime(
+      childSnapshot.updatedAt,
+      rootSnapshot.updatedAt,
+    );
+    final preferred = _isNewerStatusSnapshot(rootSnapshot, childSnapshot)
+        ? rootSnapshot
+        : childSnapshot;
+
+    final childRecent = _isSnapshotRecent(
+      snapshotSeenAt: childSeen,
+      freshestSeenAt: freshestSeen,
+    );
+    final rootRecent = _isSnapshotRecent(
+      snapshotSeenAt: rootSeen,
+      freshestSeenAt: freshestSeen,
+    );
+
+    // Combine root + child status paths so transient write races do not flip
+    // "Protected" to "Not protected" while one stream is still catching up.
+    final mergedVpnActive = (childRecent && childSnapshot.vpnActive) ||
+        (rootRecent && rootSnapshot.vpnActive) ||
+        ((!childRecent && !rootRecent) &&
+            ((_isNewerStatusSnapshot(rootSnapshot, childSnapshot) &&
+                    rootSnapshot.vpnActive) ||
+                (!_isNewerStatusSnapshot(rootSnapshot, childSnapshot) &&
+                    childSnapshot.vpnActive)));
+
+    return DeviceStatusSnapshot(
+      deviceId: deviceId,
+      lastSeen: freshestSeen,
+      vpnActive: mergedVpnActive,
+      queriesProcessed: preferred.queriesProcessed,
+      queriesBlocked: preferred.queriesBlocked,
+      queriesAllowed: preferred.queriesAllowed,
+      updatedAt: freshestUpdated,
+    );
+  }
+
+  DateTime? _snapshotSeenAt(DeviceStatusSnapshot snapshot) {
+    return snapshot.lastSeen ?? snapshot.updatedAt;
+  }
+
+  bool _isSnapshotRecent({
+    required DateTime? snapshotSeenAt,
+    required DateTime? freshestSeenAt,
+  }) {
+    if (snapshotSeenAt == null || freshestSeenAt == null) {
+      return false;
+    }
+    return freshestSeenAt.difference(snapshotSeenAt) <=
+        _vpnStateFreshnessWindow;
+  }
+
+  DateTime? _maxDateTime(DateTime? left, DateTime? right) {
+    if (left == null) {
+      return right;
+    }
+    if (right == null) {
+      return left;
+    }
+    return left.isAfter(right) ? left : right;
   }
 
   /// Streams latest heartbeat timestamps for a set of device IDs.
