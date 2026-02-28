@@ -72,8 +72,10 @@ class DnsVpnService : VpnService() {
             15_000L,
             30_000L
         )
-        private const val APP_GUARD_POLL_INTERVAL_MS = 1_200L
-        private const val APP_GUARD_COOLDOWN_MS = 1_500L
+        private const val APP_GUARD_POLL_INTERVAL_MS = 350L
+        private const val APP_GUARD_COOLDOWN_MS = 450L
+        private const val APP_GUARD_ENFORCE_RETRIES = 4
+        private const val APP_GUARD_ENFORCE_RETRY_DELAY_MS = 180L
         private const val EFFECTIVE_POLICY_POLL_INTERVAL_MS = 5_000L
         private const val EFFECTIVE_POLICY_POLL_TIMEOUT_MS = 6_000L
         private const val WEB_DIAGNOSTICS_WRITE_MIN_INTERVAL_MS = 5_000L
@@ -271,6 +273,8 @@ class DnsVpnService : VpnService() {
     private var appGuardThread: Thread? = null
     @Volatile
     private var lastAppGuardActionEpochMs: Long = 0L
+    @Volatile
+    private var lastAppGuardedPackage: String = ""
     @Volatile
     private var appGuardPermissionWarningLogged: Boolean = false
     @Volatile
@@ -2267,9 +2271,6 @@ class DnsVpnService : VpnService() {
         if (!serviceRunning) {
             return
         }
-        if (lastAppliedBlockedPackages.isEmpty()) {
-            return
-        }
         if (!hasUsageStatsPermissionForGuard()) {
             if (!appGuardPermissionWarningLogged) {
                 appGuardPermissionWarningLogged = true
@@ -2293,33 +2294,101 @@ class DnsVpnService : VpnService() {
         if (normalizedForeground.isEmpty()) {
             return
         }
-        if (normalizedForeground == packageName ||
-            normalizedForeground.startsWith("$packageName.") ||
-            normalizedForeground == "com.android.systemui"
-        ) {
+        if (isGuardExemptPackage(normalizedForeground)) {
             return
         }
-        if (!lastAppliedBlockedPackages.contains(normalizedForeground)) {
+        val blockAllActive = lastAppliedCategories.contains(BLOCK_ALL_CATEGORY_TOKEN)
+        val explicitlyBlocked = lastAppliedBlockedPackages.contains(normalizedForeground)
+        val shouldBlockForeground = explicitlyBlocked || blockAllActive
+        if (!shouldBlockForeground) {
+            if (lastAppGuardedPackage == normalizedForeground) {
+                lastAppGuardedPackage = ""
+            }
             return
         }
 
         val now = System.currentTimeMillis()
-        if (now - lastAppGuardActionEpochMs < APP_GUARD_COOLDOWN_MS) {
+        if (now - lastAppGuardActionEpochMs < APP_GUARD_COOLDOWN_MS &&
+            normalizedForeground == lastAppGuardedPackage
+        ) {
             return
         }
         lastAppGuardActionEpochMs = now
+        lastAppGuardedPackage = normalizedForeground
         Log.w(TAG, "Blocked foreground app detected package=$normalizedForeground")
         showProtectionAttentionNotification(
             "Blocked app detected. Open TrustBridge to review active limits."
         )
-        try {
+        pushBlockedAppToHomeStrict(blockedPackage = normalizedForeground)
+    }
+
+    private fun isGuardExemptPackage(normalizedPackage: String): Boolean {
+        if (normalizedPackage.isEmpty()) {
+            return true
+        }
+        if (normalizedPackage == packageName ||
+            normalizedPackage.startsWith("$packageName.") ||
+            normalizedPackage == "com.android.systemui"
+        ) {
+            return true
+        }
+        if (normalizedPackage.contains("launcher")) {
+            return true
+        }
+        if (normalizedPackage == "android" ||
+            normalizedPackage == "com.android.phone" ||
+            normalizedPackage == "com.android.dialer" ||
+            normalizedPackage == "com.google.android.dialer"
+        ) {
+            return true
+        }
+        return false
+    }
+
+    private fun pushBlockedAppToHomeStrict(blockedPackage: String) {
+        var launched = moveBlockedAppToHome()
+        if (!launched) {
+            Log.w(TAG, "Failed to move blocked app to home screen")
+            return
+        }
+
+        repeat(APP_GUARD_ENFORCE_RETRIES - 1) {
+            try {
+                Thread.sleep(APP_GUARD_ENFORCE_RETRY_DELAY_MS)
+            } catch (_: InterruptedException) {
+                return
+            }
+
+            val currentForeground = currentForegroundPackageFromUsageStats()
+                ?.trim()
+                ?.lowercase()
+                ?.takeIf { it.isNotEmpty() }
+                ?: return
+            if (currentForeground == packageName ||
+                currentForeground.startsWith("$packageName.") ||
+                currentForeground == "com.android.systemui" ||
+                currentForeground.contains("launcher")
+            ) {
+                return
+            }
+            if (currentForeground != blockedPackage) {
+                return
+            }
+            launched = moveBlockedAppToHome() || launched
+        }
+    }
+
+    private fun moveBlockedAppToHome(): Boolean {
+        return try {
             val homeIntent = Intent(Intent.ACTION_MAIN).apply {
                 addCategory(Intent.CATEGORY_HOME)
                 addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
             }
             startActivity(homeIntent)
+            true
         } catch (error: Exception) {
             Log.w(TAG, "Failed to move blocked app to home screen", error)
+            false
         }
     }
 
@@ -2350,7 +2419,7 @@ class DnsVpnService : VpnService() {
     private fun currentForegroundPackageFromUsageStats(): String? {
         val usageStatsManager = getSystemService(UsageStatsManager::class.java) ?: return null
         val endTime = System.currentTimeMillis()
-        val startTime = endTime - 120_000L
+        val startTime = endTime - 20_000L
         val usageEvents = usageStatsManager.queryEvents(startTime, endTime)
         val event = UsageEvents.Event()
         var latestPackage: String? = null
