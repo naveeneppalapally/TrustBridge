@@ -937,7 +937,7 @@ class _BlockCategoriesScreenState extends State<BlockCategoriesScreen> {
             ),
           ),
           child: const Text(
-            'Only apps that actually used the internet on the child phone are shown here. '
+            'Apps installed on your child\'s phone that can use internet are shown here. '
             'Turn one ON to block that app.',
           ),
         ),
