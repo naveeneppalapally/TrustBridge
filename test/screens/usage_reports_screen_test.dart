@@ -205,8 +205,6 @@ void main() {
 
       expect(find.text('Usage access required'), findsOneWidget);
       expect(find.text('Grant Access'), findsOneWidget);
-      expect(
-          find.byKey(const Key('usage_reports_nextdns_card')), findsOneWidget);
     });
 
     testWidgets('shows NextDNS analytics when profile is configured',

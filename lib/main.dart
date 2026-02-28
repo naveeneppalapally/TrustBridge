@@ -46,35 +46,13 @@ import 'package:trustbridge_app/services/policy_vpn_sync_service.dart';
 import 'package:trustbridge_app/theme/app_theme.dart';
 import 'package:trustbridge_app/widgets/child_shell.dart';
 import 'package:trustbridge_app/widgets/parent_shell.dart';
+import 'package:trustbridge_app/widgets/skeleton_loaders.dart';
 
 Future<void> main() async {
   WidgetsFlutterBinding.ensureInitialized();
-  try {
-    await Firebase.initializeApp(
-      options: DefaultFirebaseOptions.currentPlatform,
-    ).timeout(const Duration(seconds: 12));
-  } catch (error) {
-    debugPrint('[Startup] Firebase initialization timed out/skipped: $error');
-  }
-  try {
-    await AppModeService().primeCache().timeout(const Duration(seconds: 3));
-  } catch (error) {
-    debugPrint('[Startup] App mode cache prime timed out/skipped: $error');
-  }
-  if (!kDebugMode) {
-    try {
-      await _initCrashlytics().timeout(const Duration(seconds: 5));
-    } catch (error) {
-      debugPrint('[Startup] Crashlytics initialization skipped: $error');
-    }
-  }
-  try {
-    await _initPerformance().timeout(const Duration(seconds: 4));
-  } catch (error) {
-    debugPrint('[Startup] Performance initialization skipped: $error');
-  }
   NotificationService.navigatorKey = GlobalKey<NavigatorState>();
-  runApp(const MyApp());
+  final startupFuture = _bootstrapStartupServices();
+  runApp(MyApp(startupFuture: startupFuture));
   WidgetsBinding.instance.addPostFrameCallback((_) {
     unawaited(NotificationService().initialize());
     // Defer background scheduler registration until after first frame to
@@ -82,6 +60,33 @@ Future<void> main() async {
     unawaited(_initBlocklistWorkmanager());
     unawaited(_syncBlocklistsOnForeground());
   });
+}
+
+Future<void> _bootstrapStartupServices() async {
+  try {
+    await Firebase.initializeApp(
+      options: DefaultFirebaseOptions.currentPlatform,
+    ).timeout(const Duration(seconds: 12));
+  } catch (_) {
+    // Continue with cached/local flows when Firebase is temporarily unavailable.
+    return;
+  }
+
+  await Future.wait<void>([
+    AppModeService().primeCache().timeout(
+          const Duration(seconds: 3),
+          onTimeout: () {},
+        ),
+    _initPerformance().timeout(
+      const Duration(seconds: 4),
+      onTimeout: () {},
+    ),
+    if (!kDebugMode)
+      _initCrashlytics().timeout(
+        const Duration(seconds: 5),
+        onTimeout: () {},
+      ),
+  ], eagerError: false);
 }
 
 bool _blocklistForegroundSyncInFlight = false;
@@ -107,8 +112,8 @@ Future<void> _syncBlocklistsOnForeground({
       forceRefresh: forceRefresh,
     );
     _lastBlocklistForegroundSyncAt = DateTime.now();
-  } catch (error) {
-    debugPrint('[BlocklistSync] Foreground sync skipped: $error');
+  } catch (_) {
+    // Non-blocking best-effort refresh.
   } finally {
     _blocklistForegroundSyncInFlight = false;
   }
@@ -120,8 +125,8 @@ Future<void> _initBlocklistWorkmanager() async {
     await BlocklistWorkmanagerService.registerWeeklySync(
       List<BlocklistCategory>.from(BlocklistCategory.values),
     );
-  } catch (error) {
-    debugPrint('[BlocklistWork] Initialization skipped: $error');
+  } catch (_) {
+    // Non-blocking best-effort scheduler registration.
   }
 }
 
@@ -156,13 +161,18 @@ Future<void> _initPerformance() async {
   try {
     await FirebasePerformance.instance
         .setPerformanceCollectionEnabled(!kDebugMode);
-  } catch (error) {
-    debugPrint('[Performance] Initialization skipped: $error');
+  } catch (_) {
+    // Keep app usable even if performance plugin init fails.
   }
 }
 
 class MyApp extends StatefulWidget {
-  const MyApp({super.key});
+  const MyApp({
+    super.key,
+    required this.startupFuture,
+  });
+
+  final Future<void> startupFuture;
 
   static Future<void> setLocale(
     BuildContext context,
@@ -265,7 +275,7 @@ class _MyAppState extends State<MyApp> {
             child: child ?? const SizedBox.shrink(),
           );
         },
-        home: const _ModeRootScreen(),
+        home: _ModeRootScreen(startupFuture: widget.startupFuture),
         onGenerateRoute: _onGenerateRoute,
       ),
     );
@@ -369,7 +379,11 @@ class _MyAppState extends State<MyApp> {
 }
 
 class _ModeRootScreen extends StatefulWidget {
-  const _ModeRootScreen();
+  const _ModeRootScreen({
+    required this.startupFuture,
+  });
+
+  final Future<void> startupFuture;
 
   @override
   State<_ModeRootScreen> createState() => _ModeRootScreenState();
@@ -378,13 +392,16 @@ class _ModeRootScreen extends StatefulWidget {
 class _ModeRootScreenState extends State<_ModeRootScreen>
     with WidgetsBindingObserver {
   final AppModeService _appModeService = AppModeService();
-  Future<void>? _modePrimeFuture;
+  Future<void>? _bootstrapFuture;
 
   @override
   void initState() {
     super.initState();
     WidgetsBinding.instance.addObserver(this);
-    _modePrimeFuture = _appModeService.primeCache();
+    _bootstrapFuture = Future.wait<void>([
+      widget.startupFuture,
+      _appModeService.primeCache(),
+    ], eagerError: false);
   }
 
   @override
@@ -403,14 +420,10 @@ class _ModeRootScreenState extends State<_ModeRootScreen>
   @override
   Widget build(BuildContext context) {
     return FutureBuilder<void>(
-      future: _modePrimeFuture,
+      future: _bootstrapFuture,
       builder: (context, snapshot) {
         if (snapshot.connectionState == ConnectionState.waiting) {
-          return const Scaffold(
-            body: Center(
-              child: CircularProgressIndicator(),
-            ),
-          );
+          return const _StartupSkeletonScreen();
         }
 
         switch (_appModeService.cachedMode) {
@@ -422,6 +435,35 @@ class _ModeRootScreenState extends State<_ModeRootScreen>
             return const WelcomeScreen();
         }
       },
+    );
+  }
+}
+
+class _StartupSkeletonScreen extends StatelessWidget {
+  const _StartupSkeletonScreen();
+
+  @override
+  Widget build(BuildContext context) {
+    return Scaffold(
+      body: SafeArea(
+        child: Padding(
+          padding: const EdgeInsets.fromLTRB(16, 20, 16, 16),
+          child: ListView(
+            physics: const NeverScrollableScrollPhysics(),
+            children: const <Widget>[
+              SkeletonCard(height: 54),
+              SizedBox(height: 14),
+              SkeletonChildCard(),
+              SizedBox(height: 14),
+              SkeletonCard(height: 96),
+              SizedBox(height: 12),
+              SkeletonCard(height: 96),
+              SizedBox(height: 12),
+              SkeletonCard(height: 96),
+            ],
+          ),
+        ),
+      ),
     );
   }
 }
@@ -456,9 +498,7 @@ class _ChildModeEntryScreenState extends State<_ChildModeEntryScreen> {
       future: _pairedFuture,
       builder: (context, snapshot) {
         if (snapshot.connectionState == ConnectionState.waiting) {
-          return const Scaffold(
-            body: Center(child: CircularProgressIndicator()),
-          );
+          return const _StartupSkeletonScreen();
         }
 
         final paired = snapshot.data ?? false;
@@ -531,8 +571,8 @@ class _AuthWrapperState extends State<AuthWrapper> {
       if (previousUserId != null && previousUserId != nextUserId) {
         try {
           await _firestoreService.removeFcmToken(previousUserId);
-        } catch (error) {
-          debugPrint('[FCM] Failed removing token: $error');
+        } catch (_) {
+          // Non-blocking cleanup.
         }
       }
 
@@ -549,8 +589,8 @@ class _AuthWrapperState extends State<AuthWrapper> {
       if (token != null && token.trim().isNotEmpty) {
         try {
           await _firestoreService.saveFcmToken(nextUserId, token);
-        } catch (error) {
-          debugPrint('[FCM] Failed saving token: $error');
+        } catch (_) {
+          // Non-blocking token sync.
         }
       }
 
@@ -628,11 +668,7 @@ class _AuthWrapperState extends State<AuthWrapper> {
         _scheduleCrashlyticsUserContext(snapshot.data);
 
         if (snapshot.connectionState == ConnectionState.waiting) {
-          return const Scaffold(
-            body: Center(
-              child: CircularProgressIndicator(),
-            ),
-          );
+          return const _StartupSkeletonScreen();
         }
 
         final user = snapshot.data;
@@ -652,11 +688,7 @@ class _AuthWrapperState extends State<AuthWrapper> {
           future: _launchRouteFuture,
           builder: (context, launchSnapshot) {
             if (launchSnapshot.connectionState == ConnectionState.waiting) {
-              return const Scaffold(
-                body: Center(
-                  child: CircularProgressIndicator(),
-                ),
-              );
+              return const _StartupSkeletonScreen();
             }
 
             final launchRoute = launchSnapshot.data;
@@ -739,8 +771,7 @@ Future<_LaunchRoute> _loadLaunchRoute({
       parentId: user.uid,
       onboardingComplete: onboardingComplete,
     );
-  } catch (error) {
-    debugPrint('[AuthWrapper] Launch route fallback: $error');
+  } catch (_) {
     return _LaunchRoute(
       parentId: user.uid,
       onboardingComplete: localCompletion,
@@ -774,8 +805,8 @@ Future<void> _reconcileOnboardingStateWithCloud({
             const Duration(seconds: 2),
           );
     }
-  } catch (error) {
-    debugPrint('[AuthWrapper] Cloud reconciliation skipped: $error');
+  } catch (_) {
+    // Best-effort reconciliation.
   }
 }
 
@@ -811,11 +842,7 @@ class _DashboardEntryScreenState extends State<_DashboardEntryScreen> {
       future: _launchRouteFuture,
       builder: (context, snapshot) {
         if (snapshot.connectionState == ConnectionState.waiting) {
-          return const Scaffold(
-            body: Center(
-              child: CircularProgressIndicator(),
-            ),
-          );
+          return const _StartupSkeletonScreen();
         }
 
         final launchRoute = snapshot.data;

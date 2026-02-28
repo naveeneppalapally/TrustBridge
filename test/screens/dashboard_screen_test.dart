@@ -202,8 +202,8 @@ void main() {
       );
 
       expect(find.text('Test Child'), findsOneWidget);
-      expect(find.byKey(const Key('child_card_mode_badge')), findsOneWidget);
-      expect(find.textContaining('TIME USAGE'), findsOneWidget);
+      expect(find.byKey(const Key('child_card_status_badge')), findsOneWidget);
+      expect(find.textContaining('SCREEN TIME TODAY'), findsOneWidget);
       expect(find.byKey(const Key('child_card_pause_button')), findsOneWidget);
     });
   });

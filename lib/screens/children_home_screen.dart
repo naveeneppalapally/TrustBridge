@@ -6,6 +6,7 @@ import '../models/child_profile.dart';
 import '../models/schedule.dart';
 import '../services/auth_service.dart';
 import '../services/firestore_service.dart';
+import '../widgets/skeleton_loaders.dart';
 import 'add_child_screen.dart';
 import 'child_control_screen.dart';
 
@@ -29,8 +30,9 @@ class _ChildrenHomeScreenState extends State<ChildrenHomeScreen> {
   AuthService? _authService;
   FirestoreService? _firestoreService;
   bool _updatingPause = false;
-  final Map<String, String> _statusReadLogSignatureByChildId =
-      <String, String>{};
+  List<ChildProfile> _lastChildrenSnapshot = const <ChildProfile>[];
+  Map<String, DeviceStatusSnapshot> _lastStatusSnapshotByDeviceId =
+      const <String, DeviceStatusSnapshot>{};
 
   AuthService get _resolvedAuthService {
     _authService ??= widget.authService ?? AuthService();
@@ -65,11 +67,15 @@ class _ChildrenHomeScreenState extends State<ChildrenHomeScreen> {
       ),
       body: StreamBuilder<List<ChildProfile>>(
         stream: _resolvedFirestoreService.getChildrenStream(parentId),
+        initialData: _lastChildrenSnapshot.isNotEmpty
+            ? _lastChildrenSnapshot
+            : _resolvedFirestoreService.getCachedChildren(parentId),
         builder: (context, snapshot) {
-          if (snapshot.connectionState == ConnectionState.waiting &&
-              !snapshot.hasData) {
-            return const Center(child: CircularProgressIndicator());
+          final streamChildren = snapshot.data ?? const <ChildProfile>[];
+          if (streamChildren.isNotEmpty) {
+            _lastChildrenSnapshot = streamChildren;
           }
+
           if (snapshot.hasError) {
             return const Center(
               child: Padding(
@@ -82,8 +88,21 @@ class _ChildrenHomeScreenState extends State<ChildrenHomeScreen> {
             );
           }
 
-          final rawChildren = snapshot.data ?? const <ChildProfile>[];
+          final rawChildren = streamChildren.isNotEmpty
+              ? streamChildren
+              : _lastChildrenSnapshot;
           final children = _dedupeChildren(rawChildren);
+          if (children.isEmpty &&
+              snapshot.connectionState == ConnectionState.waiting) {
+            return ListView(
+              padding: const EdgeInsets.fromLTRB(16, 14, 16, 24),
+              children: const [
+                SkeletonChildCard(),
+                SizedBox(height: 12),
+                SkeletonChildCard(),
+              ],
+            );
+          }
           if (children.isEmpty) {
             return Center(
               child: Padding(
@@ -137,9 +156,13 @@ class _ChildrenHomeScreenState extends State<ChildrenHomeScreen> {
               parentId: parentId,
               childIdByDeviceId: childIdByDeviceId,
             ),
+            initialData: _lastStatusSnapshotByDeviceId,
             builder: (context, statusSnapshot) {
-              final statusByDeviceId =
-                  statusSnapshot.data ?? const <String, DeviceStatusSnapshot>{};
+              final statusByDeviceId = statusSnapshot.data ??
+                  _lastStatusSnapshotByDeviceId;
+              if (statusByDeviceId.isNotEmpty) {
+                _lastStatusSnapshotByDeviceId = statusByDeviceId;
+              }
 
               return ListView.separated(
                 padding: const EdgeInsets.fromLTRB(16, 14, 16, 24),
@@ -158,6 +181,7 @@ class _ChildrenHomeScreenState extends State<ChildrenHomeScreen> {
                         MaterialPageRoute<void>(
                           builder: (_) => ChildControlScreen(
                             childId: child.id,
+                            initialChild: child,
                             authService: widget.authService,
                             firestoreService: widget.firestoreService,
                             parentIdOverride: widget.parentIdOverride,
@@ -212,41 +236,10 @@ class _ChildrenHomeScreenState extends State<ChildrenHomeScreen> {
         ? 'Offline'
         : (vpnActive ? 'Protected right now' : 'Not protected right now');
 
-    _logProtectionStatusRead(
-      child: child,
-      freshestSeen: freshestSeen,
-      online: online,
-      vpnActive: vpnActive,
-      statusLabel: statusLabel,
-    );
-
     return _ChildLiveStatus(
       protectedNow: protectedNow,
       modeLabel: _modeLabelForNow(child, now),
       statusLabel: statusLabel,
-    );
-  }
-
-  void _logProtectionStatusRead({
-    required ChildProfile child,
-    required DateTime? freshestSeen,
-    required bool online,
-    required bool vpnActive,
-    required String statusLabel,
-  }) {
-    final signature =
-        '${freshestSeen?.millisecondsSinceEpoch ?? 0}|$online|$vpnActive|$statusLabel';
-    if (_statusReadLogSignatureByChildId[child.id] == signature) {
-      return;
-    }
-    _statusReadLogSignatureByChildId[child.id] = signature;
-    final ageSeconds = freshestSeen == null
-        ? -1
-        : DateTime.now().difference(freshestSeen).inSeconds;
-    debugPrint(
-      '[ProtectionStatusRead] childId=${child.id} name=${child.nickname} '
-      'online=$online vpnActive=$vpnActive lastSeenAgeSec=$ageSeconds '
-      'dashboardStatus="$statusLabel"',
     );
   }
 

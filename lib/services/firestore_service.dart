@@ -96,11 +96,111 @@ class FirestoreService {
   final FirebaseFirestore _firestore;
   final NextDnsApiService _nextDnsApiService;
   int _lastPolicyEventEpochMs = 0;
+  final Map<String, List<ChildProfile>> _childrenCacheByParentId =
+      <String, List<ChildProfile>>{};
+  final Map<String, ChildProfile> _childCacheByScopedId =
+      <String, ChildProfile>{};
+  final Map<String, Stream<List<ChildProfile>>> _childrenStreamByParentId =
+      <String, Stream<List<ChildProfile>>>{};
+  final Map<String, Stream<ChildProfile?>> _childStreamByScopedId =
+      <String, Stream<ChildProfile?>>{};
 
   /// Public accessor for the underlying Firestore instance.
   FirebaseFirestore get firestore => _firestore;
   final CrashlyticsService _crashlyticsService = CrashlyticsService();
   final PerformanceService _performanceService = PerformanceService();
+
+  String _scopedChildCacheKey({
+    required String parentId,
+    required String childId,
+  }) {
+    return '${parentId.trim()}::${childId.trim()}';
+  }
+
+  List<ChildProfile> getCachedChildren(String parentId) {
+    final normalizedParentId = parentId.trim();
+    if (normalizedParentId.isEmpty) {
+      return const <ChildProfile>[];
+    }
+    final cached = _childrenCacheByParentId[normalizedParentId];
+    if (cached == null || cached.isEmpty) {
+      return const <ChildProfile>[];
+    }
+    return List<ChildProfile>.from(cached);
+  }
+
+  ChildProfile? getCachedChild({
+    required String parentId,
+    required String childId,
+  }) {
+    final key = _scopedChildCacheKey(parentId: parentId, childId: childId);
+    return _childCacheByScopedId[key];
+  }
+
+  List<ChildProfile> _childrenFromSnapshot(
+    QuerySnapshot<Map<String, dynamic>> snapshot,
+  ) {
+    final children = <ChildProfile>[];
+    for (final doc in snapshot.docs) {
+      try {
+        children.add(ChildProfile.fromFirestore(doc));
+      } catch (error, stackTrace) {
+        developer.log(
+          'Skipping malformed child document: ${doc.id}',
+          name: 'FirestoreService',
+          error: error,
+          stackTrace: stackTrace,
+        );
+      }
+    }
+    children.sort((a, b) => a.createdAt.compareTo(b.createdAt));
+    return children;
+  }
+
+  void _upsertChildrenCache(String parentId, List<ChildProfile> children) {
+    final normalizedParentId = parentId.trim();
+    if (normalizedParentId.isEmpty) {
+      return;
+    }
+    final immutable = List<ChildProfile>.unmodifiable(children);
+    _childrenCacheByParentId[normalizedParentId] = immutable;
+    for (final child in immutable) {
+      final key = _scopedChildCacheKey(
+        parentId: normalizedParentId,
+        childId: child.id,
+      );
+      _childCacheByScopedId[key] = child;
+    }
+  }
+
+  void _upsertChildCache({
+    required String parentId,
+    required ChildProfile child,
+  }) {
+    final normalizedParentId = parentId.trim();
+    if (normalizedParentId.isEmpty) {
+      return;
+    }
+    final key = _scopedChildCacheKey(
+      parentId: normalizedParentId,
+      childId: child.id,
+    );
+    _childCacheByScopedId[key] = child;
+    final existing = _childrenCacheByParentId[normalizedParentId];
+    if (existing == null) {
+      return;
+    }
+    final next = List<ChildProfile>.from(existing);
+    final index = next.indexWhere((value) => value.id == child.id);
+    if (index >= 0) {
+      next[index] = child;
+    } else {
+      next.add(child);
+      next.sort((a, b) => a.createdAt.compareTo(b.createdAt));
+    }
+    _childrenCacheByParentId[normalizedParentId] =
+        List<ChildProfile>.unmodifiable(next);
+  }
 
   Future<void> ensureParentProfile({
     required String parentId,
@@ -1094,6 +1194,7 @@ class FirestoreService {
         ...child.toFirestore(),
         'parentId': parentId,
       });
+      _upsertChildCache(parentId: parentId, child: child);
       await _crashlyticsService.setCustomKeys({
         'last_child_id': child.id,
         'last_child_age_band': ageBand.value,
@@ -1111,58 +1212,35 @@ class FirestoreService {
   }
 
   Stream<List<ChildProfile>> getChildrenStream(String parentId) {
-    if (parentId.trim().isEmpty) {
+    final normalizedParentId = parentId.trim();
+    if (normalizedParentId.isEmpty) {
       throw ArgumentError.value(parentId, 'parentId', 'Parent ID is required.');
     }
-
-    return _firestore
-        .collection('children')
-        .where('parentId', isEqualTo: parentId)
-        .snapshots()
-        .map((snapshot) {
-      final children = <ChildProfile>[];
-      for (final doc in snapshot.docs) {
-        try {
-          children.add(ChildProfile.fromFirestore(doc));
-        } catch (error, stackTrace) {
-          developer.log(
-            'Skipping malformed child document: ${doc.id}',
-            name: 'FirestoreService',
-            error: error,
-            stackTrace: stackTrace,
-          );
-        }
-      }
-      children.sort((a, b) => a.createdAt.compareTo(b.createdAt));
-      return children;
+    return _childrenStreamByParentId.putIfAbsent(normalizedParentId, () {
+      return _firestore
+          .collection('children')
+          .where('parentId', isEqualTo: normalizedParentId)
+          .snapshots(includeMetadataChanges: true)
+          .map((snapshot) {
+        final children = _childrenFromSnapshot(snapshot);
+        _upsertChildrenCache(normalizedParentId, children);
+        return children;
+      }).asBroadcastStream();
     });
   }
 
   Future<List<ChildProfile>> getChildren(String parentId) async {
-    if (parentId.trim().isEmpty) {
+    final normalizedParentId = parentId.trim();
+    if (normalizedParentId.isEmpty) {
       throw ArgumentError.value(parentId, 'parentId', 'Parent ID is required.');
     }
 
     final snapshot = await _firestore
         .collection('children')
-        .where('parentId', isEqualTo: parentId)
+        .where('parentId', isEqualTo: normalizedParentId)
         .get();
-
-    final children = <ChildProfile>[];
-    for (final doc in snapshot.docs) {
-      try {
-        children.add(ChildProfile.fromFirestore(doc));
-      } catch (error, stackTrace) {
-        developer.log(
-          'Skipping malformed child document: ${doc.id}',
-          name: 'FirestoreService',
-          error: error,
-          stackTrace: stackTrace,
-        );
-      }
-    }
-
-    children.sort((a, b) => a.createdAt.compareTo(b.createdAt));
+    final children = _childrenFromSnapshot(snapshot);
+    _upsertChildrenCache(normalizedParentId, children);
     return children;
   }
 
@@ -1211,8 +1289,48 @@ class FirestoreService {
     if (data == null || data['parentId'] != parentId) {
       return null;
     }
+    final child = ChildProfile.fromFirestore(snapshot);
+    _upsertChildCache(parentId: parentId, child: child);
+    return child;
+  }
 
-    return ChildProfile.fromFirestore(snapshot);
+  Stream<ChildProfile?> getChildStream({
+    required String parentId,
+    required String childId,
+  }) {
+    final normalizedParentId = parentId.trim();
+    final normalizedChildId = childId.trim();
+    if (normalizedParentId.isEmpty) {
+      throw ArgumentError.value(parentId, 'parentId', 'Parent ID is required.');
+    }
+    if (normalizedChildId.isEmpty) {
+      throw ArgumentError.value(childId, 'childId', 'Child ID is required.');
+    }
+
+    final key = _scopedChildCacheKey(
+      parentId: normalizedParentId,
+      childId: normalizedChildId,
+    );
+    return _childStreamByScopedId.putIfAbsent(key, () {
+      return _firestore
+          .collection('children')
+          .doc(normalizedChildId)
+          .snapshots(includeMetadataChanges: true)
+          .map((snapshot) {
+        if (!snapshot.exists) {
+          _childCacheByScopedId.remove(key);
+          return null;
+        }
+        final data = snapshot.data() ?? const <String, dynamic>{};
+        final ownerParentId = (data['parentId'] as String?)?.trim();
+        if (ownerParentId == null || ownerParentId != normalizedParentId) {
+          return null;
+        }
+        final child = ChildProfile.fromFirestore(snapshot);
+        _upsertChildCache(parentId: normalizedParentId, child: child);
+        return child;
+      }).asBroadcastStream();
+    });
   }
 
   Future<List<InstalledAppInfo>> getChildInstalledAppsOnce({
@@ -2043,6 +2161,12 @@ class FirestoreService {
       protectionEnabled: child.protectionEnabled,
       sourceUpdatedAt: updatedAt,
       policySchemaVersion: normalizedPolicy.policySchemaVersion,
+    );
+    _upsertChildCache(
+      parentId: parentId,
+      child: child.copyWith(
+        policy: normalizedPolicy,
+      ),
     );
   }
 

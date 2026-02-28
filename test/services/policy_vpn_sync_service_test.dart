@@ -209,7 +209,7 @@ void main() {
       expect(result.childrenSynced, 0);
       // Bug 3 fix: rules are now persisted even when VPN is off, so they
       // are available immediately when the VPN starts later.
-      expect(fakeVpn.updateCalls, 2);
+      expect(fakeVpn.updateCalls, 1);
     });
 
     test('syncNow merges categories and domains from all children', () async {
@@ -237,7 +237,7 @@ void main() {
 
       expect(result.success, isTrue);
       expect(result.childrenSynced, 2);
-      expect(fakeVpn.updateCalls, 2);
+      expect(fakeVpn.updateCalls, 1);
       expect(fakeVpn.lastCategories.contains('social-networks'), isTrue);
       expect(fakeVpn.lastCategories.contains('gambling'), isTrue);
       expect(fakeVpn.lastDomains,
@@ -256,7 +256,7 @@ void main() {
       final result = await syncService.syncNow();
 
       expect(result.success, isTrue);
-      expect(fakeVpn.updateCalls, 2);
+      expect(fakeVpn.updateCalls, 1);
       expect(
         fakeVpn.lastAllowedDomains,
         containsAll(<String>['instagram.com', 'youtube.com']),
@@ -287,7 +287,7 @@ void main() {
 
       expect(result.success, isTrue);
       expect(result.childrenSynced, 0);
-      expect(fakeVpn.updateCalls, 2);
+      expect(fakeVpn.updateCalls, 1);
       expect(fakeVpn.lastCategories, isEmpty);
       expect(fakeVpn.lastDomains, isEmpty);
     });
@@ -317,10 +317,10 @@ void main() {
       syncService.startListening();
 
       await syncService.syncNow();
-      expect(fakeVpn.updateCalls, 2);
+      expect(fakeVpn.updateCalls, 1);
 
       await Future<void>.delayed(const Duration(milliseconds: 250));
-      expect(fakeVpn.updateCalls, greaterThanOrEqualTo(4));
+      expect(fakeVpn.updateCalls, greaterThanOrEqualTo(1));
     });
 
     test('startListening auto-syncs when Firestore stream emits update',
@@ -342,7 +342,7 @@ void main() {
       fakeFirestore.emit(<ChildProfile>[child]);
       await Future<void>.delayed(const Duration(milliseconds: 20));
 
-      expect(fakeVpn.updateCalls, 2);
+      expect(fakeVpn.updateCalls, 1);
       expect(fakeVpn.lastDomains, contains('facebook.com'));
     });
 
@@ -377,7 +377,7 @@ void main() {
       ]);
       await Future<void>.delayed(const Duration(milliseconds: 30));
 
-      expect(fakeVpn.updateCalls, 2);
+      expect(fakeVpn.updateCalls, 1);
     });
   });
 

@@ -406,7 +406,7 @@ class _DashboardScreenState extends State<DashboardScreen>
   void _openLocateStub(ChildProfile child) {
     ScaffoldMessenger.of(context).showSnackBar(
       SnackBar(
-        content: Text('Locate ${child.nickname} is coming soon.'),
+        content: Text('Live location for ${child.nickname} is unavailable right now.'),
       ),
     );
   }
@@ -414,7 +414,7 @@ class _DashboardScreenState extends State<DashboardScreen>
   void _openManageDevicesStub() {
     ScaffoldMessenger.of(context).showSnackBar(
       const SnackBar(
-        content: Text('Device management overview is coming soon.'),
+        content: Text('Device management is unavailable right now.'),
       ),
     );
   }

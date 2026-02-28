@@ -1,12 +1,10 @@
-import 'dart:async';
-
 import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:trustbridge_app/screens/onboarding_screen.dart';
 
 void main() {
   group('OnboardingScreen', () {
-    testWidgets('renders welcome page first', (WidgetTester tester) async {
+    testWidgets('renders quick setup single-step screen', (tester) async {
       await tester.pumpWidget(
         const MaterialApp(
           home: OnboardingScreen(parentId: 'parent-test'),
@@ -14,10 +12,13 @@ void main() {
       );
       await tester.pump();
 
-      expect(find.text('Welcome to TrustBridge'), findsOneWidget);
+      expect(find.text('Quick Setup'), findsOneWidget);
+      expect(find.text('Set up in one step'), findsOneWidget);
+      expect(find.text('Child name'), findsOneWidget);
+      expect(find.text('Generate Pairing Code'), findsOneWidget);
     });
 
-    testWidgets('shows 3 step indicator dots', (WidgetTester tester) async {
+    testWidgets('shows 3 age-band chips', (tester) async {
       await tester.pumpWidget(
         const MaterialApp(
           home: OnboardingScreen(parentId: 'parent-test'),
@@ -25,10 +26,12 @@ void main() {
       );
       await tester.pump();
 
-      expect(find.byType(AnimatedContainer), findsNWidgets(3));
+      expect(find.text('6-9 years'), findsOneWidget);
+      expect(find.text('10-13 years'), findsOneWidget);
+      expect(find.text('14-17 years'), findsOneWidget);
     });
 
-    testWidgets('shows Skip button', (WidgetTester tester) async {
+    testWidgets('shows validation when child name is empty', (tester) async {
       await tester.pumpWidget(
         const MaterialApp(
           home: OnboardingScreen(parentId: 'parent-test'),
@@ -36,103 +39,19 @@ void main() {
       );
       await tester.pump();
 
-      expect(find.text('Skip'), findsOneWidget);
-    });
-
-    testWidgets('shows Next button on first page', (WidgetTester tester) async {
-      await tester.pumpWidget(
-        const MaterialApp(
-          home: OnboardingScreen(parentId: 'parent-test'),
-        ),
-      );
-      await tester.pump();
-
-      expect(find.text('Next'), findsOneWidget);
-    });
-
-    testWidgets('Next advances to page 2', (WidgetTester tester) async {
-      await tester.pumpWidget(
-        const MaterialApp(
-          home: OnboardingScreen(parentId: 'parent-test'),
-        ),
-      );
-      await tester.pump();
-
-      await tester.tap(find.text('Next'));
+      await tester.tap(find.text('Generate Pairing Code'));
       await tester.pumpAndSettle();
 
-      expect(find.text('Add your first child'), findsOneWidget);
+      expect(find.text('Please enter your child\'s name.'), findsOneWidget);
     });
 
-    testWidgets('Back button appears on page 2', (WidgetTester tester) async {
-      await tester.pumpWidget(
-        const MaterialApp(
-          home: OnboardingScreen(parentId: 'parent-test'),
-        ),
-      );
-      await tester.pump();
-
-      await tester.tap(find.text('Next'));
-      await tester.pumpAndSettle();
-
-      expect(find.text('Back'), findsOneWidget);
-    });
-
-    testWidgets('shows Get Started on last page', (WidgetTester tester) async {
-      await tester.pumpWidget(
-        const MaterialApp(
-          home: OnboardingScreen(parentId: 'parent-test'),
-        ),
-      );
-      await tester.pump();
-
-      await tester.tap(find.text('Next'));
-      await tester.pumpAndSettle();
-      await tester.tap(find.text('Next'));
-      await tester.pumpAndSettle();
-
-      expect(find.textContaining('Get Started'), findsOneWidget);
-    });
-
-    testWidgets('skip completes onboarding then routes to dashboard',
-        (WidgetTester tester) async {
-      var completeCalled = false;
-
+    testWidgets('Skip routes to dashboard', (tester) async {
       await tester.pumpWidget(
         MaterialApp(
           routes: {
             '/dashboard': (_) => const Scaffold(body: Text('Dashboard Home')),
           },
-          home: OnboardingScreen(
-            parentId: 'parent-test',
-            onCompleteOnboarding: (_) async {
-              completeCalled = true;
-            },
-          ),
-        ),
-      );
-      await tester.pump();
-
-      await tester.tap(find.text('Skip'));
-      await tester.pumpAndSettle();
-
-      expect(completeCalled, isTrue);
-      expect(find.text('Dashboard Home'), findsOneWidget);
-    });
-
-    testWidgets('skip still routes to dashboard when cloud completion fails',
-        (WidgetTester tester) async {
-      await tester.pumpWidget(
-        MaterialApp(
-          routes: {
-            '/dashboard': (_) => const Scaffold(body: Text('Dashboard Home')),
-          },
-          home: OnboardingScreen(
-            parentId: 'parent-test',
-            onCompleteOnboarding: (_) async {
-              throw Exception('permission-denied');
-            },
-          ),
+          home: const OnboardingScreen(parentId: 'parent-test'),
         ),
       );
       await tester.pump();
@@ -141,34 +60,6 @@ void main() {
       await tester.pumpAndSettle();
 
       expect(find.text('Dashboard Home'), findsOneWidget);
-    });
-
-    testWidgets('skip routes immediately even when cloud completion is slow',
-        (WidgetTester tester) async {
-      final completer = Completer<void>();
-
-      await tester.pumpWidget(
-        MaterialApp(
-          routes: {
-            '/dashboard': (_) => const Scaffold(body: Text('Dashboard Home')),
-          },
-          home: OnboardingScreen(
-            parentId: 'parent-test',
-            onCompleteOnboarding: (_) => completer.future,
-          ),
-        ),
-      );
-      await tester.pump();
-
-      await tester.tap(find.text('Skip'));
-      await tester.pumpAndSettle();
-
-      expect(find.text('Dashboard Home'), findsOneWidget);
-
-      if (!completer.isCompleted) {
-        completer.complete();
-      }
-      await tester.pump();
     });
   });
 }

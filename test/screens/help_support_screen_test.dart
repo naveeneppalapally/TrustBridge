@@ -80,7 +80,7 @@ void main() {
 
       await tester.tap(find.byKey(const Key('support_topic_dropdown')));
       await tester.pumpAndSettle();
-      await tester.tap(find.text('Policy Question').last);
+      await tester.tap(find.text('Blocking Question').last);
       await tester.pumpAndSettle();
 
       await tester.enterText(
@@ -98,7 +98,7 @@ void main() {
       expect(snapshot.docs.length, 1);
       final data = snapshot.docs.first.data();
       expect(data['parentId'], 'parent-help-c');
-      expect(data['subject'], 'Policy Question');
+      expect(data['subject'], 'Blocking Question');
       expect(
         data['message'],
         'Policy updates are delayed in my dashboard after save.',

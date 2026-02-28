@@ -3,6 +3,8 @@ import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_local_notifications/flutter_local_notifications.dart';
 
+const bool _isFlutterTest = bool.fromEnvironment('FLUTTER_TEST');
+
 /// Background message handler - must be top-level.
 @pragma('vm:entry-point')
 Future<void> firebaseMessagingBackgroundHandler(RemoteMessage message) async {
@@ -29,7 +31,15 @@ class NotificationService {
     }
     _isInitialized = true;
 
-    FirebaseMessaging.onBackgroundMessage(firebaseMessagingBackgroundHandler);
+    if (!_isFlutterTest) {
+      try {
+        FirebaseMessaging.onBackgroundMessage(firebaseMessagingBackgroundHandler);
+      } on MissingPluginException catch (error) {
+        debugPrint('[FCM] Background handler unavailable: $error');
+      } catch (error) {
+        debugPrint('[FCM] Background handler registration failed: $error');
+      }
+    }
 
     try {
       const channel = AndroidNotificationChannel(
@@ -59,8 +69,14 @@ class NotificationService {
       debugPrint('[FCM] Local notification init failed: $error');
     }
 
-    FirebaseMessaging.onMessage.listen(_onForegroundMessage);
-    FirebaseMessaging.onMessageOpenedApp.listen(_onNotificationOpenedApp);
+    try {
+      FirebaseMessaging.onMessage.listen(_onForegroundMessage);
+      FirebaseMessaging.onMessageOpenedApp.listen(_onNotificationOpenedApp);
+    } on MissingPluginException catch (error) {
+      debugPrint('[FCM] Foreground listeners unavailable: $error');
+    } catch (error) {
+      debugPrint('[FCM] Foreground listener setup failed: $error');
+    }
 
     try {
       final initialMessage = await _fcm.getInitialMessage();
