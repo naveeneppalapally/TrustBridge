@@ -2777,8 +2777,52 @@ class DnsVpnService : VpnService() {
     }
 
     override fun onTaskRemoved(rootIntent: Intent?) {
-        super.onTaskRemoved(rootIntent)
+        val immediateRestartRequested = requestImmediateSelfRestart(reason = "onTaskRemoved")
+        if (!immediateRestartRequested) {
+            Log.w(TAG, "Immediate task-removal restart could not be requested; using fallback recovery")
+        }
         scheduleUnexpectedStopRecovery(reason = "onTaskRemoved")
+        super.onTaskRemoved(rootIntent)
+    }
+
+    private fun requestImmediateSelfRestart(reason: String): Boolean {
+        val config = try {
+            vpnPreferencesStore.loadConfig()
+        } catch (_: Exception) {
+            return false
+        }
+        if (!config.enabled) {
+            Log.d(TAG, "Immediate restart skipped ($reason): VPN disabled")
+            return false
+        }
+
+        if (VpnService.prepare(this) != null) {
+            Log.w(TAG, "Immediate restart skipped ($reason): VPN permission missing")
+            return false
+        }
+
+        val nextTransientAttempt = maxOf(1, activeTransientRetryAttempt + 1)
+        val restartIntent = buildStartIntent(
+            config = config,
+            bootRestore = false,
+            bootRestoreAttempt = 0,
+            transientRetryAttempt = nextTransientAttempt
+        )
+        return try {
+            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
+                startForegroundService(restartIntent)
+            } else {
+                startService(restartIntent)
+            }
+            Log.w(
+                TAG,
+                "Requested immediate VPN restart ($reason) attempt=$nextTransientAttempt"
+            )
+            true
+        } catch (error: Exception) {
+            Log.e(TAG, "Immediate restart request failed ($reason)", error)
+            false
+        }
     }
 
     private fun scheduleUnexpectedStopRecovery(reason: String) {
@@ -2801,8 +2845,10 @@ class DnsVpnService : VpnService() {
         }
 
         val nextTransientAttempt = maxOf(1, activeTransientRetryAttempt + 1)
+        val inProcessDelayMs = if (reason == "onTaskRemoved") 1_000L else 5_000L
+        val alarmDelayMs = if (reason == "onTaskRemoved") 5_000L else 15_000L
         val inProcessScheduled = scheduleInProcessStartRetry(
-            delayMs = 5_000L,
+            delayMs = inProcessDelayMs,
             config = config,
             bootRestore = false,
             bootRestoreAttempt = 0,
@@ -2810,7 +2856,7 @@ class DnsVpnService : VpnService() {
         )
         val alarmScheduled = scheduleStartRetry(
             requestCode = 4000 + nextTransientAttempt,
-            delayMs = 15_000L,
+            delayMs = alarmDelayMs,
             config = config,
             bootRestore = false,
             bootRestoreAttempt = 0,
