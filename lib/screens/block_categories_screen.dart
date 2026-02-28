@@ -47,7 +47,8 @@ class BlockCategoriesScreen extends StatefulWidget {
   State<BlockCategoriesScreen> createState() => _BlockCategoriesScreenState();
 }
 
-class _BlockCategoriesScreenState extends State<BlockCategoriesScreen> {
+class _BlockCategoriesScreenState extends State<BlockCategoriesScreen>
+    with WidgetsBindingObserver {
   static const Map<String, List<String>> _serviceOrderByCategory =
       <String, List<String>>{
     'social-networks': <String>[
@@ -140,6 +141,7 @@ class _BlockCategoriesScreenState extends State<BlockCategoriesScreen> {
   bool _isLoadingInstalledApps = false;
   bool _autoSaveQueued = false;
   String _query = '';
+  final TextEditingController _searchController = TextEditingController();
   List<InstalledAppInfo> _installedApps = const <InstalledAppInfo>[];
   Map<String, List<String>> _observedDomainsByPackage =
       const <String, List<String>>{};
@@ -330,6 +332,7 @@ class _BlockCategoriesScreenState extends State<BlockCategoriesScreen> {
   @override
   void initState() {
     super.initState();
+    WidgetsBinding.instance.addObserver(this);
     _liveChildContext = widget.child;
     _hydrateStateFromChild(widget.child);
     if (_appInventoryEnabled) {
@@ -358,6 +361,8 @@ class _BlockCategoriesScreenState extends State<BlockCategoriesScreen> {
 
   @override
   void dispose() {
+    WidgetsBinding.instance.removeObserver(this);
+    _searchController.dispose();
     _effectivePolicySubscription?.cancel();
     _effectivePolicySubscription = null;
     _childContextSubscription?.cancel();
@@ -367,6 +372,20 @@ class _BlockCategoriesScreenState extends State<BlockCategoriesScreen> {
     _vpnDiagnosticsSubscription?.cancel();
     _vpnDiagnosticsSubscription = null;
     super.dispose();
+  }
+
+  @override
+  void didChangeAppLifecycleState(AppLifecycleState state) {
+    if (state != AppLifecycleState.resumed) {
+      return;
+    }
+    if (!mounted) {
+      return;
+    }
+    if (_query.trim().isEmpty) {
+      return;
+    }
+    _clearSearchFilter();
   }
 
   void _hydrateStateFromChild(ChildProfile child) {
@@ -765,15 +784,40 @@ class _BlockCategoriesScreenState extends State<BlockCategoriesScreen> {
       children: [
         TextField(
           key: const Key('block_categories_search'),
+          controller: _searchController,
           onChanged: (value) => setState(() => _query = value),
           decoration: InputDecoration(
             hintText: 'Search categories or apps',
             prefixIcon: const Icon(Icons.search),
+            suffixIcon: _query.trim().isEmpty
+                ? null
+                : IconButton(
+                    tooltip: 'Clear search',
+                    onPressed: _clearSearchFilter,
+                    icon: const Icon(Icons.close_rounded),
+                  ),
             border: OutlineInputBorder(
               borderRadius: BorderRadius.circular(14),
             ),
           ),
         ),
+        if (_query.trim().isNotEmpty) ...[
+          const SizedBox(height: 8),
+          Row(
+            children: [
+              Expanded(
+                child: Text(
+                  'Filtered by "${_query.trim()}".',
+                  style: Theme.of(context).textTheme.bodySmall,
+                ),
+              ),
+              TextButton(
+                onPressed: _clearSearchFilter,
+                child: const Text('Show all apps'),
+              ),
+            ],
+          ),
+        ],
         const SizedBox(height: 16),
         if (_activeRestrictionNotice != null) ...[
           Card(
@@ -901,6 +945,9 @@ class _BlockCategoriesScreenState extends State<BlockCategoriesScreen> {
 
   Widget _buildInstalledAppsSection() {
     final apps = _visibleInstalledApps;
+    final activeQuery = _query.trim();
+    final filtered = activeQuery.isNotEmpty;
+    final totalApps = _installedApps.length;
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
@@ -908,7 +955,9 @@ class _BlockCategoriesScreenState extends State<BlockCategoriesScreen> {
           children: [
             Expanded(
               child: Text(
-                'INSTALLED APPS',
+                filtered
+                    ? 'INSTALLED APPS (${apps.length}/$totalApps)'
+                    : 'INSTALLED APPS ($totalApps)',
                 style: Theme.of(context).textTheme.titleSmall?.copyWith(
                       fontWeight: FontWeight.w800,
                       letterSpacing: 0.5,
@@ -967,7 +1016,9 @@ class _BlockCategoriesScreenState extends State<BlockCategoriesScreen> {
               child: Text(
                 _isLoadingInstalledApps
                     ? 'Loading app inventory from child device...'
-                    : 'No network apps found yet. Open Chrome or WhatsApp on the child phone, then tap refresh.',
+                    : filtered
+                        ? 'No apps match "$activeQuery". Tap "Show all apps" to clear the filter.'
+                        : 'No network apps found yet. Open Chrome or WhatsApp on the child phone, then tap refresh.',
                 style: Theme.of(context).textTheme.bodyMedium,
               ),
             ),
@@ -1097,6 +1148,17 @@ class _BlockCategoriesScreenState extends State<BlockCategoriesScreen> {
     return (blocked: blocked, status: 'Allowed', color: Colors.green.shade700);
   }
 
+  void _clearSearchFilter() {
+    if (_query.trim().isEmpty && _searchController.text.trim().isEmpty) {
+      return;
+    }
+    _searchController.clear();
+    FocusScope.of(context).unfocus();
+    setState(() {
+      _query = '';
+    });
+  }
+
   ({String? serviceId, String? categoryId}) _serviceMatchForPackage(
     String packageName,
   ) {
@@ -1171,7 +1233,7 @@ class _BlockCategoriesScreenState extends State<BlockCategoriesScreen> {
     }
     final activeSchedule = _activeScheduleAt(now);
     if (activeSchedule == null) {
-      return null;
+      return 'free';
     }
     switch (activeSchedule.action) {
       case ScheduleAction.blockAll:
@@ -1201,11 +1263,13 @@ class _BlockCategoriesScreenState extends State<BlockCategoriesScreen> {
     final modeContext = _activeModeContext();
     final activeModeKey = modeContext.modeKey;
     final serviceMatch = _serviceMatchForPackage(packageName);
-    final modeBlockingPackage = _isModeBlockingPackage(
-      packageName: packageName,
-      serviceId: serviceMatch.serviceId,
-      categoryId: serviceMatch.categoryId,
-    );
+    final wasEffectivelyBlockedBeforeToggle = _effectiveInstalledPackageState(
+      InstalledAppInfo(
+        packageName: packageName,
+        appName: appName,
+        isSystemApp: false,
+      ),
+    ).blocked;
     setState(() {
       if (enabled) {
         _blockedPackages.add(packageName);
@@ -1218,7 +1282,7 @@ class _BlockCategoriesScreenState extends State<BlockCategoriesScreen> {
       } else {
         _blockedPackages.remove(packageName);
         if (activeModeKey != null && RolloutFlags.modeAppOverrides) {
-          if (modeBlockingPackage) {
+          if (wasEffectivelyBlockedBeforeToggle) {
             _addModePackageAllowOverride(
               modeKey: activeModeKey,
               packageName: packageName,
@@ -1252,7 +1316,7 @@ class _BlockCategoriesScreenState extends State<BlockCategoriesScreen> {
     );
     await _autoSaveToggleChanges();
     if (!enabled &&
-        modeBlockingPackage &&
+        wasEffectivelyBlockedBeforeToggle &&
         modeContext.modeLabel != null &&
         mounted) {
       ScaffoldMessenger.of(context).showSnackBar(

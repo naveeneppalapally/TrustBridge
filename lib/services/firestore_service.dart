@@ -3485,15 +3485,15 @@ class FirestoreService {
       return 'bedtime';
     }
     if (manualMode == null || manualMode.isEmpty) {
-      return null;
+      return 'free';
     }
     final mode = (manualMode['mode'] as String?)?.trim().toLowerCase();
     if (mode == null || mode.isEmpty) {
-      return null;
+      return 'free';
     }
     final expiresAt = _dynamicDateTime(manualMode['expiresAt']);
     if (expiresAt != null && !expiresAt.isAfter(now)) {
-      return null;
+      return 'free';
     }
     switch (mode) {
       case 'homework':
