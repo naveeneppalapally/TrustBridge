@@ -10,6 +10,8 @@ import android.os.Build
 import android.os.PowerManager
 import android.os.SystemClock
 import android.os.UserManager
+import android.net.ConnectivityManager
+import android.net.NetworkCapabilities
 import android.net.Uri
 import android.provider.Settings
 import android.content.pm.ApplicationInfo
@@ -63,6 +65,7 @@ class MainActivity : FlutterFragmentActivity() {
         private const val DEVICE_OWNER_SETUP_COMMAND =
             "adb shell dpm set-device-owner com.navee.trustbridge/.TrustBridgeAdminReceiver"
         private const val AUTO_RESTORE_MIN_INTERVAL_MS = 8_000L
+        private const val TRUSTBRIDGE_INTERCEPT_DNS = "10.111.111.111"
         private val USAGE_CHANNEL_NAMES = listOf(
             "com.navee.trustbridge/usage_stats"
         )
@@ -121,7 +124,7 @@ class MainActivity : FlutterFragmentActivity() {
     private fun handleMethodCall(call: MethodCall, result: MethodChannel.Result) {
         when (call.method) {
             "getStatus" -> result.success(
-                DnsVpnService.statusSnapshot(permissionGranted = hasVpnPermission())
+                buildVpnStatusSnapshot()
             )
 
             "hasVpnPermission" -> result.success(hasVpnPermission())
@@ -229,7 +232,7 @@ class MainActivity : FlutterFragmentActivity() {
                 result.success(true)
             }
 
-            "isVpnRunning" -> result.success(DnsVpnService.isRunning)
+            "isVpnRunning" -> result.success(isVpnRunningNow())
 
             "isIgnoringBatteryOptimizations" -> {
                 result.success(isIgnoringBatteryOptimizations())
@@ -254,7 +257,7 @@ class MainActivity : FlutterFragmentActivity() {
 
             "clearDnsQueryLogs" -> {
                 DnsVpnService.clearRecentQueryLogs()
-                if (DnsVpnService.isRunning) {
+                if (isVpnRunningNow()) {
                     val serviceIntent = Intent(this, DnsVpnService::class.java).apply {
                         action = DnsVpnService.ACTION_CLEAR_QUERY_LOGS
                     }
@@ -264,7 +267,7 @@ class MainActivity : FlutterFragmentActivity() {
             }
 
             "flushDnsCache" -> {
-                if (!DnsVpnService.isRunning) {
+                if (!isVpnRunningNow()) {
                     result.success(false)
                     return
                 }
@@ -292,7 +295,7 @@ class MainActivity : FlutterFragmentActivity() {
 
             "clearRuleCache" -> {
                 blocklistStore.clearRules()
-                if (DnsVpnService.isRunning) {
+                if (isVpnRunningNow()) {
                     val serviceIntent = Intent(this, DnsVpnService::class.java).apply {
                         action = DnsVpnService.ACTION_UPDATE_RULES
                         putStringArrayListExtra(
@@ -390,7 +393,7 @@ class MainActivity : FlutterFragmentActivity() {
                     ?.trim()
                     ?.takeIf { it.isNotEmpty() }
 
-                if (DnsVpnService.isRunning) {
+                if (isVpnRunningNow()) {
                     val serviceIntent = Intent(this, DnsVpnService::class.java).apply {
                         action = DnsVpnService.ACTION_SET_UPSTREAM_DNS
                         if (upstreamDns != null) {
@@ -454,7 +457,7 @@ class MainActivity : FlutterFragmentActivity() {
     }
 
     private fun maybeAutoRestoreVpnOnForegroundEntry() {
-        if (DnsVpnService.isRunning) {
+        if (isVpnRunningNow()) {
             return
         }
         if (!hasVpnPermission()) {
@@ -494,6 +497,32 @@ class MainActivity : FlutterFragmentActivity() {
             putExtra(DnsVpnService.EXTRA_UPSTREAM_DNS, config.upstreamDns)
         }
         startServiceCompat(serviceIntent)
+    }
+
+    private fun buildVpnStatusSnapshot(): Map<String, Any?> {
+        val snapshot = DnsVpnService.statusSnapshot(permissionGranted = hasVpnPermission()).toMutableMap()
+        snapshot["isRunning"] = isVpnRunningNow()
+        return snapshot
+    }
+
+    private fun isVpnRunningNow(): Boolean {
+        val manager = getSystemService(ConnectivityManager::class.java) ?: return false
+        return try {
+            manager.allNetworks.any { network ->
+                val capabilities = manager.getNetworkCapabilities(network) ?: return@any false
+                if (!capabilities.hasTransport(NetworkCapabilities.TRANSPORT_VPN)) {
+                    return@any false
+                }
+                val linkProperties = manager.getLinkProperties(network)
+                val interfaceName = linkProperties?.interfaceName.orEmpty()
+                val hasTrustBridgeDns = linkProperties?.dnsServers?.any { dns ->
+                    dns.hostAddress == TRUSTBRIDGE_INTERCEPT_DNS
+                } == true
+                interfaceName.equals("tun0", ignoreCase = true) || hasTrustBridgeDns
+            }
+        } catch (_: Exception) {
+            false
+        }
     }
 
     private fun handleUsageMethodCall(call: MethodCall, result: MethodChannel.Result) {
@@ -579,7 +608,7 @@ class MainActivity : FlutterFragmentActivity() {
         }
 
         return mapOf(
-            "vpnRunning" to DnsVpnService.isRunning,
+            "vpnRunning" to isVpnRunningNow(),
             "deviceAdminActive" to adminActive,
             "deviceOwnerActive" to ownerActive,
             "alwaysOnVpnPackage" to (alwaysOnPackage ?: ""),
