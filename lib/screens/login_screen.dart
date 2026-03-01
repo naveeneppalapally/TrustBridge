@@ -14,6 +14,10 @@ class LoginScreen extends StatefulWidget {
 }
 
 class _LoginScreenState extends State<LoginScreen> {
+  static final RegExp _emailPattern = RegExp(
+    r'^[A-Za-z0-9._%+-]+@[A-Za-z0-9.-]+\.[A-Za-z]{2,}$',
+  );
+
   final AuthService _authService = AuthService();
   final AppModeService _appModeService = AppModeService();
   final TextEditingController _phoneController = TextEditingController();
@@ -96,9 +100,47 @@ class _LoginScreenState extends State<LoginScreen> {
         return 'Invalid email or password.';
       case 'too-many-requests':
         return 'Too many attempts. Please wait and try again.';
+      case 'account-exists-with-different-credential':
+        return 'This email already exists with a different sign-in method.';
       default:
         return '$fallback ($code)';
     }
+  }
+
+  String? _validateEmail(String email) {
+    if (email.isEmpty) {
+      return 'Please enter your email address.';
+    }
+    if (email.contains(' ')) {
+      return 'Email address cannot contain spaces.';
+    }
+    if (!_emailPattern.hasMatch(email)) {
+      return 'Enter a valid email address (example: name@email.com).';
+    }
+    return null;
+  }
+
+  String? _validatePassword(String password, {required bool isSignUp}) {
+    if (password.isEmpty) {
+      return 'Please enter your password.';
+    }
+    if (isSignUp) {
+      if (password.length < 8) {
+        return 'Password must be at least 8 characters.';
+      }
+      if (!RegExp(r'[A-Z]').hasMatch(password)) {
+        return 'Include at least one uppercase letter.';
+      }
+      if (!RegExp(r'[a-z]').hasMatch(password)) {
+        return 'Include at least one lowercase letter.';
+      }
+      if (!RegExp(r'[0-9]').hasMatch(password)) {
+        return 'Include at least one number.';
+      }
+    } else if (password.length < 6) {
+      return 'Password must be at least 6 characters.';
+    }
+    return null;
   }
 
   @override
@@ -203,15 +245,18 @@ class _LoginScreenState extends State<LoginScreen> {
               final sheetNavigator = Navigator.of(sheetContext);
               final email = emailInput.trim();
               final password = passwordInput;
-              if (email.isEmpty || password.isEmpty) {
+              final emailError = _validateEmail(email);
+              if (emailError != null) {
                 setModalState(() {
-                  errorMessage = 'Email and password are required.';
+                  errorMessage = emailError;
                 });
                 return;
               }
-              if (password.length < 6) {
+              final passwordError =
+                  _validatePassword(password, isSignUp: isSignUp);
+              if (passwordError != null) {
                 setModalState(() {
-                  errorMessage = 'Password must be at least 6 characters.';
+                  errorMessage = passwordError;
                 });
                 return;
               }
@@ -326,6 +371,35 @@ class _LoginScreenState extends State<LoginScreen> {
         );
       },
     );
+  }
+
+  Future<void> _signInWithGoogle() async {
+    if (_isLoading) {
+      return;
+    }
+    setState(() {
+      _isLoading = true;
+      _errorMessage = null;
+    });
+
+    final user = await _authService.signInWithGoogle();
+    final resolvedUser = user ?? _authService.currentUser;
+
+    if (!mounted) {
+      return;
+    }
+
+    setState(() {
+      _isLoading = false;
+      if (resolvedUser == null &&
+          _authService.lastErrorMessage != 'aborted-by-user') {
+        _errorMessage = _friendlyError('Google sign-in failed. Try again.');
+      }
+    });
+
+    if (resolvedUser != null) {
+      await _goToDashboardIfNeeded();
+    }
   }
 
   @override
@@ -672,7 +746,7 @@ class _LoginScreenState extends State<LoginScreen> {
     return Column(
       children: [
         TextButton(
-          onPressed: _showEmailAuthSheet,
+          onPressed: _isLoading ? null : _showEmailAuthSheet,
           child: const Text('Login with Email'),
         ),
         const SizedBox(height: 4),
@@ -693,27 +767,25 @@ class _LoginScreenState extends State<LoginScreen> {
           ],
         ),
         const SizedBox(height: 12),
-        Row(
-          mainAxisAlignment: MainAxisAlignment.center,
-          children: [
-            _socialButton(icon: Icons.g_mobiledata),
-            const SizedBox(width: 12),
-            _socialButton(icon: Icons.apple),
-          ],
+        SizedBox(
+          width: double.infinity,
+          child: OutlinedButton.icon(
+            onPressed: _isLoading ? null : _signInWithGoogle,
+            style: OutlinedButton.styleFrom(
+              minimumSize: const Size(double.infinity, 50),
+              side: BorderSide(color: mutedText.withValues(alpha: 0.25)),
+              shape: RoundedRectangleBorder(
+                borderRadius: BorderRadius.circular(12),
+              ),
+            ),
+            icon: const Icon(Icons.g_mobiledata, size: 26),
+            label: const Text(
+              'Continue with Google',
+              style: TextStyle(fontWeight: FontWeight.w600),
+            ),
+          ),
         ),
       ],
-    );
-  }
-
-  Widget _socialButton({required IconData icon}) {
-    return OutlinedButton(
-      onPressed: () {},
-      style: OutlinedButton.styleFrom(
-        minimumSize: const Size(50, 50),
-        side: BorderSide(color: Colors.grey.withValues(alpha: 0.2)),
-        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(26)),
-      ),
-      child: Icon(icon, size: 24),
     );
   }
 

@@ -72,68 +72,82 @@ class _ScheduleCreatorScreenState extends State<ScheduleCreatorScreen> {
 
   @override
   Widget build(BuildContext context) {
+    final textTheme = Theme.of(context).textTheme;
     return Scaffold(
       appBar: AppBar(
-        title: const Text('Schedule Editor'),
+        title: const Text('Edit Schedule'),
       ),
       body: ListView(
         padding: const EdgeInsets.fromLTRB(16, 16, 16, 24),
         children: [
           Text(
-            'ROUTINE TYPE',
-            style: Theme.of(context).textTheme.titleSmall?.copyWith(
-                  fontWeight: FontWeight.w800,
-                  letterSpacing: 0.5,
-                ),
+            'Set when this rule should run. You can change this anytime.',
+            style: textTheme.bodyMedium,
+          ),
+          const SizedBox(height: 14),
+          Text(
+            '1. Schedule type',
+            style: textTheme.titleSmall?.copyWith(
+              fontWeight: FontWeight.w800,
+            ),
           ),
           const SizedBox(height: 10),
           _buildRoutineTypeRow(),
           const SizedBox(height: 10),
           _buildRoutineDescriptionCard(),
           const SizedBox(height: 18),
+          Text(
+            '2. Time window',
+            style: textTheme.titleSmall?.copyWith(
+              fontWeight: FontWeight.w800,
+            ),
+          ),
+          const SizedBox(height: 10),
           _buildTimeCard(),
           const SizedBox(height: 18),
           Text(
-            'DAYS',
-            style: Theme.of(context).textTheme.titleSmall?.copyWith(
-                  fontWeight: FontWeight.w800,
-                  letterSpacing: 0.5,
-                ),
+            '3. Repeat on',
+            style: textTheme.titleSmall?.copyWith(
+              fontWeight: FontWeight.w800,
+            ),
           ),
           const SizedBox(height: 10),
           _buildDaySelector(),
           const SizedBox(height: 18),
           Text(
-            'RESTRICTION LEVEL',
-            style: Theme.of(context).textTheme.titleSmall?.copyWith(
-                  fontWeight: FontWeight.w800,
-                  letterSpacing: 0.5,
-                ),
+            '4. During this time',
+            style: textTheme.titleSmall?.copyWith(
+              fontWeight: FontWeight.w800,
+            ),
           ),
           const SizedBox(height: 10),
           _buildRestrictionCard(
             key: const Key('schedule_block_distractions_card'),
-            title: 'Block Distractions',
-            subtitle: 'Social media, games, and streaming apps are blocked.\n'
-                'School apps, WhatsApp, and phone calls stay available.\n'
-                'Good for homework time.',
+            title: 'Homework Focus',
+            subtitle:
+                'Blocks social media, games, and streaming.\nCalls and communication stay available.',
             action: ScheduleAction.blockDistracting,
           ),
           const SizedBox(height: 10),
           _buildRestrictionCard(
             key: const Key('schedule_block_all_card'),
-            title: 'Block Everything',
+            title: 'Sleep Lock',
             subtitle:
-                'Total lockout - only phone calls and emergency services work.\n'
-                'No internet, no apps, no YouTube.\n'
-                'Use for bedtime or exam periods.',
+                'Blocks internet and app access during this window.\nBest for bedtime.',
             action: ScheduleAction.blockAll,
+          ),
+          const SizedBox(height: 10),
+          _buildRestrictionCard(
+            key: const Key('schedule_allow_all_card'),
+            title: 'Reminder Only',
+            subtitle: 'No blocks. Keeps this as a reminder schedule only.',
+            action: ScheduleAction.allowAll,
           ),
           const SizedBox(height: 14),
           SwitchListTile(
             key: const Key('schedule_remind_toggle'),
             contentPadding: EdgeInsets.zero,
-            title: const Text('Remind child 5m before'),
+            title: const Text('Send a reminder 5 minutes before start'),
             value: _remindBefore,
             onChanged: (value) => setState(() => _remindBefore = value),
           ),
@@ -153,7 +167,7 @@ class _ScheduleCreatorScreenState extends State<ScheduleCreatorScreen> {
                       child: CircularProgressIndicator(strokeWidth: 2),
                     )
                   : const Text(
-                      'Save Routine',
+                      'Save Schedule',
                       style: TextStyle(fontWeight: FontWeight.bold),
                     ),
             ),
@@ -171,64 +185,76 @@ class _ScheduleCreatorScreenState extends State<ScheduleCreatorScreen> {
       ScheduleType.custom,
     ];
 
-    return Container(
-      padding: const EdgeInsets.all(4),
-      decoration: BoxDecoration(
-        color: Colors.grey.withValues(alpha: 0.12),
-        borderRadius: BorderRadius.circular(26),
-      ),
-      child: Row(
-        children: types
-            .map(
-              (type) => Expanded(
-                child: GestureDetector(
-                  key: Key('schedule_type_${type.name}'),
-                  onTap: () => setState(() {
-                    _type = type;
-                  }),
-                  child: AnimatedContainer(
-                    duration: const Duration(milliseconds: 180),
-                    curve: Curves.easeOut,
-                    padding: const EdgeInsets.symmetric(vertical: 10),
-                    decoration: BoxDecoration(
-                      color: _type == type ? Colors.white : Colors.transparent,
-                      borderRadius: BorderRadius.circular(20),
-                    ),
-                    child: Text(
-                      _typeLabel(type),
-                      textAlign: TextAlign.center,
-                      style: TextStyle(
-                        fontWeight:
-                            _type == type ? FontWeight.w700 : FontWeight.w500,
-                      ),
-                    ),
-                  ),
-                ),
-              ),
-            )
-            .toList(growable: false),
-      ),
+    return Wrap(
+      spacing: 8,
+      runSpacing: 8,
+      children: types.map((type) {
+        return ChoiceChip(
+          key: Key('schedule_type_${type.name}'),
+          label: Text(_typeLabel(type)),
+          selected: _type == type,
+          onSelected: (_) => setState(() => _type = type),
+        );
+      }).toList(growable: false),
     );
   }
 
   Widget _buildRoutineDescriptionCard() {
+    final colorScheme = Theme.of(context).colorScheme;
     return Container(
       key: const Key('schedule_routine_description_card'),
       padding: const EdgeInsets.all(12),
       decoration: BoxDecoration(
-        color: Colors.blue.withValues(alpha: 0.08),
+        color: colorScheme.primary.withValues(alpha: 0.10),
         borderRadius: BorderRadius.circular(12),
-        border: Border.all(color: Colors.blue.withValues(alpha: 0.20)),
+        border: Border.all(color: colorScheme.primary.withValues(alpha: 0.20)),
       ),
       child: Text(
         _typeDescription(_type),
         key: const Key('schedule_routine_description_text'),
         style: TextStyle(
-          color: Colors.grey[800],
+          color: colorScheme.onSurface,
           height: 1.3,
         ),
       ),
     );
+  }
+
+  Widget _buildDayPresetChips() {
+    return Wrap(
+      spacing: 8,
+      runSpacing: 8,
+      children: [
+        ActionChip(
+          label: const Text('Weekdays'),
+          onPressed: () => _applyDayPreset(
+            const {
+              Day.monday,
+              Day.tuesday,
+              Day.wednesday,
+              Day.thursday,
+              Day.friday,
+            },
+          ),
+        ),
+        ActionChip(
+          label: const Text('Weekend'),
+          onPressed: () => _applyDayPreset(
+            const {Day.saturday, Day.sunday},
+          ),
+        ),
+        ActionChip(
+          label: const Text('Every day'),
+          onPressed: () => _applyDayPreset(Day.values.toSet()),
+        ),
+      ],
+    );
+  }
+
+  void _applyDayPreset(Set<Day> days) {
+    setState(() {
+      _days = days.toSet();
+    });
   }
 
   Widget _buildTimeCard() {
@@ -309,47 +335,36 @@ class _ScheduleCreatorScreenState extends State<ScheduleCreatorScreen> {
   }
 
   Widget _buildDaySelector() {
-    return Row(
-      mainAxisAlignment: MainAxisAlignment.spaceBetween,
-      children: Day.values.map((day) {
-        final selected = _days.contains(day);
-        return InkWell(
-          key: Key('schedule_day_${day.name}'),
-          onTap: () {
-            setState(() {
-              if (selected) {
-                _days.remove(day);
-              } else {
-                _days.add(day);
-              }
-            });
-          },
-          borderRadius: BorderRadius.circular(18),
-          child: Container(
-            width: 34,
-            height: 34,
-            decoration: BoxDecoration(
-              shape: BoxShape.circle,
-              color: selected ? const Color(0xFF207CF8) : Colors.transparent,
-              border: Border.all(
-                color: selected
-                    ? const Color(0xFF207CF8)
-                    : Colors.grey.withValues(alpha: 0.50),
-              ),
-            ),
-            child: Center(
-              child: Text(
-                _dayLabel(day),
-                style: TextStyle(
-                  color: selected ? Colors.white : Colors.grey[700],
-                  fontWeight: FontWeight.w700,
-                  fontSize: 12,
-                ),
-              ),
-            ),
-          ),
-        );
-      }).toList(growable: false),
+    final colorScheme = Theme.of(context).colorScheme;
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        _buildDayPresetChips(),
+        const SizedBox(height: 10),
+        Wrap(
+          spacing: 8,
+          runSpacing: 8,
+          children: Day.values.map((day) {
+            final selected = _days.contains(day);
+            return FilterChip(
+              key: Key('schedule_day_${day.name}'),
+              selected: selected,
+              label: Text(_dayLabel(day)),
+              selectedColor: colorScheme.primary.withValues(alpha: 0.20),
+              checkmarkColor: colorScheme.primary,
+              onSelected: (_) {
+                setState(() {
+                  if (selected) {
+                    _days.remove(day);
+                  } else {
+                    _days.add(day);
+                  }
+                });
+              },
+            );
+          }).toList(growable: false),
+        ),
+      ],
     );
   }
 
@@ -359,6 +374,7 @@ class _ScheduleCreatorScreenState extends State<ScheduleCreatorScreen> {
     required String subtitle,
     required ScheduleAction action,
   }) {
+    final colorScheme = Theme.of(context).colorScheme;
     final selected = _action == action;
     return InkWell(
       key: key,
@@ -370,11 +386,13 @@ class _ScheduleCreatorScreenState extends State<ScheduleCreatorScreen> {
           borderRadius: BorderRadius.circular(14),
           border: Border.all(
             color: selected
-                ? const Color(0xFF207CF8)
-                : Colors.grey.withValues(alpha: 0.40),
+                ? colorScheme.primary
+                : colorScheme.outline.withValues(alpha: 0.45),
             width: selected ? 2 : 1,
           ),
-          color: selected ? const Color(0x1A207CF8) : Colors.transparent,
+          color: selected
+              ? colorScheme.primary.withValues(alpha: 0.10)
+              : Colors.transparent,
         ),
         child: Row(
           crossAxisAlignment: CrossAxisAlignment.start,
@@ -382,8 +400,10 @@ class _ScheduleCreatorScreenState extends State<ScheduleCreatorScreen> {
             Icon(
               action == ScheduleAction.blockAll
                   ? Icons.block
-                  : Icons.shield_outlined,
-              color: selected ? const Color(0xFF207CF8) : Colors.grey[700],
+                  : action == ScheduleAction.allowAll
+                      ? Icons.notifications_active_outlined
+                      : Icons.shield_outlined,
+              color: selected ? colorScheme.primary : colorScheme.onSurface,
             ),
             const SizedBox(width: 12),
             Expanded(
@@ -400,15 +420,14 @@ class _ScheduleCreatorScreenState extends State<ScheduleCreatorScreen> {
                   Text(
                     subtitle,
                     style: TextStyle(
-                      color: Colors.grey[700],
+                      color: colorScheme.onSurfaceVariant,
                       height: 1.3,
                     ),
                   ),
                 ],
               ),
             ),
-            if (selected)
-              const Icon(Icons.check_circle, color: Color(0xFF207CF8)),
+            if (selected) Icon(Icons.check_circle, color: colorScheme.primary),
           ],
         ),
       ),
@@ -417,38 +436,39 @@ class _ScheduleCreatorScreenState extends State<ScheduleCreatorScreen> {
 
   Widget _buildSummaryCard(BuildContext context) {
     final dayText = _formatSelectedDays(_days);
+    final colorScheme = Theme.of(context).colorScheme;
     return Container(
       padding: const EdgeInsets.all(14),
       decoration: BoxDecoration(
-        color: const Color(0xFF1F2937),
+        color: colorScheme.surfaceContainerHighest.withValues(alpha: 0.75),
         borderRadius: BorderRadius.circular(14),
       ),
-      child: Row(
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          Expanded(
-            child: Text(
-              'ROUTINE SUMMARY · $dayText, ${_formatTime(_startTime)} - ${_formatTime(_endTime)} · ${_actionLabel(_action)}',
-              style: const TextStyle(
-                color: Colors.white,
-                fontWeight: FontWeight.w600,
-                fontSize: 12,
-              ),
+          Text(
+            'Summary',
+            style: TextStyle(
+              color: colorScheme.onSurface,
+              fontWeight: FontWeight.w700,
             ),
           ),
-          const SizedBox(width: 8),
-          Container(
-            padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
-            decoration: BoxDecoration(
-              color: Colors.blue.withValues(alpha: 0.25),
-              borderRadius: BorderRadius.circular(10),
+          const SizedBox(height: 6),
+          Text(
+            '$dayText • ${_formatTime(_startTime)} to ${_formatTime(_endTime)}',
+            style: TextStyle(
+              color: colorScheme.onSurfaceVariant,
+              fontWeight: FontWeight.w600,
+              fontSize: 12,
             ),
-            child: const Text(
-              'ACTIVE',
-              style: TextStyle(
-                color: Colors.white,
-                fontSize: 10,
-                fontWeight: FontWeight.w700,
-              ),
+          ),
+          const SizedBox(height: 4),
+          Text(
+            'Rule: ${_actionLabel(_action)}',
+            style: TextStyle(
+              color: colorScheme.onSurfaceVariant,
+              fontSize: 10,
+              fontWeight: FontWeight.w700,
             ),
           ),
         ],
@@ -538,7 +558,7 @@ class _ScheduleCreatorScreenState extends State<ScheduleCreatorScreen> {
             _isLoading = false;
           });
           final previewLines = conflicts.take(3).map((conflict) {
-            return '${_dayName(conflict.day)} · ${conflict.scheduleName}';
+            return '${_dayName(conflict.day)} • ${conflict.scheduleName}';
           }).join('\n');
           final overflowLine = conflicts.length > 3
               ? '\n+${conflicts.length - 3} more overlap(s)'
@@ -673,8 +693,7 @@ class _ScheduleCreatorScreenState extends State<ScheduleCreatorScreen> {
       for (final day in Day.values) {
         final candidateWindows =
             candidateWindowsByDay[day] ?? const <_MinuteWindow>[];
-        final otherWindows =
-            otherWindowsByDay[day] ?? const <_MinuteWindow>[];
+        final otherWindows = otherWindowsByDay[day] ?? const <_MinuteWindow>[];
         if (candidateWindows.isEmpty || otherWindows.isEmpty) {
           continue;
         }
@@ -765,28 +784,24 @@ class _ScheduleCreatorScreenState extends State<ScheduleCreatorScreen> {
   String _actionLabel(ScheduleAction action) {
     switch (action) {
       case ScheduleAction.blockAll:
-        return 'Block Everything';
+        return 'Sleep Lock';
       case ScheduleAction.blockDistracting:
-        return 'Block Distractions';
+        return 'Homework Focus';
       case ScheduleAction.allowAll:
-        return 'Allow All';
+        return 'Reminder Only';
     }
   }
 
   String _typeDescription(ScheduleType type) {
     switch (type) {
       case ScheduleType.bedtime:
-        return 'Blocks YouTube, games, and social media after bedtime hours. '
-            'Emergency calls always work.';
+        return 'Best for night time. Keeps internet use off during sleep hours.';
       case ScheduleType.school:
-        return 'During school hours, only study and communication apps are '
-            'available. Entertainment is blocked.';
+        return 'Good for class hours. Keeps attention on study activities.';
       case ScheduleType.homework:
-        return 'Gaming and video sites blocked for focused study time. '
-            'WhatsApp and phone calls still work.';
+        return 'Good for homework. Blocks distractions and supports focus.';
       case ScheduleType.custom:
-        return 'You choose exactly which apps to block and when. '
-            'Full control over every detail.';
+        return 'Use custom when you want your own time window and rules.';
     }
   }
 
@@ -816,19 +831,19 @@ class _ScheduleCreatorScreenState extends State<ScheduleCreatorScreen> {
   String _dayLabel(Day day) {
     switch (day) {
       case Day.monday:
-        return 'M';
+        return 'Mon';
       case Day.tuesday:
-        return 'T';
+        return 'Tue';
       case Day.wednesday:
-        return 'W';
+        return 'Wed';
       case Day.thursday:
-        return 'T';
+        return 'Thu';
       case Day.friday:
-        return 'F';
+        return 'Fri';
       case Day.saturday:
-        return 'S';
+        return 'Sat';
       case Day.sunday:
-        return 'S';
+        return 'Sun';
     }
   }
 

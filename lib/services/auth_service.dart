@@ -3,6 +3,7 @@ import 'dart:developer' as developer;
 
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:firebase_auth/firebase_auth.dart';
+import 'package:google_sign_in/google_sign_in.dart';
 import 'package:trustbridge_app/services/firestore_service.dart';
 
 class AuthService {
@@ -10,13 +11,16 @@ class AuthService {
     FirebaseAuth? auth,
     FirebaseFirestore? firestore,
     FirestoreService? firestoreService,
+    GoogleSignIn? googleSignIn,
   })  : _auth = auth ?? FirebaseAuth.instance,
+        _googleSignIn = googleSignIn ?? GoogleSignIn(),
         _firestoreService = firestoreService ??
             FirestoreService(
               firestore: firestore ?? FirebaseFirestore.instance,
             );
 
   final FirebaseAuth _auth;
+  final GoogleSignIn _googleSignIn;
   final FirestoreService _firestoreService;
   static const Duration _authRequestTimeout = Duration(seconds: 60);
   static const Duration _networkRetryDelay = Duration(seconds: 2);
@@ -54,7 +58,8 @@ class AuthService {
           verificationCompleted: (PhoneAuthCredential credential) async {
             _log('Auto verification callback received');
             try {
-              final userCredential = await _auth.signInWithCredential(credential);
+              final userCredential =
+                  await _auth.signInWithCredential(credential);
               final user = userCredential.user;
               if (user != null &&
                   (userCredential.additionalUserInfo?.isNewUser ?? false)) {
@@ -122,8 +127,8 @@ class AuthService {
         return true;
       }
 
-      final codeSentDuringAttempt = _verificationId != null &&
-          _verificationId != verificationIdBefore;
+      final codeSentDuringAttempt =
+          _verificationId != null && _verificationId != verificationIdBefore;
       if (!allowRetry ||
           codeSentDuringAttempt ||
           !_isTransientNetworkErrorCode(_lastErrorMessage)) {
@@ -175,8 +180,50 @@ class AuthService {
   }
 
   Future<void> signOut() async {
+    try {
+      await _googleSignIn.signOut();
+    } catch (_) {
+      // Keep sign-out resilient even if Google sign-out fails.
+    }
     await _auth.signOut();
     _log('User signed out');
+  }
+
+  Future<User?> signInWithGoogle() async {
+    _lastErrorMessage = null;
+    return _runAuthOperationWithRetry<User?>(
+      operationName: 'Google sign-in',
+      action: () async {
+        final googleAccount = await _googleSignIn.signIn();
+        if (googleAccount == null) {
+          _lastErrorMessage = 'aborted-by-user';
+          return null;
+        }
+
+        final googleAuth = await googleAccount.authentication;
+        if (googleAuth.idToken == null || googleAuth.idToken!.isEmpty) {
+          throw FirebaseAuthException(
+            code: 'missing-id-token',
+            message: 'Google sign-in did not return a valid ID token.',
+          );
+        }
+
+        final credential = GoogleAuthProvider.credential(
+          accessToken: googleAuth.accessToken,
+          idToken: googleAuth.idToken,
+        );
+
+        final userCredential = await _auth
+            .signInWithCredential(credential)
+            .timeout(_authRequestTimeout);
+        final user = userCredential.user;
+        if (user != null) {
+          unawaited(_ensureParentProfileSafely(user));
+        }
+        _log('Google sign-in succeeded');
+        return user;
+      },
+    );
   }
 
   Future<User?> signInWithEmail({
@@ -187,10 +234,12 @@ class AuthService {
     return _runAuthOperationWithRetry<User?>(
       operationName: 'Email sign-in',
       action: () async {
-        final credential = await _auth.signInWithEmailAndPassword(
-          email: email.trim(),
-          password: password,
-        ).timeout(_authRequestTimeout);
+        final credential = await _auth
+            .signInWithEmailAndPassword(
+              email: email.trim(),
+              password: password,
+            )
+            .timeout(_authRequestTimeout);
         final user = credential.user;
         if (user != null &&
             (credential.additionalUserInfo?.isNewUser ?? false)) {
@@ -210,10 +259,12 @@ class AuthService {
     return _runAuthOperationWithRetry<User?>(
       operationName: 'Email sign-up',
       action: () async {
-        final credential = await _auth.createUserWithEmailAndPassword(
-          email: email.trim(),
-          password: password,
-        ).timeout(_authRequestTimeout);
+        final credential = await _auth
+            .createUserWithEmailAndPassword(
+              email: email.trim(),
+              password: password,
+            )
+            .timeout(_authRequestTimeout);
         final user = credential.user;
         if (user != null) {
           unawaited(_ensureParentProfileSafely(user));
