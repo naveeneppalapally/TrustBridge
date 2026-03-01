@@ -20,7 +20,6 @@ import 'package:trustbridge_app/services/firestore_service.dart';
 import 'package:trustbridge_app/services/nextdns_api_service.dart';
 import 'package:trustbridge_app/services/remote_command_service.dart';
 import 'package:trustbridge_app/services/vpn_service.dart';
-import 'package:trustbridge_app/utils/parent_pin_gate.dart';
 import 'package:trustbridge_app/widgets/empty_state.dart';
 
 class BlockCategoriesScreen extends StatefulWidget {
@@ -383,9 +382,15 @@ class _BlockCategoriesScreenState extends State<BlockCategoriesScreen>
       return;
     }
     if (_query.trim().isEmpty) {
+      if (_appInventoryEnabled) {
+        unawaited(_loadInstalledApps());
+      }
       return;
     }
     _clearSearchFilter();
+    if (_appInventoryEnabled) {
+      unawaited(_loadInstalledApps());
+    }
   }
 
   void _hydrateStateFromChild(ChildProfile child) {
@@ -458,21 +463,40 @@ class _BlockCategoriesScreenState extends State<BlockCategoriesScreen>
       _isLoadingInstalledApps = true;
     });
     try {
-      final appsFuture = _resolvedFirestoreService.getChildInstalledAppsOnce(
-        parentId: parentId,
-        childId: widget.child.id,
-      );
-      final observedDomainsFuture =
-          _resolvedFirestoreService.getChildObservedAppDomainsOnce(
-        parentId: parentId,
-        childId: widget.child.id,
-      );
-      final apps = await appsFuture;
-      final observedDomains = await observedDomainsFuture;
+      List<InstalledAppInfo>? fetchedApps;
+      Map<String, List<String>>? fetchedObservedDomains;
+
+      try {
+        fetchedApps = await _resolvedFirestoreService.getChildInstalledAppsOnce(
+          parentId: parentId,
+          childId: widget.child.id,
+        );
+      } catch (error) {
+        debugPrint('[BlockApps] installed apps refresh failed: $error');
+      }
+
+      try {
+        fetchedObservedDomains =
+            await _resolvedFirestoreService.getChildObservedAppDomainsOnce(
+          parentId: parentId,
+          childId: widget.child.id,
+        );
+      } catch (error) {
+        debugPrint('[BlockApps] observed domains refresh failed: $error');
+      }
+
+      final baseApps = fetchedApps ??
+          (_installedApps.isNotEmpty
+              ? _installedApps
+              : const <InstalledAppInfo>[]);
+      final observedDomains =
+          fetchedObservedDomains ?? _observedDomainsByPackage;
+
       final appsByPackage = <String, InstalledAppInfo>{
-        for (final app in apps)
+        for (final app in baseApps)
           if (!app.isSystemApp) app.packageName.trim().toLowerCase(): app,
       };
+
       // Show full installed inventory first, then backfill observed-only
       // packages that may not have synced into inventory yet.
       final mergedAppsByPackage = <String, InstalledAppInfo>{
@@ -496,6 +520,7 @@ class _BlockCategoriesScreenState extends State<BlockCategoriesScreen>
           isLaunchable: true,
         );
       }
+
       final mergedApps = mergedAppsByPackage.values.toList(growable: false);
       mergedApps.sort((a, b) {
         final rankA = _installedPackageRank(a.packageName);
@@ -505,6 +530,7 @@ class _BlockCategoriesScreenState extends State<BlockCategoriesScreen>
         }
         return a.appName.toLowerCase().compareTo(b.appName.toLowerCase());
       });
+
       if (!mounted) {
         return;
       }
@@ -513,15 +539,8 @@ class _BlockCategoriesScreenState extends State<BlockCategoriesScreen>
         _observedDomainsByPackage = observedDomains;
         _installedAppIconBytesCache.clear();
       });
-    } catch (_) {
-      if (!mounted) {
-        return;
-      }
-      setState(() {
-        _installedApps = const <InstalledAppInfo>[];
-        _observedDomainsByPackage = const <String, List<String>>{};
-        _installedAppIconBytesCache.clear();
-      });
+    } catch (error) {
+      debugPrint('[BlockApps] refresh failed: $error');
     } finally {
       if (mounted) {
         setState(() {
@@ -1254,10 +1273,6 @@ class _BlockCategoriesScreenState extends State<BlockCategoriesScreen>
       return;
     }
     if (!mounted) {
-      return;
-    }
-    final allowed = await requireParentPin(context);
-    if (!allowed || !mounted) {
       return;
     }
     final modeContext = _activeModeContext();
@@ -2392,18 +2407,6 @@ class _BlockCategoriesScreenState extends State<BlockCategoriesScreen>
     if (!mounted) {
       return;
     }
-    final authorized = await requireParentPin(context);
-    if (!authorized) {
-      if (!mounted) {
-        return;
-      }
-      ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(
-          content: Text('Parent PIN required to change protection.'),
-        ),
-      );
-      return;
-    }
 
     final normalizedServiceId = appKey.trim().toLowerCase();
     final service = ServiceDefinitions.byId[normalizedServiceId];
@@ -2543,18 +2546,6 @@ class _BlockCategoriesScreenState extends State<BlockCategoriesScreen>
     }
 
     if (!mounted) {
-      return;
-    }
-    final authorized = await requireParentPin(context);
-    if (!authorized) {
-      if (!mounted) {
-        return;
-      }
-      final messenger = ScaffoldMessenger.of(context);
-      messenger.showSnackBar(
-        const SnackBar(
-            content: Text('Parent PIN required to change protection.')),
-      );
       return;
     }
 

@@ -7,7 +7,6 @@ import '../../services/auth_service.dart';
 import '../../services/firestore_service.dart';
 import '../../services/heartbeat_service.dart';
 import '../../services/vpn_service.dart';
-import '../../utils/parent_pin_gate.dart';
 
 /// Parent-focused protection settings with a simple overview and gated advanced tools.
 class ProtectionSettingsScreen extends StatefulWidget {
@@ -588,10 +587,6 @@ class _ProtectionSettingsScreenState extends State<ProtectionSettingsScreen> {
       return;
     }
 
-    final authorized = await requireParentPin(context);
-    if (!authorized) {
-      return;
-    }
     if (!mounted) {
       return;
     }
@@ -601,11 +596,6 @@ class _ProtectionSettingsScreenState extends State<ProtectionSettingsScreen> {
   }
 
   Future<void> _disableProtectionWithPin(String parentId) async {
-    final authorized = await requireParentPin(context);
-    if (!authorized) {
-      return;
-    }
-
     setState(() {
       _updating = true;
     });

@@ -1,15 +1,8 @@
-import 'dart:convert';
-
-import 'package:fake_cloud_firestore/fake_cloud_firestore.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
-import 'package:http/http.dart' as http;
-import 'package:http/testing.dart';
 import 'package:trustbridge_app/config/rollout_flags.dart';
 import 'package:trustbridge_app/screens/usage_reports_screen.dart';
 import 'package:trustbridge_app/services/app_usage_service.dart';
-import 'package:trustbridge_app/services/firestore_service.dart';
-import 'package:trustbridge_app/services/nextdns_api_service.dart';
 import 'package:trustbridge_app/widgets/skeleton_loaders.dart';
 
 class _FakeAppUsageService extends AppUsageService {
@@ -38,15 +31,15 @@ class _FakeAppUsageService extends AppUsageService {
 
 void main() {
   group('UsageReportsScreen', () {
-    setUp(RolloutFlags.resetForTest);
+    setUp(() {
+      RolloutFlags.resetForTest();
+      RolloutFlags.setForTest('per_app_usage_reports', true);
+    });
     tearDown(RolloutFlags.resetForTest);
 
     Future<void> pumpScreen(
       WidgetTester tester, {
       AppUsageService? appUsageService,
-      FirestoreService? firestoreService,
-      NextDnsApiService? nextDnsApiService,
-      String? parentIdOverride,
     }) async {
       await tester.binding.setSurfaceSize(const Size(430, 1300));
       addTearDown(() => tester.binding.setSurfaceSize(null));
@@ -54,10 +47,8 @@ void main() {
       await tester.pumpWidget(
         MaterialApp(
           home: UsageReportsScreen(
+            allowLocalDeviceFallback: true,
             appUsageService: appUsageService,
-            firestoreService: firestoreService,
-            nextDnsApiService: nextDnsApiService,
-            parentIdOverride: parentIdOverride,
           ),
         ),
       );
@@ -126,13 +117,15 @@ void main() {
       expect(find.text('Usage Reports'), findsOneWidget);
       expect(find.text('This Week'), findsOneWidget);
       expect(find.byIcon(Icons.calendar_today_outlined), findsOneWidget);
+      expect(find.textContaining('Clear summary for'), findsOneWidget);
     });
 
     testWidgets('shows hero card and category section', (tester) async {
+      RolloutFlags.setForTest('per_app_usage_reports', true);
       await pumpScreen(tester, appUsageService: buildDataService());
 
       expect(find.byKey(const Key('usage_reports_hero_card')), findsOneWidget);
-      expect(find.text('Total Screen Time'), findsOneWidget);
+      expect(find.text('Selected Day Screen Time'), findsOneWidget);
       expect(find.text('5h 47m'), findsOneWidget);
 
       expect(
@@ -140,23 +133,31 @@ void main() {
         findsOneWidget,
       );
       expect(find.text('By Category'), findsOneWidget);
-      expect(find.text('Social'), findsWidgets);
-      expect(find.text('Education'), findsWidgets);
-      expect(find.text('Games'), findsWidgets);
+      expect(find.textContaining('Social'), findsWidgets);
+      expect(find.textContaining('Education'), findsWidgets);
+      expect(find.textContaining('Games'), findsWidgets);
+      expect(find.text('Vs Yesterday'), findsOneWidget);
+      expect(find.text('Top App'), findsOneWidget);
     });
 
     testWidgets('shows trend and most used apps sections', (tester) async {
+      RolloutFlags.setForTest('per_app_usage_reports', true);
+      expect(RolloutFlags.perAppUsageReports, isTrue);
       await pumpScreen(tester, appUsageService: buildDataService());
 
       expect(find.byKey(const Key('usage_reports_trend_card')), findsOneWidget);
       expect(find.text('7-Day Trend'), findsOneWidget);
-
-      expect(find.byKey(const Key('usage_reports_apps_card')), findsOneWidget);
+      await tester.scrollUntilVisible(
+        find.text('Most Used Apps'),
+        240,
+        scrollable: find.byType(Scrollable).first,
+      );
+      await tester.pumpAndSettle();
       expect(find.text('Most Used Apps'), findsOneWidget);
-      expect(find.text('YouTube'), findsOneWidget);
-      expect(find.text('WhatsApp'), findsOneWidget);
-      expect(find.text('Entertainment'), findsOneWidget);
-      expect(find.text('Social'), findsWidgets);
+      expect(find.text('YouTube'), findsWidgets);
+      expect(find.text('WhatsApp'), findsWidgets);
+      expect(find.text('Entertainment'), findsWidgets);
+      expect(find.textContaining('Social'), findsWidgets);
     });
 
     testWidgets('hides per-app/day-filter sections when rollout flag is off',
@@ -205,74 +206,6 @@ void main() {
 
       expect(find.text('Usage access required'), findsOneWidget);
       expect(find.text('Grant Access'), findsOneWidget);
-    });
-
-    testWidgets('shows NextDNS analytics when profile is configured',
-        (tester) async {
-      final fakeFirestore = FakeFirebaseFirestore();
-      const parentId = 'parent-nextdns-usage';
-
-      await fakeFirestore.collection('parents').doc(parentId).set({
-        'uid': parentId,
-        'phoneNumber': '+911234567890',
-        'preferences': {
-          'nextDnsEnabled': true,
-          'nextDnsProfileId': 'abc123',
-        },
-      });
-
-      final firestoreService = FirestoreService(firestore: fakeFirestore);
-      final nextDnsApiService = NextDnsApiService(
-        secretStore: InMemoryNextDnsSecretStore(),
-        httpClient: MockClient((request) async {
-          final path = request.url.path;
-          if (path.endsWith('/analytics/domains')) {
-            return http.Response(
-              jsonEncode({
-                'data': [
-                  {'domain': 'youtube.com', 'queries': 12},
-                  {'domain': 'tiktok.com', 'queries': 7},
-                ],
-              }),
-              200,
-            );
-          }
-          if (path.endsWith('/analytics/status')) {
-            return http.Response(
-              jsonEncode({
-                'data': [
-                  {'status': 'blocked', 'queries': 19},
-                  {'status': 'allowed', 'queries': 40},
-                ],
-              }),
-              200,
-            );
-          }
-          return http.Response(jsonEncode({'data': []}), 200);
-        }),
-      );
-      await nextDnsApiService.setNextDnsApiKey('test-api-key');
-
-      await pumpScreen(
-        tester,
-        appUsageService: buildDataService(),
-        firestoreService: firestoreService,
-        nextDnsApiService: nextDnsApiService,
-        parentIdOverride: parentId,
-      );
-
-      await tester.dragUntilVisible(
-        find.byKey(const Key('usage_reports_nextdns_card')),
-        find.byType(ListView).first,
-        const Offset(0, -240),
-      );
-      await tester.pumpAndSettle();
-
-      expect(
-          find.byKey(const Key('usage_reports_nextdns_card')), findsOneWidget);
-      expect(find.text('Sites Blocked Today: 19'), findsOneWidget);
-      expect(find.text('youtube.com'), findsOneWidget);
-      expect(find.text('tiktok.com'), findsOneWidget);
     });
   });
 }

@@ -18,7 +18,6 @@ import 'package:trustbridge_app/services/vpn_service.dart';
 import 'package:trustbridge_app/screens/dns_query_log_screen.dart';
 import 'package:trustbridge_app/screens/domain_policy_tester_screen.dart';
 import 'package:trustbridge_app/screens/nextdns_settings_screen.dart';
-import 'package:trustbridge_app/utils/parent_pin_gate.dart';
 
 class VpnProtectionScreen extends StatefulWidget {
   const VpnProtectionScreen({
@@ -401,7 +400,8 @@ class _VpnProtectionScreenState extends State<VpnProtectionScreen> {
                             : l10n.notAvailableLabel,
               ),
             ),
-            if ((_status.isRunning || canEnable) && !_ignoringBatteryOptimizations) ...[
+            if ((_status.isRunning || canEnable) &&
+                !_ignoringBatteryOptimizations) ...[
               const SizedBox(height: 10),
               Container(
                 padding: const EdgeInsets.all(12),
@@ -1549,14 +1549,6 @@ class _VpnProtectionScreenState extends State<VpnProtectionScreen> {
   }
 
   Future<void> _disableProtection() async {
-    final authorized = await requireParentPin(context);
-    if (!authorized) {
-      if (mounted) {
-        _showMessage('Parent PIN required to disable protection.', isError: true);
-      }
-      return;
-    }
-
     setState(() => _isBusy = true);
     try {
       final stopped = await _resolvedVpnService.stopVpn();

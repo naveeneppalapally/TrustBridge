@@ -119,34 +119,35 @@ class ChildUsageUploadService {
       final appUsageByPackage = todayBucket.appUsageByPackage;
       final todayTotalMs = todayBucket.totalMs;
 
+      final dailyTopApps = _buildTopAppsFromDailyUsage(
+        appUsageByPackage: appUsageByPackage,
+        appIconsByPackage: appIconsByPackage,
+      );
+      final dailyCategorySlices = todayBucket.categoryTotals.entries
+          .map((entry) => <String, dynamic>{
+                'label': entry.key,
+                'durationMs': entry.value,
+              })
+          .toList(growable: false)
+        ..sort(
+          (a, b) => _toInt(b['durationMs']).compareTo(_toInt(a['durationMs'])),
+        );
+
       final payload = <String, dynamic>{
-        'totalScreenTimeMs': report.totalScreenTime.inMilliseconds,
+        // "latest" should represent today's snapshot, not 7-day cumulative data.
+        'totalScreenTimeMs': todayTotalMs,
         'averageDailyScreenTimeMs':
             report.averageDailyScreenTime.inMilliseconds,
-        'categorySlices': report.categorySlices
-            .map((s) => <String, dynamic>{
-                  'label': s.label,
-                  'durationMs': s.duration.inMilliseconds,
-                })
-            .toList(),
+        'categorySlices': dailyCategorySlices,
         'dailyTrend': report.dailyTrend
             .map((p) => <String, dynamic>{
                   'label': p.label,
                   'durationMs': p.duration.inMilliseconds,
                 })
             .toList(),
-        'topApps': report.topApps
-            .map((a) => <String, dynamic>{
-                  'packageName': a.packageName,
-                  'appName': a.appName,
-                  'category': a.category,
-                  'durationMs': a.duration.inMilliseconds,
-                  'progress': a.progress,
-                  if ((appIconsByPackage[a.packageName] ?? '').isNotEmpty)
-                    'appIconBase64': appIconsByPackage[a.packageName],
-                })
-            .toList(),
+        'topApps': dailyTopApps,
         'dayKey': dayKey,
+        'snapshotVersion': 2,
         'uploadedAt': FieldValue.serverTimestamp(),
         'deviceUploadedAtLocal': now.toIso8601String(),
       };
@@ -173,6 +174,7 @@ class ChildUsageUploadService {
           final dailyPayload = <String, dynamic>{
             'capturedAt': FieldValue.serverTimestamp(),
             'dayKey': bucket.dayKey,
+            'snapshotVersion': 2,
             'totalScreenMinutes': (bucket.totalMs / 60000).round(),
             'appUsageByPackage': bucket.appUsageByPackage,
             'categoryTotals': bucket.categoryTotals,
@@ -243,6 +245,59 @@ class ChildUsageUploadService {
       return value.toInt();
     }
     return 0;
+  }
+
+  List<Map<String, dynamic>> _buildTopAppsFromDailyUsage({
+    required Map<String, dynamic> appUsageByPackage,
+    required Map<String, String> appIconsByPackage,
+  }) {
+    final rows = <Map<String, dynamic>>[];
+    var maxDurationMs = 0;
+
+    for (final entry in appUsageByPackage.entries) {
+      final packageName = entry.key.trim().toLowerCase();
+      if (packageName.isEmpty || entry.value is! Map) {
+        continue;
+      }
+      final appMap = (entry.value as Map).map(
+        (key, value) => MapEntry(key.toString(), value),
+      );
+      final durationMs = _toInt(appMap['durationMs']);
+      if (durationMs <= 0) {
+        continue;
+      }
+      if (durationMs > maxDurationMs) {
+        maxDurationMs = durationMs;
+      }
+      final icon = (appIconsByPackage[packageName] ?? '').trim();
+      rows.add(<String, dynamic>{
+        'packageName': packageName,
+        'appName': (appMap['appName'] as String?)?.trim().isNotEmpty == true
+            ? (appMap['appName'] as String).trim()
+            : packageName,
+        'category': _categoryFromPackage(packageName),
+        'durationMs': durationMs,
+        'progress': 0.0,
+        if (icon.isNotEmpty) 'appIconBase64': icon,
+      });
+    }
+
+    if (rows.isEmpty) {
+      return const <Map<String, dynamic>>[];
+    }
+
+    rows.sort(
+      (a, b) => _toInt(b['durationMs']).compareTo(_toInt(a['durationMs'])),
+    );
+    final safeMax = maxDurationMs <= 0 ? 1 : maxDurationMs;
+    return rows
+        .take(10)
+        .map((row) => <String, dynamic>{
+              ...row,
+              'progress': (_toInt(row['durationMs']) / safeMax)
+                  .clamp(0.0, 1.0),
+            })
+        .toList(growable: false);
   }
 }
 

@@ -1,15 +1,12 @@
 import 'package:flutter/material.dart';
 
-import '../config/rollout_flags.dart';
 import '../config/service_definitions.dart';
 import '../models/child_profile.dart';
-import '../models/installed_app_info.dart';
 import '../models/policy.dart';
 import '../models/service_definition.dart';
 import '../services/auth_service.dart';
 import '../services/firestore_service.dart';
 import '../services/remote_command_service.dart';
-import '../utils/parent_pin_gate.dart';
 
 class ModeOverridesScreen extends StatefulWidget {
   const ModeOverridesScreen({
@@ -31,26 +28,53 @@ class ModeOverridesScreen extends StatefulWidget {
 
 class _ModeOverridesScreenState extends State<ModeOverridesScreen> {
   static const Map<String, String> _modeLabels = <String, String>{
-    'bedtime': 'Bedtime',
     'homework': 'Homework',
-    'focus': 'Focus',
+    'bedtime': 'Bedtime',
     'free': 'Free Play',
   };
+
+  static const List<_ServiceGroup> _groups = <_ServiceGroup>[
+    _ServiceGroup(
+      title: 'Social Media',
+      categoryId: 'social-networks',
+      hint: 'Instagram, Facebook, Snapchat, TikTok',
+    ),
+    _ServiceGroup(
+      title: 'Messaging',
+      categoryId: 'chat',
+      hint: 'WhatsApp, Telegram, Discord',
+    ),
+    _ServiceGroup(
+      title: 'Streaming',
+      categoryId: 'streaming',
+      hint: 'YouTube and video apps',
+    ),
+    _ServiceGroup(
+      title: 'Gaming',
+      categoryId: 'games',
+      hint: 'Roblox and online games',
+    ),
+  ];
+
+  static const List<String> _popularServiceIds = <String>[
+    'instagram',
+    'youtube',
+    'tiktok',
+    'facebook',
+    'snapchat',
+    'whatsapp',
+    'telegram',
+    'discord',
+    'roblox',
+  ];
 
   AuthService? _authService;
   FirestoreService? _firestoreService;
 
   late final Map<String, ModeOverrideSet> _workingModeOverrides;
-  String _selectedMode = 'bedtime';
+  String _selectedMode = 'homework';
   bool _saving = false;
-  bool _loadingInstalledApps = false;
-  String _query = '';
-  List<InstalledAppInfo> _installedApps = const <InstalledAppInfo>[];
-
-  late Set<String> _forceBlockServices;
-  late Set<String> _forceAllowServices;
-  late Set<String> _forceBlockPackages;
-  late Set<String> _forceAllowPackages;
+  late Set<String> _blockedServiceIds;
 
   AuthService get _resolvedAuthService {
     _authService ??= widget.authService ?? AuthService();
@@ -67,11 +91,7 @@ class _ModeOverridesScreenState extends State<ModeOverridesScreen> {
     if (override != null && override.isNotEmpty) {
       return override;
     }
-    try {
-      return _resolvedAuthService.currentUser?.uid;
-    } catch (_) {
-      return null;
-    }
+    return _resolvedAuthService.currentUser?.uid;
   }
 
   @override
@@ -82,114 +102,13 @@ class _ModeOverridesScreenState extends State<ModeOverridesScreen> {
         entry.key: entry.value,
     };
     _hydrateSelectedMode();
-    if (RolloutFlags.modeAppOverrides && RolloutFlags.appInventory) {
-      _loadInstalledApps();
-    }
-  }
-
-  void _hydrateSelectedMode() {
-    final current =
-        _workingModeOverrides[_selectedMode] ?? const ModeOverrideSet();
-    _forceBlockServices = current.forceBlockServices
-        .map((value) => value.trim().toLowerCase())
-        .where((value) => value.isNotEmpty)
-        .toSet();
-    _forceAllowServices = current.forceAllowServices
-        .map((value) => value.trim().toLowerCase())
-        .where((value) => value.isNotEmpty)
-        .toSet();
-    _forceBlockPackages = current.forceBlockPackages
-        .map((value) => value.trim().toLowerCase())
-        .where((value) => value.isNotEmpty)
-        .toSet();
-    _forceAllowPackages = current.forceAllowPackages
-        .map((value) => value.trim().toLowerCase())
-        .where((value) => value.isNotEmpty)
-        .toSet();
-  }
-
-  void _persistSelectedMode() {
-    _workingModeOverrides[_selectedMode] = ModeOverrideSet(
-      forceBlockServices: _ordered(_forceBlockServices),
-      forceAllowServices: _ordered(_forceAllowServices),
-      forceBlockPackages: _ordered(_forceBlockPackages),
-      forceAllowPackages: _ordered(_forceAllowPackages),
-      forceBlockDomains:
-          _workingModeOverrides[_selectedMode]?.forceBlockDomains ??
-              const <String>[],
-      forceAllowDomains:
-          _workingModeOverrides[_selectedMode]?.forceAllowDomains ??
-              const <String>[],
-    );
-  }
-
-  Future<void> _loadInstalledApps() async {
-    if (!RolloutFlags.appInventory) {
-      return;
-    }
-    final parentId = _parentId?.trim();
-    if (parentId == null || parentId.isEmpty) {
-      return;
-    }
-    setState(() => _loadingInstalledApps = true);
-    try {
-      final apps = await _resolvedFirestoreService.getChildInstalledAppsOnce(
-        parentId: parentId,
-        childId: widget.child.id,
-      );
-      if (!mounted) {
-        return;
-      }
-      setState(() {
-        _installedApps = apps;
-      });
-    } catch (_) {
-      if (!mounted) {
-        return;
-      }
-      setState(() {
-        _installedApps = const <InstalledAppInfo>[];
-      });
-    } finally {
-      if (mounted) {
-        setState(() => _loadingInstalledApps = false);
-      }
-    }
-  }
-
-  List<InstalledAppInfo> get _visibleInstalledApps {
-    final query = _query.trim().toLowerCase();
-    if (query.isEmpty) {
-      return _installedApps;
-    }
-    return _installedApps.where((app) {
-      return app.appName.toLowerCase().contains(query) ||
-          app.packageName.toLowerCase().contains(query);
-    }).toList(growable: false);
   }
 
   @override
   Widget build(BuildContext context) {
-    if (!RolloutFlags.modeAppOverrides) {
-      return Scaffold(
-        appBar: AppBar(
-          title: const Text('Mode Overrides'),
-        ),
-        body: const Center(
-          child: Padding(
-            padding: EdgeInsets.all(24),
-            child: Text(
-              'Mode overrides are temporarily disabled by rollout flag.',
-              textAlign: TextAlign.center,
-            ),
-          ),
-        ),
-      );
-    }
+    final modeLabel = _modeLabels[_selectedMode] ?? 'Mode';
     return Scaffold(
-      appBar: AppBar(
-        title: const Text('Mode Overrides'),
-      ),
+      appBar: AppBar(title: const Text('Easy Mode Setup')),
       body: ListView(
         padding: const EdgeInsets.fromLTRB(16, 12, 16, 24),
         children: <Widget>[
@@ -199,11 +118,16 @@ class _ModeOverridesScreenState extends State<ModeOverridesScreen> {
                   fontWeight: FontWeight.w700,
                 ),
           ),
-          const SizedBox(height: 6),
+          const SizedBox(height: 8),
           Text(
-            'Choose one mode, then mark apps/services as Block or Allow for that mode only.',
-            style: Theme.of(context).textTheme.bodyMedium?.copyWith(
-                  color: Colors.grey.shade700,
+            'Pick a mode and choose what should be blocked in that mode.',
+            style: Theme.of(context).textTheme.bodyMedium,
+          ),
+          const SizedBox(height: 4),
+          Text(
+            'Lockdown follows Bedtime rules.',
+            style: Theme.of(context).textTheme.bodySmall?.copyWith(
+                  color: Theme.of(context).colorScheme.onSurfaceVariant,
                 ),
           ),
           const SizedBox(height: 14),
@@ -211,27 +135,48 @@ class _ModeOverridesScreenState extends State<ModeOverridesScreen> {
             spacing: 8,
             runSpacing: 8,
             children: _modeLabels.entries.map((entry) {
-              final selected = _selectedMode == entry.key;
-              final counts = _modeCountLabel(entry.key);
               return ChoiceChip(
-                label: Text('${entry.value} ($counts)'),
-                selected: selected,
-                onSelected: (_) {
-                  setState(() {
-                    _persistSelectedMode();
-                    _selectedMode = entry.key;
-                    _hydrateSelectedMode();
-                  });
-                },
+                label: Text(entry.value),
+                selected: _selectedMode == entry.key,
+                onSelected: (_) => _switchMode(entry.key),
               );
             }).toList(growable: false),
           ),
           const SizedBox(height: 16),
-          _buildServiceOverridesSection(),
-          if (RolloutFlags.appInventory) ...[
-            const SizedBox(height: 16),
-            _buildInstalledAppsSection(),
-          ],
+          Card(
+            child: Column(
+              children: [
+                ListTile(
+                  title: Text(
+                    '$modeLabel: Quick Toggles',
+                    style: const TextStyle(fontWeight: FontWeight.w700),
+                  ),
+                  subtitle: const Text('Turn these on to block that group.'),
+                ),
+                const Divider(height: 1),
+                ..._groups.map((group) => _buildGroupToggle(group)),
+              ],
+            ),
+          ),
+          const SizedBox(height: 12),
+          Card(
+            child: Column(
+              children: [
+                const ListTile(
+                  title: Text(
+                    'Popular Apps',
+                    style: TextStyle(fontWeight: FontWeight.w700),
+                  ),
+                  subtitle: Text(
+                    'Use these for app-specific control in this mode.',
+                  ),
+                ),
+                const Divider(height: 1),
+                ..._popularServices()
+                    .map((service) => _buildServiceToggle(service)),
+              ],
+            ),
+          ),
           const SizedBox(height: 20),
           FilledButton.icon(
             onPressed: _saving ? null : _save,
@@ -245,183 +190,120 @@ class _ModeOverridesScreenState extends State<ModeOverridesScreen> {
                     ),
                   )
                 : const Icon(Icons.save_rounded),
-            label: Text(_saving ? 'Saving…' : 'Save Mode Overrides'),
+            label: Text(_saving ? 'Saving...' : 'Save $modeLabel Rules'),
           ),
         ],
       ),
     );
   }
 
-  Widget _buildServiceOverridesSection() {
-    final services = ServiceDefinitions.all.toList(growable: false)
-      ..sort(
-        (left, right) => left.displayName
-            .toLowerCase()
-            .compareTo(right.displayName.toLowerCase()),
-      );
+  Widget _buildGroupToggle(_ServiceGroup group) {
+    final serviceIds = _serviceIdsForCategory(group.categoryId);
+    final allBlocked = serviceIds.isNotEmpty &&
+        serviceIds.every((serviceId) => _blockedServiceIds.contains(serviceId));
 
-    return Card(
-      child: Padding(
-        padding: const EdgeInsets.all(12),
-        child: Column(
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: <Widget>[
-            const Text(
-              'Mapped Services (App + Web)',
-              style: TextStyle(fontSize: 16, fontWeight: FontWeight.w700),
-            ),
-            const SizedBox(height: 6),
-            const Text(
-              'Use this for cataloged services such as Instagram, YouTube, TikTok.',
-            ),
-            const SizedBox(height: 10),
-            ...services.map((service) => _buildServiceRow(service)),
-          ],
-        ),
-      ),
+    return SwitchListTile(
+      title: Text(group.title),
+      subtitle: Text(group.hint),
+      value: allBlocked,
+      onChanged: (value) {
+        setState(() {
+          if (value) {
+            _blockedServiceIds.addAll(serviceIds);
+          } else {
+            _blockedServiceIds.removeWhere(serviceIds.contains);
+          }
+        });
+      },
     );
   }
 
-  Widget _buildServiceRow(ServiceDefinition service) {
+  Widget _buildServiceToggle(ServiceDefinition service) {
     final serviceId = service.serviceId.trim().toLowerCase();
-    final blocked = _forceBlockServices.contains(serviceId);
-    final allowed = _forceAllowServices.contains(serviceId);
-
-    return ListTile(
-      dense: true,
-      contentPadding: EdgeInsets.zero,
+    final blocked = _blockedServiceIds.contains(serviceId);
+    return CheckboxListTile(
+      value: blocked,
       title: Text(service.displayName),
-      subtitle: Text(service.categoryId),
-      trailing: Wrap(
-        spacing: 8,
-        children: <Widget>[
-          FilterChip(
-            label: const Text('Block'),
-            selected: blocked,
-            onSelected: (selected) {
-              setState(() {
-                if (selected) {
-                  _forceBlockServices.add(serviceId);
-                  _forceAllowServices.remove(serviceId);
-                } else {
-                  _forceBlockServices.remove(serviceId);
-                }
-              });
-            },
-          ),
-          FilterChip(
-            label: const Text('Allow'),
-            selected: allowed,
-            onSelected: (selected) {
-              setState(() {
-                if (selected) {
-                  _forceAllowServices.add(serviceId);
-                  _forceBlockServices.remove(serviceId);
-                } else {
-                  _forceAllowServices.remove(serviceId);
-                }
-              });
-            },
-          ),
-        ],
-      ),
+      subtitle: Text(_prettyCategoryLabel(service.categoryId)),
+      onChanged: (value) {
+        setState(() {
+          if (value == true) {
+            _blockedServiceIds.add(serviceId);
+          } else {
+            _blockedServiceIds.remove(serviceId);
+          }
+        });
+      },
+      controlAffinity: ListTileControlAffinity.trailing,
     );
   }
 
-  Widget _buildInstalledAppsSection() {
-    final visibleApps = _visibleInstalledApps;
-    return Card(
-      child: Padding(
-        padding: const EdgeInsets.all(12),
-        child: Column(
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: <Widget>[
-            const Text(
-              'Installed Apps (Child Device)',
-              style: TextStyle(fontSize: 16, fontWeight: FontWeight.w700),
-            ),
-            const SizedBox(height: 6),
-            TextField(
-              onChanged: (value) => setState(() => _query = value),
-              decoration: InputDecoration(
-                hintText: 'Search app name or package',
-                prefixIcon: const Icon(Icons.search),
-                border: OutlineInputBorder(
-                  borderRadius: BorderRadius.circular(12),
-                ),
-              ),
-            ),
-            const SizedBox(height: 10),
-            if (_loadingInstalledApps)
-              const Padding(
-                padding: EdgeInsets.symmetric(vertical: 16),
-                child: Center(child: CircularProgressIndicator()),
-              )
-            else if (visibleApps.isEmpty)
-              const Padding(
-                padding: EdgeInsets.symmetric(vertical: 12),
-                child: Text('No installed apps found yet.'),
-              )
-            else
-              ...visibleApps.map((app) => _buildInstalledAppRow(app)),
-          ],
-        ),
-      ),
-    );
+  String _prettyCategoryLabel(String categoryId) {
+    final normalized = categoryId.trim().toLowerCase();
+    switch (normalized) {
+      case 'social-networks':
+        return 'Social Media';
+      case 'streaming':
+        return 'Streaming';
+      case 'games':
+        return 'Gaming';
+      case 'chat':
+        return 'Messaging';
+      default:
+        return normalized;
+    }
   }
 
-  Widget _buildInstalledAppRow(InstalledAppInfo app) {
-    final packageName = app.packageName.trim().toLowerCase();
-    final blocked = _forceBlockPackages.contains(packageName);
-    final allowed = _forceAllowPackages.contains(packageName);
-    return ListTile(
-      dense: true,
-      contentPadding: EdgeInsets.zero,
-      title: Text(app.appName),
-      subtitle: Text(app.packageName),
-      trailing: Wrap(
-        spacing: 8,
-        children: <Widget>[
-          FilterChip(
-            label: const Text('Block'),
-            selected: blocked,
-            onSelected: (selected) {
-              setState(() {
-                if (selected) {
-                  _forceBlockPackages.add(packageName);
-                  _forceAllowPackages.remove(packageName);
-                } else {
-                  _forceBlockPackages.remove(packageName);
-                }
-              });
-            },
-          ),
-          FilterChip(
-            label: const Text('Allow'),
-            selected: allowed,
-            onSelected: (selected) {
-              setState(() {
-                if (selected) {
-                  _forceAllowPackages.add(packageName);
-                  _forceBlockPackages.remove(packageName);
-                } else {
-                  _forceAllowPackages.remove(packageName);
-                }
-              });
-            },
-          ),
-        ],
-      ),
-    );
+  List<ServiceDefinition> _popularServices() {
+    final services = <ServiceDefinition>[];
+    for (final serviceId in _popularServiceIds) {
+      final service = ServiceDefinitions.byId[serviceId];
+      if (service != null) {
+        services.add(service);
+      }
+    }
+    return services;
   }
 
-  String _modeCountLabel(String modeKey) {
-    final mode = _workingModeOverrides[modeKey] ?? const ModeOverrideSet();
-    final blockCount =
-        mode.forceBlockServices.length + mode.forceBlockPackages.length;
-    final allowCount =
-        mode.forceAllowServices.length + mode.forceAllowPackages.length;
-    return 'B$blockCount/A$allowCount';
+  List<String> _serviceIdsForCategory(String categoryId) {
+    return ServiceDefinitions.servicesForCategory(categoryId);
+  }
+
+  void _switchMode(String modeKey) {
+    setState(() {
+      _persistSelectedMode();
+      _selectedMode = modeKey;
+      _hydrateSelectedMode();
+    });
+  }
+
+  void _hydrateSelectedMode() {
+    final current =
+        _workingModeOverrides[_selectedMode] ?? const ModeOverrideSet();
+    _blockedServiceIds = current.forceBlockServices
+        .map((value) => value.trim().toLowerCase())
+        .where((value) => value.isNotEmpty)
+        .toSet();
+  }
+
+  void _persistSelectedMode() {
+    final current =
+        _workingModeOverrides[_selectedMode] ?? const ModeOverrideSet();
+    final blockedServices = _ordered(_blockedServiceIds);
+    final allowedServices = current.forceAllowServices
+        .map((value) => value.trim().toLowerCase())
+        .where(
+            (value) => value.isNotEmpty && !_blockedServiceIds.contains(value))
+        .toSet();
+    final updated = current.copyWith(
+      forceBlockServices: blockedServices,
+      forceAllowServices: _ordered(allowedServices),
+    );
+    if (updated.isEmpty) {
+      _workingModeOverrides.remove(_selectedMode);
+    } else {
+      _workingModeOverrides[_selectedMode] = updated;
+    }
   }
 
   List<String> _ordered(Set<String> values) {
@@ -442,8 +324,7 @@ class _ModeOverridesScreenState extends State<ModeOverridesScreen> {
       return;
     }
 
-    final authorized = await requireParentPin(context);
-    if (!authorized || !mounted) {
+    if (!mounted) {
       return;
     }
 
@@ -459,8 +340,7 @@ class _ModeOverridesScreenState extends State<ModeOverridesScreen> {
         child: updatedChild,
       );
 
-      if (RolloutFlags.policySyncTriggerRemoteCommand &&
-          widget.child.deviceIds.isNotEmpty) {
+      if (widget.child.deviceIds.isNotEmpty) {
         final remoteCommandService = RemoteCommandService();
         for (final deviceId in widget.child.deviceIds) {
           remoteCommandService.sendRestartVpnCommand(deviceId).catchError(
@@ -473,7 +353,7 @@ class _ModeOverridesScreenState extends State<ModeOverridesScreen> {
         return;
       }
       ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text('Mode overrides saved')),
+        const SnackBar(content: Text('Mode rules saved')),
       );
       Navigator.of(context).pop(true);
     } catch (error) {
@@ -481,7 +361,7 @@ class _ModeOverridesScreenState extends State<ModeOverridesScreen> {
         return;
       }
       ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(content: Text('Failed to save mode overrides: $error')),
+        SnackBar(content: Text('Failed to save mode rules: $error')),
       );
     } finally {
       if (mounted) {
@@ -489,4 +369,16 @@ class _ModeOverridesScreenState extends State<ModeOverridesScreen> {
       }
     }
   }
+}
+
+class _ServiceGroup {
+  const _ServiceGroup({
+    required this.title,
+    required this.categoryId,
+    required this.hint,
+  });
+
+  final String title;
+  final String categoryId;
+  final String hint;
 }
