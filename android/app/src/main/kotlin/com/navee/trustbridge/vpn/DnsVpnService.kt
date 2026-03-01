@@ -369,6 +369,10 @@ class DnsVpnService : VpnService() {
         if (persisted.blockedPackages.isNotEmpty()) {
             lastAppliedBlockedPackages = persisted.blockedPackages
         }
+        if (!hasChildProtectionContext(persisted)) {
+            // Parent-only devices should never show child protection-off alerts.
+            dismissProtectionAttentionNotification()
+        }
         filterEngine = DnsFilterEngine(this)
         blockedCategoryCount = filterEngine.blockedCategoryCount()
         blockedDomainCount = filterEngine.effectiveBlockedDomainCount()
@@ -383,6 +387,7 @@ class DnsVpnService : VpnService() {
             // Keep notification pinned whenever protection is enabled so OEM
             // battery managers are less likely to reclaim the service.
             ensureForegroundStarted()
+            VpnHealthCheckJobService.schedule(this)
         }
 
         return when (action) {
@@ -561,6 +566,7 @@ class DnsVpnService : VpnService() {
                 lastScheduledBootRetryAttempt = -1
                 lastScheduledTransientRetryAttempt = -1
                 vpnPreferencesStore.setEnabled(false)
+                VpnHealthCheckJobService.cancel(this)
                 cancelWatchdogPing()
                 dismissProtectionAttentionNotification()
                 stopVpn(stopService = true, markDisabled = true)
@@ -666,6 +672,7 @@ class DnsVpnService : VpnService() {
             serviceRunning = true
             isRunning = true
             vpnPreferencesStore.setEnabled(true)
+            VpnHealthCheckJobService.schedule(this)
             reconnectAttemptCount = 0
             activeBootRestoreAttempt = 0
             activeTransientRetryAttempt = 0
@@ -2897,6 +2904,11 @@ class DnsVpnService : VpnService() {
     }
 
     private fun showProtectionAttentionNotification(message: String) {
+        if (!hasChildProtectionContext()) {
+            // Suppress child protection-off notifications on parent-only devices.
+            dismissProtectionAttentionNotification()
+            return
+        }
         if (serviceRunning && isRunning) {
             // Avoid surfacing stale "protection off" alerts once protection has
             // already recovered.
@@ -2944,6 +2956,17 @@ class DnsVpnService : VpnService() {
             .setPriority(NotificationCompat.PRIORITY_HIGH)
             .build()
         manager.notify(RECOVERY_NOTIFICATION_ID, notification)
+    }
+
+    private fun hasChildProtectionContext(config: PersistedVpnConfig? = null): Boolean {
+        val activeConfig = config ?: try {
+            vpnPreferencesStore.loadConfig()
+        } catch (_: Exception) {
+            return false
+        }
+        val childId = activeConfig.childId?.trim().orEmpty()
+        val parentId = activeConfig.parentId?.trim().orEmpty()
+        return childId.isNotEmpty() && parentId.isNotEmpty()
     }
 
     private fun dismissProtectionAttentionNotification() {

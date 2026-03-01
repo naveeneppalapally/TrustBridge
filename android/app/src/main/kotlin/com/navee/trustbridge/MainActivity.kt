@@ -771,7 +771,12 @@ class MainActivity : FlutterFragmentActivity() {
             item["lastTimeUsedEpochMs"] = maxOf(previousLastUsed, stat.lastTimeUsed)
 
             val dailyMap = item["dailyUsageMs"] as MutableMap<String, Long>
-            val dayKey = formatDateKey(stat.lastTimeUsed)
+            val dayEpochMs = when {
+                stat.firstTimeStamp > 0L -> stat.firstTimeStamp
+                stat.lastTimeUsed > 0L -> stat.lastTimeUsed
+                else -> 0L
+            }
+            val dayKey = formatDateKey(dayEpochMs)
             val previousDayTotal = dailyMap[dayKey] ?: 0L
             dailyMap[dayKey] = previousDayTotal + stat.totalTimeInForeground
         }

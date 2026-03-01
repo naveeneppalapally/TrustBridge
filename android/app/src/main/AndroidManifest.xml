@@ -63,6 +63,7 @@
             android:name=".vpn.DnsVpnService"
             android:enabled="true"
             android:exported="false"
+            android:process=":vpn"
             android:stopWithTask="false"
             android:foregroundServiceType="specialUse"
             android:permission="android.permission.BIND_VPN_SERVICE">
@@ -73,6 +74,12 @@
                 <action android:name="android.net.VpnService" />
             </intent-filter>
         </service>
+
+        <service
+            android:name=".vpn.VpnHealthCheckJobService"
+            android:enabled="true"
+            android:exported="false"
+            android:permission="android.permission.BIND_JOB_SERVICE" />
 
         <receiver
             android:name=".vpn.VpnBootReceiver"

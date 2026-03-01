@@ -109,6 +109,25 @@ class ServiceDefinitions {
       ],
     ),
     ServiceDefinition(
+      serviceId: 'zee5',
+      categoryId: 'streaming',
+      displayName: 'ZEE5',
+      domains: <String>[
+        'zee5.com',
+        'zee5.tv',
+        'zee5vod.akamaized.net',
+        'zee5.akamaized.net',
+        'akamaized.net',
+      ],
+      criticalDomains: <String>[
+        'zee5.com',
+        'zee5vod.akamaized.net',
+      ],
+      androidPackages: <String>[
+        'com.graymatrix.did',
+      ],
+    ),
+    ServiceDefinition(
       serviceId: 'reddit',
       categoryId: 'forums',
       displayName: 'Reddit',

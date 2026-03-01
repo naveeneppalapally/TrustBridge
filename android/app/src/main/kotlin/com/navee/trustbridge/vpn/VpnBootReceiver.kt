@@ -25,6 +25,7 @@ class VpnBootReceiver : BroadcastReceiver() {
 
         val prefsStore = VpnPreferencesStore(context)
         val config = prefsStore.loadConfig()
+        VpnHealthCheckJobService.schedule(context)
         if (!config.enabled) {
             Log.d(TAG, "Boot restore skipped: VPN not enabled by user")
             return
