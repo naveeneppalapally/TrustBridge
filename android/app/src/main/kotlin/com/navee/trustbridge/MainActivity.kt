@@ -383,6 +383,27 @@ class MainActivity : FlutterFragmentActivity() {
                 result.success(true)
             }
 
+            "syncEffectivePolicyNow" -> {
+                val parentId = call.argument<String>("parentId")
+                    ?.trim()
+                    ?.takeIf { it.isNotEmpty() }
+                val childId = call.argument<String>("childId")
+                    ?.trim()
+                    ?.takeIf { it.isNotEmpty() }
+                persistPolicyContext(call)
+                val serviceIntent = Intent(this, DnsVpnService::class.java).apply {
+                    action = DnsVpnService.ACTION_POLICY_PUSH_SYNC
+                    if (parentId != null) {
+                        putExtra(DnsVpnService.EXTRA_PARENT_ID, parentId)
+                    }
+                    if (childId != null) {
+                        putExtra(DnsVpnService.EXTRA_CHILD_ID, childId)
+                    }
+                }
+                startServiceCompat(serviceIntent)
+                result.success(true)
+            }
+
             "savePolicyContext" -> {
                 persistPolicyContext(call)
                 result.success(true)

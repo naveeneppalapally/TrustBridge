@@ -260,6 +260,85 @@ class DnsFilterEngine(private val context: Context) {
     }
 
     @Synchronized
+    fun addBlockedDomain(domain: String): Boolean {
+        val normalized = normalizeDomain(domain)
+        if (normalized.isEmpty()) {
+            return false
+        }
+        val changed = blockedDomains.add(normalized)
+        if (changed) {
+            persistCurrentRules()
+        }
+        return changed
+    }
+
+    @Synchronized
+    fun removeBlockedDomain(domain: String): Boolean {
+        val normalized = normalizeDomain(domain)
+        if (normalized.isEmpty()) {
+            return false
+        }
+        val changed = blockedDomains.remove(normalized)
+        if (changed) {
+            persistCurrentRules()
+        }
+        return changed
+    }
+
+    @Synchronized
+    fun addBlockedCategory(category: String): Boolean {
+        val normalized = normalizeCategoryToken(category)
+        if (normalized.isEmpty()) {
+            return false
+        }
+        val changed = blockedCategories.add(normalized)
+        if (changed) {
+            persistCurrentRules()
+        }
+        return changed
+    }
+
+    @Synchronized
+    fun removeBlockedCategory(category: String): Boolean {
+        val normalized = normalizeCategoryToken(category)
+        if (normalized.isEmpty()) {
+            return false
+        }
+        val changed = blockedCategories.remove(normalized)
+        if (changed) {
+            persistCurrentRules()
+        }
+        return changed
+    }
+
+    @Synchronized
+    fun addTemporaryAllowedDomain(domain: String): Boolean {
+        val normalized = normalizeDomain(domain)
+        if (normalized.isEmpty()) {
+            return false
+        }
+        return temporaryAllowedDomains.add(normalized)
+    }
+
+    @Synchronized
+    fun removeTemporaryAllowedDomain(domain: String): Boolean {
+        val normalized = normalizeDomain(domain)
+        if (normalized.isEmpty()) {
+            return false
+        }
+        return temporaryAllowedDomains.remove(normalized)
+    }
+
+    @Synchronized
+    fun snapshotBlockedCategories(): Set<String> = blockedCategories.toSet()
+
+    @Synchronized
+    fun snapshotBlockedDomains(): Set<String> = blockedDomains.toSet()
+
+    @Synchronized
+    fun snapshotTemporaryAllowedDomains(): Set<String> = temporaryAllowedDomains.toSet()
+
+    @Synchronized
     fun blockedDomainCount(): Int = blockedDomains.size
 
     @Synchronized
@@ -323,6 +402,18 @@ class DnsFilterEngine(private val context: Context) {
             } catch (error: Exception) {
                 Log.e(TAG, "Failed to persist blocklist rules", error)
             }
+        }
+    }
+
+    @Synchronized
+    private fun persistCurrentRules() {
+        try {
+            blocklistStore.replaceRules(
+                categories = blockedCategories,
+                domains = blockedDomains
+            )
+        } catch (error: Exception) {
+            Log.e(TAG, "Failed to persist incremental blocklist rules", error)
         }
     }
 
