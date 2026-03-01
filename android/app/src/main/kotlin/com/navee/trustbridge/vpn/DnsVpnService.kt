@@ -131,6 +131,8 @@ class DnsVpnService : VpnService() {
         const val ACTION_STOP = "com.navee.trustbridge.vpn.STOP"
         const val ACTION_RESTART = "com.navee.trustbridge.vpn.RESTART"
         const val ACTION_UPDATE_RULES = "com.navee.trustbridge.vpn.UPDATE_RULES"
+        const val ACTION_INCREMENTAL_UPDATE = "com.navee.trustbridge.vpn.INCREMENTAL_UPDATE"
+        const val ACTION_POLICY_PUSH_SYNC = "com.navee.trustbridge.vpn.POLICY_PUSH_SYNC"
         const val ACTION_SET_UPSTREAM_DNS = "com.navee.trustbridge.vpn.SET_UPSTREAM_DNS"
         const val ACTION_CLEAR_QUERY_LOGS = "com.navee.trustbridge.vpn.CLEAR_QUERY_LOGS"
         const val ACTION_FLUSH_DNS_CACHE = "com.navee.trustbridge.vpn.FLUSH_DNS_CACHE"
@@ -138,6 +140,12 @@ class DnsVpnService : VpnService() {
         const val EXTRA_BLOCKED_DOMAINS = "blockedDomains"
         const val EXTRA_BLOCKED_PACKAGES = "blockedPackages"
         const val EXTRA_TEMP_ALLOWED_DOMAINS = "temporaryAllowedDomains"
+        const val EXTRA_ADD_BLOCKED_CATEGORIES = "addBlockedCategories"
+        const val EXTRA_REMOVE_BLOCKED_CATEGORIES = "removeBlockedCategories"
+        const val EXTRA_ADD_BLOCKED_DOMAINS = "addBlockedDomains"
+        const val EXTRA_REMOVE_BLOCKED_DOMAINS = "removeBlockedDomains"
+        const val EXTRA_ADD_TEMP_ALLOWED_DOMAINS = "addTemporaryAllowedDomains"
+        const val EXTRA_REMOVE_TEMP_ALLOWED_DOMAINS = "removeTemporaryAllowedDomains"
         const val EXTRA_UPSTREAM_DNS = "upstreamDns"
         const val EXTRA_PARENT_ID = "parentId"
         const val EXTRA_CHILD_ID = "childId"
@@ -492,6 +500,46 @@ class DnsVpnService : VpnService() {
                 flushDnsCacheBestEffort()
                 scheduleInstalledAppInventoryWrite()
                 scheduleWatchdogPing()
+                START_STICKY
+            }
+
+            ACTION_INCREMENTAL_UPDATE -> {
+                applyIncrementalUpdate(intent)
+                startEffectivePolicyListenerIfConfigured()
+                flushDnsCacheBestEffort()
+                scheduleWatchdogPing()
+                START_STICKY
+            }
+
+            ACTION_POLICY_PUSH_SYNC -> {
+                val parentId = intent?.getStringExtra(EXTRA_PARENT_ID)
+                    ?.trim()
+                    ?.takeIf { it.isNotEmpty() }
+                val childId = intent?.getStringExtra(EXTRA_CHILD_ID)
+                    ?.trim()
+                    ?.takeIf { it.isNotEmpty() }
+                if (parentId != null || childId != null) {
+                    vpnPreferencesStore.savePolicyContext(parentId = parentId, childId = childId)
+                }
+                maybeBootstrapPolicySyncAuth("policy_push")
+                if (!serviceRunning) {
+                    val hasPermission = VpnService.prepare(this) == null
+                    if (hasPermission) {
+                        ensureForegroundStarted()
+                        startVpn()
+                    } else {
+                        Log.w(TAG, "Skipping policy push sync: VPN permission missing")
+                        return START_STICKY
+                    }
+                }
+                startEffectivePolicyListenerIfConfigured()
+                policyApplyExecutor.execute {
+                    try {
+                        pollEffectivePolicySnapshotOnce()
+                    } catch (error: Exception) {
+                        Log.w(TAG, "policy push sync failed", error)
+                    }
+                }
                 START_STICKY
             }
 
@@ -2750,6 +2798,76 @@ class DnsVpnService : VpnService() {
             normalizedCategories,
             normalizedDomains,
             normalizedAllowedDomains
+        )
+        blockedCategoryCount = filterEngine.blockedCategoryCount()
+        blockedDomainCount = filterEngine.effectiveBlockedDomainCount()
+        lastRuleUpdateEpochMs = System.currentTimeMillis()
+        maybeWriteWebDiagnosticsTelemetry(force = true)
+    }
+
+    private fun applyIncrementalUpdate(intent: Intent?) {
+        val addCategories =
+            intent?.getStringArrayListExtra(EXTRA_ADD_BLOCKED_CATEGORIES)?.toList() ?: emptyList()
+        val removeCategories =
+            intent?.getStringArrayListExtra(EXTRA_REMOVE_BLOCKED_CATEGORIES)?.toList() ?: emptyList()
+        val addDomains =
+            intent?.getStringArrayListExtra(EXTRA_ADD_BLOCKED_DOMAINS)?.toList() ?: emptyList()
+        val removeDomains =
+            intent?.getStringArrayListExtra(EXTRA_REMOVE_BLOCKED_DOMAINS)?.toList() ?: emptyList()
+        val addAllowed =
+            intent?.getStringArrayListExtra(EXTRA_ADD_TEMP_ALLOWED_DOMAINS)?.toList()
+                ?: emptyList()
+        val removeAllowed =
+            intent?.getStringArrayListExtra(EXTRA_REMOVE_TEMP_ALLOWED_DOMAINS)?.toList()
+                ?: emptyList()
+
+        if (addCategories.isEmpty() &&
+            removeCategories.isEmpty() &&
+            addDomains.isEmpty() &&
+            removeDomains.isEmpty() &&
+            addAllowed.isEmpty() &&
+            removeAllowed.isEmpty()
+        ) {
+            return
+        }
+
+        addCategories.forEach { raw ->
+            filterEngine.addBlockedCategory(normalizeCategoryToken(raw))
+        }
+        removeCategories.forEach { raw ->
+            filterEngine.removeBlockedCategory(normalizeCategoryToken(raw))
+        }
+        addDomains.forEach { raw ->
+            filterEngine.addBlockedDomain(normalizeDomainToken(raw))
+        }
+        removeDomains.forEach { raw ->
+            filterEngine.removeBlockedDomain(normalizeDomainToken(raw))
+        }
+        addAllowed.forEach { raw ->
+            filterEngine.addTemporaryAllowedDomain(normalizeDomainToken(raw))
+        }
+        removeAllowed.forEach { raw ->
+            filterEngine.removeTemporaryAllowedDomain(normalizeDomainToken(raw))
+        }
+
+        val nextCategories = filterEngine.snapshotBlockedCategories().toList().sorted()
+        val nextDomains = filterEngine.snapshotBlockedDomains().toList().sorted()
+        val nextAllowedDomains = filterEngine.snapshotTemporaryAllowedDomains().toList().sorted()
+        val nextBlockedPackages = deriveBlockedPackages(
+            domains = nextDomains.toSet(),
+            allowedDomains = nextAllowedDomains.toSet()
+        )
+
+        lastAppliedCategories = nextCategories
+        lastAppliedDomains = nextDomains
+        lastAppliedAllowedDomains = nextAllowedDomains
+        lastAppliedBlockedPackages = nextBlockedPackages
+        vpnPreferencesStore.saveRules(
+            categories = nextCategories,
+            domains = nextDomains,
+            temporaryAllowedDomains = nextAllowedDomains,
+            blockedPackages = nextBlockedPackages,
+            upstreamDns = lastAppliedUpstreamDns
         )
         blockedCategoryCount = filterEngine.blockedCategoryCount()
         blockedDomainCount = filterEngine.effectiveBlockedDomainCount()

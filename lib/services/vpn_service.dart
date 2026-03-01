@@ -827,6 +827,33 @@ class VpnService implements VpnServiceBase {
     }
   }
 
+  Future<bool> syncEffectivePolicyNow({
+    String? parentId,
+    String? childId,
+  }) async {
+    if (!_supported) {
+      return false;
+    }
+    final normalizedParentId = parentId?.trim();
+    final normalizedChildId = childId?.trim();
+    try {
+      return await _channel.invokeMethod<bool>(
+            'syncEffectivePolicyNow',
+            {
+              if (normalizedParentId != null && normalizedParentId.isNotEmpty)
+                'parentId': normalizedParentId,
+              if (normalizedChildId != null && normalizedChildId.isNotEmpty)
+                'childId': normalizedChildId,
+            },
+          ) ??
+          false;
+    } on PlatformException {
+      return false;
+    } on MissingPluginException {
+      return false;
+    }
+  }
+
   @override
   Future<bool> setUpstreamDns({String? upstreamDns}) async {
     if (!_supported) {

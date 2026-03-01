@@ -1,8 +1,13 @@
+import 'dart:async';
+
+import 'package:firebase_core/firebase_core.dart';
 import 'package:firebase_messaging/firebase_messaging.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_local_notifications/flutter_local_notifications.dart';
+import 'package:trustbridge_app/firebase_options.dart';
 import 'package:trustbridge_app/core/utils/app_logger.dart';
+import 'package:trustbridge_app/services/child_effective_policy_sync_service.dart';
 
 const bool _isFlutterTest = bool.fromEnvironment('FLUTTER_TEST');
 
@@ -10,6 +15,21 @@ const bool _isFlutterTest = bool.fromEnvironment('FLUTTER_TEST');
 @pragma('vm:entry-point')
 Future<void> firebaseMessagingBackgroundHandler(RemoteMessage message) async {
   AppLogger.debug('[FCM] Background message: ${message.messageId}');
+  if (message.data['type'] == 'policy_update') {
+    try {
+      if (Firebase.apps.isEmpty) {
+        await Firebase.initializeApp(
+          options: DefaultFirebaseOptions.currentPlatform,
+        );
+      }
+      await ChildEffectivePolicySyncService.instance.handlePolicyUpdatePush(
+        payload: message.data,
+        source: 'fcm_background',
+      );
+    } catch (error) {
+      AppLogger.debug('[FCM] Background policy_update handling failed: $error');
+    }
+  }
 }
 
 class NotificationService {
@@ -34,7 +54,8 @@ class NotificationService {
 
     if (!_isFlutterTest) {
       try {
-        FirebaseMessaging.onBackgroundMessage(firebaseMessagingBackgroundHandler);
+        FirebaseMessaging.onBackgroundMessage(
+            firebaseMessagingBackgroundHandler);
       } on MissingPluginException catch (error) {
         AppLogger.debug('[FCM] Background handler unavailable: $error');
       } catch (error) {
@@ -194,6 +215,15 @@ class NotificationService {
 
   void _onForegroundMessage(RemoteMessage message) {
     AppLogger.debug('[FCM] Foreground message: ${message.messageId}');
+    if (message.data['type'] == 'policy_update') {
+      unawaited(
+        ChildEffectivePolicySyncService.instance.handlePolicyUpdatePush(
+          payload: message.data,
+          source: 'fcm_foreground',
+        ),
+      );
+      return;
+    }
 
     final notification = message.notification;
     if (notification == null) {

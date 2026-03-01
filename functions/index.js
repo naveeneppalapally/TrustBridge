@@ -1,7 +1,10 @@
 /* eslint-disable max-lines */
 const admin = require("firebase-admin");
 const {logger} = require("firebase-functions");
-const {onDocumentCreated} = require("firebase-functions/v2/firestore");
+const {
+  onDocumentCreated,
+  onDocumentWritten,
+} = require("firebase-functions/v2/firestore");
 const {onSchedule} = require("firebase-functions/v2/scheduler");
 
 admin.initializeApp();
@@ -41,6 +44,17 @@ function readStringSet(value) {
       .map((entry) => asTrimmedString(entry))
       .filter((entry) => entry.length > 0);
   return new Set(items);
+}
+
+function parseVersion(value) {
+  if (typeof value === "number" && Number.isFinite(value)) {
+    return Math.trunc(value);
+  }
+  if (typeof value === "string") {
+    const parsed = Number.parseInt(value.trim(), 10);
+    return Number.isFinite(parsed) ? parsed : 0;
+  }
+  return 0;
 }
 
 function uninstallAlertsEnabled(parentData) {
@@ -324,6 +338,115 @@ exports.sendParentNotificationFromQueue = onDocumentCreated(
         error,
       });
     }
+  },
+);
+
+exports.pushChildPolicyUpdate = onDocumentWritten(
+  {
+    document: "children/{childId}/effective_policy/current",
+    region: "asia-south1",
+    retry: false,
+  },
+  async (event) => {
+    const after = event.data && event.data.after;
+    if (!after || !after.exists) {
+      return;
+    }
+
+    const before = event.data && event.data.before;
+    const beforeData = before && before.exists ? before.data() || {} : {};
+    const afterData = after.data() || {};
+
+    const beforeVersion = parseVersion(beforeData.version);
+    const afterVersion = parseVersion(afterData.version);
+    if (before && before.exists && afterVersion <= beforeVersion) {
+      return;
+    }
+
+    const childId = asTrimmedString(event.params.childId);
+    if (!childId) {
+      return;
+    }
+
+    const parentId = asTrimmedString(afterData.parentId);
+    const timestamp = String(Date.now());
+    const version = String(afterVersion);
+
+    const devicesSnapshot = await db
+        .collection("children")
+        .doc(childId)
+        .collection("devices")
+        .get();
+
+    if (devicesSnapshot.empty) {
+      logger.info("Policy update push skipped: no child devices.", {
+        childId,
+        version,
+      });
+      return;
+    }
+
+    let sentCount = 0;
+    let failedCount = 0;
+    for (const deviceDoc of devicesSnapshot.docs) {
+      const token = asTrimmedString(deviceDoc.get("fcmToken"));
+      if (!token) {
+        continue;
+      }
+
+      const message = {
+        token,
+        data: {
+          type: "policy_update",
+          childId,
+          parentId,
+          version,
+          timestamp,
+        },
+        android: {
+          priority: "high",
+        },
+      };
+
+      try {
+        await admin.messaging().send(message);
+        sentCount += 1;
+      } catch (error) {
+        failedCount += 1;
+        const errorCode = error && error.code ? String(error.code) : "unknown";
+        if (errorCode === "messaging/registration-token-not-registered") {
+          try {
+            await deviceDoc.ref.set(
+                {
+                  fcmToken: admin.firestore.FieldValue.delete(),
+                  fcmTokenUpdatedAt: admin.firestore.FieldValue.serverTimestamp(),
+                },
+                {merge: true},
+            );
+          } catch (clearError) {
+            logger.warn("Failed clearing stale child FCM token.", {
+              childId,
+              deviceId: deviceDoc.id,
+              clearError,
+            });
+          }
+        }
+        logger.warn("Policy update push failed for child device.", {
+          childId,
+          deviceId: deviceDoc.id,
+          errorCode,
+          errorMessage: error && error.message ? String(error.message) : "",
+        });
+      }
+    }
+
+    logger.info("Policy update push fanout complete.", {
+      childId,
+      parentId,
+      version,
+      sentCount,
+      failedCount,
+    });
   },
 );
 

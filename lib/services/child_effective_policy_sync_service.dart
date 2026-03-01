@@ -22,6 +22,9 @@ class ChildEffectivePolicySyncService {
   String? _deviceId;
   int? _lastAppliedVersion;
   bool _starting = false;
+  List<String> _cachedCategories = const <String>[];
+  List<String> _cachedDomains = const <String>[];
+  List<String> _cachedAllowedDomains = const <String>[];
 
   Future<void> start() async {
     if (_subscription != null || _starting) {
@@ -67,6 +70,59 @@ class ChildEffectivePolicySyncService {
     _lastAppliedVersion = null;
   }
 
+  Future<bool> handlePolicyUpdatePush({
+    Map<String, dynamic>? payload,
+    String source = 'fcm',
+  }) async {
+    await _ensureContext(payload: payload);
+    final childId = _childId?.trim() ?? '';
+    if (childId.isEmpty) {
+      return false;
+    }
+
+    try {
+      if (_vpnService is VpnService) {
+        await (_vpnService as VpnService).syncEffectivePolicyNow(
+          parentId: _parentId,
+          childId: _childId,
+        );
+      }
+    } catch (_) {
+      // Best-effort native wake-up path.
+    }
+
+    // Optimistic apply to reduce perceived latency while fresh policy fetch runs.
+    if (_cachedCategories.isNotEmpty ||
+        _cachedDomains.isNotEmpty ||
+        _cachedAllowedDomains.isNotEmpty) {
+      try {
+        await _vpnService.updateFilterRules(
+          blockedCategories: _cachedCategories,
+          blockedDomains: _cachedDomains,
+          temporaryAllowedDomains: _cachedAllowedDomains,
+          parentId: _parentId,
+          childId: _childId,
+        );
+      } catch (_) {
+        // Best-effort optimistic path.
+      }
+    }
+
+    final snapshot = await _firestore
+        .collection('children')
+        .doc(childId)
+        .collection('effective_policy')
+        .doc('current')
+        .get();
+    if (!snapshot.exists) {
+      return false;
+    }
+    await _applySnapshot(snapshot);
+    AppLogger.debug(
+        '[ChildPolicySync] push handled source=$source childId=$childId');
+    return true;
+  }
+
   Future<void> _applySnapshot(
     DocumentSnapshot<Map<String, dynamic>> snapshot,
   ) async {
@@ -100,6 +156,10 @@ class ChildEffectivePolicySyncService {
     if (domains.isEmpty) {
       domains = _toStringList(data['blockedDomains']);
     }
+    var allowedDomains = _toStringList(data['temporaryAllowedDomainsResolved']);
+    if (allowedDomains.isEmpty) {
+      allowedDomains = _toStringList(data['temporaryAllowedDomains']);
+    }
     var packages = _toStringList(data['blockedPackagesResolved']);
     if (packages.isEmpty) {
       packages = _toStringList(data['blockedPackages']);
@@ -131,6 +191,7 @@ class ChildEffectivePolicySyncService {
       updated = await _vpnService.updateFilterRules(
         blockedCategories: categories,
         blockedDomains: domains,
+        temporaryAllowedDomains: allowedDomains,
         parentId: currentParentId,
         childId: currentChildId,
       );
@@ -152,9 +213,14 @@ class ChildEffectivePolicySyncService {
       if (updated && vpnRunning && version != null) {
         _lastAppliedVersion = version;
       }
+      if (updated) {
+        _cachedCategories = List<String>.from(categories);
+        _cachedDomains = List<String>.from(domains);
+        _cachedAllowedDomains = List<String>.from(allowedDomains);
+      }
       AppLogger.debug(
         '[ChildPolicySync] applied version=${version ?? -1} '
-        'cats=${categories.length} domains=${domains.length} '
+        'cats=${categories.length} domains=${domains.length} allowed=${allowedDomains.length} '
         'updated=$updated vpnRunning=$vpnRunning',
       );
     } catch (error) {
@@ -227,7 +293,8 @@ class ChildEffectivePolicySyncService {
           .doc(deviceId)
           .set(payload, SetOptions(merge: true));
     } catch (error) {
-      AppLogger.debug('[ChildPolicySync] policy_apply_acks write failed: $error');
+      AppLogger.debug(
+          '[ChildPolicySync] policy_apply_acks write failed: $error');
     }
   }
 
@@ -271,5 +338,20 @@ class ChildEffectivePolicySyncService {
         .toSet()
         .toList()
       ..sort();
+  }
+
+  Future<void> _ensureContext({Map<String, dynamic>? payload}) async {
+    final payloadChildId = (payload?['childId'] as String?)?.trim() ?? '';
+    final payloadParentId = (payload?['parentId'] as String?)?.trim() ?? '';
+    if (payloadChildId.isNotEmpty) {
+      _childId = payloadChildId;
+    } else if ((_childId?.isEmpty ?? true)) {
+      _childId = (await _pairingService.getPairedChildId())?.trim();
+    }
+    if (payloadParentId.isNotEmpty) {
+      _parentId = payloadParentId;
+    } else if ((_parentId?.isEmpty ?? true)) {
+      _parentId = (await _pairingService.getPairedParentId())?.trim();
+    }
   }
 }
