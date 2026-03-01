@@ -35,6 +35,12 @@ import io.flutter.plugin.common.MethodCall
 import io.flutter.plugin.common.MethodChannel
 
 class MainActivity : FlutterFragmentActivity() {
+    private data class UsageSnapshot(
+        val packageName: String,
+        val durationMs: Long,
+        val lastTimeUsedMs: Long
+    )
+
     companion object {
         private const val VPN_PERMISSION_REQUEST_CODE = 44123
         private const val DEVICE_ADMIN_PERMISSION_REQUEST_CODE = 44124
@@ -707,7 +713,25 @@ class MainActivity : FlutterFragmentActivity() {
                 packageName
             )
         }
-        return mode == AppOpsManager.MODE_ALLOWED
+        if (mode == AppOpsManager.MODE_ALLOWED) {
+            return true
+        }
+
+        // Some OEM builds report MODE_DEFAULT even when usage access works.
+        return try {
+            val usageStatsManager = getSystemService(UsageStatsManager::class.java) ?: return false
+            val endTime = System.currentTimeMillis()
+            val startTime = endTime - 24L * 60L * 60L * 1000L
+            val hasStats = !usageStatsManager.queryUsageStats(
+                UsageStatsManager.INTERVAL_DAILY,
+                startTime,
+                endTime
+            ).isNullOrEmpty()
+            val hasEvents = usageStatsManager.queryEvents(startTime, endTime).hasNextEvent()
+            hasStats || hasEvents
+        } catch (_: Exception) {
+            false
+        }
     }
 
     private fun openUsageStatsSettings(): Boolean {
@@ -735,31 +759,58 @@ class MainActivity : FlutterFragmentActivity() {
         val todayStart = dayStartEpochMs(endTime)
 
         val aggregates = mutableMapOf<String, MutableMap<String, Any>>()
+        val reportableCache = mutableMapOf<String, Boolean>()
+        val appNameCache = mutableMapOf<String, String>()
         for (offset in 0 until safePastDays) {
             val dayStart = todayStart - (offset * dayMillis)
             val dayEnd = minOf(dayStart + dayMillis, endTime)
             val dayKey = formatDateKey(dayStart)
-            val dayStats = usageStatsManager.queryAndAggregateUsageStats(dayStart, dayEnd)
-            if (dayStats.isNullOrEmpty()) {
+            val eventSnapshots = collectEventUsageSnapshots(
+                usageStatsManager = usageStatsManager,
+                dayStart = dayStart,
+                dayEnd = dayEnd
+            )
+            val daySnapshots = if (eventSnapshots.isNotEmpty()) {
+                // OEMs like Vivo can over-report aggregate totals for explicit
+                // ranges. Foreground events track real app transitions more
+                // reliably, so prefer them whenever they exist.
+                eventSnapshots
+            } else {
+                collectAggregatedUsageSnapshots(
+                    usageStatsManager = usageStatsManager,
+                    dayStart = dayStart,
+                    dayEnd = dayEnd
+                )
+            }
+            if (daySnapshots.isEmpty()) {
                 continue
             }
 
-            dayStats.values.forEach { stat ->
-                val packageName = stat.packageName ?: return@forEach
-                val foregroundMs = stat.totalTimeInForeground
-                if (foregroundMs <= 0L) {
+            daySnapshots.values.forEach { snapshot ->
+                val packageName = snapshot.packageName
+                val foregroundMs = snapshot.durationMs
+                if (packageName.isBlank() || foregroundMs <= 0L) {
                     return@forEach
                 }
-                val appName = try {
-                    val appInfo = packageManager.getApplicationInfo(packageName, 0)
-                    packageManager.getApplicationLabel(appInfo).toString()
-                } catch (_: Exception) {
-                    packageName
+                val normalizedPackage = packageName.trim()
+                val isReportable = reportableCache.getOrPut(normalizedPackage) {
+                    isUsageReportableApp(normalizedPackage)
+                }
+                if (!isReportable) {
+                    return@forEach
+                }
+                val appName = appNameCache.getOrPut(normalizedPackage) {
+                    try {
+                        val appInfo = packageManager.getApplicationInfo(normalizedPackage, 0)
+                        packageManager.getApplicationLabel(appInfo).toString()
+                    } catch (_: Exception) {
+                        normalizedPackage
+                    }
                 }
 
-                val item = aggregates.getOrPut(packageName) {
+                val item = aggregates.getOrPut(normalizedPackage) {
                     mutableMapOf(
-                        "packageName" to packageName,
+                        "packageName" to normalizedPackage,
                         "appName" to appName,
                         "totalForegroundTimeMs" to 0L,
                         "lastTimeUsedEpochMs" to 0L,
@@ -771,7 +822,7 @@ class MainActivity : FlutterFragmentActivity() {
                 item["totalForegroundTimeMs"] = previousTotal + foregroundMs
 
                 val previousLastUsed = (item["lastTimeUsedEpochMs"] as? Long) ?: 0L
-                item["lastTimeUsedEpochMs"] = maxOf(previousLastUsed, stat.lastTimeUsed)
+                item["lastTimeUsedEpochMs"] = maxOf(previousLastUsed, snapshot.lastTimeUsedMs)
 
                 val dailyMap = item["dailyUsageMs"] as MutableMap<String, Long>
                 val previousDayTotal = dailyMap[dayKey] ?: 0L
@@ -794,6 +845,130 @@ class MainActivity : FlutterFragmentActivity() {
                     "dailyUsageMs" to dailyMap
                 )
             }
+    }
+
+    private fun isUsageReportableApp(packageName: String): Boolean {
+        val normalizedPackage = packageName.trim()
+        if (normalizedPackage.isEmpty()) {
+            return false
+        }
+        if (normalizedPackage.equals(this.packageName, ignoreCase = true)) {
+            return false
+        }
+        val applicationInfo = try {
+            packageManager.getApplicationInfo(normalizedPackage, 0)
+        } catch (_: Exception) {
+            null
+        }
+        if (!isParentControllableApp(normalizedPackage, applicationInfo)) {
+            return false
+        }
+        return try {
+            packageManager.getLaunchIntentForPackage(normalizedPackage) != null
+        } catch (_: Exception) {
+            false
+        }
+    }
+
+    private fun collectAggregatedUsageSnapshots(
+        usageStatsManager: UsageStatsManager,
+        dayStart: Long,
+        dayEnd: Long
+    ): Map<String, UsageSnapshot> {
+        val snapshots = mutableMapOf<String, UsageSnapshot>()
+        val stats = usageStatsManager.queryAndAggregateUsageStats(dayStart, dayEnd)
+        if (stats.isNullOrEmpty()) {
+            return snapshots
+        }
+        stats.values.forEach { stat ->
+            val packageName = stat.packageName?.trim().orEmpty()
+            if (packageName.isEmpty() || stat.totalTimeInForeground <= 0L) {
+                return@forEach
+            }
+            snapshots[packageName] = UsageSnapshot(
+                packageName = packageName,
+                durationMs = stat.totalTimeInForeground,
+                lastTimeUsedMs = stat.lastTimeUsed
+            )
+        }
+        return snapshots
+    }
+
+    private fun collectEventUsageSnapshots(
+        usageStatsManager: UsageStatsManager,
+        dayStart: Long,
+        dayEnd: Long
+    ): Map<String, UsageSnapshot> {
+        val usageEvents = usageStatsManager.queryEvents(dayStart, dayEnd)
+        val event = UsageEvents.Event()
+        val durationsByPackage = mutableMapOf<String, Long>()
+        val lastUsedByPackage = mutableMapOf<String, Long>()
+        var currentForegroundPackage: String? = null
+        var currentForegroundStart = 0L
+
+        fun closeForegroundWindow(closedAt: Long) {
+            val packageName = currentForegroundPackage ?: return
+            if (currentForegroundStart <= 0L) {
+                currentForegroundPackage = null
+                currentForegroundStart = 0L
+                return
+            }
+            val clampedEnd = closedAt.coerceAtMost(dayEnd)
+            val duration = (clampedEnd - currentForegroundStart).coerceAtLeast(0L)
+            if (duration > 0L) {
+                durationsByPackage[packageName] =
+                    (durationsByPackage[packageName] ?: 0L) + duration
+                lastUsedByPackage[packageName] =
+                    maxOf(lastUsedByPackage[packageName] ?: 0L, clampedEnd)
+            }
+            currentForegroundPackage = null
+            currentForegroundStart = 0L
+        }
+
+        while (usageEvents.hasNextEvent()) {
+            usageEvents.getNextEvent(event)
+            val packageName = event.packageName?.trim().orEmpty()
+            if (packageName.isEmpty()) {
+                continue
+            }
+            val isForegroundEvent = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) {
+                event.eventType == UsageEvents.Event.ACTIVITY_RESUMED ||
+                    event.eventType == UsageEvents.Event.MOVE_TO_FOREGROUND
+            } else {
+                event.eventType == UsageEvents.Event.MOVE_TO_FOREGROUND
+            }
+            val isBackgroundEvent = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) {
+                event.eventType == UsageEvents.Event.ACTIVITY_PAUSED ||
+                    event.eventType == UsageEvents.Event.MOVE_TO_BACKGROUND
+            } else {
+                event.eventType == UsageEvents.Event.MOVE_TO_BACKGROUND
+            }
+
+            if (isForegroundEvent) {
+                if (currentForegroundPackage != null && currentForegroundPackage != packageName) {
+                    closeForegroundWindow(event.timeStamp)
+                }
+                currentForegroundPackage = packageName
+                currentForegroundStart = event.timeStamp.coerceAtLeast(dayStart)
+                lastUsedByPackage[packageName] =
+                    maxOf(lastUsedByPackage[packageName] ?: 0L, event.timeStamp)
+                continue
+            }
+
+            if (isBackgroundEvent && currentForegroundPackage == packageName) {
+                closeForegroundWindow(event.timeStamp)
+            }
+        }
+
+        closeForegroundWindow(dayEnd)
+
+        return durationsByPackage.mapValues { (packageName, durationMs) ->
+            UsageSnapshot(
+                packageName = packageName,
+                durationMs = durationMs,
+                lastTimeUsedMs = lastUsedByPackage[packageName] ?: dayEnd
+            )
+        }
     }
 
     private fun dayStartEpochMs(epochMs: Long): Long {
