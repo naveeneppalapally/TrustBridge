@@ -21,7 +21,8 @@ class ChildUsageUploadService {
   final FirebaseFirestore _firestore;
   final AppUsageService _appUsageService;
 
-  static const Duration _minUploadInterval = Duration(minutes: 15);
+  // Keep writes controlled, but update quickly enough for parent UX.
+  static const Duration _minUploadInterval = Duration(minutes: 2);
   DateTime? _lastUploadedAt;
 
   /// Uploads usage data if enough time has elapsed since the last upload.
@@ -30,9 +31,11 @@ class ChildUsageUploadService {
   /// (non-throwing — errors are swallowed so callers can fire-and-forget).
   Future<bool> uploadIfNeeded({
     required String childId,
+    bool force = false,
   }) async {
     final now = DateTime.now();
-    if (_lastUploadedAt != null &&
+    if (!force &&
+        _lastUploadedAt != null &&
         now.difference(_lastUploadedAt!) < _minUploadInterval) {
       return false; // too soon
     }

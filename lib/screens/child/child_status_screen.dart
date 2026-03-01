@@ -204,6 +204,7 @@ class _ChildStatusScreenState extends State<ChildStatusScreen>
   String? _lastBrowserDnsBypassSignalReasonCode;
   bool _deviceAdminActive = true;
   bool _requestingDeviceAdmin = false;
+  DateTime? _lastForcedUsageUploadAt;
 
   @override
   void initState() {
@@ -231,6 +232,7 @@ class _ChildStatusScreenState extends State<ChildStatusScreen>
       unawaited(_refreshDeviceAdminState());
       unawaited(_refreshBrowserDnsBypassDiagnostics());
       unawaited(_processPendingRemoteCommands());
+      unawaited(_sendHeartbeatOnce(forceUsageUpload: true));
       if (RolloutFlags.appInventory) {
         unawaited(_syncInstalledAppInventory(force: false));
       }
@@ -402,11 +404,7 @@ class _ChildStatusScreenState extends State<ChildStatusScreen>
       // Device ID refresh is best-effort.
     }
 
-    try {
-      await HeartbeatService.sendHeartbeat();
-    } catch (_) {
-      // Heartbeat bootstrap is best-effort.
-    }
+    await _sendHeartbeatOnce(forceUsageUpload: true);
   }
 
   Future<User?> _normalizeChildFirestoreSession({
@@ -543,7 +541,7 @@ class _ChildStatusScreenState extends State<ChildStatusScreen>
     if (_heartbeatTimer != null) {
       return;
     }
-    unawaited(_sendHeartbeatOnce());
+    unawaited(_sendHeartbeatOnce(forceUsageUpload: true));
     _heartbeatTimer = Timer.periodic(
       const Duration(seconds: 45),
       (_) => unawaited(_sendHeartbeatOnce()),
@@ -657,7 +655,9 @@ class _ChildStatusScreenState extends State<ChildStatusScreen>
     });
   }
 
-  Future<void> _sendHeartbeatOnce() async {
+  Future<void> _sendHeartbeatOnce({
+    bool forceUsageUpload = false,
+  }) async {
     try {
       await HeartbeatService.sendHeartbeat();
     } catch (_) {
@@ -669,10 +669,26 @@ class _ChildStatusScreenState extends State<ChildStatusScreen>
     if (RolloutFlags.perAppUsageReports &&
         childId != null &&
         childId.isNotEmpty) {
-      unawaited(
-        _resolvedUsageUploadService.uploadIfNeeded(childId: childId),
-      );
+      final shouldForceUpload = forceUsageUpload && _canForceUsageUploadNow();
+      try {
+        await _resolvedUsageUploadService.uploadIfNeeded(
+          childId: childId,
+          force: shouldForceUpload,
+        );
+      } catch (_) {
+        // Usage upload should never break heartbeat loop.
+      }
     }
+  }
+
+  bool _canForceUsageUploadNow() {
+    final now = DateTime.now();
+    final last = _lastForcedUsageUploadAt;
+    if (last != null && now.difference(last) < const Duration(seconds: 75)) {
+      return false;
+    }
+    _lastForcedUsageUploadAt = now;
+    return true;
   }
 
   void _startRemoteCommandLoop() {
