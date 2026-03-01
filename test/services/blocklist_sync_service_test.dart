@@ -135,7 +135,7 @@ void main() {
       await dbService.updateMeta(
         socialSource.id,
         1,
-        syncedAt: now.subtract(const Duration(days: 1)),
+        syncedAt: now.subtract(const Duration(hours: 12)),
       );
 
       final result = await service.syncSource(socialSource);

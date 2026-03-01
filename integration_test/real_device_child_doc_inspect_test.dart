@@ -1,11 +1,10 @@
-// ignore_for_file: avoid_print
-
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:firebase_auth/firebase_auth.dart';
 import 'package:firebase_core/firebase_core.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:integration_test/integration_test.dart';
 import 'package:trustbridge_app/firebase_options.dart';
+import 'package:flutter/foundation.dart';
 
 const String _runIdRaw = String.fromEnvironment('TB_RUN_ID', defaultValue: '');
 const String _childIdRaw = String.fromEnvironment('TB_CHILD_ID', defaultValue: '');
@@ -66,7 +65,7 @@ void main() {
     final pausedUntil = _readDateTime(childData['pausedUntil']);
     final manualMode = childData['manualMode'];
 
-    print(
+    debugPrint(
       '[CHILD_INSPECT] parentId=$parentId childId=$childId '
       'deviceIds=${deviceIds.join(",")} '
       'updatedAt=${updatedAt?.toIso8601String() ?? "null"} '
@@ -84,7 +83,7 @@ void main() {
       final fcmToken = (data['fcmToken'] as String?)?.trim();
       final model = (data['model'] as String?)?.trim();
       final osVersion = (data['osVersion'] as String?)?.trim();
-      print(
+      debugPrint(
         '[CHILD_INSPECT_DEVICE] id=${doc.id} '
         'hasFcm=${fcmToken != null && fcmToken.isNotEmpty} '
         'model=${model ?? ""} os=${osVersion ?? ""}',

@@ -2,13 +2,14 @@ import 'package:firebase_messaging/firebase_messaging.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_local_notifications/flutter_local_notifications.dart';
+import 'package:trustbridge_app/core/utils/app_logger.dart';
 
 const bool _isFlutterTest = bool.fromEnvironment('FLUTTER_TEST');
 
 /// Background message handler - must be top-level.
 @pragma('vm:entry-point')
 Future<void> firebaseMessagingBackgroundHandler(RemoteMessage message) async {
-  debugPrint('[FCM] Background message: ${message.messageId}');
+  AppLogger.debug('[FCM] Background message: ${message.messageId}');
 }
 
 class NotificationService {
@@ -35,9 +36,9 @@ class NotificationService {
       try {
         FirebaseMessaging.onBackgroundMessage(firebaseMessagingBackgroundHandler);
       } on MissingPluginException catch (error) {
-        debugPrint('[FCM] Background handler unavailable: $error');
+        AppLogger.debug('[FCM] Background handler unavailable: $error');
       } catch (error) {
-        debugPrint('[FCM] Background handler registration failed: $error');
+        AppLogger.debug('[FCM] Background handler registration failed: $error');
       }
     }
 
@@ -64,18 +65,18 @@ class NotificationService {
         onDidReceiveNotificationResponse: _onNotificationTap,
       );
     } on MissingPluginException catch (error) {
-      debugPrint('[FCM] Local notifications unavailable: $error');
+      AppLogger.debug('[FCM] Local notifications unavailable: $error');
     } catch (error) {
-      debugPrint('[FCM] Local notification init failed: $error');
+      AppLogger.debug('[FCM] Local notification init failed: $error');
     }
 
     try {
       FirebaseMessaging.onMessage.listen(_onForegroundMessage);
       FirebaseMessaging.onMessageOpenedApp.listen(_onNotificationOpenedApp);
     } on MissingPluginException catch (error) {
-      debugPrint('[FCM] Foreground listeners unavailable: $error');
+      AppLogger.debug('[FCM] Foreground listeners unavailable: $error');
     } catch (error) {
-      debugPrint('[FCM] Foreground listener setup failed: $error');
+      AppLogger.debug('[FCM] Foreground listener setup failed: $error');
     }
 
     try {
@@ -84,7 +85,7 @@ class NotificationService {
         _handleNotificationNavigation(initialMessage.data);
       }
     } catch (error) {
-      debugPrint('[FCM] Initial message read failed: $error');
+      AppLogger.debug('[FCM] Initial message read failed: $error');
     }
   }
 
@@ -98,10 +99,10 @@ class NotificationService {
       final granted =
           settings.authorizationStatus == AuthorizationStatus.authorized ||
               settings.authorizationStatus == AuthorizationStatus.provisional;
-      debugPrint('[FCM] Permission: ${settings.authorizationStatus}');
+      AppLogger.debug('[FCM] Permission: ${settings.authorizationStatus}');
       return granted;
     } catch (error) {
-      debugPrint('[FCM] Permission request failed: $error');
+      AppLogger.debug('[FCM] Permission request failed: $error');
       return false;
     }
   }
@@ -126,7 +127,7 @@ class NotificationService {
       final token = await _fcm.getToken();
       return token;
     } catch (error) {
-      debugPrint('[FCM] Token error: $error');
+      AppLogger.debug('[FCM] Token error: $error');
       return null;
     }
   }
@@ -171,10 +172,10 @@ class NotificationService {
       );
       return true;
     } on MissingPluginException catch (error) {
-      debugPrint('[FCM] Local notification unavailable: $error');
+      AppLogger.debug('[FCM] Local notification unavailable: $error');
       return false;
     } catch (error) {
-      debugPrint('[FCM] Local notification failed: $error');
+      AppLogger.debug('[FCM] Local notification failed: $error');
       return false;
     }
   }
@@ -192,7 +193,7 @@ class NotificationService {
   }
 
   void _onForegroundMessage(RemoteMessage message) {
-    debugPrint('[FCM] Foreground message: ${message.messageId}');
+    AppLogger.debug('[FCM] Foreground message: ${message.messageId}');
 
     final notification = message.notification;
     if (notification == null) {
@@ -257,7 +258,7 @@ class NotificationService {
   void _navigateToRoute(String route) {
     final navigationState = navigatorKey?.currentState;
     if (navigationState == null) {
-      debugPrint('[FCM] Navigator not ready for route $route');
+      AppLogger.debug('[FCM] Navigator not ready for route $route');
       return;
     }
     navigationState.pushNamed(route);

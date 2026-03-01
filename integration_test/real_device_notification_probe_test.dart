@@ -1,5 +1,3 @@
-// ignore_for_file: avoid_print
-
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:firebase_auth/firebase_auth.dart';
 import 'package:firebase_core/firebase_core.dart';
@@ -11,6 +9,7 @@ import 'package:trustbridge_app/models/access_request.dart';
 import 'package:trustbridge_app/services/firestore_service.dart';
 import 'package:trustbridge_app/services/notification_service.dart';
 import 'package:trustbridge_app/services/pairing_service.dart';
+import 'package:flutter/foundation.dart';
 
 const String _role = String.fromEnvironment(
   'TB_ROLE',
@@ -117,7 +116,7 @@ Future<User> _ensureParentAuthUser() async {
 
   final currentUser = auth.currentUser;
   if (currentUser != null && currentUser.uid.trim().isNotEmpty) {
-    print('[NOTIF_PROBE] using existing auth session uid=${currentUser.uid}');
+    debugPrint('[NOTIF_PROBE] using existing auth session uid=${currentUser.uid}');
     return currentUser;
   }
 
@@ -127,7 +126,7 @@ Future<User> _ensureParentAuthUser() async {
         .firstWhere((user) => user != null)
         .timeout(const Duration(seconds: 10));
     if (restored != null && restored.uid.trim().isNotEmpty) {
-      print('[NOTIF_PROBE] restored auth session uid=${restored.uid}');
+      debugPrint('[NOTIF_PROBE] restored auth session uid=${restored.uid}');
       return restored;
     }
   } catch (_) {
@@ -154,16 +153,16 @@ Future<void> _parentRegister({bool watch = false}) async {
         .requestPermission()
         .timeout(const Duration(seconds: 15));
   } catch (error) {
-    print('[NOTIF_PROBE] parent permission request skipped: $error');
+    debugPrint('[NOTIF_PROBE] parent permission request skipped: $error');
   }
   final token = (await notifications.getToken())?.trim() ?? '';
-  print('[NOTIF_PROBE] parent uid=$parentId token_len=${token.length}');
+  debugPrint('[NOTIF_PROBE] parent uid=$parentId token_len=${token.length}');
   if (token.isEmpty) {
     fail('Parent FCM token unavailable.');
   }
 
   await FirestoreService().saveFcmToken(parentId, token);
-  print('[NOTIF_PROBE] parent token saved');
+  debugPrint('[NOTIF_PROBE] parent token saved');
   if (watch) {
     await _watchWindow('parent');
   }
@@ -183,15 +182,15 @@ Future<void> _parentRegisterQueueProbe() async {
         .requestPermission()
         .timeout(const Duration(seconds: 15));
   } catch (error) {
-    print('[NOTIF_PROBE] parent permission request skipped: $error');
+    debugPrint('[NOTIF_PROBE] parent permission request skipped: $error');
   }
   final token = (await notifications.getToken())?.trim() ?? '';
-  print('[NOTIF_PROBE] parent uid=$parentId token_len=${token.length}');
+  debugPrint('[NOTIF_PROBE] parent uid=$parentId token_len=${token.length}');
   if (token.isEmpty) {
     fail('Parent FCM token unavailable.');
   }
   await FirestoreService().saveFcmToken(parentId, token);
-  print('[NOTIF_PROBE] parent token saved');
+  debugPrint('[NOTIF_PROBE] parent token saved');
 
   final marker = DateTime.now().millisecondsSinceEpoch;
   final queueRef = await FirebaseFirestore.instance.collection('notification_queue').add(
@@ -205,7 +204,7 @@ Future<void> _parentRegisterQueueProbe() async {
       'sentAt': FieldValue.serverTimestamp(),
     },
   );
-  print(
+  debugPrint(
     '[NOTIF_PROBE] queue_probe marker=queue-probe-$marker queueId=${queueRef.id}',
   );
 
@@ -226,16 +225,16 @@ Future<void> _parentRepairToken() async {
         .requestPermission()
         .timeout(const Duration(seconds: 15));
   } catch (error) {
-    print('[NOTIF_PROBE] parent permission request skipped: $error');
+    debugPrint('[NOTIF_PROBE] parent permission request skipped: $error');
   }
 
   try {
     await FirebaseMessaging.instance
         .deleteToken()
         .timeout(const Duration(seconds: 20));
-    print('[NOTIF_PROBE] parent token deleted');
+    debugPrint('[NOTIF_PROBE] parent token deleted');
   } catch (error) {
-    print('[NOTIF_PROBE] parent token delete failed: $error');
+    debugPrint('[NOTIF_PROBE] parent token delete failed: $error');
   }
 
   await Future<void>.delayed(const Duration(seconds: 2));
@@ -244,13 +243,13 @@ Future<void> _parentRepairToken() async {
               .timeout(const Duration(seconds: 45), onTimeout: () => null))
           ?.trim() ??
       '';
-  print('[NOTIF_PROBE] parent repaired token_len=${token.length}');
+  debugPrint('[NOTIF_PROBE] parent repaired token_len=${token.length}');
   if (token.isEmpty) {
     fail('Parent FCM token unavailable after token repair.');
   }
 
   await FirestoreService().saveFcmToken(parentId, token);
-  print('[NOTIF_PROBE] parent repaired token saved');
+  debugPrint('[NOTIF_PROBE] parent repaired token saved');
 }
 
 Future<void> _childRegister({bool watch = false}) async {
@@ -264,7 +263,7 @@ Future<void> _childRegister({bool watch = false}) async {
   await notifications.initialize();
   await notifications.requestPermission();
   final token = (await notifications.getToken())?.trim() ?? '';
-  print('[NOTIF_PROBE] child token_len=${token.length}');
+  debugPrint('[NOTIF_PROBE] child token_len=${token.length}');
   if (token.isEmpty) {
     fail('Child FCM token unavailable.');
   }
@@ -299,7 +298,7 @@ Future<void> _childRegister({bool watch = false}) async {
     SetOptions(merge: true),
   );
 
-  print(
+  debugPrint(
     '[NOTIF_PROBE] child token saved childId=$childId deviceId=$deviceId '
     'parentId=$parentId authUid=$parentIdFromAuth',
   );
@@ -347,7 +346,7 @@ Future<void> _childSubmitRequest() async {
     body: '$childNickname requested $target for 15 min.',
     route: '/parent-requests',
   );
-  print(
+  debugPrint(
     '[NOTIF_PROBE] child request submitted requestId=$requestId '
     'parentId=$parentId childId=$childId target=$target',
   );
@@ -378,7 +377,7 @@ Future<void> _parentRespondLatest() async {
     orElse: () => throw StateError('No matching pending request found for marker=$marker'),
   );
   final matchedData = doc.data();
-  print(
+  debugPrint(
     '[NOTIF_PROBE] parent matched pending request '
     'requestId=${doc.id} '
     'rawChildId=${matchedData['childId']} '
@@ -402,7 +401,7 @@ Future<void> _parentRespondLatest() async {
         status == RequestStatus.approved ? RequestDuration.fifteenMin : null,
   );
 
-  print(
+  debugPrint(
     '[NOTIF_PROBE] parent responded requestId=${doc.id} '
     'status=${status.name} parentId=$parentId',
   );
@@ -420,7 +419,7 @@ Future<void> _parentDeleteChild() async {
   }
 
   await FirestoreService().deleteChild(parentId: parentId, childId: childId);
-  print('[NOTIF_PROBE] child deleted childId=$childId parentId=$parentId');
+  debugPrint('[NOTIF_PROBE] child deleted childId=$childId parentId=$parentId');
 }
 
 Future<void> _inspectQueue() async {
@@ -443,7 +442,7 @@ Future<void> _inspectQueue() async {
       continue;
     }
     printed += 1;
-    print(
+    debugPrint(
       '[NOTIF_PROBE] queue doc=${doc.id} '
       'processed=${data['processed']} status=${data['status']} '
       'eventType=${data['eventType']} route=${data['route']} '
@@ -452,16 +451,16 @@ Future<void> _inspectQueue() async {
   }
 
   if (printed == 0) {
-    print('[NOTIF_PROBE] queue no docs matched marker=$marker');
+    debugPrint('[NOTIF_PROBE] queue no docs matched marker=$marker');
   }
 }
 
 Future<void> _watchWindow(String label) async {
-  print('[NOTIF_PROBE] watch start label=$label seconds=$_watchSeconds');
+  debugPrint('[NOTIF_PROBE] watch start label=$label seconds=$_watchSeconds');
   final endAt = DateTime.now().add(const Duration(seconds: _watchSeconds));
   while (DateTime.now().isBefore(endAt)) {
     await Future<void>.delayed(const Duration(seconds: 5));
-    print('[NOTIF_PROBE] watch tick label=$label ts=${DateTime.now().toIso8601String()}');
+    debugPrint('[NOTIF_PROBE] watch tick label=$label ts=${DateTime.now().toIso8601String()}');
   }
-  print('[NOTIF_PROBE] watch end label=$label');
+  debugPrint('[NOTIF_PROBE] watch end label=$label');
 }

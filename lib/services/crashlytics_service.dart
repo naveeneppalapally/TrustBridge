@@ -1,5 +1,6 @@
 import 'package:firebase_crashlytics/firebase_crashlytics.dart';
 import 'package:flutter/foundation.dart';
+import 'dart:developer' as developer;
 
 class CrashlyticsService {
   CrashlyticsService._();
@@ -44,7 +45,7 @@ class CrashlyticsService {
 
   Future<void> log(String message) async {
     if (kDebugMode) {
-      debugPrint('[Crashlytics] $message');
+      developer.log(message, name: 'Crashlytics');
       return;
     }
     await _crashlytics.log(message);
@@ -57,7 +58,12 @@ class CrashlyticsService {
     bool fatal = false,
   }) async {
     if (kDebugMode) {
-      debugPrint('[Crashlytics] Error: $error');
+      developer.log(
+        'Error: $error',
+        name: 'Crashlytics',
+        error: error,
+        stackTrace: stackTrace,
+      );
       return;
     }
     await _crashlytics.recordError(

@@ -1,11 +1,10 @@
-// ignore_for_file: avoid_print
-
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:firebase_auth/firebase_auth.dart';
 import 'package:firebase_core/firebase_core.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:integration_test/integration_test.dart';
 import 'package:trustbridge_app/firebase_options.dart';
+import 'package:flutter/foundation.dart';
 
 const String _runIdRaw = String.fromEnvironment('TB_RUN_ID', defaultValue: '');
 const String _childIdRaw = String.fromEnvironment('TB_CHILD_ID', defaultValue: '');
@@ -51,7 +50,7 @@ void main() {
     }
     final childData = childSnapshot.data() ?? const <String, dynamic>{};
     final deviceIds = _readStringList(childData['deviceIds']);
-    print(
+    debugPrint(
       '[UNINSTALL_EVENT_INSPECT] parentId=$parentId childId=$childId '
       'deviceCount=${deviceIds.length}',
     );
@@ -72,18 +71,18 @@ void main() {
             continue;
           }
           final epochMs = _readInt(data['timestampEpochMs']);
-          print(
+          debugPrint(
             '[UNINSTALL_EVENT] deviceId=$deviceId type=$type epochMs=$epochMs docId=${eventDoc.id}',
           );
         }
       } on FirebaseException catch (error) {
-        print(
+        debugPrint(
           '[UNINSTALL_EVENT] deviceId=$deviceId read_error=${error.code}',
         );
       }
     }
 
-    print(
+    debugPrint(
       '[UNINSTALL_NOTIFICATION] notification_queue is write-only in security rules; '
       'direct parent read is not permitted.',
     );

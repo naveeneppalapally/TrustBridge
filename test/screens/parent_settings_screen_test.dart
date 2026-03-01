@@ -81,10 +81,6 @@ void main() {
           .tap(find.byKey(const Key('settings_biometric_login_switch')));
       await tester.pumpAndSettle();
 
-      expect(find.text('SAVE'), findsOneWidget);
-      await tester.tap(find.widgetWithText(TextButton, 'SAVE'));
-      await tester.pumpAndSettle();
-
       final snapshot =
           await fakeFirestore.collection('parents').doc(parentId).get();
       final preferences =

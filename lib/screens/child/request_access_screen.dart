@@ -2,6 +2,7 @@ import 'dart:async';
 
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 
 import '../../config/feature_gates.dart';
 import '../../screens/upgrade_screen.dart';
@@ -127,6 +128,7 @@ class _RequestAccessScreenState extends State<RequestAccessScreen> {
       _sending = true;
       _error = null;
     });
+    unawaited(HapticFeedback.mediumImpact());
 
     try {
       final gate =
@@ -166,6 +168,7 @@ class _RequestAccessScreenState extends State<RequestAccessScreen> {
         _sending = false;
         _sent = true;
       });
+      unawaited(HapticFeedback.mediumImpact());
     } catch (error) {
       if (!mounted) {
         return;

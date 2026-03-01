@@ -1,5 +1,5 @@
 import 'package:cloud_firestore/cloud_firestore.dart';
-import 'package:flutter/foundation.dart';
+import 'package:trustbridge_app/core/utils/app_logger.dart';
 
 import '../models/subscription.dart';
 import 'auth_service.dart';
@@ -53,7 +53,7 @@ class SubscriptionService {
 
   /// Refresh hook for Play Store purchase sync (stub for post-submission day).
   Future<void> refreshFromPlayStore() async {
-    debugPrint('[Subscription] refreshFromPlayStore called (stub).');
+    AppLogger.debug('[Subscription] refreshFromPlayStore called (stub).');
   }
 
   /// Starts one-time 7 day trial. Returns false when trial already used.

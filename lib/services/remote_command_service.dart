@@ -1,8 +1,8 @@
 import 'dart:async';
+import 'package:trustbridge_app/core/utils/app_logger.dart';
 
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:firebase_auth/firebase_auth.dart';
-import 'package:flutter/foundation.dart';
 import 'package:workmanager/workmanager.dart';
 
 import '../models/app_mode.dart';
@@ -126,7 +126,7 @@ class RemoteCommandService {
   Future<void> processPendingCommands() async {
     final mode = await _appModeService.getMode();
     if (mode == AppMode.parent) {
-      debugPrint(
+      AppLogger.debug(
         '[RemoteCommandService] Skip command polling in parent mode.',
       );
       return;
@@ -195,7 +195,7 @@ class RemoteCommandService {
         'updatedAt': FieldValue.serverTimestamp(),
       });
     } catch (updateError) {
-      debugPrint(
+      AppLogger.debug(
           '[RemoteCommandService] command result update failed: $updateError');
     }
   }

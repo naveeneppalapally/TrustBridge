@@ -1,5 +1,6 @@
 import 'dart:async';
 import 'dart:collection';
+import 'package:trustbridge_app/core/utils/app_logger.dart';
 
 import 'package:flutter/foundation.dart';
 import 'package:path/path.dart' as p;
@@ -184,7 +185,7 @@ class PolicyVpnSyncService extends ChangeNotifier {
   void startListening() {
     final parentId = _resolveParentId();
     if (parentId == null || parentId.isEmpty) {
-      debugPrint('[PolicyVpnSync] No user logged in; listener not started.');
+      AppLogger.debug('[PolicyVpnSync] No user logged in; listener not started.');
       return;
     }
 
@@ -192,7 +193,7 @@ class PolicyVpnSyncService extends ChangeNotifier {
       return;
     }
 
-    debugPrint('[PolicyVpnSync] Starting listener for parentId=$parentId');
+    AppLogger.debug('[PolicyVpnSync] Starting listener for parentId=$parentId');
     _childrenSubscription?.cancel();
     _accessRequestsSubscription?.cancel();
     _listeningParentId = parentId;
@@ -202,7 +203,7 @@ class PolicyVpnSyncService extends ChangeNotifier {
         _firestoreService.getChildrenStream(parentId).listen(
       _onChildrenUpdated,
       onError: (Object error) {
-        debugPrint('[PolicyVpnSync] Stream error: $error');
+        AppLogger.debug('[PolicyVpnSync] Stream error: $error');
         _lastSyncResult = SyncResult.error(error.toString());
         notifyListeners();
       },
@@ -212,7 +213,7 @@ class PolicyVpnSyncService extends ChangeNotifier {
         _firestoreService.getAllRequestsStream(parentId).listen(
       _onAccessRequestsUpdated,
       onError: (Object error) {
-        debugPrint('[PolicyVpnSync] Access request stream error: $error');
+        AppLogger.debug('[PolicyVpnSync] Access request stream error: $error');
         _lastSyncResult = SyncResult.error(error.toString());
         notifyListeners();
       },
@@ -221,7 +222,7 @@ class PolicyVpnSyncService extends ChangeNotifier {
 
   /// Stop listening to policy changes (call on logout).
   void stopListening() {
-    debugPrint('[PolicyVpnSync] Stopping listener');
+    AppLogger.debug('[PolicyVpnSync] Stopping listener');
     _childrenSubscription?.cancel();
     _childrenSubscription = null;
     _accessRequestsSubscription?.cancel();
@@ -234,7 +235,7 @@ class PolicyVpnSyncService extends ChangeNotifier {
   }
 
   Future<void> _onChildrenUpdated(List<ChildProfile> children) async {
-    debugPrint(
+    AppLogger.debug(
         '[PolicyVpnSync] Firestore policy update: ${children.length} children.');
     await _syncToVpn(children);
   }
@@ -245,7 +246,7 @@ class PolicyVpnSyncService extends ChangeNotifier {
       return;
     }
 
-    debugPrint(
+    AppLogger.debug(
       '[PolicyVpnSync] Access request update: ${requests.length} requests.',
     );
     await syncNow();

@@ -1,5 +1,3 @@
-// ignore_for_file: avoid_print
-
 import 'dart:async';
 
 import 'package:cloud_firestore/cloud_firestore.dart';
@@ -132,7 +130,7 @@ Future<void> _runSetup(String runId) async {
     currentUserIdResolver: () => parentId,
   );
   final pairingCode = await pairingService.generatePairingCode(child.id);
-  print(
+  debugPrint(
     '[OFFLINE_SETUP] runId=$runId parentId=$parentId childId=${child.id} '
     'email=$email pairingCode=$pairingCode',
   );
@@ -181,7 +179,7 @@ Future<void> _runParentApply(String runId) async {
   );
 
   final savedAtMs = DateTime.now().millisecondsSinceEpoch;
-  print(
+  debugPrint(
     '[OFFLINE_PARENT] op=$op savedAtMs=$savedAtMs parentId=$parentId '
     'childId=$childId',
   );
@@ -262,7 +260,7 @@ Future<void> _runChildWatch(String runId, WidgetTester tester) async {
   );
   await tester.pump(const Duration(seconds: 2));
 
-  print(
+  debugPrint(
     '[OFFLINE_WATCH] ready runId=$runId parentId=$parentId childId=$childId '
     'deviceId=$deviceId',
   );
@@ -273,7 +271,7 @@ Future<void> _runChildWatch(String runId, WidgetTester tester) async {
     final status = await vpn.getStatus();
     final insta = await vpn.evaluateDomainPolicy(_domainInstagram);
     final youtube = await vpn.evaluateDomainPolicy(_domainYoutube);
-    print(
+    debugPrint(
       '[OFFLINE_WATCH] tsMs=$nowMs running=${status.isRunning} '
       'cats=${status.blockedCategoryCount} domains=${status.blockedDomainCount} '
       'insta=${insta.blocked} youtube=${youtube.blocked}',
@@ -282,7 +280,7 @@ Future<void> _runChildWatch(String runId, WidgetTester tester) async {
     await tester.pump();
   }
 
-  print('[OFFLINE_WATCH] done');
+  debugPrint('[OFFLINE_WATCH] done');
   await tester.pumpWidget(const SizedBox.shrink());
   await tester.pump(const Duration(milliseconds: 200));
 }

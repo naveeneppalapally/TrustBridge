@@ -1,5 +1,5 @@
 import 'package:cloud_firestore/cloud_firestore.dart';
-import 'package:flutter/foundation.dart';
+import 'package:trustbridge_app/core/utils/app_logger.dart';
 
 import '../config/service_definitions.dart';
 import '../config/rollout_flags.dart';
@@ -43,7 +43,7 @@ class ChildUsageUploadService {
     try {
       final hasPermission = await _appUsageService.hasUsageAccessPermission();
       if (!hasPermission) {
-        debugPrint(
+        AppLogger.debug(
           '[ChildUsageUpload] Usage access permission not granted — skipping.',
         );
         return false;
@@ -211,10 +211,10 @@ class ChildUsageUploadService {
       }
 
       _lastUploadedAt = now;
-      debugPrint('[ChildUsageUpload] Uploaded usage for child=$childId');
+      AppLogger.debug('[ChildUsageUpload] Uploaded usage for child=$childId');
       return true;
     } catch (error) {
-      debugPrint('[ChildUsageUpload] Upload failed: $error');
+      AppLogger.debug('[ChildUsageUpload] Upload failed: $error');
       return false;
     }
   }

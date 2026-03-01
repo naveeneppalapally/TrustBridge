@@ -1,5 +1,6 @@
 import 'dart:async';
 import 'dart:collection';
+import 'package:trustbridge_app/core/utils/app_logger.dart';
 
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:firebase_auth/firebase_auth.dart';
@@ -386,13 +387,13 @@ class _ChildStatusScreenState extends State<ChildStatusScreen>
     final currentUid = currentUser?.uid.trim();
     final isAnonymousSession = currentUser?.isAnonymous == true;
     if (currentUid == null || currentUid.isEmpty) {
-      debugPrint(
+      AppLogger.debug(
         '[ChildStatus] Missing signed-in Firebase session after normalization.',
       );
       return;
     }
     if (currentUid != normalizedParentId && !isAnonymousSession) {
-      debugPrint(
+      AppLogger.debug(
         '[ChildStatus] Parent mismatch during bootstrap and session is non-anonymous. '
         'expectedParentId=$normalizedParentId currentUid=$currentUid',
       );
@@ -422,7 +423,7 @@ class _ChildStatusScreenState extends State<ChildStatusScreen>
     }
 
     if (currentUser != null) {
-      debugPrint(
+      AppLogger.debug(
         '[ChildStatus] Resetting unexpected Firebase session '
         'expectedParentId=$expectedParentId currentUid=${currentUid ?? 'null'} '
         'anonymous=${currentUser.isAnonymous}',
@@ -438,7 +439,7 @@ class _ChildStatusScreenState extends State<ChildStatusScreen>
       final credential = await FirebaseAuth.instance.signInAnonymously();
       return credential.user;
     } on FirebaseAuthException catch (error) {
-      debugPrint(
+      AppLogger.debug(
         '[ChildStatus] Anonymous sign-in failed '
         'code=${error.code} message=${error.message}',
       );
@@ -635,7 +636,7 @@ class _ChildStatusScreenState extends State<ChildStatusScreen>
     }
 
     if (nextAssessment != null) {
-      debugPrint(
+      AppLogger.debug(
         '[ChildStatus] web-dns-check '
         'warn=${nextAssessment.shouldWarn} '
         'reason=${nextAssessment.reasonCode} '
@@ -711,7 +712,7 @@ class _ChildStatusScreenState extends State<ChildStatusScreen>
     try {
       await _resolvedRemoteCommandService.processPendingCommands();
     } catch (error) {
-      debugPrint('[ChildStatus] remote command poll failed: $error');
+      AppLogger.debug('[ChildStatus] remote command poll failed: $error');
     }
   }
 
@@ -859,7 +860,7 @@ class _ChildStatusScreenState extends State<ChildStatusScreen>
     Future<void> writeToken(String rawToken) async {
       final token = rawToken.trim();
       if (token.isEmpty) {
-        debugPrint('[ChildStatus] FCM token empty; skipping token sync.');
+        AppLogger.debug('[ChildStatus] FCM token empty; skipping token sync.');
         return;
       }
       final deviceId = await _resolvedPairingService.getOrCreateDeviceId();
@@ -876,7 +877,7 @@ class _ChildStatusScreenState extends State<ChildStatusScreen>
         },
         SetOptions(merge: true),
       );
-      debugPrint(
+      AppLogger.debug(
         '[ChildStatus] Child FCM token synced: '
         'children/$childId/devices/$deviceId',
       );
@@ -887,12 +888,12 @@ class _ChildStatusScreenState extends State<ChildStatusScreen>
       if (token != null) {
         await writeToken(token);
       } else {
-        debugPrint(
+        AppLogger.debug(
           '[ChildStatus] FCM token unavailable at startup; will retry on refresh.',
         );
       }
     } catch (error) {
-      debugPrint('[ChildStatus] Initial FCM token sync failed: $error');
+      AppLogger.debug('[ChildStatus] Initial FCM token sync failed: $error');
     }
 
     try {
@@ -901,10 +902,10 @@ class _ChildStatusScreenState extends State<ChildStatusScreen>
           NotificationService().onTokenRefresh.listen((nextToken) {
         unawaited(writeToken(nextToken));
       }, onError: (Object error) {
-        debugPrint('[ChildStatus] FCM token refresh listener failed: $error');
+        AppLogger.debug('[ChildStatus] FCM token refresh listener failed: $error');
       });
     } catch (error) {
-      debugPrint('[ChildStatus] Unable to attach FCM token listener: $error');
+      AppLogger.debug('[ChildStatus] Unable to attach FCM token listener: $error');
     }
   }
 
@@ -1080,7 +1081,7 @@ class _ChildStatusScreenState extends State<ChildStatusScreen>
             event.eventEpochMs <= effectiveSnapshot.version) {
           continue;
         }
-        debugPrint(
+        AppLogger.debug(
           '[ChildStatus] policy_event doc=${change.doc.id} '
           'epochMs=${event.eventEpochMs} '
           'cats=${event.blockedCategories.length} '
@@ -1088,20 +1089,20 @@ class _ChildStatusScreenState extends State<ChildStatusScreen>
         );
         final baseChild = _lastKnownChild;
         if (baseChild == null) {
-          debugPrint(
+          AppLogger.debug(
             '[ChildStatus] policy_event queued (missing base child) '
             'doc=${change.doc.id}',
           );
           _pendingPolicyEvents.addLast(event);
           continue;
         }
-        debugPrint(
+        AppLogger.debug(
           '[ChildStatus] policy_event applying now doc=${change.doc.id}',
         );
         unawaited(_applyPolicyEvent(baseChild, event));
       }
     }, onError: (Object error) {
-      debugPrint('[ChildStatus] policy_events listener error: $error');
+      AppLogger.debug('[ChildStatus] policy_events listener error: $error');
     });
     _policyEventsSubscriptionKey = nextKey;
   }
@@ -1180,7 +1181,7 @@ class _ChildStatusScreenState extends State<ChildStatusScreen>
       }
       unawaited(_applyEffectivePolicySnapshot(baseChild, snapshot));
     }, onError: (Object error) {
-      debugPrint('[ChildStatus] effective_policy listener error: $error');
+      AppLogger.debug('[ChildStatus] effective_policy listener error: $error');
       _lastEffectivePolicySnapshot = null;
     });
     _effectivePolicySubscriptionKey = childId;
@@ -1294,7 +1295,7 @@ class _ChildStatusScreenState extends State<ChildStatusScreen>
         event.eventEpochMs <= effectiveSnapshot.version) {
       return;
     }
-    debugPrint(
+    AppLogger.debug(
       '[ChildStatus] _applyPolicyEvent '
       'cats=${event.blockedCategories.length} domains=${event.blockedDomains.length}',
     );
@@ -1324,7 +1325,7 @@ class _ChildStatusScreenState extends State<ChildStatusScreen>
     if (baseChild == null || _pendingPolicyEvents.isEmpty) {
       return;
     }
-    debugPrint(
+    AppLogger.debug(
       '[ChildStatus] draining queued policy events count=${_pendingPolicyEvents.length}',
     );
     var current = baseChild;
@@ -1463,7 +1464,7 @@ class _ChildStatusScreenState extends State<ChildStatusScreen>
         snapshot: effectiveSnapshot,
       );
       if (snapshotIsStale) {
-        debugPrint(
+        AppLogger.debug(
           '[ChildStatus] ignoring stale effective_policy snapshot '
           'version=${effectiveSnapshot.version} childUpdatedAt=${child.updatedAt.toIso8601String()} '
           'sourceUpdatedAt=${effectiveSnapshot.sourceUpdatedAt?.toIso8601String() ?? '<null>'}',
@@ -1703,10 +1704,10 @@ class _ChildStatusScreenState extends State<ChildStatusScreen>
 
   Future<void> _drainProtectionApplyQueue() async {
     if (_isApplyingProtectionRules) {
-      debugPrint('[ChildStatus] drainProtection skipped (already applying)');
+      AppLogger.debug('[ChildStatus] drainProtection skipped (already applying)');
       return;
     }
-    debugPrint(
+    AppLogger.debug(
       '[ChildStatus] drainProtection start queue=${_pendingProtectionApplies.length}',
     );
     _isApplyingProtectionRules = true;
@@ -1755,7 +1756,7 @@ class _ChildStatusScreenState extends State<ChildStatusScreen>
         }
         return true;
       }
-      debugPrint(
+      AppLogger.debug(
         '[ChildStatus] applying rules force=${next.forceRecheck} '
         'cats=${next.categories.length} services=${next.services.length} '
         'domains=${next.domains.length} '
@@ -1807,7 +1808,7 @@ class _ChildStatusScreenState extends State<ChildStatusScreen>
         }
       }
       if (!applied) {
-        debugPrint('[ChildStatus] updateFilterRules returned false');
+        AppLogger.debug('[ChildStatus] updateFilterRules returned false');
         await _writePolicyApplyAck(
           next: next,
           applyStatus: 'failed',
@@ -1829,7 +1830,7 @@ class _ChildStatusScreenState extends State<ChildStatusScreen>
         expectedDomains: next.domains,
       );
       if (!cacheMatches) {
-        debugPrint(
+        AppLogger.debug(
           '[ChildStatus] rule cache mismatch '
           'expected(cats=${next.categories.length}, domains=${next.domains.length}) '
           'actual(cats=${cacheSnapshot.categoryCount}, domains=${cacheSnapshot.domainCount})',
@@ -1847,7 +1848,7 @@ class _ChildStatusScreenState extends State<ChildStatusScreen>
         _scheduleProtectionRetry();
         return false;
       }
-      debugPrint('[ChildStatus] updateFilterRules applied successfully');
+      AppLogger.debug('[ChildStatus] updateFilterRules applied successfully');
       if (syncedCategories.isNotEmpty) {
         unawaited(
           _syncBlocklistsInBackground(
@@ -1874,7 +1875,7 @@ class _ChildStatusScreenState extends State<ChildStatusScreen>
       _schedulePolicyApplyHeartbeat();
       return true;
     } catch (error, stackTrace) {
-      debugPrint(
+      AppLogger.debug(
         '[ChildStatus] Failed to apply protection rules: $error\n$stackTrace',
       );
       await _writePolicyApplyAck(
@@ -2130,7 +2131,7 @@ class _ChildStatusScreenState extends State<ChildStatusScreen>
           // Fall through to logging below.
         }
       }
-      debugPrint('[ChildStatus] policy_apply_acks write failed: $ackError');
+      AppLogger.debug('[ChildStatus] policy_apply_acks write failed: $ackError');
     }
   }
 
