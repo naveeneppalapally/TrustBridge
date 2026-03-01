@@ -1,5 +1,3 @@
-// ignore_for_file: avoid_print
-
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:firebase_auth/firebase_auth.dart';
 import 'package:firebase_core/firebase_core.dart';
@@ -8,6 +6,7 @@ import 'package:integration_test/integration_test.dart';
 import 'package:trustbridge_app/firebase_options.dart';
 import 'package:trustbridge_app/models/schedule.dart';
 import 'package:trustbridge_app/services/firestore_service.dart';
+import 'package:flutter/foundation.dart';
 
 const String _runIdRaw = String.fromEnvironment('TB_RUN_ID', defaultValue: '');
 const String _pairingCodeRaw = String.fromEnvironment(
@@ -70,7 +69,7 @@ void main() {
         fail('Pairing code is missing parentId or childId.');
       }
 
-      print(
+      debugPrint(
         '[IG_DRIVE] runId=$runId parentId=$parentId childId=$childId '
         'phaseSeconds=$_phaseSeconds',
       );
@@ -81,7 +80,7 @@ void main() {
         childId: childId,
         blockSocial: false,
       );
-      print('[IG_DRIVE] phase=off_applied epochMs=${_nowMs()}');
+      debugPrint('[IG_DRIVE] phase=off_applied epochMs=${_nowMs()}');
       await Future<void>.delayed(const Duration(seconds: _phaseSeconds));
 
       await _applySocialPolicy(
@@ -90,7 +89,7 @@ void main() {
         childId: childId,
         blockSocial: true,
       );
-      print('[IG_DRIVE] phase=on_applied epochMs=${_nowMs()}');
+      debugPrint('[IG_DRIVE] phase=on_applied epochMs=${_nowMs()}');
       await Future<void>.delayed(const Duration(seconds: _phaseSeconds));
 
       await _applySocialPolicy(
@@ -99,7 +98,7 @@ void main() {
         childId: childId,
         blockSocial: false,
       );
-      print('[IG_DRIVE] phase=off2_applied epochMs=${_nowMs()}');
+      debugPrint('[IG_DRIVE] phase=off2_applied epochMs=${_nowMs()}');
       await Future<void>.delayed(const Duration(seconds: 8));
     },
     timeout: const Timeout(Duration(minutes: 8)),

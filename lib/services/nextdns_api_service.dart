@@ -1,8 +1,8 @@
 import 'dart:async';
 import 'dart:convert';
 import 'dart:io';
+import 'package:trustbridge_app/core/utils/app_logger.dart';
 
-import 'package:flutter/foundation.dart';
 import 'package:flutter_secure_storage/flutter_secure_storage.dart';
 import 'package:http/http.dart' as http;
 
@@ -561,7 +561,7 @@ class NextDnsApiService {
       }
       return <String, dynamic>{};
     } catch (error) {
-      debugPrint('[NextDNS] Failed to decode response JSON: $error');
+      AppLogger.debug('[NextDNS] Failed to decode response JSON: $error');
       return <String, dynamic>{};
     }
   }

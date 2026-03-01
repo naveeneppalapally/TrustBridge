@@ -1,9 +1,9 @@
 import 'dart:async';
 import 'dart:collection';
+import 'package:trustbridge_app/core/utils/app_logger.dart';
 
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:firebase_auth/firebase_auth.dart';
-import 'package:flutter/foundation.dart';
 import 'package:http/http.dart' as http;
 
 import '../config/blocklist_sources.dart';
@@ -78,7 +78,7 @@ class BlocklistSyncService {
         _enableRemoteLogging = enableRemoteLogging;
 
   static const Duration _staleAfter = Duration(days: 14);
-  static const Duration _minimumRefreshGap = Duration(days: 7);
+  static const Duration _minimumRefreshGap = Duration(days: 1);
   static const Duration _requestTimeout = Duration(seconds: 30);
 
   static BlocklistSyncService _instance = BlocklistSyncService._internal();
@@ -328,7 +328,7 @@ class BlocklistSyncService {
         'syncedAt': Timestamp.fromDate(result.syncedAt),
       });
     } catch (error) {
-      debugPrint('[BlocklistSync] Failed to write sync log: $error');
+      AppLogger.debug('[BlocklistSync] Failed to write sync log: $error');
     }
   }
 

@@ -1,5 +1,3 @@
-// ignore_for_file: avoid_print
-
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:firebase_auth/firebase_auth.dart';
 import 'package:firebase_core/firebase_core.dart';
@@ -126,7 +124,7 @@ void main() {
 
       final permissionGranted = await _ensureVpnPermission(vpn);
       if (!permissionGranted) {
-        print(
+        debugPrint(
           '[DELETE_CLEANUP] VPN permission unavailable. '
           'Proceeding with pairing-clear verification only.',
         );
@@ -179,7 +177,7 @@ void main() {
       );
 
       final elapsedMs = timer.elapsedMilliseconds;
-      print(
+      debugPrint(
         '[DELETE_CLEANUP] elapsedMs=$elapsedMs '
         'stopped=$stoppedWithinThirtySeconds '
         'unpairedUi=$childUnpairedMessageVisible',

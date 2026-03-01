@@ -29,9 +29,9 @@ void main() {
       );
       await tester.pump();
 
-      expect(find.text('Schedule Editor'), findsOneWidget);
-      expect(find.text('ROUTINE TYPE'), findsOneWidget);
-      expect(find.text('RESTRICTION LEVEL'), findsOneWidget);
+      expect(find.text('Edit Schedule'), findsOneWidget);
+      expect(find.text('1. Schedule type'), findsOneWidget);
+      expect(find.text('4. During this time'), findsOneWidget);
       await tester.dragUntilVisible(
         find.byKey(const Key('schedule_save_button')),
         find.byType(ListView),
@@ -57,15 +57,27 @@ void main() {
       await tester.pump();
       expect(find.byKey(const Key('schedule_type_custom')), findsOneWidget);
       expect(
-        find.textContaining('You choose exactly which apps to block and when.'),
+        find.textContaining(
+          'Use custom when you want your own time window and rules.',
+        ),
         findsOneWidget,
       );
 
+      await tester.dragUntilVisible(
+        find.byKey(const Key('schedule_block_all_card')),
+        find.byType(ListView),
+        const Offset(0, -220),
+      );
+      await tester.pumpAndSettle();
       await tester.tap(find.byKey(const Key('schedule_block_all_card')));
       await tester.pump();
       expect(find.byKey(const Key('schedule_block_all_card')), findsOneWidget);
-      expect(find.textContaining('Total lockout - only phone calls'),
-          findsOneWidget);
+      expect(
+        find.textContaining(
+          'Blocks internet and app access during this window.',
+        ),
+        findsOneWidget,
+      );
     });
 
     testWidgets('day selector and reminder toggle work', (tester) async {

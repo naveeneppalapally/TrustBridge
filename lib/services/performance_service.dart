@@ -1,4 +1,5 @@
 import 'dart:async';
+import 'package:trustbridge_app/core/utils/app_logger.dart';
 
 import 'package:firebase_performance/firebase_performance.dart';
 import 'package:flutter/foundation.dart';
@@ -105,7 +106,7 @@ class PerformanceService {
   /// Start a trace. In debug/tests this returns a no-op trace.
   Future<PerformanceTrace> startTrace(String name) async {
     if (kDebugMode) {
-      debugPrint('[Performance] startTrace($name)');
+      AppLogger.debug('[Performance] startTrace($name)');
       return _NoopPerformanceTrace(name);
     }
 
@@ -118,10 +119,10 @@ class PerformanceService {
       await trace.start();
       return _FirebasePerformanceTrace(name: name, trace: trace);
     } on MissingPluginException catch (error) {
-      debugPrint('[Performance] plugin missing for trace "$name": $error');
+      AppLogger.debug('[Performance] plugin missing for trace "$name": $error');
       return _NoopPerformanceTrace(name);
     } catch (error) {
-      debugPrint('[Performance] unable to start trace "$name": $error');
+      AppLogger.debug('[Performance] unable to start trace "$name": $error');
       return _NoopPerformanceTrace(name);
     }
   }
@@ -221,7 +222,7 @@ class PerformanceService {
       }
       return performance.newHttpMetric(url.toString(), method);
     } catch (error) {
-      debugPrint('[Performance] unable to create HTTP metric: $error');
+      AppLogger.debug('[Performance] unable to create HTTP metric: $error');
       return null;
     }
   }

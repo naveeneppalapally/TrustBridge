@@ -1,5 +1,3 @@
-// ignore_for_file: avoid_print
-
 import 'dart:async';
 
 import 'package:cloud_firestore/cloud_firestore.dart';
@@ -156,7 +154,7 @@ Future<void> _runSetup(String runId) async {
   );
   final pairingCode = await pairingService.generatePairingCode(child.id);
 
-  print(
+  debugPrint(
     '[SCHEDULE_SETUP] runId=$runId parentId=$parentId childId=${child.id} '
     'email=$email pairingCode=$pairingCode',
   );
@@ -240,7 +238,7 @@ Future<void> _runCycle(String runId) async {
     },
     SetOptions(merge: true),
   );
-  print(
+  debugPrint(
     '[SCHEDULE_CYCLE] phase=first start=${firstStart.toIso8601String()} '
     'end=${firstEnd.toIso8601String()}',
   );
@@ -285,7 +283,7 @@ Future<void> _runCycle(String runId) async {
     SetOptions(merge: true),
   );
 
-  print(
+  debugPrint(
     '[SCHEDULE_CYCLE] phase=second aStart=${secondAStart.toIso8601String()} '
     'aEnd=${secondAEnd.toIso8601String()} bStart=${secondBStart.toIso8601String()} '
     'bEnd=${secondBEnd.toIso8601String()} gapMin=$_gapMinutes',
@@ -310,7 +308,7 @@ Future<void> _runCycle(String runId) async {
     },
     SetOptions(merge: true),
   );
-  print('[SCHEDULE_CYCLE] phase=done clearedSchedules=true');
+  debugPrint('[SCHEDULE_CYCLE] phase=done clearedSchedules=true');
 }
 
 Future<void> _runObserve(
@@ -364,7 +362,7 @@ Future<void> _runObserve(
   var hasPermission = await vpn.hasVpnPermission();
   if (!hasPermission) {
     final requested = await vpn.requestPermission();
-    print('[SCHEDULE_OBSERVE] requestPermission returned=$requested');
+    debugPrint('[SCHEDULE_OBSERVE] requestPermission returned=$requested');
     final waitUntil = DateTime.now().add(const Duration(seconds: 45));
     while (DateTime.now().isBefore(waitUntil)) {
       await Future<void>.delayed(const Duration(milliseconds: 500));
@@ -436,12 +434,12 @@ Future<void> _runObserve(
     }
     if (observedStates.isEmpty || observedStates.last != actualBlocked) {
       observedStates.add(actualBlocked);
-      print(
+      debugPrint(
         '[SCHEDULE_OBSERVE] transition=${actualBlocked ? 'BLOCKED' : 'UNBLOCKED'} '
         'at=${now.toIso8601String()}',
       );
     }
-    print(
+    debugPrint(
       '[SCHEDULE_OBSERVE] sample=$sampleCount ts=${now.toIso8601String()} '
       'running=${status.isRunning} expectedBlocked=$expectedBlocked '
       'actualBlocked=$actualBlocked evalBlocked=${eval.blocked} '
@@ -455,7 +453,7 @@ Future<void> _runObserve(
 
   const requiredPattern = <bool>[false, true, false, true, false, true, false];
   final sequenceOk = _containsSubsequence(observedStates, requiredPattern);
-  print(
+  debugPrint(
     '[SCHEDULE_OBSERVE] sequence=$observedStates required=$requiredPattern '
     'sequenceOk=$sequenceOk samples=$sampleCount mismatches=$mismatchCount '
     'vpnDown=$vpnDownCount',
@@ -738,7 +736,7 @@ Future<void> _waitUntil(DateTime target, {required String label}) async {
     final sleep = remaining > const Duration(seconds: 30)
         ? const Duration(seconds: 30)
         : remaining;
-    print(
+    debugPrint(
       '[SCHEDULE_WAIT] label=$label now=${now.toIso8601String()} '
       'remainingSec=${remaining.inSeconds}',
     );

@@ -1,11 +1,10 @@
-// ignore_for_file: avoid_print
-
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:firebase_auth/firebase_auth.dart';
 import 'package:firebase_core/firebase_core.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:integration_test/integration_test.dart';
 import 'package:trustbridge_app/firebase_options.dart';
+import 'package:flutter/foundation.dart';
 
 const String _runIdRaw = String.fromEnvironment('TB_RUN_ID', defaultValue: '');
 const String _childIdRaw = String.fromEnvironment('TB_CHILD_ID', defaultValue: '');
@@ -62,10 +61,10 @@ void main() {
     );
     writeWatch.stop();
 
-    print(
+    debugPrint(
       '[PAIRING_CODE_ISSUE] runId=$runId parentId=$parentId childId=$childId pairingCode=$code',
     );
-    print(
+    debugPrint(
       '[PAIRING_CODE_ISSUE_TIMING] signInMs=${signInWatch.elapsedMilliseconds} '
       'writeCodeMs=${writeWatch.elapsedMilliseconds}',
     );

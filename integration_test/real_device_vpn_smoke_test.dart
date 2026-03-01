@@ -1,5 +1,3 @@
-// ignore_for_file: avoid_print
-
 import 'package:firebase_core/firebase_core.dart';
 import 'package:firebase_auth/firebase_auth.dart';
 import 'package:flutter_test/flutter_test.dart';
@@ -8,6 +6,7 @@ import 'package:trustbridge_app/firebase_options.dart';
 import 'package:trustbridge_app/services/heartbeat_service.dart';
 import 'package:trustbridge_app/services/pairing_service.dart';
 import 'package:trustbridge_app/services/vpn_service.dart';
+import 'package:flutter/foundation.dart';
 
 const String _role = String.fromEnvironment(
   'TB_ROLE',
@@ -104,7 +103,7 @@ void main() {
 
 Future<void> _sendHeartbeat() async {
   await HeartbeatService.sendHeartbeat();
-  print('[VPN_SMOKE] sendHeartbeat invoked');
+  debugPrint('[VPN_SMOKE] sendHeartbeat invoked');
 }
 
 Future<void> _printPairingStatus() async {
@@ -112,7 +111,7 @@ Future<void> _printPairingStatus() async {
   final deviceId = await pairing.getOrCreateDeviceId();
   final parentId = await pairing.getPairedParentId();
   final childId = await pairing.getPairedChildId();
-  print(
+  debugPrint(
     '[VPN_SMOKE] pairing deviceId=$deviceId parentId=$parentId childId=$childId',
   );
 }
@@ -138,32 +137,32 @@ Future<void> _signInPairStartWatch(VpnService vpn) async {
   );
   signInWatch.stop();
   final uid = credential.user?.uid;
-  print('[VPN_SMOKE] signed_in uid=$uid');
-  print('[VPN_SMOKE_TIMING] signInMs=${signInWatch.elapsedMilliseconds}');
+  debugPrint('[VPN_SMOKE] signed_in uid=$uid');
+  debugPrint('[VPN_SMOKE_TIMING] signInMs=${signInWatch.elapsedMilliseconds}');
 
   final pairing = PairingService();
   final deviceId = await pairing.getOrCreateDeviceId();
   final pairWatch = Stopwatch()..start();
   final result = await pairing.validateAndPair(pairingCode, deviceId);
   pairWatch.stop();
-  print(
+  debugPrint(
     '[VPN_SMOKE] pair result success=${result.success} error=${result.error} '
     'childId=${result.childId} parentId=${result.parentId} deviceId=$deviceId',
   );
-  print('[VPN_SMOKE_TIMING] pairMs=${pairWatch.elapsedMilliseconds}');
+  debugPrint('[VPN_SMOKE_TIMING] pairMs=${pairWatch.elapsedMilliseconds}');
   if (!result.success) {
     fail('Pairing failed: ${result.error}');
   }
 
   await _startBlocking(vpn, _blockedDomain.trim(), watchSeconds: 0);
   total.stop();
-  print('[VPN_SMOKE_TIMING] totalUntilBlockingMs=${total.elapsedMilliseconds}');
+  debugPrint('[VPN_SMOKE_TIMING] totalUntilBlockingMs=${total.elapsedMilliseconds}');
 
   final endAt = DateTime.now().add(const Duration(seconds: _watchSeconds));
   while (DateTime.now().isBefore(endAt)) {
     await Future<void>.delayed(const Duration(seconds: 5));
     await HeartbeatService.sendHeartbeat();
-    print('[VPN_SMOKE] heartbeat sent during watch');
+    debugPrint('[VPN_SMOKE] heartbeat sent during watch');
     await _printStatus(vpn);
   }
 }
@@ -174,24 +173,24 @@ Future<void> _printStatus(VpnService vpn) async {
   final cache = await vpn.getRuleCacheSnapshot(sampleLimit: 10);
   final queries = await vpn.getRecentDnsQueries(limit: 20);
 
-  print(
+  debugPrint(
     '[VPN_SMOKE] status supported=${status.supported} '
     'permission=${status.permissionGranted} running=${status.isRunning} '
     'processed=${status.queriesProcessed} blocked=${status.queriesBlocked} '
     'allowed=${status.queriesAllowed} privateDns=${status.privateDnsActive}'
     ' mode=${status.privateDnsMode}',
   );
-  print(
+  debugPrint(
     '[VPN_SMOKE] telemetry running=${telemetry.isRunning} '
     'intercepted=${telemetry.queriesIntercepted} '
     'blocked=${telemetry.queriesBlocked} allowed=${telemetry.queriesAllowed}',
   );
-  print(
+  debugPrint(
     '[VPN_SMOKE] cache categories=${cache.categoryCount} domains=${cache.domainCount} '
     'sampleDomains=${cache.sampleDomains}',
   );
   for (final entry in queries.take(10)) {
-    print(
+    debugPrint(
       '[VPN_SMOKE] query domain=${entry.domain} blocked=${entry.blocked} '
       'ts=${entry.timestamp.toIso8601String()}',
     );
@@ -211,7 +210,7 @@ Future<void> _startBlocking(
   }
 
   final initial = await vpn.getStatus();
-  print(
+  debugPrint(
     '[VPN_SMOKE] initial permission=${initial.permissionGranted} '
     'running=${initial.isRunning}',
   );
@@ -219,7 +218,7 @@ Future<void> _startBlocking(
   var permissionGranted = initial.permissionGranted;
   if (!permissionGranted) {
     final requestResult = await vpn.requestPermission();
-    print('[VPN_SMOKE] requestPermission returned=$requestResult');
+    debugPrint('[VPN_SMOKE] requestPermission returned=$requestResult');
     final stopwatch = Stopwatch()..start();
     while (stopwatch.elapsed < const Duration(seconds: 30)) {
       await Future<void>.delayed(const Duration(milliseconds: 500));
@@ -243,7 +242,7 @@ Future<void> _startBlocking(
     blockedDomains: <String>[normalizedDomain],
   );
   startWatch.stop();
-  print('[VPN_SMOKE] startVpn returned=$started domain=$normalizedDomain');
+  debugPrint('[VPN_SMOKE] startVpn returned=$started domain=$normalizedDomain');
   if (!started) {
     fail('startVpn returned false.');
   }
@@ -254,14 +253,14 @@ Future<void> _startBlocking(
     blockedDomains: <String>[normalizedDomain],
   );
   updateWatch.stop();
-  print('[VPN_SMOKE] updateFilterRules returned=$updated');
+  debugPrint('[VPN_SMOKE] updateFilterRules returned=$updated');
 
   final firstStatusWatch = Stopwatch()..start();
   await Future<void>.delayed(const Duration(seconds: 2));
   await _printStatus(vpn);
   firstStatusWatch.stop();
   total.stop();
-  print(
+  debugPrint(
     '[VPN_SMOKE_TIMING_BLOCK] permissionMs=${permissionWatch.elapsedMilliseconds} '
     'startVpnMs=${startWatch.elapsedMilliseconds} '
     'updateRulesMs=${updateWatch.elapsedMilliseconds} '
@@ -280,7 +279,7 @@ Future<void> _startBlocking(
 
 Future<void> _stopVpn(VpnService vpn) async {
   final stopped = await vpn.stopVpn();
-  print('[VPN_SMOKE] stopVpn returned=$stopped');
+  debugPrint('[VPN_SMOKE] stopVpn returned=$stopped');
   await Future<void>.delayed(const Duration(seconds: 1));
   await _printStatus(vpn);
 }
@@ -304,7 +303,7 @@ Future<void> _startHold(
 Future<void> _clearLogs(VpnService vpn) async {
   final clearedLogs = await vpn.clearDnsQueryLogs();
   final clearedCache = await vpn.clearRuleCache();
-  print(
+  debugPrint(
     '[VPN_SMOKE] clearDnsQueryLogs=$clearedLogs clearRuleCache=$clearedCache',
   );
 }
@@ -314,7 +313,7 @@ Future<void> _evaluate(VpnService vpn) async {
       .trim()
       .toLowerCase();
   final evaluation = await vpn.evaluateDomainPolicy(input);
-  print(
+  debugPrint(
     '[VPN_SMOKE] evaluate input=${evaluation.inputDomain} '
     'normalized=${evaluation.normalizedDomain} blocked=${evaluation.blocked} '
     'matchedRule=${evaluation.matchedRule}',

@@ -1,6 +1,4 @@
 
-// ignore_for_file: avoid_print
-
 import 'dart:async';
 
 import 'package:cloud_firestore/cloud_firestore.dart';
@@ -247,7 +245,7 @@ Future<void> _runSetup(String runId) async {
   );
   final pairingCode = await pairingService.generatePairingCode(child.id);
 
-  print(
+  debugPrint(
     '[SYNC_STRESS_SETUP] runId=$runId parentId=$parentId childId=${child.id} '
     'email=$email pairingCode=$pairingCode',
   );
@@ -311,7 +309,7 @@ Future<void> _runDrive(String runId) async {
       childId: childId,
     );
     final savedAtMs = DateTime.now().millisecondsSinceEpoch;
-    print(
+    debugPrint(
       '[SYNC_STRESS_DRIVE] seq=${op.seq} opId=${op.id} kind=${op.kind} '
       'startedAtMs=$startedAtMs savedAtMs=$savedAtMs',
     );
@@ -332,7 +330,7 @@ Future<void> _runDrive(String runId) async {
   final parentFinalManualOk = manualMode == null;
   final finalStateOk = parentFinalPolicyOk && parentFinalPauseOk && parentFinalManualOk;
 
-  print(
+  debugPrint(
     '[SYNC_STRESS_DRIVE_FINAL] finalStateOk=$finalStateOk '
     'parentFinalPolicyOk=$parentFinalPolicyOk '
     'parentFinalPauseOk=$parentFinalPauseOk '
@@ -388,7 +386,7 @@ Future<void> _runObserve(String runId, WidgetTester tester) async {
   var hasPermission = await vpn.hasVpnPermission();
   if (!hasPermission) {
     final requested = await vpn.requestPermission();
-    print('[SYNC_STRESS_OBSERVE] requestPermission returned=$requested');
+    debugPrint('[SYNC_STRESS_OBSERVE] requestPermission returned=$requested');
     final waitUntil = DateTime.now().add(const Duration(seconds: 45));
     while (DateTime.now().isBefore(waitUntil)) {
       await Future<void>.delayed(const Duration(milliseconds: 500));
@@ -427,9 +425,9 @@ Future<void> _runObserve(String runId, WidgetTester tester) async {
   );
   await tester.pump(const Duration(seconds: 2));
 
-  print('[SYNC_STRESS_OBSERVE] ready runId=$runId childId=$childId');
+  debugPrint('[SYNC_STRESS_OBSERVE] ready runId=$runId childId=$childId');
   var lastObservedBlocked = _isBlocked(await vpn.getStatus());
-  print('[SYNC_STRESS_OBSERVE] initialBlocked=$lastObservedBlocked');
+  debugPrint('[SYNC_STRESS_OBSERVE] initialBlocked=$lastObservedBlocked');
 
   for (final op in _operations) {
     final timeout = op.seq == 1
@@ -444,7 +442,7 @@ Future<void> _runObserve(String runId, WidgetTester tester) async {
     );
     if (sample == null) {
       final last = await vpn.getStatus();
-      print(
+      debugPrint(
         '[SYNC_STRESS_OBSERVE_RESULT] seq=${op.seq} opId=${op.id} '
         'status=lost reason=state_not_enforced '
         'enforcedAtMs=-1 cats=${last.blockedCategoryCount} '
@@ -454,7 +452,7 @@ Future<void> _runObserve(String runId, WidgetTester tester) async {
     }
 
     lastObservedBlocked = _isBlocked(sample.status);
-    print(
+    debugPrint(
       '[SYNC_STRESS_OBSERVE_RESULT] seq=${op.seq} opId=${op.id} '
       'status=enforced enforcedAtMs=${sample.enforcedAtMs} '
       'cats=${sample.status.blockedCategoryCount} '
@@ -487,7 +485,7 @@ Future<void> _runObserve(String runId, WidgetTester tester) async {
   final finalStateOk =
       finalPolicyClear && finalPauseClear && finalManualClear && finalVpnClear;
 
-  print(
+  debugPrint(
     '[SYNC_STRESS_OBSERVE_FINAL] finalStateOk=$finalStateOk '
     'finalPolicyClear=$finalPolicyClear finalPauseClear=$finalPauseClear '
     'finalManualClear=$finalManualClear finalVpnClear=$finalVpnClear '

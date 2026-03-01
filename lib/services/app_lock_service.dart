@@ -1,5 +1,6 @@
 import 'package:flutter/foundation.dart';
 import 'package:local_auth/local_auth.dart';
+import 'package:trustbridge_app/core/utils/app_logger.dart';
 
 class AppLockService extends ChangeNotifier {
   AppLockService._();
@@ -35,7 +36,7 @@ class AppLockService extends ChangeNotifier {
       final enrolled = await _localAuth.getAvailableBiometrics();
       return enrolled.isNotEmpty;
     } catch (error) {
-      debugPrint('[AppLock] Biometric capability check failed: $error');
+      AppLogger.debug('[AppLock] Biometric capability check failed: $error');
       return false;
     }
   }
@@ -54,7 +55,7 @@ class AppLockService extends ChangeNotifier {
       }
       return success;
     } catch (error) {
-      debugPrint('[AppLock] Biometric authentication failed: $error');
+      AppLogger.debug('[AppLock] Biometric authentication failed: $error');
       return false;
     }
   }

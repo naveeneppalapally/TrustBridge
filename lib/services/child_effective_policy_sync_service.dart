@@ -1,7 +1,7 @@
 import 'dart:async';
+import 'package:trustbridge_app/core/utils/app_logger.dart';
 
 import 'package:cloud_firestore/cloud_firestore.dart';
-import 'package:flutter/foundation.dart';
 
 import 'pairing_service.dart';
 import 'vpn_service.dart';
@@ -50,10 +50,10 @@ class ChildEffectivePolicySyncService {
           unawaited(_applySnapshot(snapshot));
         },
         onError: (Object error) {
-          debugPrint('[ChildPolicySync] listener error: $error');
+          AppLogger.debug('[ChildPolicySync] listener error: $error');
         },
       );
-      debugPrint(
+      AppLogger.debug(
           '[ChildPolicySync] started childId=$childId parentId=$parentId');
     } finally {
       _starting = false;
@@ -152,7 +152,7 @@ class ChildEffectivePolicySyncService {
       if (updated && vpnRunning && version != null) {
         _lastAppliedVersion = version;
       }
-      debugPrint(
+      AppLogger.debug(
         '[ChildPolicySync] applied version=${version ?? -1} '
         'cats=${categories.length} domains=${domains.length} '
         'updated=$updated vpnRunning=$vpnRunning',
@@ -160,7 +160,7 @@ class ChildEffectivePolicySyncService {
     } catch (error) {
       applyStatus = 'error';
       applyError = '$error';
-      debugPrint('[ChildPolicySync] apply failed: $error');
+      AppLogger.debug('[ChildPolicySync] apply failed: $error');
     } finally {
       applyStopwatch.stop();
       await _writePolicyApplyAck(
@@ -227,7 +227,7 @@ class ChildEffectivePolicySyncService {
           .doc(deviceId)
           .set(payload, SetOptions(merge: true));
     } catch (error) {
-      debugPrint('[ChildPolicySync] policy_apply_acks write failed: $error');
+      AppLogger.debug('[ChildPolicySync] policy_apply_acks write failed: $error');
     }
   }
 

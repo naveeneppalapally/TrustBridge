@@ -1,5 +1,6 @@
 import 'dart:async';
 import 'dart:convert';
+import 'package:trustbridge_app/core/utils/app_logger.dart';
 
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:flutter/material.dart';
@@ -472,7 +473,7 @@ class _BlockCategoriesScreenState extends State<BlockCategoriesScreen>
           childId: widget.child.id,
         );
       } catch (error) {
-        debugPrint('[BlockApps] installed apps refresh failed: $error');
+        AppLogger.debug('[BlockApps] installed apps refresh failed: $error');
       }
 
       try {
@@ -482,7 +483,7 @@ class _BlockCategoriesScreenState extends State<BlockCategoriesScreen>
           childId: widget.child.id,
         );
       } catch (error) {
-        debugPrint('[BlockApps] observed domains refresh failed: $error');
+        AppLogger.debug('[BlockApps] observed domains refresh failed: $error');
       }
 
       final baseApps = fetchedApps ??
@@ -540,7 +541,7 @@ class _BlockCategoriesScreenState extends State<BlockCategoriesScreen>
         _installedAppIconBytesCache.clear();
       });
     } catch (error) {
-      debugPrint('[BlockApps] refresh failed: $error');
+      AppLogger.debug('[BlockApps] refresh failed: $error');
     } finally {
       if (mounted) {
         setState(() {

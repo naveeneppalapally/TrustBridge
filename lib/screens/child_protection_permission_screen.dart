@@ -1,4 +1,5 @@
 import 'dart:async';
+import 'package:trustbridge_app/core/utils/app_logger.dart';
 
 import 'package:flutter/material.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
@@ -151,7 +152,7 @@ class _ChildProtectionPermissionScreenState
     try {
       await _saveDeviceAdminState(deviceAdminActive).timeout(_backgroundOpTimeout);
     } catch (error) {
-      debugPrint('[ChildSetup] saveDeviceAdminState skipped: $error');
+      AppLogger.debug('[ChildSetup] saveDeviceAdminState skipped: $error');
     }
 
     if (!mounted) {
@@ -199,7 +200,7 @@ class _ChildProtectionPermissionScreenState
     try {
       await operation().timeout(_backgroundOpTimeout);
     } catch (error) {
-      debugPrint('[ChildSetup] $label skipped: $error');
+      AppLogger.debug('[ChildSetup] $label skipped: $error');
     }
   }
 

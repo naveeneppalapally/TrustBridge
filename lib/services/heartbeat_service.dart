@@ -2,6 +2,7 @@ import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:firebase_auth/firebase_auth.dart';
 import 'package:flutter/foundation.dart';
 import 'package:workmanager/workmanager.dart';
+import 'package:trustbridge_app/core/utils/app_logger.dart';
 
 import 'pairing_service.dart';
 import 'vpn_service.dart';
@@ -85,7 +86,7 @@ class HeartbeatService {
       }
       if (_pairingServiceOverride == null &&
           FirebaseAuth.instance.currentUser == null) {
-        debugPrint(
+        AppLogger.debug(
           '[Heartbeat] Skipped: no signed-in Firebase session for child mode.',
         );
         return;
@@ -99,7 +100,7 @@ class HeartbeatService {
             authUid.isNotEmpty &&
             authUid != normalizedParentId &&
             !isAnonymousSession) {
-          debugPrint(
+          AppLogger.debug(
             '[Heartbeat] Unexpected non-anonymous auth session for child mode. '
             'expectedParentId=$normalizedParentId currentUid=$authUid '
             'attempting anonymous re-auth.',
@@ -110,7 +111,7 @@ class HeartbeatService {
             authUser = credential.user;
             authUid = authUser?.uid.trim();
           } catch (error) {
-            debugPrint(
+            AppLogger.debug(
               '[Heartbeat] Anonymous re-auth failed; heartbeat skipped: $error',
             );
             return;
@@ -119,7 +120,7 @@ class HeartbeatService {
         if (authUid != null &&
             authUid.isNotEmpty &&
             authUid != normalizedParentId) {
-          debugPrint(
+          AppLogger.debug(
             '[Heartbeat] Parent mismatch detected. '
             'expectedParentId=$normalizedParentId currentUid=$authUid',
           );
@@ -140,11 +141,11 @@ class HeartbeatService {
             .doc(normalizedChildId)
             .get();
       } catch (error) {
-        debugPrint('[Heartbeat] child lookup failed: $error');
+        AppLogger.debug('[Heartbeat] child lookup failed: $error');
         return;
       }
       if (!childSnapshot.exists) {
-        debugPrint(
+        AppLogger.debug(
           '[Heartbeat] Child profile missing; clearing local pairing and '
           'protection childId=$normalizedChildId deviceId=$deviceId',
         );
@@ -156,7 +157,7 @@ class HeartbeatService {
       if (childParentId == null ||
           childParentId.isEmpty ||
           childParentId != normalizedParentId) {
-        debugPrint(
+        AppLogger.debug(
           '[Heartbeat] Child profile ownership mismatch; clearing local '
           'pairing/protection childId=$normalizedChildId '
           'expectedParent=$normalizedParentId actualParent=$childParentId',
@@ -177,7 +178,7 @@ class HeartbeatService {
             deviceId: deviceId,
           );
           if (!repaired) {
-            debugPrint(
+            AppLogger.debug(
               '[Heartbeat] Device is no longer assigned to child profile; '
               'clearing local pairing/protection childId=$normalizedChildId '
               'deviceId=$deviceId',
@@ -217,7 +218,7 @@ class HeartbeatService {
           },
           SetOptions(merge: true),
         );
-        debugPrint(
+        AppLogger.debug(
           '[ProtectionStatusWrite] path=devices/$deviceId '
           'childId=$normalizedChildId vpnActive=${status.isRunning} '
           'atEpochMs=$nowEpochMs',
@@ -225,7 +226,7 @@ class HeartbeatService {
       } catch (error) {
         // Root heartbeat telemetry is best-effort. Child-level device linkage
         // and local protection must remain active even if this write is denied.
-        debugPrint('[Heartbeat] root device heartbeat write skipped: $error');
+        AppLogger.debug('[Heartbeat] root device heartbeat write skipped: $error');
       }
 
       try {
@@ -255,16 +256,16 @@ class HeartbeatService {
           },
           SetOptions(merge: true),
         );
-        debugPrint(
+        AppLogger.debug(
           '[ProtectionStatusWrite] path=children/$normalizedChildId/devices/$deviceId '
           'vpnActive=${status.isRunning} atEpochMs=$nowEpochMs',
         );
       } catch (error) {
-        debugPrint('[Heartbeat] child device heartbeat write skipped: $error');
+        AppLogger.debug('[Heartbeat] child device heartbeat write skipped: $error');
       }
     } catch (error) {
       // Heartbeat failures are intentionally silent.
-      debugPrint('[Heartbeat] send failed: $error');
+      AppLogger.debug('[Heartbeat] send failed: $error');
     }
   }
 
@@ -287,7 +288,7 @@ class HeartbeatService {
         SetOptions(merge: true),
       );
     } catch (error) {
-      debugPrint('[Heartbeat] child device link write failed: $error');
+      AppLogger.debug('[Heartbeat] child device link write failed: $error');
       return false;
     }
 
@@ -299,7 +300,7 @@ class HeartbeatService {
         },
       );
     } catch (error) {
-      debugPrint('[Heartbeat] child deviceIds refresh skipped: $error');
+      AppLogger.debug('[Heartbeat] child deviceIds refresh skipped: $error');
       // Device linkage doc is still present; continue with heartbeat flow.
     }
     return true;

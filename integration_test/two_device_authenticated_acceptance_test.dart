@@ -332,7 +332,7 @@ Future<void> _runChildValidation(
     if (!pairingResult.success) {
       // Diagnostic for real-device acceptance runs.
       // ignore: avoid_print
-      print(
+      debugPrint(
         'TB child_validate pairing failed: '
         'error=${pairingResult.error} '
         'childId=${pairingResult.childId} '

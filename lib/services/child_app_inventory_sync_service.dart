@@ -1,7 +1,7 @@
 import 'dart:convert';
+import 'package:trustbridge_app/core/utils/app_logger.dart';
 
 import 'package:cloud_firestore/cloud_firestore.dart';
-import 'package:flutter/foundation.dart';
 
 import '../config/rollout_flags.dart';
 import '../models/installed_app_info.dart';
@@ -101,7 +101,7 @@ class ChildAppInventorySyncService {
       _lastUploadedAt = now;
       return true;
     } catch (error) {
-      debugPrint('[ChildAppInventorySync] failed: $error');
+      AppLogger.debug('[ChildAppInventorySync] failed: $error');
       return false;
     }
   }

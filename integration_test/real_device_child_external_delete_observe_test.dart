@@ -1,5 +1,3 @@
-// ignore_for_file: avoid_print
-
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:firebase_auth/firebase_auth.dart';
 import 'package:firebase_core/firebase_core.dart';
@@ -85,7 +83,7 @@ void main() {
       var permissionGranted = await vpn.hasVpnPermission();
       if (!permissionGranted) {
         final requested = await vpn.requestPermission();
-        print('[EXTERNAL_DELETE_OBSERVE] requestPermission returned=$requested');
+        debugPrint('[EXTERNAL_DELETE_OBSERVE] requestPermission returned=$requested');
         final granted = await _waitUntil(
           predicate: () => vpn.hasVpnPermission(),
           timeout: const Duration(seconds: 45),
@@ -136,7 +134,7 @@ void main() {
       );
       await tester.pumpAndSettle(const Duration(seconds: 2));
 
-      print(
+      debugPrint(
         '[EXTERNAL_DELETE_OBSERVE] ready '
         'parentId=$parentId childId=$childId deviceId=$deviceId running=true',
       );
@@ -193,7 +191,7 @@ void main() {
       );
 
       final waitForDeleteMs = deleteDetectedAt.difference(waitStart).inMilliseconds;
-      print(
+      debugPrint(
         '[EXTERNAL_DELETE_OBSERVE] '
         'deleteDetectedMs=$waitForDeleteMs '
         'vpnStopped=$vpnStopped '

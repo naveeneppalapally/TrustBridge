@@ -1,6 +1,7 @@
 import 'package:firebase_core/firebase_core.dart';
 import 'package:flutter/widgets.dart';
 import 'package:workmanager/workmanager.dart';
+import 'package:trustbridge_app/core/utils/app_logger.dart';
 
 import '../config/blocklist_sources.dart';
 import '../firebase_options.dart';
@@ -36,7 +37,7 @@ void callbackDispatcher() {
       await BlocklistSyncService().syncAll(categories);
       return true;
     } catch (error) {
-      debugPrint('[BlocklistWork] Background sync failed: $error');
+      AppLogger.debug('[BlocklistWork] Background sync failed: $error');
       return false;
     }
   });
@@ -63,21 +64,21 @@ class BlocklistWorkmanagerService {
     _initialized = true;
   }
 
-  /// Registers weekly periodic blocklist sync for enabled categories.
-  static Future<void> registerWeeklySync(
+  /// Registers daily periodic blocklist sync for enabled categories.
+  static Future<void> registerDailySync(
     List<BlocklistCategory> enabledCategories,
   ) async {
     await initialize();
 
     if (enabledCategories.isEmpty) {
-      await cancelWeeklySync();
+      await cancelDailySync();
       return;
     }
 
     await Workmanager().registerPeriodicTask(
       _uniqueTaskName,
       taskName,
-      frequency: const Duration(days: 7),
+      frequency: const Duration(days: 1),
       constraints: Constraints(
         networkType: NetworkType.connected,
         requiresBatteryNotLow: true,
@@ -89,8 +90,8 @@ class BlocklistWorkmanagerService {
     );
   }
 
-  /// Cancels scheduled weekly blocklist sync.
-  static Future<void> cancelWeeklySync() async {
+  /// Cancels scheduled daily blocklist sync.
+  static Future<void> cancelDailySync() async {
     await Workmanager().cancelByUniqueName(_uniqueTaskName);
   }
 }
