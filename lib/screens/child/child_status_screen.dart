@@ -2263,13 +2263,16 @@ class _ChildStatusScreenState extends State<ChildStatusScreen>
     final activeModeOverride = !RolloutFlags.modeAppOverrides || modeKey == null
         ? null
         : child.policy.modeOverrides[modeKey];
+    final suppressModeForceBlocks = modeKey == 'free';
     if (activeModeOverride != null) {
-      effectiveServices.addAll(
-        activeModeOverride.forceBlockServices
-            .map((serviceId) => serviceId.trim().toLowerCase())
-            .where((serviceId) => serviceId.isNotEmpty)
-            .where(ServiceDefinitions.byId.containsKey),
-      );
+      if (!suppressModeForceBlocks) {
+        effectiveServices.addAll(
+          activeModeOverride.forceBlockServices
+              .map((serviceId) => serviceId.trim().toLowerCase())
+              .where((serviceId) => serviceId.isNotEmpty)
+              .where(ServiceDefinitions.byId.containsKey),
+        );
+      }
       effectiveServices.removeAll(
         activeModeOverride.forceAllowServices
             .map((serviceId) => serviceId.trim().toLowerCase())
@@ -2286,11 +2289,13 @@ class _ChildStatusScreenState extends State<ChildStatusScreen>
       domains: domains,
     );
     if (activeModeOverride != null) {
-      domains.addAll(
-        activeModeOverride.forceBlockDomains
-            .map((domain) => domain.trim().toLowerCase())
-            .where((domain) => domain.isNotEmpty),
-      );
+      if (!suppressModeForceBlocks) {
+        domains.addAll(
+          activeModeOverride.forceBlockDomains
+              .map((domain) => domain.trim().toLowerCase())
+              .where((domain) => domain.isNotEmpty),
+        );
+      }
       domains.removeAll(
         activeModeOverride.forceAllowDomains
             .map((domain) => domain.trim().toLowerCase())
@@ -2308,11 +2313,13 @@ class _ChildStatusScreenState extends State<ChildStatusScreen>
       );
       blockedPackages.addAll(customPackages);
       if (activeModeOverride != null) {
-        blockedPackages.addAll(
-          activeModeOverride.forceBlockPackages
-              .map((pkg) => pkg.trim().toLowerCase())
-              .where((pkg) => pkg.isNotEmpty),
-        );
+        if (!suppressModeForceBlocks) {
+          blockedPackages.addAll(
+            activeModeOverride.forceBlockPackages
+                .map((pkg) => pkg.trim().toLowerCase())
+                .where((pkg) => pkg.isNotEmpty),
+          );
+        }
         blockedPackages.removeAll(
           activeModeOverride.forceAllowPackages
               .map((pkg) => pkg.trim().toLowerCase())
