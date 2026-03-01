@@ -852,9 +852,6 @@ class MainActivity : FlutterFragmentActivity() {
         if (normalizedPackage.isEmpty()) {
             return false
         }
-        if (normalizedPackage.equals(this.packageName, ignoreCase = true)) {
-            return false
-        }
         val applicationInfo = try {
             packageManager.getApplicationInfo(normalizedPackage, 0)
         } catch (_: Exception) {
