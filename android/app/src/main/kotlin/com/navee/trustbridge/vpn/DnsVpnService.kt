@@ -1753,6 +1753,14 @@ class DnsVpnService : VpnService() {
             }).map(::normalizeDomainToken)
                 .filter { it.isNotEmpty() }
         )
+        if (suppressModeForceBlocks) {
+            domainSet.removeAll(
+                modeBlockedDomains
+                    .map(::normalizeDomainToken)
+                    .filter { it.isNotEmpty() }
+                    .toSet()
+            )
+        }
         if (!suppressModeForceBlocks) {
             domainSet.addAll(
                 modeBlockedDomains
@@ -1777,6 +1785,14 @@ class DnsVpnService : VpnService() {
             }).map { it.trim().lowercase() }
                 .filter { it.isNotEmpty() }
         )
+        if (suppressModeForceBlocks) {
+            blockedPackageSet.removeAll(
+                modeBlockedPackages
+                    .map { it.trim().lowercase() }
+                    .filter { it.isNotEmpty() }
+                    .toSet()
+            )
+        }
         if (!suppressModeForceBlocks) {
             blockedPackageSet.addAll(
                 modeBlockedPackages

@@ -1229,6 +1229,39 @@ class FirestoreService {
     });
   }
 
+  Future<void> updateParentContactInfo({
+    required String parentId,
+    String? email,
+    String? displayName,
+  }) async {
+    if (parentId.trim().isEmpty) {
+      throw ArgumentError.value(parentId, 'parentId', 'Parent ID is required.');
+    }
+
+    final updates = <String, dynamic>{};
+    if (email != null) {
+      final normalized = email.trim();
+      if (normalized.isNotEmpty) {
+        updates['email'] = normalized;
+      }
+    }
+    if (displayName != null) {
+      final normalized = displayName.trim();
+      if (normalized.isNotEmpty) {
+        updates['displayName'] = normalized;
+      }
+    }
+    if (updates.isEmpty) {
+      return;
+    }
+
+    updates['updatedAt'] = FieldValue.serverTimestamp();
+    await _firestore.collection('parents').doc(parentId).set(
+          updates,
+          SetOptions(merge: true),
+        );
+  }
+
   Future<List<ChildProfile>> getChildren(String parentId) async {
     final normalizedParentId = parentId.trim();
     if (normalizedParentId.isEmpty) {
@@ -3214,6 +3247,7 @@ class FirestoreService {
       final activeModeOverride = activeModeKey == null
           ? const <String, dynamic>{}
           : _dynamicMap(normalizedModeOverrides[activeModeKey]);
+      final suppressModeForceBlocks = activeModeKey == 'free';
       final modeForceBlockServices = _normalizeServiceIds(
         _dynamicStringList(activeModeOverride['forceBlockServices']),
       );
@@ -3232,7 +3266,7 @@ class FirestoreService {
       final modeForceAllowDomains = _normalizeStringIterable(
         _dynamicStringList(activeModeOverride['forceAllowDomains']),
       );
-      final modeBlockedPackages = protectionEnabled
+      final modeBlockedPackages = protectionEnabled && !suppressModeForceBlocks
           ? (<String>{
               ...ServiceDefinitions.resolvePackages(
                 blockedCategories: const <String>[],
@@ -3252,7 +3286,7 @@ class FirestoreService {
             }.toList()
             ..sort())
           : <String>[];
-      final modeBlockedDomains = protectionEnabled
+      final modeBlockedDomains = protectionEnabled && !suppressModeForceBlocks
           ? (<String>{
               ...ServiceDefinitions.resolveDomains(
                 blockedCategories: const <String>[],
