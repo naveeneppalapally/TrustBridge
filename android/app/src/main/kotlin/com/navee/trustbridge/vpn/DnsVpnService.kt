@@ -1729,10 +1729,15 @@ class DnsVpnService : VpnService() {
         val modeAllowedPackages =
             parsePolicyStringList(snapshotData["modeAllowedPackagesResolved"])
         val snapshotParentId = (snapshotData["parentId"] as? String)?.trim().orEmpty()
+        val activeModeKey = (snapshotData["activeModeKey"] as? String)
+            ?.trim()
+            ?.lowercase()
+            .orEmpty()
         val nowEpochMs = System.currentTimeMillis()
         val pausedUntilEpochMs = parseEpochMillis(snapshotData["pausedUntil"])
         val pauseActive = pausedUntilEpochMs != null && pausedUntilEpochMs > nowEpochMs
         val activeManualMode = parseActiveManualMode(snapshotData["manualMode"], nowEpochMs)
+        val suppressModeForceBlocks = activeModeKey == "free" || activeManualMode == "free"
 
         val categories = buildEffectiveListenerCategories(
             baseCategories = baseCategories,
@@ -1748,11 +1753,13 @@ class DnsVpnService : VpnService() {
             }).map(::normalizeDomainToken)
                 .filter { it.isNotEmpty() }
         )
-        domainSet.addAll(
-            modeBlockedDomains
-                .map(::normalizeDomainToken)
-                .filter { it.isNotEmpty() }
-        )
+        if (!suppressModeForceBlocks) {
+            domainSet.addAll(
+                modeBlockedDomains
+                    .map(::normalizeDomainToken)
+                    .filter { it.isNotEmpty() }
+            )
+        }
         domainSet.removeAll(
             modeAllowedDomains
                 .map(::normalizeDomainToken)
@@ -1770,11 +1777,13 @@ class DnsVpnService : VpnService() {
             }).map { it.trim().lowercase() }
                 .filter { it.isNotEmpty() }
         )
-        blockedPackageSet.addAll(
-            modeBlockedPackages
-                .map { it.trim().lowercase() }
-                .filter { it.isNotEmpty() }
-        )
+        if (!suppressModeForceBlocks) {
+            blockedPackageSet.addAll(
+                modeBlockedPackages
+                    .map { it.trim().lowercase() }
+                    .filter { it.isNotEmpty() }
+            )
+        }
         blockedPackageSet.removeAll(
             modeAllowedPackages
                 .map { it.trim().lowercase() }
