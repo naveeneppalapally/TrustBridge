@@ -1,3 +1,5 @@
+import 'dart:async';
+
 import 'package:firebase_core/firebase_core.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/scheduler.dart';
@@ -279,31 +281,60 @@ class _VpnStatusIndicator extends StatefulWidget {
   State<_VpnStatusIndicator> createState() => _VpnStatusIndicatorState();
 }
 
-class _VpnStatusIndicatorState extends State<_VpnStatusIndicator> {
+class _VpnStatusIndicatorState extends State<_VpnStatusIndicator>
+    with WidgetsBindingObserver {
   final VpnService _vpnService = VpnService();
-  late Future<VpnStatus> _statusFuture;
+  Timer? _refreshTimer;
+  VpnStatus? _status;
 
   @override
   void initState() {
     super.initState();
-    _statusFuture = _vpnService.getStatus();
+    WidgetsBinding.instance.addObserver(this);
+    unawaited(_refreshStatus());
+    _refreshTimer = Timer.periodic(const Duration(seconds: 3), (_) {
+      unawaited(_refreshStatus());
+    });
+  }
+
+  @override
+  void dispose() {
+    WidgetsBinding.instance.removeObserver(this);
+    _refreshTimer?.cancel();
+    super.dispose();
+  }
+
+  @override
+  void didChangeAppLifecycleState(AppLifecycleState state) {
+    if (state == AppLifecycleState.resumed) {
+      unawaited(_refreshStatus());
+    }
+  }
+
+  Future<void> _refreshStatus() async {
+    final status = await _vpnService.getStatus();
+    if (!mounted) {
+      return;
+    }
+    final previousRunning = _status?.isRunning;
+    if (previousRunning == status.isRunning && _status != null) {
+      return;
+    }
+    setState(() {
+      _status = status;
+    });
   }
 
   @override
   Widget build(BuildContext context) {
-    return FutureBuilder<VpnStatus>(
-      future: _statusFuture,
-      builder: (context, snapshot) {
-        final running = snapshot.data?.isRunning == true;
-        return Tooltip(
-          message: running ? 'Protection active' : 'Protection needs attention',
-          child: Icon(
-            Icons.circle,
-            size: 12,
-            color: running ? Colors.green : Colors.red,
-          ),
-        );
-      },
+    final running = _status?.isRunning == true;
+    return Tooltip(
+      message: running ? 'Protection active' : 'Protection needs attention',
+      child: Icon(
+        Icons.circle,
+        size: 12,
+        color: running ? Colors.green : Colors.red,
+      ),
     );
   }
 }
