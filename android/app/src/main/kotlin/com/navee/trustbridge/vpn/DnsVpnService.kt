@@ -35,6 +35,7 @@ import com.google.firebase.firestore.FieldValue
 import com.google.firebase.Timestamp
 import com.google.firebase.firestore.FirebaseFirestore
 import com.google.firebase.firestore.FirebaseFirestoreException
+import com.google.firebase.firestore.FirebaseFirestoreSettings
 import com.google.firebase.firestore.ListenerRegistration
 import com.google.firebase.firestore.SetOptions
 import com.google.android.gms.tasks.Tasks
@@ -357,6 +358,10 @@ class DnsVpnService : VpnService() {
         super.onCreate()
         try {
             FirebaseApp.initializeApp(this)
+            val firestore = FirebaseFirestore.getInstance()
+            firestore.firestoreSettings = FirebaseFirestoreSettings.Builder()
+                .setPersistenceEnabled(false)
+                .build()
         } catch (error: Exception) {
             Log.w(TAG, "Firebase init failed in VPN process", error)
         }
