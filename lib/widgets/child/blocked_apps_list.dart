@@ -5,24 +5,27 @@ class BlockedAppsList extends StatelessWidget {
   const BlockedAppsList({
     super.key,
     required this.blockedAppKeys,
+    this.reasonsByAppKey = const <String, String>{},
     this.onAppTap,
   });
 
   /// Canonical app keys (e.g. instagram, tiktok).
   final List<String> blockedAppKeys;
+  final Map<String, String> reasonsByAppKey;
 
   /// Optional app tap callback with friendly app name.
   final void Function(String appName)? onAppTap;
 
-  static const Map<String, ({String emoji, String name})> _apps = {
-    'instagram': (emoji: '📸', name: 'Instagram'),
-    'tiktok': (emoji: '🎵', name: 'TikTok'),
-    'twitter': (emoji: '🐦', name: 'Twitter / X'),
-    'snapchat': (emoji: '👻', name: 'Snapchat'),
-    'facebook': (emoji: '👥', name: 'Facebook'),
-    'youtube': (emoji: '▶️', name: 'YouTube'),
-    'reddit': (emoji: '🤖', name: 'Reddit'),
-    'roblox': (emoji: '🎮', name: 'Roblox'),
+  static const Map<String, String> _apps = {
+    'instagram': 'Instagram',
+    'tiktok': 'TikTok',
+    'twitter': 'Twitter / X',
+    'snapchat': 'Snapchat',
+    'facebook': 'Facebook',
+    'youtube': 'YouTube',
+    'reddit': 'Reddit',
+    'roblox': 'Roblox',
+    'zee5': 'ZEE5',
   };
 
   @override
@@ -62,13 +65,27 @@ class BlockedAppsList extends StatelessWidget {
             )
           else
             ...visible.map((key) {
-              final mapping = _apps[key];
-              final appName = mapping?.name ?? _toLabel(key);
-              final emoji = mapping?.emoji ?? '📱';
+              final appName = _apps[key] ?? _toLabel(key);
+              final reason = reasonsByAppKey[key]?.trim() ?? '';
               return ListTile(
                 contentPadding: EdgeInsets.zero,
                 dense: true,
-                title: Text('$emoji $appName'),
+                leading: CircleAvatar(
+                  radius: 14,
+                  backgroundColor: Theme.of(context)
+                      .colorScheme
+                      .primary
+                      .withValues(alpha: 0.14),
+                  child: Text(
+                    appName.isEmpty ? '?' : appName[0].toUpperCase(),
+                    style: TextStyle(
+                      color: Theme.of(context).colorScheme.primary,
+                      fontWeight: FontWeight.w700,
+                    ),
+                  ),
+                ),
+                title: Text(appName),
+                subtitle: reason.isEmpty ? null : Text(reason),
                 onTap: onAppTap == null ? null : () => onAppTap!(appName),
               );
             }),

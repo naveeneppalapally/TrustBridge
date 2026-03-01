@@ -1,3 +1,6 @@
+import 'dart:convert';
+import 'dart:typed_data';
+
 import 'package:fl_chart/fl_chart.dart';
 import 'package:flutter/material.dart';
 
@@ -37,26 +40,15 @@ class UsageReportsScreen extends StatefulWidget {
 }
 
 class _UsageReportsScreenState extends State<UsageReportsScreen> {
-  AppUsageService? _appUsageService;
   AuthService? _authService;
   FirestoreService? _firestoreService;
-  NextDnsApiService? _nextDnsApiService;
   UsageReportData? _report;
   List<ChildProfile> _children = const <ChildProfile>[];
-  int? _nextDnsBlockedToday;
-  List<NextDnsDomainStat> _nextDnsTopBlockedDomains = const [];
-  bool _nextDnsConfigured = false;
-  bool _usageAccessGranted = true;
   bool _loading = true;
   String? _error;
   DateTime _selectedDay = DateTime.now();
 
   bool get _perAppUsageReportsEnabled => RolloutFlags.perAppUsageReports;
-
-  AppUsageService get _resolvedAppUsageService {
-    _appUsageService ??= widget.appUsageService ?? AppUsageService();
-    return _appUsageService!;
-  }
 
   AuthService get _resolvedAuthService {
     _authService ??= widget.authService ?? AuthService();
@@ -66,11 +58,6 @@ class _UsageReportsScreenState extends State<UsageReportsScreen> {
   FirestoreService get _resolvedFirestoreService {
     _firestoreService ??= widget.firestoreService ?? FirestoreService();
     return _firestoreService!;
-  }
-
-  NextDnsApiService get _resolvedNextDnsApiService {
-    _nextDnsApiService ??= widget.nextDnsApiService ?? NextDnsApiService();
-    return _nextDnsApiService!;
   }
 
   String? get _parentId {
@@ -116,27 +103,12 @@ class _UsageReportsScreenState extends State<UsageReportsScreen> {
         children,
         selectedDay: _selectedDay,
       );
-      final usageAccessGranted =
-          await _resolvedAppUsageService.hasUsageAccessPermission();
-      if (report == null) {
-        final localReport = await _resolvedAppUsageService.getUsageReport(
-          pastDays: 7,
-        );
-        if (localReport.hasData) {
-          report = localReport;
-        }
-      }
-      final analytics = await _loadNextDnsAnalytics();
       if (!mounted) {
         return;
       }
       setState(() {
         _report = report;
         _children = children;
-        _nextDnsConfigured = analytics.configured;
-        _nextDnsBlockedToday = analytics.blockedToday;
-        _nextDnsTopBlockedDomains = analytics.topBlockedDomains;
-        _usageAccessGranted = usageAccessGranted;
         _loading = false;
       });
     } catch (error) {
@@ -189,15 +161,6 @@ class _UsageReportsScreenState extends State<UsageReportsScreen> {
         ),
       );
     }
-    if (!_usageAccessGranted) {
-      return ListView(
-        padding: const EdgeInsets.fromLTRB(16, 12, 16, 24),
-        children: [
-          _buildUsageAccessRequiredCard(),
-        ],
-      );
-    }
-
     final report = _report;
     if (report == null || !report.hasData) {
       return ListView(
@@ -210,8 +173,6 @@ class _UsageReportsScreenState extends State<UsageReportsScreen> {
           _buildChildSummaryFallbackCard(),
           const SizedBox(height: 14),
           _buildChildUsagePendingCard(),
-          const SizedBox(height: 14),
-          _buildNextDnsAnalyticsCard(),
         ],
       );
     }
@@ -232,18 +193,12 @@ class _UsageReportsScreenState extends State<UsageReportsScreen> {
           const SizedBox(height: 14),
           _MostUsedAppsCard(report: report),
         ],
-        const SizedBox(height: 14),
-        _buildNextDnsAnalyticsCard(),
       ],
     );
   }
 
   Widget _buildChildUsagePendingCard() {
     final hasChildren = _children.isNotEmpty;
-    if (!_usageAccessGranted) {
-      return _buildUsageAccessRequiredCard();
-    }
-
     return Card(
       child: Padding(
         padding: const EdgeInsets.all(20),
@@ -264,8 +219,8 @@ class _UsageReportsScreenState extends State<UsageReportsScreen> {
             const SizedBox(height: 8),
             Text(
               hasChildren
-                  ? 'Open TrustBridge on the child phone and grant Usage Access there. '
-                      'Reports update automatically after the next heartbeat.'
+                  ? 'No recent usage logs are available yet from the child phone. '
+                      'Open TrustBridge on the child device once and keep Usage Access enabled there.'
                   : 'Add and pair a child device to start receiving reports.',
               textAlign: TextAlign.center,
             ),
@@ -278,50 +233,6 @@ class _UsageReportsScreenState extends State<UsageReportsScreen> {
         ),
       ),
     );
-  }
-
-  Widget _buildUsageAccessRequiredCard() {
-    return Card(
-      child: Padding(
-        padding: const EdgeInsets.all(20),
-        child: Column(
-          mainAxisSize: MainAxisSize.min,
-          children: [
-            const Icon(Icons.bar_chart_outlined, size: 48),
-            const SizedBox(height: 12),
-            const Text(
-              'Usage access required',
-              style: TextStyle(
-                fontSize: 18,
-                fontWeight: FontWeight.w700,
-              ),
-            ),
-            const SizedBox(height: 8),
-            const Text(
-              'To see which apps your child uses, tap here to grant access.',
-              textAlign: TextAlign.center,
-            ),
-            const SizedBox(height: 14),
-            FilledButton(
-              onPressed: _openUsageAccessSettings,
-              child: const Text('Grant Access'),
-            ),
-          ],
-        ),
-      ),
-    );
-  }
-
-  Future<void> _openUsageAccessSettings() async {
-    final opened = await _resolvedAppUsageService.openUsageAccessSettings();
-    if (!opened || !mounted) {
-      return;
-    }
-    await Future<void>.delayed(const Duration(milliseconds: 600));
-    if (!mounted) {
-      return;
-    }
-    await _load();
   }
 
   Widget _buildChildSummaryFallbackCard() {
@@ -505,6 +416,9 @@ class _UsageReportsScreenState extends State<UsageReportsScreen> {
       final selectedDailyData =
           (selectedNestedSnapshot.data() ?? selectedFlatSnapshot.data()) ??
               const <String, dynamic>{};
+      final latestDayKey = (latestData['dayKey'] as String?)?.trim() ?? '';
+      final canUseLatestForSelectedDay =
+          latestData.isNotEmpty && latestDayKey == selectedDayKey;
 
       if (selectedDailyData.isNotEmpty) {
         final totalMinutes = _toInt(selectedDailyData['totalScreenMinutes']);
@@ -554,6 +468,7 @@ class _UsageReportsScreenState extends State<UsageReportsScreen> {
               packageName: packageName,
               reportedName: (appMap['appName'] as String?)?.trim(),
             );
+            final appIconBase64 = (appMap['appIconBase64'] as String?)?.trim();
             final aggregateKey = packageName;
             final existing = appTotals[aggregateKey];
             if (existing == null) {
@@ -562,16 +477,20 @@ class _UsageReportsScreenState extends State<UsageReportsScreen> {
                 appName: appName,
                 category: _categoryFromPackage(packageName),
                 durationMs: resolvedDurationMs,
+                appIconBase64: appIconBase64,
               );
             } else {
               appTotals[aggregateKey] = existing.copyWith(
                 durationMs: existing.durationMs + resolvedDurationMs,
+                appIconBase64: existing.appIconBase64?.trim().isNotEmpty == true
+                    ? existing.appIconBase64
+                    : appIconBase64,
               );
             }
             hasAnyData = true;
           }
         }
-      } else if (latestData.isNotEmpty) {
+      } else if (canUseLatestForSelectedDay) {
         final reportTotalMs = _toInt(latestData['totalScreenTimeMs']);
         if (reportTotalMs > 0) {
           totalScreenTimeMs += reportTotalMs;
@@ -615,6 +534,7 @@ class _UsageReportsScreenState extends State<UsageReportsScreen> {
               packageName: packageName,
               reportedName: (appMap['appName'] as String?)?.trim(),
             );
+            final appIconBase64 = (appMap['appIconBase64'] as String?)?.trim();
             final existing = appTotals[packageName];
             if (existing == null) {
               appTotals[packageName] = _AggregatedAppUsage(
@@ -622,10 +542,14 @@ class _UsageReportsScreenState extends State<UsageReportsScreen> {
                 appName: appName,
                 category: _categoryFromPackage(packageName),
                 durationMs: resolvedDurationMs,
+                appIconBase64: appIconBase64,
               );
             } else {
               appTotals[packageName] = existing.copyWith(
                 durationMs: existing.durationMs + resolvedDurationMs,
+                appIconBase64: existing.appIconBase64?.trim().isNotEmpty == true
+                    ? existing.appIconBase64
+                    : appIconBase64,
               );
             }
             hasAnyData = true;
@@ -643,6 +567,7 @@ class _UsageReportsScreenState extends State<UsageReportsScreen> {
             if (durationMs <= 0) {
               continue;
             }
+            final appIconBase64 = (app['appIconBase64'] as String?)?.trim();
 
             final aggregateKey =
                 packageName.isNotEmpty ? packageName : appName.toLowerCase();
@@ -653,10 +578,14 @@ class _UsageReportsScreenState extends State<UsageReportsScreen> {
                 appName: appName.isEmpty ? 'App' : appName,
                 category: category.isEmpty ? 'Other' : category,
                 durationMs: durationMs,
+                appIconBase64: appIconBase64,
               );
             } else {
               appTotals[aggregateKey] = existing.copyWith(
                 durationMs: existing.durationMs + durationMs,
+                appIconBase64: existing.appIconBase64?.trim().isNotEmpty == true
+                    ? existing.appIconBase64
+                    : appIconBase64,
               );
             }
             hasAnyData = true;
@@ -679,22 +608,6 @@ class _UsageReportsScreenState extends State<UsageReportsScreen> {
         trendTotalsMs[index] += durationMs;
         hasAnyData = true;
       }
-
-      if (trendNestedSnapshots.every((snapshot) => !snapshot.exists) &&
-          trendFlatSnapshots.every((snapshot) => !snapshot.exists) &&
-          latestData.isNotEmpty) {
-        final trend = _parseMapList(latestData['dailyTrend']);
-        for (var index = 0;
-            index < trend.length && index < trendTotalsMs.length;
-            index++) {
-          final point = trend[index];
-          final durationMs = _toInt(point['durationMs']);
-          trendTotalsMs[index] += durationMs;
-          if (durationMs > 0) {
-            hasAnyData = true;
-          }
-        }
-      }
     }
 
     if (!hasAnyData) {
@@ -702,9 +615,10 @@ class _UsageReportsScreenState extends State<UsageReportsScreen> {
     }
 
     final trendTotalMs = trendTotalsMs.fold<int>(0, (sum, item) => sum + item);
-    final averageDailyScreenTimeMs = trendTotalMs > 0
-        ? (trendTotalMs / trendTotalsMs.length).round()
-        : (totalScreenTimeMs / 7).round();
+    final trendDaysWithData = trendTotalsMs.where((value) => value > 0).length;
+    final averageDailyScreenTimeMs = trendDaysWithData > 0
+        ? (trendTotalMs / trendDaysWithData).round()
+        : totalScreenTimeMs;
 
     final categorySlices = categoryTotalsMs.entries
         .map(
@@ -729,6 +643,7 @@ class _UsageReportsScreenState extends State<UsageReportsScreen> {
             category: entry.category,
             duration: Duration(milliseconds: entry.durationMs),
             progress: (entry.durationMs / maxAppDurationMs).clamp(0.0, 1.0),
+            appIconBase64: entry.appIconBase64,
           ),
         )
         .toList(growable: false);
@@ -801,6 +716,7 @@ class _UsageReportsScreenState extends State<UsageReportsScreen> {
     'in.mohalla.video': 'Moj',
     'com.sharechat.app': 'ShareChat',
     'in.mohalla.sharechat': 'ShareChat',
+    'com.graymatrix.did': 'ZEE5',
   };
 
   String _resolveAppName({
@@ -889,146 +805,6 @@ class _UsageReportsScreenState extends State<UsageReportsScreen> {
       ],
     );
   }
-
-  Widget _buildNextDnsAnalyticsCard() {
-    if (!_nextDnsConfigured) {
-      return const Card(
-        key: Key('usage_reports_nextdns_card'),
-        child: Padding(
-          padding: EdgeInsets.all(16),
-          child: Column(
-            crossAxisAlignment: CrossAxisAlignment.start,
-            children: [
-              Text(
-                'Web Protection Analytics',
-                style: TextStyle(fontSize: 16, fontWeight: FontWeight.w800),
-              ),
-              SizedBox(height: 8),
-              Text('Connect web profile to view blocked domain insights.'),
-            ],
-          ),
-        ),
-      );
-    }
-
-    final blockedToday = _nextDnsBlockedToday ?? 0;
-    return Card(
-      key: const Key('usage_reports_nextdns_card'),
-      elevation: 0,
-      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
-      child: Padding(
-        padding: const EdgeInsets.all(16),
-        child: Column(
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            const Text(
-              'Web Protection Analytics',
-              style: TextStyle(fontSize: 16, fontWeight: FontWeight.w800),
-            ),
-            const SizedBox(height: 8),
-            Text(
-              'Sites Blocked Today: $blockedToday',
-              key: const Key('usage_reports_nextdns_blocked_today'),
-              style: const TextStyle(
-                fontSize: 18,
-                fontWeight: FontWeight.w700,
-                color: Color(0xFF2563EB),
-              ),
-            ),
-            const SizedBox(height: 10),
-            if (_nextDnsTopBlockedDomains.isEmpty)
-              const Text('No blocked-domain samples available yet.')
-            else
-              ..._nextDnsTopBlockedDomains.map(
-                (domain) => Padding(
-                  padding: const EdgeInsets.only(bottom: 8),
-                  child: Row(
-                    children: [
-                      const Icon(Icons.block, size: 16, color: Colors.red),
-                      const SizedBox(width: 8),
-                      Expanded(
-                        child: Text(
-                          domain.domain,
-                          style: const TextStyle(fontWeight: FontWeight.w600),
-                        ),
-                      ),
-                      Text(
-                        '${domain.queries}',
-                        style: const TextStyle(
-                          color: Colors.black54,
-                          fontWeight: FontWeight.w700,
-                        ),
-                      ),
-                    ],
-                  ),
-                ),
-              ),
-          ],
-        ),
-      ),
-    );
-  }
-
-  Future<_NextDnsUsageAnalytics> _loadNextDnsAnalytics() async {
-    final parentId = _parentId;
-    if (parentId == null) {
-      return const _NextDnsUsageAnalytics(configured: false);
-    }
-
-    try {
-      final preferences = await _resolvedFirestoreService.getParentPreferences(
-        parentId,
-      );
-      final enabled = preferences?['nextDnsEnabled'] == true;
-      final profileId =
-          (preferences?['nextDnsProfileId'] as String? ?? '').trim();
-      if (!enabled || profileId.isEmpty) {
-        return const _NextDnsUsageAnalytics(configured: false);
-      }
-
-      final topDomains = await _resolvedNextDnsApiService.getTopDomains(
-        profileId: profileId,
-        status: 'blocked',
-        limit: 5,
-      );
-      final status = await _resolvedNextDnsApiService.getAnalyticsStatus(
-        profileId: profileId,
-        limit: 20,
-      );
-
-      var blockedFromStatus = 0;
-      for (final entry in status) {
-        if (entry.status.toLowerCase().contains('block')) {
-          blockedFromStatus += entry.queries;
-        }
-      }
-      final blockedFromTopDomains = topDomains.fold<int>(
-        0,
-        (sum, domain) => sum + domain.queries,
-      );
-
-      return _NextDnsUsageAnalytics(
-        configured: true,
-        blockedToday:
-            blockedFromStatus > 0 ? blockedFromStatus : blockedFromTopDomains,
-        topBlockedDomains: topDomains,
-      );
-    } catch (_) {
-      return const _NextDnsUsageAnalytics(configured: true);
-    }
-  }
-}
-
-class _NextDnsUsageAnalytics {
-  const _NextDnsUsageAnalytics({
-    required this.configured,
-    this.blockedToday,
-    this.topBlockedDomains = const [],
-  });
-
-  final bool configured;
-  final int? blockedToday;
-  final List<NextDnsDomainStat> topBlockedDomains;
 }
 
 class _AggregatedAppUsage {
@@ -1037,24 +813,28 @@ class _AggregatedAppUsage {
     required this.appName,
     required this.category,
     required this.durationMs,
+    this.appIconBase64,
   });
 
   final String packageName;
   final String appName;
   final String category;
   final int durationMs;
+  final String? appIconBase64;
 
   _AggregatedAppUsage copyWith({
     String? packageName,
     String? appName,
     String? category,
     int? durationMs,
+    String? appIconBase64,
   }) {
     return _AggregatedAppUsage(
       packageName: packageName ?? this.packageName,
       appName: appName ?? this.appName,
       category: category ?? this.category,
       durationMs: durationMs ?? this.durationMs,
+      appIconBase64: appIconBase64 ?? this.appIconBase64,
     );
   }
 }
@@ -1358,8 +1138,29 @@ class _UsageRowTile extends StatelessWidget {
 
   final AppUsageSummary row;
 
+  Uint8List? _decodeIcon(String? rawIcon) {
+    final value = rawIcon?.trim() ?? '';
+    if (value.isEmpty) {
+      return null;
+    }
+    try {
+      return base64Decode(value);
+    } catch (_) {
+      return null;
+    }
+  }
+
+  String _avatarLabel(String appName) {
+    final normalized = appName.trim();
+    if (normalized.isEmpty) {
+      return '?';
+    }
+    return normalized[0].toUpperCase();
+  }
+
   @override
   Widget build(BuildContext context) {
+    final iconBytes = _decodeIcon(row.appIconBase64);
     return Padding(
       padding: const EdgeInsets.only(bottom: 12),
       child: Column(
@@ -1373,11 +1174,30 @@ class _UsageRowTile extends StatelessWidget {
                   color: const Color(0xFFEFF6FF),
                   borderRadius: BorderRadius.circular(10),
                 ),
-                child: const Icon(
-                  Icons.apps,
-                  color: Color(0xFF2563EB),
-                  size: 20,
-                ),
+                clipBehavior: Clip.antiAlias,
+                child: iconBytes != null
+                    ? Image.memory(
+                        iconBytes,
+                        fit: BoxFit.cover,
+                        errorBuilder: (_, __, ___) => Center(
+                          child: Text(
+                            _avatarLabel(row.appName),
+                            style: const TextStyle(
+                              color: Color(0xFF2563EB),
+                              fontWeight: FontWeight.w700,
+                            ),
+                          ),
+                        ),
+                      )
+                    : Center(
+                        child: Text(
+                          _avatarLabel(row.appName),
+                          style: const TextStyle(
+                            color: Color(0xFF2563EB),
+                            fontWeight: FontWeight.w700,
+                          ),
+                        ),
+                      ),
               ),
               const SizedBox(width: 10),
               Expanded(

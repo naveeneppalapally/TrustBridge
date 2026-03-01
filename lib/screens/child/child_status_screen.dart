@@ -30,6 +30,7 @@ import '../../services/pairing_service.dart';
 import '../../services/remote_command_service.dart';
 import '../../services/vpn_service.dart';
 import 'blocked_overlay_screen.dart';
+import 'blocked_details_screen.dart';
 import '../../widgets/child/blocked_apps_list.dart';
 import '../../widgets/child/mode_display_card.dart';
 import 'request_access_screen.dart';
@@ -2824,6 +2825,21 @@ class _ChildStatusScreenState extends State<ChildStatusScreen>
       activeSchedule: activeSchedule,
       activeManualMode: activeManualMode,
     );
+    final blockedAppReasons = _blockedAppReasons(
+      blockedApps: blockedApps,
+      child: child,
+      pauseActive: pauseActive,
+      activeSchedule: activeSchedule,
+      activeManualMode: activeManualMode,
+      modeName: modeConfig.name,
+    );
+    final effectiveRules = _buildEffectiveProtectionRules(
+      child: child,
+      now: now,
+      manualMode: manualMode,
+    );
+    final blockedCategoryLabels =
+        _blockedCategoryLabels(effectiveRules.categories);
     final hasParentContext = (_parentId?.isNotEmpty ?? false);
 
     return ListView(
@@ -2860,6 +2876,7 @@ class _ChildStatusScreenState extends State<ChildStatusScreen>
         const SizedBox(height: 14),
         BlockedAppsList(
           blockedAppKeys: blockedApps,
+          reasonsByAppKey: blockedAppReasons,
           onAppTap: (appName) {
             Navigator.of(context).push(
               MaterialPageRoute(
@@ -2875,9 +2892,37 @@ class _ChildStatusScreenState extends State<ChildStatusScreen>
           },
         ),
         const SizedBox(height: 12),
+        _buildBlockedNowCard(
+          context,
+          blockedCategoryLabels: blockedCategoryLabels,
+          blockedDomainsCount: effectiveRules.domains.length,
+          blockedAppsCount: blockedApps.length,
+        ),
+        const SizedBox(height: 8),
+        Align(
+          alignment: Alignment.centerLeft,
+          child: TextButton.icon(
+            onPressed: () {
+              Navigator.of(context).push(
+                MaterialPageRoute(
+                  builder: (_) => BlockedDetailsScreen(
+                    blockedCategories: effectiveRules.categories.toList()
+                      ..sort(),
+                    blockedAppKeys: blockedApps,
+                    blockedDomainsCount: effectiveRules.domains.length,
+                  ),
+                ),
+              );
+            },
+            icon: const Icon(Icons.list_alt_rounded),
+            label: const Text('See full blocked details'),
+          ),
+        ),
+        const SizedBox(height: 12),
         if (pauseActive && pausedUntilValue != null)
           Text(
-            'Free time starts at ${DateFormat('h:mm a').format(pausedUntilValue)}',
+            'Internet pause ends at ${DateFormat('h:mm a').format(pausedUntilValue)} '
+            '(${_timeRemainingLabel(now: now, endsAt: pausedUntilValue)})',
             style: Theme.of(context).textTheme.bodyMedium?.copyWith(
                   color: Theme.of(context).colorScheme.onSurfaceVariant,
                   fontWeight: FontWeight.w600,
@@ -2885,7 +2930,8 @@ class _ChildStatusScreenState extends State<ChildStatusScreen>
           )
         else if (activeManualMode != null && modeActiveUntil != null)
           Text(
-            'Free time starts at ${DateFormat('h:mm a').format(modeActiveUntil)}',
+            '${modeConfig.name} ends at ${DateFormat('h:mm a').format(modeActiveUntil)} '
+            '(${_timeRemainingLabel(now: now, endsAt: modeActiveUntil)})',
             style: Theme.of(context).textTheme.bodyMedium?.copyWith(
                   color: Theme.of(context).colorScheme.onSurfaceVariant,
                   fontWeight: FontWeight.w600,
@@ -3025,6 +3071,70 @@ class _ChildStatusScreenState extends State<ChildStatusScreen>
     );
   }
 
+  Widget _buildBlockedNowCard(
+    BuildContext context, {
+    required List<String> blockedCategoryLabels,
+    required int blockedDomainsCount,
+    required int blockedAppsCount,
+  }) {
+    return Container(
+      padding: const EdgeInsets.all(12),
+      decoration: BoxDecoration(
+        borderRadius: BorderRadius.circular(12),
+        color: Theme.of(context).colorScheme.surfaceContainerHighest,
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Text(
+            'What is blocked right now',
+            style: Theme.of(context).textTheme.titleSmall?.copyWith(
+                  fontWeight: FontWeight.w700,
+                ),
+          ),
+          const SizedBox(height: 6),
+          Text(
+            blockedCategoryLabels.isEmpty
+                ? 'No categories are blocked currently.'
+                : blockedCategoryLabels.join(' • '),
+            style: Theme.of(context).textTheme.bodyMedium,
+          ),
+          const SizedBox(height: 6),
+          Text(
+            '$blockedAppsCount apps and $blockedDomainsCount website domains are blocked.',
+            style: Theme.of(context).textTheme.bodySmall?.copyWith(
+                  color: Theme.of(context).colorScheme.onSurfaceVariant,
+                ),
+          ),
+        ],
+      ),
+    );
+  }
+
+  List<String> _blockedCategoryLabels(Set<String> categories) {
+    return categories.where((value) => value.trim().isNotEmpty).map((value) {
+      final id = value.trim().toLowerCase();
+      switch (id) {
+        case '__block_all__':
+          return 'All Internet';
+        case 'social-networks':
+          return 'Social Media';
+        case 'adult-content':
+          return 'Adult Content';
+        case 'games':
+          return 'Gaming';
+        case 'streaming':
+          return 'Streaming';
+        default:
+          return id
+              .split(RegExp(r'[_\s-]+'))
+              .where((part) => part.isNotEmpty)
+              .map((part) => '${part[0].toUpperCase()}${part.substring(1)}')
+              .join(' ');
+      }
+    }).toList(growable: false);
+  }
+
   Widget _buildApprovalBanner({
     required BuildContext context,
     required String parentId,
@@ -3056,7 +3166,14 @@ class _ChildStatusScreenState extends State<ChildStatusScreen>
           return const SizedBox.shrink();
         }
 
-        final durationLabel = latestApproved.duration.label;
+        final now = DateTime.now();
+        final expiresAt = latestApproved.expiresAt;
+        final remainingLabel = expiresAt != null && expiresAt.isAfter(now)
+            ? _timeRemainingLabel(now: now, endsAt: expiresAt)
+            : null;
+        final statusText = remainingLabel == null
+            ? '${latestApproved.appOrSite} approved'
+            : '${latestApproved.appOrSite} allowed for $remainingLabel';
         return Container(
           padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
           decoration: BoxDecoration(
@@ -3064,7 +3181,7 @@ class _ChildStatusScreenState extends State<ChildStatusScreen>
             borderRadius: BorderRadius.circular(12),
           ),
           child: Text(
-            '✅ ${latestApproved.appOrSite} approved for $durationLabel',
+            'Access granted: $statusText',
             style: Theme.of(context).textTheme.bodyMedium?.copyWith(
                   color: Colors.green.shade800,
                   fontWeight: FontWeight.w700,
@@ -3169,9 +3286,17 @@ class _ChildStatusScreenState extends State<ChildStatusScreen>
     final categories = child.policy.blockedCategories
         .map((category) => category.trim().toLowerCase())
         .toSet();
+    final blockedServices = child.policy.blockedServices
+        .map((service) => service.trim().toLowerCase())
+        .where((service) => service.isNotEmpty)
+        .toSet();
     final domains = child.policy.blockedDomains
         .map((domain) => domain.trim().toLowerCase())
         .where((domain) => domain.isNotEmpty)
+        .toSet();
+    final blockedPackages = child.policy.blockedPackages
+        .map((packageName) => packageName.trim().toLowerCase())
+        .where((packageName) => packageName.isNotEmpty)
         .toSet();
 
     if (pauseActive) {
@@ -3195,21 +3320,82 @@ class _ChildStatusScreenState extends State<ChildStatusScreen>
       }
     }
 
-    if (categories.contains(_blockAllCategory) ||
-        categories.contains('social') ||
-        categories.contains('social-networks') ||
-        categories.intersection(_distractingCategories).isNotEmpty) {
-      apps.addAll(SocialMediaDomains.byApp.keys);
-    }
+    apps.addAll(
+      ServiceDefinitions.resolveEffectiveServices(
+        blockedCategories: categories,
+        blockedServices: blockedServices,
+      ),
+    );
 
     for (final domain in domains) {
-      final app = SocialMediaDomains.appForDomain(domain);
-      if (app != null) {
-        apps.add(app);
+      for (final service in ServiceDefinitions.all) {
+        if (service.matchesDomain(domain)) {
+          apps.add(service.serviceId);
+        }
+      }
+    }
+
+    for (final packageName in blockedPackages) {
+      for (final service in ServiceDefinitions.all) {
+        final packageMatch = service.androidPackages.any(
+          (candidate) => candidate.trim().toLowerCase() == packageName,
+        );
+        if (packageMatch) {
+          apps.add(service.serviceId);
+        }
       }
     }
 
     return apps.toList()..sort();
+  }
+
+  Map<String, String> _blockedAppReasons({
+    required List<String> blockedApps,
+    required ChildProfile child,
+    required bool pauseActive,
+    required Schedule? activeSchedule,
+    required _ManualModeOverride? activeManualMode,
+    required String modeName,
+  }) {
+    final manualBlockedServices = child.policy.blockedServices
+        .map((value) => value.trim().toLowerCase())
+        .where((value) => value.isNotEmpty)
+        .toSet();
+    final hasActiveMode =
+        pauseActive || activeManualMode != null || activeSchedule != null;
+    final reasons = <String, String>{};
+    for (final app in blockedApps) {
+      if (manualBlockedServices.contains(app)) {
+        reasons[app] = 'Blocked by parent';
+        continue;
+      }
+      reasons[app] =
+          hasActiveMode ? 'Blocked during $modeName' : 'Blocked by parent';
+    }
+    return reasons;
+  }
+
+  String _timeRemainingLabel({
+    required DateTime now,
+    required DateTime endsAt,
+  }) {
+    final remaining = endsAt.difference(now);
+    if (remaining.inSeconds <= 0) {
+      return 'ending now';
+    }
+    final totalMinutes = remaining.inMinutes;
+    if (totalMinutes < 1) {
+      return 'less than 1 min left';
+    }
+    final hours = totalMinutes ~/ 60;
+    final minutes = totalMinutes % 60;
+    if (hours <= 0) {
+      return '$minutes min left';
+    }
+    if (minutes == 0) {
+      return '$hours h left';
+    }
+    return '$hours h $minutes min left';
   }
 
   double? _manualModeProgress(_ManualModeOverride mode, DateTime now) {

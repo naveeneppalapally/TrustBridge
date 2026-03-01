@@ -1,6 +1,7 @@
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:flutter/foundation.dart';
 
+import '../config/service_definitions.dart';
 import '../config/rollout_flags.dart';
 import 'app_usage_service.dart';
 
@@ -49,31 +50,74 @@ class ChildUsageUploadService {
       if (!report.hasData) {
         return false;
       }
-      final usageEntries = await _appUsageService.getUsageEntries(pastDays: 2);
+      final usageEntries = await _appUsageService.getUsageEntries(pastDays: 7);
+      final installedApps = await _appUsageService.getInstalledLaunchableApps();
+      final appIconsByPackage = <String, String>{};
+      for (final app in installedApps) {
+        final packageName = app.packageName.trim().toLowerCase();
+        final icon = app.appIconBase64?.trim() ?? '';
+        if (packageName.isEmpty || icon.isEmpty) {
+          continue;
+        }
+        appIconsByPackage[packageName] = icon;
+      }
       final dayKey = _dateKey(now);
-      final appUsageByPackage = <String, dynamic>{};
-      var todayTotalMs = 0;
+      final trackedDayKeys = List<String>.generate(
+        7,
+        (index) => _dateKey(now.subtract(Duration(days: index))),
+      );
+      final dailyBuckets = <String, _UsageDayBucket>{
+        for (final key in trackedDayKeys) key: _UsageDayBucket(dayKey: key),
+      };
+
       for (final entry in usageEntries) {
         final packageName = entry.packageName.trim().toLowerCase();
         if (packageName.isEmpty) {
           continue;
         }
-        final todayMs = entry.dailyUsageMs[dayKey] ?? 0;
-        if (todayMs <= 0) {
-          continue;
+        final appName = entry.appName.isEmpty ? packageName : entry.appName;
+        final appCategory = _categoryFromPackage(packageName);
+        final icon = appIconsByPackage[packageName];
+
+        for (final usagePoint in entry.dailyUsageMs.entries) {
+          final bucket = dailyBuckets[usagePoint.key];
+          if (bucket == null) {
+            continue;
+          }
+          final usageMs = usagePoint.value;
+          if (usageMs <= 0) {
+            continue;
+          }
+          bucket.totalMs += usageMs;
+          bucket.categoryTotals[appCategory] =
+              (bucket.categoryTotals[appCategory] ?? 0) + usageMs;
+          final existing = bucket.appUsageByPackage[packageName];
+          if (existing == null) {
+            bucket.appUsageByPackage[packageName] = <String, dynamic>{
+              'appName': appName,
+              'minutes': (usageMs / 60000).round(),
+              'durationMs': usageMs,
+              'launches': 0,
+              if (icon != null && icon.isNotEmpty) 'appIconBase64': icon,
+            };
+          } else {
+            final previousMs = _toInt(existing['durationMs']);
+            final mergedMs = previousMs + usageMs;
+            bucket.appUsageByPackage[packageName] = <String, dynamic>{
+              ...existing,
+              'appName': appName,
+              'minutes': (mergedMs / 60000).round(),
+              'durationMs': mergedMs,
+              'launches': _toInt(existing['launches']),
+              if (icon != null && icon.isNotEmpty) 'appIconBase64': icon,
+            };
+          }
         }
-        todayTotalMs += todayMs;
-        appUsageByPackage[packageName] = <String, dynamic>{
-          'appName': entry.appName.isEmpty ? packageName : entry.appName,
-          'minutes': (todayMs / 60000).round(),
-          'durationMs': todayMs,
-          'launches': 0,
-        };
       }
-      final categoryTotals = <String, int>{};
-      for (final slice in report.categorySlices) {
-        categoryTotals[slice.label] = slice.duration.inMilliseconds;
-      }
+      final todayBucket =
+          dailyBuckets[dayKey] ?? _UsageDayBucket(dayKey: dayKey);
+      final appUsageByPackage = todayBucket.appUsageByPackage;
+      final todayTotalMs = todayBucket.totalMs;
 
       final payload = <String, dynamic>{
         'totalScreenTimeMs': report.totalScreenTime.inMilliseconds,
@@ -98,6 +142,8 @@ class ChildUsageUploadService {
                   'category': a.category,
                   'durationMs': a.duration.inMilliseconds,
                   'progress': a.progress,
+                  if ((appIconsByPackage[a.packageName] ?? '').isNotEmpty)
+                    'appIconBase64': appIconsByPackage[a.packageName],
                 })
             .toList(),
         'dayKey': dayKey,
@@ -120,37 +166,42 @@ class ChildUsageUploadService {
           .set(payload, SetOptions(merge: true));
 
       if (RolloutFlags.perAppUsageReports) {
-        final dailyPayload = <String, dynamic>{
-          'capturedAt': FieldValue.serverTimestamp(),
-          'dayKey': dayKey,
-          'totalScreenMinutes': (todayTotalMs / 60000).round(),
-          'appUsageByPackage': appUsageByPackage,
-          'categoryTotals': categoryTotals,
-          'trendPoint': <String, dynamic>{
-            'dayKey': dayKey,
-            'durationMs': todayTotalMs,
-          },
-          'uploadedAt': FieldValue.serverTimestamp(),
-          'deviceUploadedAtLocal': now.toIso8601String(),
-        };
+        for (final bucket in dailyBuckets.values) {
+          if (bucket.totalMs <= 0 && bucket.appUsageByPackage.isEmpty) {
+            continue;
+          }
+          final dailyPayload = <String, dynamic>{
+            'capturedAt': FieldValue.serverTimestamp(),
+            'dayKey': bucket.dayKey,
+            'totalScreenMinutes': (bucket.totalMs / 60000).round(),
+            'appUsageByPackage': bucket.appUsageByPackage,
+            'categoryTotals': bucket.categoryTotals,
+            'trendPoint': <String, dynamic>{
+              'dayKey': bucket.dayKey,
+              'durationMs': bucket.totalMs,
+            },
+            'uploadedAt': FieldValue.serverTimestamp(),
+            'deviceUploadedAtLocal': now.toIso8601String(),
+          };
 
-        // Plan v2 canonical path.
-        await _firestore
-            .collection('children')
-            .doc(childId)
-            .collection('usage_reports')
-            .doc('daily')
-            .collection('days')
-            .doc(dayKey)
-            .set(dailyPayload, SetOptions(merge: true));
+          // Canonical nested path.
+          await _firestore
+              .collection('children')
+              .doc(childId)
+              .collection('usage_reports')
+              .doc('daily')
+              .collection('days')
+              .doc(bucket.dayKey)
+              .set(dailyPayload, SetOptions(merge: true));
 
-        // Backward-compatible flat path for existing dashboards/tests.
-        await _firestore
-            .collection('children')
-            .doc(childId)
-            .collection('usage_reports')
-            .doc('daily_$dayKey')
-            .set(dailyPayload, SetOptions(merge: true));
+          // Backward-compatible flat path.
+          await _firestore
+              .collection('children')
+              .doc(childId)
+              .collection('usage_reports')
+              .doc('daily_${bucket.dayKey}')
+              .set(dailyPayload, SetOptions(merge: true));
+        }
       }
 
       _lastUploadedAt = now;
@@ -168,4 +219,38 @@ class ChildUsageUploadService {
     final day = date.day.toString().padLeft(2, '0');
     return '$year-$month-$day';
   }
+
+  String _categoryFromPackage(String packageName) {
+    final normalized = packageName.trim().toLowerCase();
+    if (normalized.isEmpty) {
+      return 'Other';
+    }
+    for (final service in ServiceDefinitions.all) {
+      for (final pkg in service.androidPackages) {
+        if (pkg.trim().toLowerCase() == normalized) {
+          return service.categoryId;
+        }
+      }
+    }
+    return 'Other';
+  }
+
+  int _toInt(Object? value) {
+    if (value is int) {
+      return value;
+    }
+    if (value is num) {
+      return value.toInt();
+    }
+    return 0;
+  }
+}
+
+class _UsageDayBucket {
+  _UsageDayBucket({required this.dayKey});
+
+  final String dayKey;
+  int totalMs = 0;
+  Map<String, dynamic> appUsageByPackage = <String, dynamic>{};
+  Map<String, int> categoryTotals = <String, int>{};
 }

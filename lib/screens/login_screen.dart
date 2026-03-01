@@ -61,7 +61,7 @@ class _LoginScreenState extends State<LoginScreen> {
     if (!mounted) {
       return;
     }
-    Navigator.of(context).pushNamedAndRemoveUntil(
+    Navigator.of(context, rootNavigator: true).pushNamedAndRemoveUntil(
       plan.route,
       (_) => false,
     );
@@ -81,7 +81,8 @@ class _LoginScreenState extends State<LoginScreen> {
     if (!mounted) {
       return;
     }
-    Navigator.of(context).pushNamedAndRemoveUntil('/welcome', (_) => false);
+    Navigator.of(context, rootNavigator: true)
+        .pushNamedAndRemoveUntil('/welcome', (_) => false);
   }
 
   String _friendlyError(String fallback) {
@@ -102,6 +103,9 @@ class _LoginScreenState extends State<LoginScreen> {
         return 'Too many attempts. Please wait and try again.';
       case 'account-exists-with-different-credential':
         return 'This email already exists with a different sign-in method.';
+      case 'missing-id-token':
+      case 'missing-google-token':
+        return 'Google sign-in is not configured correctly yet. Please use Email login for now.';
       default:
         return '$fallback ($code)';
     }

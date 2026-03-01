@@ -88,6 +88,7 @@ class AppUsageSummary {
     required this.category,
     required this.duration,
     required this.progress,
+    this.appIconBase64,
   });
 
   final String packageName;
@@ -95,6 +96,7 @@ class AppUsageSummary {
   final String category;
   final Duration duration;
   final double progress;
+  final String? appIconBase64;
 }
 
 class UsageReportData {
@@ -221,8 +223,7 @@ class AppUsageService {
           .where((app) => app.isValid)
           .toList(growable: false);
       apps.sort(
-        (a, b) =>
-            a.appName.toLowerCase().compareTo(b.appName.toLowerCase()),
+        (a, b) => a.appName.toLowerCase().compareTo(b.appName.toLowerCase()),
       );
       return apps;
     } on PlatformException {
