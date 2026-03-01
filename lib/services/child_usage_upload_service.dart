@@ -167,7 +167,7 @@ class ChildUsageUploadService {
           .doc(childId)
           .collection('usage_reports')
           .doc('latest')
-          .set(payload, SetOptions(merge: true));
+          .set(payload);
 
       if (RolloutFlags.perAppUsageReports) {
         for (final bucket in dailyBuckets.values) {
@@ -178,6 +178,7 @@ class ChildUsageUploadService {
             'capturedAt': FieldValue.serverTimestamp(),
             'dayKey': bucket.dayKey,
             'snapshotVersion': 2,
+            'totalScreenTimeMs': bucket.totalMs,
             'totalScreenMinutes': (bucket.totalMs / 60000).round(),
             'appUsageByPackage': bucket.appUsageByPackage,
             'categoryTotals': bucket.categoryTotals,
@@ -197,7 +198,7 @@ class ChildUsageUploadService {
               .doc('daily')
               .collection('days')
               .doc(bucket.dayKey)
-              .set(dailyPayload, SetOptions(merge: true));
+              .set(dailyPayload);
 
           // Backward-compatible flat path.
           await _firestore
@@ -205,7 +206,7 @@ class ChildUsageUploadService {
               .doc(childId)
               .collection('usage_reports')
               .doc('daily_${bucket.dayKey}')
-              .set(dailyPayload, SetOptions(merge: true));
+              .set(dailyPayload);
         }
       }
 

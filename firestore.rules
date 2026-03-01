@@ -693,6 +693,7 @@ service cloud.firestore {
                 'dailyTrend',
                 'topApps',
                 'dayKey',
+                'snapshotVersion',
                 'appUsageByPackage',
                 'trendPoint',
                 'uploadedAt',
@@ -708,6 +709,7 @@ service cloud.firestore {
             ('topApps' in request.resource.data) &&
             request.resource.data.topApps is list &&
             (!('dayKey' in request.resource.data) || request.resource.data.dayKey is string) &&
+            isOptionalInt(request.resource.data, 'snapshotVersion', 1, 10) &&
             (!('appUsageByPackage' in request.resource.data) || request.resource.data.appUsageByPackage is map) &&
             (!('trendPoint' in request.resource.data) || request.resource.data.trendPoint is map) &&
             isOptionalTimestamp(request.resource.data, 'uploadedAt') &&
@@ -720,6 +722,8 @@ service cloud.firestore {
               [
                 'capturedAt',
                 'dayKey',
+                'snapshotVersion',
+                'totalScreenTimeMs',
                 'totalScreenMinutes',
                 'appUsageByPackage',
                 'categoryTotals',
@@ -730,6 +734,8 @@ service cloud.firestore {
             ) &&
             isOptionalTimestamp(request.resource.data, 'capturedAt') &&
             isRequiredString(request.resource.data, 'dayKey', 20) &&
+            isOptionalInt(request.resource.data, 'snapshotVersion', 1, 10) &&
+            isOptionalInt(request.resource.data, 'totalScreenTimeMs', 0, 4102444800000) &&
             isRequiredInt(request.resource.data, 'totalScreenMinutes', 0, 2000000) &&
             ('appUsageByPackage' in request.resource.data) &&
             request.resource.data.appUsageByPackage is map &&
@@ -758,6 +764,8 @@ service cloud.firestore {
               [
                 'capturedAt',
                 'dayKey',
+                'snapshotVersion',
+                'totalScreenTimeMs',
                 'totalScreenMinutes',
                 'appUsageByPackage',
                 'categoryTotals',
@@ -769,6 +777,8 @@ service cloud.firestore {
             isOptionalTimestamp(request.resource.data, 'capturedAt') &&
             isRequiredString(request.resource.data, 'dayKey', 20) &&
             request.resource.data.dayKey == dayKey &&
+            isOptionalInt(request.resource.data, 'snapshotVersion', 1, 10) &&
+            isOptionalInt(request.resource.data, 'totalScreenTimeMs', 0, 4102444800000) &&
             isRequiredInt(request.resource.data, 'totalScreenMinutes', 0, 2000000) &&
             ('appUsageByPackage' in request.resource.data) &&
             request.resource.data.appUsageByPackage is map &&

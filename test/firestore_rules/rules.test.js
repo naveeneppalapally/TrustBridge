@@ -622,6 +622,73 @@ describe('notification_queue', () => {
   });
 });
 
+describe('children/{childId}/usage_reports', () => {
+  test('registered child device can write v2 latest usage snapshot', async () => {
+    await seedChildWithDevice({
+      childId: 'child-1',
+      parentId: PARENT_ID,
+      deviceId: 'device-1',
+    });
+
+    await assertSucceeds(
+      testDoc('children/child-1/usage_reports/latest', 'device-1').set({
+        totalScreenTimeMs: 125000,
+        averageDailyScreenTimeMs: 125000,
+        categorySlices: [],
+        dailyTrend: [],
+        topApps: [],
+        dayKey: '2026-03-01',
+        snapshotVersion: 2,
+        appUsageByPackage: {
+          'com.android.chrome': {
+            appName: 'Chrome',
+            durationMs: 125000,
+          },
+        },
+        trendPoint: {
+          dayKey: '2026-03-01',
+          durationMs: 125000,
+        },
+        uploadedAt: new Date(),
+        deviceUploadedAtLocal: '2026-03-01T12:00:00.000Z',
+      }),
+    );
+  });
+
+  test('registered child device can write v2 daily usage snapshot', async () => {
+    await seedChildWithDevice({
+      childId: 'child-1',
+      parentId: PARENT_ID,
+      deviceId: 'device-1',
+    });
+
+    await assertSucceeds(
+      testDoc('children/child-1/usage_reports/daily_2026-03-01', 'device-1').set({
+        capturedAt: new Date(),
+        dayKey: '2026-03-01',
+        snapshotVersion: 2,
+        totalScreenTimeMs: 125000,
+        totalScreenMinutes: 2,
+        appUsageByPackage: {
+          'com.android.chrome': {
+            appName: 'Chrome',
+            durationMs: 125000,
+          },
+        },
+        categoryTotals: {
+          Other: 125000,
+        },
+        trendPoint: {
+          dayKey: '2026-03-01',
+          durationMs: 125000,
+        },
+        uploadedAt: new Date(),
+        deviceUploadedAtLocal: '2026-03-01T12:00:00.000Z',
+      }),
+    );
+  });
+});
+
 describe('catch-all deny', () => {
   test('random collection access is denied', async () => {
     await assertFails(

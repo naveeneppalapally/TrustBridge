@@ -509,9 +509,13 @@ class _UsageReportsScreenState extends State<UsageReportsScreen> {
           latestSnapshotVersion >= 2;
 
       if (hasTrustedSelectedDailyData) {
+        final exactTotalMs = _toInt(selectedDailyData['totalScreenTimeMs']);
         final totalMinutes = _toInt(selectedDailyData['totalScreenMinutes']);
-        totalScreenTimeMs += totalMinutes * Duration.millisecondsPerMinute;
-        if (totalMinutes > 0) {
+        final resolvedTotalMs = exactTotalMs > 0
+            ? exactTotalMs
+            : totalMinutes * Duration.millisecondsPerMinute;
+        totalScreenTimeMs += resolvedTotalMs;
+        if (resolvedTotalMs > 0) {
           hasAnyData = true;
         }
 
@@ -692,11 +696,14 @@ class _UsageReportsScreenState extends State<UsageReportsScreen> {
         if (trendSnapshotVersion < 2) {
           continue;
         }
+        final exactTotalMs = _toInt(trendData['totalScreenTimeMs']);
         final totalMinutes = _toInt(trendData['totalScreenMinutes']);
-        if (totalMinutes <= 0) {
+        final durationMs = exactTotalMs > 0
+            ? exactTotalMs
+            : totalMinutes * Duration.millisecondsPerMinute;
+        if (durationMs <= 0) {
           continue;
         }
-        final durationMs = totalMinutes * Duration.millisecondsPerMinute;
         trendTotalsMs[index] += durationMs;
         hasAnyData = true;
       }
