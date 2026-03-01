@@ -2,13 +2,11 @@ import 'dart:async';
 
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:flutter/material.dart';
-import 'package:uuid/uuid.dart';
 
 import '../../config/feature_gates.dart';
-import '../../models/child_profile.dart';
 import '../../screens/upgrade_screen.dart';
-import '../../services/pairing_service.dart';
 import '../../services/feature_gate_service.dart';
+import '../../services/request_access_service.dart';
 import '../../utils/child_friendly_errors.dart';
 
 /// Child-friendly screen to request temporary access from a parent.
@@ -50,10 +48,10 @@ class _RequestAccessScreenState extends State<RequestAccessScreen> {
   late final TextEditingController _noteController;
   late final TextEditingController _otherAppController;
   late final FirebaseFirestore _firestore;
-  PairingService? _pairingService;
-  PairingService get _resolvedPairingService {
-    _pairingService ??= PairingService();
-    return _pairingService!;
+  RequestAccessService? _requestAccessService;
+  RequestAccessService get _resolvedRequestAccessService {
+    _requestAccessService ??= RequestAccessService(firestore: _firestore);
+    return _requestAccessService!;
   }
 
   String? _selectedApp;
@@ -96,30 +94,17 @@ class _RequestAccessScreenState extends State<RequestAccessScreen> {
       return;
     }
 
-    final pairedParentId = await _resolvedPairingService.getPairedParentId();
-    final pairedChildId = await _resolvedPairingService.getPairedChildId();
-
-    if ((_parentId == null || _parentId!.isEmpty) && pairedParentId != null) {
-      _parentId = pairedParentId;
-    }
-    if ((_childId == null || _childId!.isEmpty) && pairedChildId != null) {
-      _childId = pairedChildId;
-    }
-
-    if ((_childNickname == null || _childNickname!.isEmpty) &&
-        _childId != null &&
-        _childId!.isNotEmpty) {
-      try {
-        final childDoc =
-            await _firestore.collection('children').doc(_childId).get();
-        if (childDoc.exists) {
-          final profile = ChildProfile.fromFirestore(childDoc);
-          _childNickname = profile.nickname;
-          _parentId ??= (childDoc.data()?['parentId'] as String?)?.trim();
-        }
-      } catch (error) {
-        _error = ChildFriendlyErrors.sanitise(error.toString());
-      }
+    try {
+      final context = await _resolvedRequestAccessService.resolveContext(
+        parentId: _parentId,
+        childId: _childId,
+        childNickname: _childNickname,
+      );
+      _parentId = context.parentId;
+      _childId = context.childId;
+      _childNickname = context.childNickname;
+    } catch (error) {
+      _error = ChildFriendlyErrors.sanitise(error.toString());
     }
 
     if (mounted) {
@@ -162,41 +147,17 @@ class _RequestAccessScreenState extends State<RequestAccessScreen> {
         return;
       }
 
-      final requestId = const Uuid().v4();
       final selectedDuration = _durations
           .firstWhere((item) => item.minutes == _selectedDurationMinutes);
-      final trimmedReason = _noteController.text.trim();
-      await _firestore
-          .collection('parents')
-          .doc(_parentId)
-          .collection('access_requests')
-          .doc(requestId)
-          .set({
-        'childId': _childId,
-        'parentId': _parentId,
-        'childNickname': _childNickname ?? 'Child',
-        'appOrSite': requestedApp,
-        'durationLabel': selectedDuration.label,
-        'durationMinutes': _selectedDurationMinutes,
-        'reason': trimmedReason.isEmpty ? null : trimmedReason,
-        'status': 'pending',
-        'requestedAt': FieldValue.serverTimestamp(),
-        'parentReply': null,
-        'respondedAt': null,
-        'expiresAt': null,
-      });
-
-      await _firestore.collection('notification_queue').add({
-        'parentId': _parentId,
-        'childId': _childId,
-        'title': '${_childNickname ?? 'Your child'} wants access',
-        'body':
-            '${_childNickname ?? 'Your child'} requested $requestedApp for ${selectedDuration.label}.',
-        'route': '/parent-requests',
-        'eventType': 'access_request',
-        'processed': false,
-        'sentAt': FieldValue.serverTimestamp(),
-      });
+      await _resolvedRequestAccessService.sendAccessRequest(
+        parentId: _parentId!,
+        childId: _childId!,
+        childNickname: _childNickname ?? 'Your child',
+        requestedApp: requestedApp,
+        durationLabel: selectedDuration.label,
+        durationMinutes: _selectedDurationMinutes,
+        reason: _noteController.text,
+      );
 
       if (!mounted) {
         return;

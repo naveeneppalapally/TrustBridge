@@ -10,7 +10,7 @@ class ChildFriendlyErrors {
         lower.contains('does not have permission') ||
         lower.contains('unauthorized') ||
         lower.contains('unauthenticated')) {
-      return 'Something needs your parent\'s help.';
+      return 'Cannot send that right now. Try again in a moment.';
     }
     if (lower.contains('nxdomain') || lower.contains('dns')) {
       return 'This site is not available right now.';
