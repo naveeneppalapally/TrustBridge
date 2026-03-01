@@ -5,6 +5,7 @@ import 'package:flutter/material.dart';
 import '../models/access_request.dart';
 import '../screens/children_home_screen.dart';
 import '../screens/parent_settings_screen.dart';
+import '../services/app_lock_service.dart';
 import '../services/auth_service.dart';
 import '../services/firestore_service.dart';
 import '../theme/app_theme.dart';
@@ -27,13 +28,14 @@ class ParentShell extends StatefulWidget {
   State<ParentShell> createState() => _ParentShellState();
 }
 
-class _ParentShellState extends State<ParentShell> {
+class _ParentShellState extends State<ParentShell> with WidgetsBindingObserver {
   AuthService? _authService;
   FirestoreService? _firestoreService;
   Stream<List<AccessRequest>>? _pendingRequestsStream;
   Stream<int>? _unreadBypassAlertCountStream;
   String? _pendingStreamParentId;
   late int _currentIndex;
+  bool _lockPromptVisible = false;
 
   AuthService get _resolvedAuthService {
     _authService ??= widget.authService ?? AuthService();
@@ -56,12 +58,90 @@ class _ParentShellState extends State<ParentShell> {
   @override
   void initState() {
     super.initState();
+    WidgetsBinding.instance.addObserver(this);
     final rawIndex = widget.initialIndex;
     _currentIndex = rawIndex < 0
         ? 0
         : rawIndex > 1
             ? 1
             : rawIndex;
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      unawaited(_enforceParentAppLock());
+    });
+  }
+
+  @override
+  void dispose() {
+    WidgetsBinding.instance.removeObserver(this);
+    super.dispose();
+  }
+
+  @override
+  void didChangeAppLifecycleState(AppLifecycleState state) {
+    super.didChangeAppLifecycleState(state);
+    if (state == AppLifecycleState.resumed) {
+      unawaited(_enforceParentAppLock());
+    }
+  }
+
+  @override
+  void didChangeDependencies() {
+    super.didChangeDependencies();
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      unawaited(_enforceParentAppLock());
+    });
+  }
+
+  Future<void> _enforceParentAppLock() async {
+    if (!mounted || _lockPromptVisible) {
+      return;
+    }
+    final appLockService = AppLockService();
+    var biometricPreferenceEnabled = false;
+    final parentId = _parentId;
+    if (parentId != null && parentId.trim().isNotEmpty) {
+      try {
+        final profile =
+            await _resolvedFirestoreService.getParentProfile(parentId);
+        final preferences = profile?['preferences'];
+        if (preferences is Map<String, dynamic>) {
+          biometricPreferenceEnabled =
+              preferences['biometricLoginEnabled'] == true;
+        } else if (preferences is Map) {
+          biometricPreferenceEnabled =
+              preferences['biometricLoginEnabled'] == true;
+        }
+      } catch (_) {
+        biometricPreferenceEnabled = false;
+      }
+    }
+
+    if (!biometricPreferenceEnabled) {
+      return;
+    }
+    if (appLockService.isWithinGracePeriod) {
+      return;
+    }
+    if (!mounted) {
+      return;
+    }
+
+    _lockPromptVisible = true;
+    final unlocked = await appLockService.authenticateWithBiometric();
+    if (unlocked) {
+      appLockService.markUnlocked();
+    }
+    _lockPromptVisible = false;
+    if (!mounted) {
+      return;
+    }
+    if (!unlocked) {
+      await _resolvedAuthService.signOut();
+      if (!mounted) {
+        return;
+      }
+      Navigator.of(context).pushReplacementNamed('/welcome');
+    }
   }
 
   void _ensureStreams(String parentId) {

@@ -1,33 +1,25 @@
 import 'dart:async';
 
 import 'package:flutter/material.dart';
-import 'package:firebase_core/firebase_core.dart';
 import 'package:trustbridge_app/l10n/app_localizations.dart';
 import 'package:trustbridge_app/l10n/app_localizations_en.dart';
-import 'package:trustbridge_app/config/feature_gates.dart';
-import 'package:trustbridge_app/models/blocklist_source.dart';
+import 'package:trustbridge_app/models/child_profile.dart';
 import 'package:trustbridge_app/screens/beta_feedback_history_screen.dart';
 import 'package:trustbridge_app/screens/beta_feedback_screen.dart';
+import 'package:trustbridge_app/screens/blocklist_management_screen.dart';
 import 'package:trustbridge_app/screens/change_password_screen.dart';
 import 'package:trustbridge_app/screens/family_management_screen.dart';
 import 'package:trustbridge_app/screens/help_support_screen.dart';
-import 'package:trustbridge_app/screens/maximum_protection_screen.dart';
+import 'package:trustbridge_app/screens/mode_overrides_screen.dart';
 import 'package:trustbridge_app/screens/modes_screen.dart';
-import 'package:trustbridge_app/screens/nextdns_setup_screen.dart';
-import 'package:trustbridge_app/screens/onboarding_screen.dart';
 import 'package:trustbridge_app/screens/parent/alert_preferences_screen.dart';
 import 'package:trustbridge_app/screens/parent/protection_settings_screen.dart';
 import 'package:trustbridge_app/screens/privacy_center_screen.dart';
 import 'package:trustbridge_app/screens/premium_screen.dart';
-import 'package:trustbridge_app/screens/security_controls_screen.dart';
-import 'package:trustbridge_app/screens/upgrade_screen.dart';
 import 'package:trustbridge_app/screens/usage_reports_screen.dart';
 import 'package:trustbridge_app/services/auth_service.dart';
 import 'package:trustbridge_app/services/app_mode_service.dart';
-import 'package:trustbridge_app/services/blocklist_sync_service.dart';
-import 'package:trustbridge_app/services/feature_gate_service.dart';
 import 'package:trustbridge_app/services/firestore_service.dart';
-import 'package:trustbridge_app/widgets/blocklist_status_card.dart';
 import 'package:url_launcher/url_launcher.dart';
 
 class ParentSettingsScreen extends StatefulWidget {
@@ -49,16 +41,10 @@ class ParentSettingsScreen extends StatefulWidget {
 class _ParentSettingsScreenState extends State<ParentSettingsScreen> {
   AuthService? _authService;
   FirestoreService? _firestoreService;
-  BlocklistSyncService? _blocklistSyncService;
-  final FeatureGateService _featureGateService = FeatureGateService();
 
   bool _biometricLoginEnabled = false;
   bool _incognitoModeEnabled = false;
-  bool _hasChanges = false;
   bool _isSaving = false;
-  bool _isSyncingBlocklists = false;
-  bool _didAutoPrimeBlocklists = false;
-  int _blocklistStatusRefreshToken = 0;
 
   AuthService get _resolvedAuthService {
     _authService ??= widget.authService ?? AuthService();
@@ -70,16 +56,9 @@ class _ParentSettingsScreenState extends State<ParentSettingsScreen> {
     return _firestoreService!;
   }
 
-  BlocklistSyncService get _resolvedBlocklistSyncService {
-    _blocklistSyncService ??= BlocklistSyncService();
-    return _blocklistSyncService!;
-  }
-
   String? get _parentId {
     return widget.parentIdOverride ?? _resolvedAuthService.currentUser?.uid;
   }
-
-  bool get _canUseBlocklistSync => Firebase.apps.isNotEmpty;
 
   @override
   Widget build(BuildContext context) {
@@ -95,22 +74,6 @@ class _ParentSettingsScreenState extends State<ParentSettingsScreen> {
     return Scaffold(
       appBar: AppBar(
         title: Text(l10n.settingsTitle),
-        actions: [
-          if (_hasChanges)
-            TextButton(
-              onPressed: _isSaving ? null : _saveSettings,
-              child: _isSaving
-                  ? const SizedBox(
-                      width: 20,
-                      height: 20,
-                      child: CircularProgressIndicator(strokeWidth: 2),
-                    )
-                  : Text(
-                      l10n.saveButton.toUpperCase(),
-                      style: const TextStyle(fontWeight: FontWeight.w700),
-                    ),
-            ),
-        ],
       ),
       body: StreamBuilder<Map<String, dynamic>?>(
         stream: _resolvedFirestoreService.watchParentProfile(parentId),
@@ -195,11 +158,6 @@ class _ParentSettingsScreenState extends State<ParentSettingsScreen> {
                 const SizedBox(height: 18),
                 _buildSectionHeader('Security & Privacy'),
                 _buildSecurityPrivacyCard(context),
-                if (_canUseBlocklistSync) ...[
-                  const SizedBox(height: 18),
-                  _buildSectionHeader('Blocklists'),
-                  _buildBlocklistCard(context),
-                ],
                 const SizedBox(height: 18),
                 _buildSectionHeader('About'),
                 _buildAboutCard(context),
@@ -219,59 +177,45 @@ class _ParentSettingsScreenState extends State<ParentSettingsScreen> {
     return Card(
       elevation: 0,
       shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(20)),
-      child: InkWell(
+      child: Padding(
         key: const Key('settings_profile_card'),
-        borderRadius: BorderRadius.circular(20),
-        onTap: () {
-          ScaffoldMessenger.of(context).showSnackBar(
-            const SnackBar(
-              content: Text('Profile editing is unavailable right now.'),
+        padding: const EdgeInsets.all(18),
+        child: Row(
+          children: [
+            CircleAvatar(
+              radius: 28,
+              backgroundColor:
+                  Theme.of(context).colorScheme.primary.withValues(alpha: 0.16),
+              foregroundColor: Theme.of(context).colorScheme.primary,
+              child: Text(
+                displayName.isNotEmpty ? displayName[0].toUpperCase() : 'P',
+                style:
+                    const TextStyle(fontWeight: FontWeight.w800, fontSize: 22),
+              ),
             ),
-          );
-        },
-        child: Padding(
-          padding: const EdgeInsets.all(18),
-          child: Row(
-            children: [
-              CircleAvatar(
-                radius: 28,
-                backgroundColor: Theme.of(context)
-                    .colorScheme
-                    .primary
-                    .withValues(alpha: 0.16),
-                foregroundColor: Theme.of(context).colorScheme.primary,
-                child: Text(
-                  displayName.isNotEmpty ? displayName[0].toUpperCase() : 'P',
-                  style: const TextStyle(
-                      fontWeight: FontWeight.w800, fontSize: 22),
-                ),
+            const SizedBox(width: 14),
+            Expanded(
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Text(
+                    displayName,
+                    style: Theme.of(context).textTheme.titleMedium?.copyWith(
+                          fontWeight: FontWeight.w800,
+                          fontSize: 18,
+                        ),
+                  ),
+                  const SizedBox(height: 4),
+                  Text(
+                    email,
+                    style: Theme.of(context).textTheme.bodySmall?.copyWith(
+                          color: Theme.of(context).colorScheme.onSurfaceVariant,
+                        ),
+                  ),
+                ],
               ),
-              const SizedBox(width: 14),
-              Expanded(
-                child: Column(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: [
-                    Text(
-                      displayName,
-                      style: Theme.of(context).textTheme.titleMedium?.copyWith(
-                            fontWeight: FontWeight.w800,
-                            fontSize: 18,
-                          ),
-                    ),
-                    const SizedBox(height: 4),
-                    Text(
-                      email,
-                      style: Theme.of(context).textTheme.bodySmall?.copyWith(
-                            color:
-                                Theme.of(context).colorScheme.onSurfaceVariant,
-                          ),
-                    ),
-                  ],
-                ),
-              ),
-              const Icon(Icons.chevron_right),
-            ],
-          ),
+            ),
+          ],
         ),
       ),
     );
@@ -288,17 +232,6 @@ class _ParentSettingsScreenState extends State<ParentSettingsScreen> {
       child: Column(
         children: [
           ListTile(
-            key: const Key('settings_email_tile'),
-            leading: const Icon(Icons.email_outlined),
-            title: const Text('Email Address'),
-            subtitle: Text(email),
-            trailing: const Icon(Icons.chevron_right),
-            onTap: () => ScaffoldMessenger.of(context).showSnackBar(
-              const SnackBar(content: Text('Email editing is unavailable right now.')),
-            ),
-          ),
-          const Divider(height: 1),
-          ListTile(
             key: const Key('settings_change_password_tile'),
             leading: const Icon(Icons.lock_outline),
             title: const Text('Change Password'),
@@ -313,7 +246,8 @@ class _ParentSettingsScreenState extends State<ParentSettingsScreen> {
             subtitle: Text(phone),
             trailing: const Icon(Icons.chevron_right),
             onTap: () => ScaffoldMessenger.of(context).showSnackBar(
-              const SnackBar(content: Text('Phone linking is unavailable right now.')),
+              const SnackBar(
+                  content: Text('Phone linking is unavailable right now.')),
             ),
           ),
           const Divider(height: 1),
@@ -324,24 +258,6 @@ class _ParentSettingsScreenState extends State<ParentSettingsScreen> {
             subtitle: const Text('Manage parents and child seats'),
             trailing: const Icon(Icons.chevron_right),
             onTap: () => _openFamilyManagement(context),
-          ),
-          const Divider(height: 1),
-          ListTile(
-            key: const Key('settings_setup_guide_tile'),
-            leading: const Icon(Icons.help_outline),
-            title: const Text('Setup Guide'),
-            subtitle: const Text('Revisit onboarding walkthrough'),
-            trailing: const Icon(Icons.chevron_right),
-            onTap: () => _openSetupGuide(context),
-          ),
-          const Divider(height: 1),
-          ListTile(
-            key: const Key('settings_nextdns_setup_tile'),
-            leading: const Icon(Icons.dns_outlined),
-            title: const Text('NextDNS Setup'),
-            subtitle: const Text('Connect API key and map child profiles'),
-            trailing: const Icon(Icons.chevron_right),
-            onTap: () => _openNextDnsSetup(context),
           ),
         ],
       ),
@@ -412,8 +328,12 @@ class _ParentSettingsScreenState extends State<ParentSettingsScreen> {
                 : (bool value) {
                     setState(() {
                       _biometricLoginEnabled = value;
-                      _hasChanges = true;
                     });
+                    unawaited(
+                      _saveSettings(
+                        biometricLoginEnabled: value,
+                      ),
+                    );
                   },
           ),
           const Divider(height: 1),
@@ -436,18 +356,13 @@ class _ParentSettingsScreenState extends State<ParentSettingsScreen> {
                 : (bool value) {
                     setState(() {
                       _incognitoModeEnabled = value;
-                      _hasChanges = true;
                     });
+                    unawaited(
+                      _saveSettings(
+                        incognitoModeEnabled: value,
+                      ),
+                    );
                   },
-          ),
-          const Divider(height: 1),
-          ListTile(
-            key: const Key('settings_security_controls_tile'),
-            leading: const Icon(Icons.shield_outlined),
-            title: const Text('Security Controls'),
-            subtitle: const Text('App PIN, sessions, two-factor settings'),
-            trailing: const Icon(Icons.chevron_right),
-            onTap: () => _openSecurityControls(context),
           ),
           const Divider(height: 1),
           ListTile(
@@ -461,12 +376,12 @@ class _ParentSettingsScreenState extends State<ParentSettingsScreen> {
           ),
           const Divider(height: 1),
           ListTile(
-            key: const Key('settings_maximum_protection_tile'),
-            leading: const Icon(Icons.gpp_good_outlined),
-            title: const Text('Maximum Protection'),
-            subtitle: const Text('Device Owner hardening and setup'),
+            key: const Key('settings_open_source_blocklists_tile'),
+            leading: const Icon(Icons.cloud_sync_outlined),
+            title: const Text('Open-Source Blocklists'),
+            subtitle: const Text('Automatic daily updates and source status'),
             trailing: const Icon(Icons.chevron_right),
-            onTap: () => _openMaximumProtection(context),
+            onTap: () => _openBlocklistManagement(context),
           ),
           const Divider(height: 1),
           ListTile(
@@ -476,6 +391,16 @@ class _ParentSettingsScreenState extends State<ParentSettingsScreen> {
             subtitle: const Text('Free Play, Homework, Bedtime, Lockdown'),
             trailing: const Icon(Icons.chevron_right),
             onTap: () => _openModes(context),
+          ),
+          const Divider(height: 1),
+          ListTile(
+            key: const Key('settings_mode_overrides_tile'),
+            leading: const Icon(Icons.rule_folder_outlined),
+            title: const Text('Easy Mode Setup'),
+            subtitle: const Text(
+                'Pick what to block in each mode with simple toggles'),
+            trailing: const Icon(Icons.chevron_right),
+            onTap: () => _openModeOverridesPicker(context),
           ),
           const Divider(height: 1),
           ListTile(
@@ -605,25 +530,6 @@ class _ParentSettingsScreenState extends State<ParentSettingsScreen> {
     );
   }
 
-  Widget _buildBlocklistCard(BuildContext context) {
-    if (!_canUseBlocklistSync) {
-      return const SizedBox.shrink();
-    }
-    return FutureBuilder<List<BlocklistSyncStatus>>(
-      key: ValueKey<int>(_blocklistStatusRefreshToken),
-      future: _resolvedBlocklistSyncService.getStatus(),
-      builder: (context, snapshot) {
-        final statuses = snapshot.data ?? const <BlocklistSyncStatus>[];
-        _autoPrimeBlocklistsIfNeeded(statuses);
-        return BlocklistStatusCard(
-          statuses: statuses,
-          isSyncing: _isSyncingBlocklists,
-          onSyncNow: _syncBlocklistsNow,
-        );
-      },
-    );
-  }
-
   Widget _buildSectionHeader(String title) {
     return Padding(
       padding: const EdgeInsets.only(left: 4, bottom: 6),
@@ -639,8 +545,11 @@ class _ParentSettingsScreenState extends State<ParentSettingsScreen> {
     );
   }
 
-  Future<void> _saveSettings() async {
-    if (_isSaving || !_hasChanges) {
+  Future<void> _saveSettings({
+    bool? biometricLoginEnabled,
+    bool? incognitoModeEnabled,
+  }) async {
+    if (_isSaving) {
       return;
     }
 
@@ -655,8 +564,8 @@ class _ParentSettingsScreenState extends State<ParentSettingsScreen> {
     try {
       await _resolvedFirestoreService.updateParentPreferences(
         parentId: parentId,
-        biometricLoginEnabled: _biometricLoginEnabled,
-        incognitoModeEnabled: _incognitoModeEnabled,
+        biometricLoginEnabled: biometricLoginEnabled,
+        incognitoModeEnabled: incognitoModeEnabled,
       );
 
       if (!mounted) {
@@ -664,11 +573,7 @@ class _ParentSettingsScreenState extends State<ParentSettingsScreen> {
       }
       setState(() {
         _isSaving = false;
-        _hasChanges = false;
       });
-      ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text('Settings updated successfully')),
-      );
     } catch (error) {
       if (!mounted) {
         return;
@@ -679,122 +584,6 @@ class _ParentSettingsScreenState extends State<ParentSettingsScreen> {
       ScaffoldMessenger.of(context).showSnackBar(
         SnackBar(content: Text('Unable to save settings: $error')),
       );
-    }
-  }
-
-  Future<void> _syncBlocklistsNow() async {
-    if (_isSyncingBlocklists) {
-      return;
-    }
-    if (!_canUseBlocklistSync) {
-      return;
-    }
-
-    setState(() {
-      _isSyncingBlocklists = true;
-    });
-
-    try {
-      final results = await _resolvedBlocklistSyncService.syncAll(
-        _enabledBlocklistCategories(),
-        forceRefresh: true,
-      );
-
-      if (!mounted) {
-        return;
-      }
-
-      final successful = results.where((result) => result.success).toList();
-      final failed = results.where((result) => !result.success).toList();
-      final loadedDomains = successful.fold<int>(
-        0,
-        (sum, result) => sum + result.domainsLoaded,
-      );
-
-      setState(() {
-        _isSyncingBlocklists = false;
-        _blocklistStatusRefreshToken += 1;
-      });
-
-      if (failed.isEmpty) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(
-            content: Text(
-              'Blocklists synced: $loadedDomains domains loaded.',
-            ),
-          ),
-        );
-      } else {
-        final firstError = failed.first.errorMessage ?? 'Unknown error';
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(
-            content: Text(
-              'Partial sync: ${successful.length}/${results.length} succeeded. $firstError',
-            ),
-          ),
-        );
-      }
-    } catch (error) {
-      if (!mounted) {
-        return;
-      }
-      setState(() {
-        _isSyncingBlocklists = false;
-      });
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(content: Text('Blocklist sync failed: $error')),
-      );
-    }
-  }
-
-  void _autoPrimeBlocklistsIfNeeded(List<BlocklistSyncStatus> statuses) {
-    if (!_canUseBlocklistSync ||
-        _didAutoPrimeBlocklists ||
-        _isSyncingBlocklists ||
-        statuses.isEmpty) {
-      return;
-    }
-
-    final shouldPrime = statuses.every(
-      (status) => status.domainCount == 0 && status.lastSynced == null,
-    );
-    if (!shouldPrime) {
-      return;
-    }
-
-    _didAutoPrimeBlocklists = true;
-    WidgetsBinding.instance.addPostFrameCallback((_) {
-      if (!mounted) {
-        return;
-      }
-      unawaited(_primeBlocklistsInBackground());
-    });
-  }
-
-  Future<void> _primeBlocklistsInBackground() async {
-    setState(() {
-      _isSyncingBlocklists = true;
-    });
-
-    try {
-      await _resolvedBlocklistSyncService.syncAll(
-        _enabledBlocklistCategories(),
-        forceRefresh: false,
-      );
-      if (!mounted) {
-        return;
-      }
-      setState(() {
-        _blocklistStatusRefreshToken += 1;
-      });
-    } catch (_) {
-      // Startup prime is best-effort.
-    } finally {
-      if (mounted) {
-        setState(() {
-          _isSyncingBlocklists = false;
-        });
-      }
     }
   }
 
@@ -832,18 +621,6 @@ class _ParentSettingsScreenState extends State<ParentSettingsScreen> {
     );
   }
 
-  Future<void> _openSecurityControls(BuildContext context) async {
-    await Navigator.of(context).push(
-      MaterialPageRoute(
-        builder: (_) => SecurityControlsScreen(
-          authService: widget.authService,
-          firestoreService: widget.firestoreService,
-          parentIdOverride: widget.parentIdOverride,
-        ),
-      ),
-    );
-  }
-
   Future<void> _openProtectionSettings(BuildContext context) async {
     await Navigator.of(context).push(
       MaterialPageRoute(
@@ -856,10 +633,10 @@ class _ParentSettingsScreenState extends State<ParentSettingsScreen> {
     );
   }
 
-  Future<void> _openMaximumProtection(BuildContext context) async {
+  Future<void> _openBlocklistManagement(BuildContext context) async {
     await Navigator.of(context).push(
       MaterialPageRoute(
-        builder: (_) => const MaximumProtectionScreen(),
+        builder: (_) => const BlocklistManagementScreen(),
       ),
     );
   }
@@ -880,6 +657,73 @@ class _ParentSettingsScreenState extends State<ParentSettingsScreen> {
     await Navigator.of(context).push(
       MaterialPageRoute(
         builder: (_) => ModesScreen(
+          authService: widget.authService,
+          firestoreService: widget.firestoreService,
+          parentIdOverride: widget.parentIdOverride,
+        ),
+      ),
+    );
+  }
+
+  Future<void> _openModeOverridesPicker(BuildContext context) async {
+    final parentId = _parentId;
+    if (parentId == null || parentId.trim().isEmpty) {
+      return;
+    }
+
+    List<ChildProfile> children;
+    try {
+      children = await _resolvedFirestoreService.getChildrenOnce(parentId);
+    } catch (error) {
+      if (!context.mounted) {
+        return;
+      }
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text('Unable to load children: $error')),
+      );
+      return;
+    }
+    if (!context.mounted) {
+      return;
+    }
+    if (children.isEmpty) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(
+            content: Text('Add a child first to edit custom modes.')),
+      );
+      return;
+    }
+
+    final selectedChild = await showModalBottomSheet<ChildProfile>(
+      context: context,
+      showDragHandle: true,
+      builder: (sheetContext) {
+        return SafeArea(
+          child: ListView.separated(
+            shrinkWrap: true,
+            itemCount: children.length,
+            separatorBuilder: (_, __) => const Divider(height: 1),
+            itemBuilder: (_, index) {
+              final child = children[index];
+              return ListTile(
+                title: Text(child.nickname),
+                subtitle: Text('Age group: ${child.ageBand.value} years'),
+                trailing: const Icon(Icons.chevron_right),
+                onTap: () => Navigator.of(sheetContext).pop(child),
+              );
+            },
+          ),
+        );
+      },
+    );
+    if (selectedChild == null || !context.mounted) {
+      return;
+    }
+
+    await Navigator.of(context).push(
+      MaterialPageRoute(
+        builder: (_) => ModeOverridesScreen(
+          child: selectedChild,
           authService: widget.authService,
           firestoreService: widget.firestoreService,
           parentIdOverride: widget.parentIdOverride,
@@ -948,51 +792,6 @@ class _ParentSettingsScreenState extends State<ParentSettingsScreen> {
     );
   }
 
-  Future<void> _openSetupGuide(BuildContext context) async {
-    final parentId = _parentId;
-    if (parentId == null || parentId.trim().isEmpty) {
-      return;
-    }
-    await Navigator.of(context).push(
-      MaterialPageRoute(
-        builder: (_) => OnboardingScreen(
-          parentId: parentId,
-          isRevisit: true,
-          firestoreService: widget.firestoreService,
-        ),
-      ),
-    );
-  }
-
-  Future<void> _openNextDnsSetup(BuildContext context) async {
-    final gate =
-        await _featureGateService.checkGate(AppFeature.nextDnsIntegration);
-    if (!gate.allowed) {
-      if (!context.mounted) {
-        return;
-      }
-      await UpgradeScreen.maybeShow(
-        context,
-        feature: AppFeature.nextDnsIntegration,
-        reason: gate.upgradeReason,
-      );
-      return;
-    }
-
-    if (!context.mounted) {
-      return;
-    }
-    await Navigator.of(context).push(
-      MaterialPageRoute(
-        builder: (_) => NextDnsSetupScreen(
-          authService: widget.authService,
-          firestoreService: widget.firestoreService,
-          parentIdOverride: widget.parentIdOverride,
-        ),
-      ),
-    );
-  }
-
   Future<void> _openBypassAlerts(BuildContext context) async {
     if (!context.mounted) {
       return;
@@ -1016,7 +815,7 @@ class _ParentSettingsScreenState extends State<ParentSettingsScreen> {
   }
 
   void _hydrateFromProfile(Map<String, dynamic>? profile) {
-    if (_hasChanges) {
+    if (_isSaving) {
       return;
     }
     final preferences = _asMap(profile?['preferences']);
@@ -1065,12 +864,6 @@ class _ParentSettingsScreenState extends State<ParentSettingsScreen> {
       return tier.trim().toLowerCase();
     }
     return 'free';
-  }
-
-  List<BlocklistCategory> _enabledBlocklistCategories() {
-    // Current app state does not store category-level blocklist toggles yet.
-    // Sync all bundled categories so local data stays fresh.
-    return List<BlocklistCategory>.from(BlocklistCategory.values);
   }
 }
 

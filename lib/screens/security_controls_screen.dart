@@ -1,10 +1,7 @@
-import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:flutter/material.dart';
 import 'package:trustbridge_app/screens/change_password_screen.dart';
-import 'package:trustbridge_app/services/app_lock_service.dart';
 import 'package:trustbridge_app/services/auth_service.dart';
 import 'package:trustbridge_app/services/firestore_service.dart';
-import 'package:trustbridge_app/widgets/pin_entry_dialog.dart';
 
 class SecurityControlsScreen extends StatefulWidget {
   const SecurityControlsScreen({
@@ -25,7 +22,6 @@ class SecurityControlsScreen extends StatefulWidget {
 class _SecurityControlsScreenState extends State<SecurityControlsScreen> {
   AuthService? _authService;
   FirestoreService? _firestoreService;
-  AppLockService? _appLockService;
 
   bool _biometricLoginEnabled = false;
   bool _isSavingBiometric = false;
@@ -38,11 +34,6 @@ class _SecurityControlsScreenState extends State<SecurityControlsScreen> {
   FirestoreService get _resolvedFirestoreService {
     _firestoreService ??= widget.firestoreService ?? FirestoreService();
     return _firestoreService!;
-  }
-
-  AppLockService get _resolvedAppLockService {
-    _appLockService ??= AppLockService();
-    return _appLockService!;
   }
 
   String? get _parentId {
@@ -102,8 +93,6 @@ class _SecurityControlsScreenState extends State<SecurityControlsScreen> {
           final profile = snapshot.data;
           _hydrateFromProfile(profile);
           final securityMap = _asMap(profile?['security']);
-          final appPinChangedAt =
-              _toDateTime(securityMap['appPinChangedAt']) ?? DateTime.now();
           final activeSessions = _intValue(securityMap['activeSessions'], 1);
           final twoFactorEnabled =
               _boolValue(securityMap['twoFactorEnabled'], false);
@@ -143,7 +132,6 @@ class _SecurityControlsScreenState extends State<SecurityControlsScreen> {
               _buildConfigurationCard(
                 context,
                 parentId: parentId,
-                appPinChangedAt: appPinChangedAt,
                 activeSessions: activeSessions,
                 twoFactorEnabled: twoFactorEnabled,
                 accountEmail: accountEmail,
@@ -228,35 +216,15 @@ class _SecurityControlsScreenState extends State<SecurityControlsScreen> {
   Widget _buildConfigurationCard(
     BuildContext context, {
     required String parentId,
-    required DateTime appPinChangedAt,
     required int activeSessions,
     required bool twoFactorEnabled,
     required String? accountEmail,
   }) {
-    final now = DateTime.now();
-    final daysSincePinChange = now.difference(appPinChangedAt).inDays;
-
     return Card(
       elevation: 0,
       shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
       child: Column(
         children: [
-          ListTile(
-            key: const Key('security_app_pin_tile'),
-            leading: CircleAvatar(
-              radius: 16,
-              backgroundColor: Colors.blueGrey.withValues(alpha: 0.16),
-              child: const Text(
-                '123',
-                style: TextStyle(fontWeight: FontWeight.w800, fontSize: 10),
-              ),
-            ),
-            title: const Text('Change App PIN (4-digit code)'),
-            subtitle: Text('Last changed $daysSincePinChange days ago'),
-            trailing: const Icon(Icons.chevron_right),
-            onTap: () => _changePinFlow(parentId),
-          ),
-          const Divider(height: 1),
           ListTile(
             key: const Key('security_change_password_tile'),
             leading: const Icon(Icons.lock_outline),
@@ -329,43 +297,6 @@ class _SecurityControlsScreenState extends State<SecurityControlsScreen> {
     }
   }
 
-  Future<void> _changePinFlow(String parentId) async {
-    final lockEnabled = await _resolvedAppLockService.isEnabled();
-    if (!mounted) {
-      return;
-    }
-    if (lockEnabled) {
-      final unlocked = await showPinEntryDialog(context);
-      if (!unlocked) {
-        return;
-      }
-    }
-
-    final pin = await _showSetPinDialog();
-    if (pin == null) {
-      return;
-    }
-
-    try {
-      await _resolvedAppLockService.setPin(pin);
-      await _resolvedFirestoreService.updateParentSecurityMetadata(
-        parentId: parentId,
-        appPinChangedAt: DateTime.now(),
-      );
-      if (!mounted) {
-        return;
-      }
-      ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text('App PIN updated')),
-      );
-    } catch (error) {
-      if (!mounted) {
-        return;
-      }
-      _showInfo('Unable to update App PIN: $error');
-    }
-  }
-
   Future<void> _toggleTwoFactor(String parentId, bool current) async {
     try {
       await _resolvedFirestoreService.updateParentSecurityMetadata(
@@ -388,13 +319,6 @@ class _SecurityControlsScreenState extends State<SecurityControlsScreen> {
       }
       _showInfo('Unable to update two-factor setting: $error');
     }
-  }
-
-  Future<String?> _showSetPinDialog() {
-    return showDialog<String>(
-      context: context,
-      builder: (_) => const _SetPinDialog(),
-    );
   }
 
   Future<void> _openChangePassword(
@@ -431,16 +355,6 @@ class _SecurityControlsScreenState extends State<SecurityControlsScreen> {
     return fallback;
   }
 
-  DateTime? _toDateTime(Object? rawValue) {
-    if (rawValue is Timestamp) {
-      return rawValue.toDate();
-    }
-    if (rawValue is DateTime) {
-      return rawValue;
-    }
-    return null;
-  }
-
   Map<String, dynamic> _asMap(Object? value) {
     if (value is Map<String, dynamic>) {
       return value;
@@ -462,93 +376,6 @@ class _SecurityControlsScreenState extends State<SecurityControlsScreen> {
   void _showInfo(String message) {
     ScaffoldMessenger.of(context).showSnackBar(
       SnackBar(content: Text(message)),
-    );
-  }
-}
-
-class _SetPinDialog extends StatefulWidget {
-  const _SetPinDialog();
-
-  @override
-  State<_SetPinDialog> createState() => _SetPinDialogState();
-}
-
-class _SetPinDialogState extends State<_SetPinDialog> {
-  final TextEditingController _pinController = TextEditingController();
-  final TextEditingController _confirmPinController = TextEditingController();
-  String? _errorText;
-
-  @override
-  void dispose() {
-    _pinController.dispose();
-    _confirmPinController.dispose();
-    super.dispose();
-  }
-
-  void _submit() {
-    final pin = _pinController.text.trim();
-    final confirmPin = _confirmPinController.text.trim();
-
-    if (pin.length != 4 || int.tryParse(pin) == null) {
-      setState(() => _errorText = 'PIN must be exactly 4 digits.');
-      return;
-    }
-    if (pin != confirmPin) {
-      setState(() => _errorText = 'PINs do not match.');
-      return;
-    }
-
-    Navigator.of(context).pop(pin);
-  }
-
-  @override
-  Widget build(BuildContext context) {
-    return AlertDialog(
-      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(20)),
-      title: const Text('Set App PIN'),
-      content: Column(
-        mainAxisSize: MainAxisSize.min,
-        children: <Widget>[
-          TextField(
-            controller: _pinController,
-            keyboardType: TextInputType.number,
-            maxLength: 4,
-            obscureText: true,
-            decoration: const InputDecoration(
-              labelText: 'New 4-digit PIN',
-              counterText: '',
-            ),
-          ),
-          const SizedBox(height: 12),
-          TextField(
-            controller: _confirmPinController,
-            keyboardType: TextInputType.number,
-            maxLength: 4,
-            obscureText: true,
-            decoration: const InputDecoration(
-              labelText: 'Confirm PIN',
-              counterText: '',
-            ),
-          ),
-          if (_errorText != null) ...<Widget>[
-            const SizedBox(height: 8),
-            Text(
-              _errorText!,
-              style: const TextStyle(color: Colors.red, fontSize: 12),
-            ),
-          ],
-        ],
-      ),
-      actions: <Widget>[
-        TextButton(
-          onPressed: () => Navigator.of(context).pop(),
-          child: const Text('Cancel'),
-        ),
-        FilledButton(
-          onPressed: _submit,
-          child: const Text('Set PIN'),
-        ),
-      ],
     );
   }
 }
