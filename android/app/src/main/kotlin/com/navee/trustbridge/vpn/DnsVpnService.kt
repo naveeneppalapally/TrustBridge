@@ -29,6 +29,7 @@ import android.util.Log
 import androidx.core.app.NotificationCompat
 import com.navee.trustbridge.MainActivity
 import com.navee.trustbridge.R
+import com.google.firebase.FirebaseApp
 import com.google.firebase.auth.FirebaseAuth
 import com.google.firebase.firestore.FieldValue
 import com.google.firebase.Timestamp
@@ -354,6 +355,11 @@ class DnsVpnService : VpnService() {
 
     override fun onCreate() {
         super.onCreate()
+        try {
+            FirebaseApp.initializeApp(this)
+        } catch (error: Exception) {
+            Log.w(TAG, "Firebase init failed in VPN process", error)
+        }
         vpnPreferencesStore = VpnPreferencesStore(this)
         connectivityManager = getSystemService(ConnectivityManager::class.java)
         val persisted = vpnPreferencesStore.loadConfig()

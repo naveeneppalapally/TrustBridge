@@ -882,12 +882,17 @@ class MainActivity : FlutterFragmentActivity() {
         }
         stats.values.forEach { stat ->
             val packageName = stat.packageName?.trim().orEmpty()
-            if (packageName.isEmpty() || stat.totalTimeInForeground <= 0L) {
+            val durationMs = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) {
+                stat.totalTimeVisible
+            } else {
+                stat.totalTimeInForeground
+            }
+            if (packageName.isEmpty() || durationMs <= 0L) {
                 return@forEach
             }
             snapshots[packageName] = UsageSnapshot(
                 packageName = packageName,
-                durationMs = stat.totalTimeInForeground,
+                durationMs = durationMs,
                 lastTimeUsedMs = stat.lastTimeUsed
             )
         }
