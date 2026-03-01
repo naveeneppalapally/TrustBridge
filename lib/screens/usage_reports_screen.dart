@@ -18,6 +18,7 @@ class UsageReportsScreen extends StatefulWidget {
     super.key,
     this.showLoadingState = false,
     this.showAppBar = true,
+    this.allowLocalDeviceFallback = false,
     this.appUsageService,
     this.authService,
     this.firestoreService,
@@ -28,6 +29,7 @@ class UsageReportsScreen extends StatefulWidget {
 
   final bool showLoadingState;
   final bool showAppBar;
+  final bool allowLocalDeviceFallback;
   final AppUsageService? appUsageService;
   final AuthService? authService;
   final FirestoreService? firestoreService;
@@ -42,6 +44,7 @@ class UsageReportsScreen extends StatefulWidget {
 class _UsageReportsScreenState extends State<UsageReportsScreen> {
   AuthService? _authService;
   FirestoreService? _firestoreService;
+  AppUsageService? _appUsageService;
   UsageReportData? _report;
   List<ChildProfile> _children = const <ChildProfile>[];
   bool _loading = true;
@@ -58,6 +61,11 @@ class _UsageReportsScreenState extends State<UsageReportsScreen> {
   FirestoreService get _resolvedFirestoreService {
     _firestoreService ??= widget.firestoreService ?? FirestoreService();
     return _firestoreService!;
+  }
+
+  AppUsageService? get _resolvedAppUsageService {
+    _appUsageService ??= widget.appUsageService;
+    return _appUsageService;
   }
 
   String? get _parentId {
@@ -103,6 +111,11 @@ class _UsageReportsScreenState extends State<UsageReportsScreen> {
         children,
         selectedDay: _selectedDay,
       );
+      if (report == null &&
+          widget.allowLocalDeviceFallback &&
+          _resolvedAppUsageService != null) {
+        report = await _resolvedAppUsageService!.getUsageReport(pastDays: 7);
+      }
       if (!mounted) {
         return;
       }
@@ -163,6 +176,9 @@ class _UsageReportsScreenState extends State<UsageReportsScreen> {
     }
     final report = _report;
     if (report == null || !report.hasData) {
+      if (report != null && !report.permissionGranted) {
+        return _buildUsageAccessRequiredCard();
+      }
       return ListView(
         padding: const EdgeInsets.fromLTRB(16, 12, 16, 24),
         children: [
@@ -184,7 +200,11 @@ class _UsageReportsScreenState extends State<UsageReportsScreen> {
           _buildDaySelectorCard(),
           const SizedBox(height: 12),
         ],
+        _buildInsightsHeader(report),
+        const SizedBox(height: 12),
         _HeroStatsCard(report: report),
+        const SizedBox(height: 14),
+        _UsageHighlightsCard(report: report),
         const SizedBox(height: 14),
         _CategoryCard(report: report),
         if (_perAppUsageReportsEnabled) ...[
@@ -194,6 +214,67 @@ class _UsageReportsScreenState extends State<UsageReportsScreen> {
           _MostUsedAppsCard(report: report),
         ],
       ],
+    );
+  }
+
+  Widget _buildUsageAccessRequiredCard() {
+    return ListView(
+      padding: const EdgeInsets.fromLTRB(16, 12, 16, 24),
+      children: [
+        Card(
+          child: Padding(
+            padding: const EdgeInsets.all(20),
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                const Text(
+                  'Usage access required',
+                  style: TextStyle(fontSize: 18, fontWeight: FontWeight.w800),
+                ),
+                const SizedBox(height: 8),
+                const Text(
+                  'To see which apps your child uses, grant Usage Access on the child phone.',
+                ),
+                const SizedBox(height: 14),
+                FilledButton.icon(
+                  onPressed: () async {
+                    await _resolvedAppUsageService?.openUsageAccessSettings();
+                  },
+                  icon: const Icon(Icons.settings_outlined),
+                  label: const Text('Grant Access'),
+                ),
+              ],
+            ),
+          ),
+        ),
+      ],
+    );
+  }
+
+  Widget _buildInsightsHeader(UsageReportData report) {
+    final activeDays = report.dailyTrend
+        .where((point) => point.duration.inMilliseconds > 0)
+        .length;
+    final selectedDayLabel = _dayChipLabel(_selectedDay);
+    return Card(
+      child: Padding(
+        padding: const EdgeInsets.all(14),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Text(
+              'Clear summary for $selectedDayLabel',
+              style: const TextStyle(fontSize: 16, fontWeight: FontWeight.w800),
+            ),
+            const SizedBox(height: 6),
+            Text(
+              activeDays <= 1
+                  ? 'Showing latest activity. As more days are used, trends become clearer.'
+                  : 'Average is calculated from $activeDays active days to avoid misleading numbers.',
+            ),
+          ],
+        ),
+      ),
     );
   }
 
@@ -416,11 +497,18 @@ class _UsageReportsScreenState extends State<UsageReportsScreen> {
       final selectedDailyData =
           (selectedNestedSnapshot.data() ?? selectedFlatSnapshot.data()) ??
               const <String, dynamic>{};
+      final selectedDailySnapshotVersion =
+          _toInt(selectedDailyData['snapshotVersion']);
+      final hasTrustedSelectedDailyData =
+          selectedDailyData.isNotEmpty && selectedDailySnapshotVersion >= 2;
       final latestDayKey = (latestData['dayKey'] as String?)?.trim() ?? '';
+      final latestSnapshotVersion = _toInt(latestData['snapshotVersion']);
       final canUseLatestForSelectedDay =
-          latestData.isNotEmpty && latestDayKey == selectedDayKey;
+          latestData.isNotEmpty &&
+          latestDayKey == selectedDayKey &&
+          latestSnapshotVersion >= 2;
 
-      if (selectedDailyData.isNotEmpty) {
+      if (hasTrustedSelectedDailyData) {
         final totalMinutes = _toInt(selectedDailyData['totalScreenMinutes']);
         totalScreenTimeMs += totalMinutes * Duration.millisecondsPerMinute;
         if (totalMinutes > 0) {
@@ -598,6 +686,10 @@ class _UsageReportsScreenState extends State<UsageReportsScreen> {
                 trendFlatSnapshots[index].data()) ??
             const <String, dynamic>{};
         if (trendData.isEmpty) {
+          continue;
+        }
+        final trendSnapshotVersion = _toInt(trendData['snapshotVersion']);
+        if (trendSnapshotVersion < 2) {
           continue;
         }
         final totalMinutes = _toInt(trendData['totalScreenMinutes']);
@@ -861,7 +953,7 @@ class _HeroStatsCard extends StatelessWidget {
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
           const Text(
-            'Total Screen Time',
+            'Selected Day Screen Time',
             style: TextStyle(
               color: Colors.white70,
               fontSize: 13,
@@ -891,13 +983,138 @@ class _HeroStatsCard extends StatelessWidget {
           ),
           const SizedBox(height: 10),
           Text(
-            'DAILY AVERAGE: ${_formatDuration(report.averageDailyScreenTime)}',
+            'ACTIVE-DAY AVERAGE: ${_formatDuration(report.averageDailyScreenTime)}',
             style: const TextStyle(
               color: Colors.white70,
               fontSize: 12,
               letterSpacing: 0.3,
               fontWeight: FontWeight.w600,
             ),
+          ),
+        ],
+      ),
+    );
+  }
+}
+
+class _UsageHighlightsCard extends StatelessWidget {
+  const _UsageHighlightsCard({required this.report});
+
+  final UsageReportData report;
+
+  @override
+  Widget build(BuildContext context) {
+    final trend = report.dailyTrend;
+    final todayMs = trend.isNotEmpty ? trend.last.duration.inMilliseconds : 0;
+    final yesterdayMs =
+        trend.length > 1 ? trend[trend.length - 2].duration.inMilliseconds : 0;
+    final activeDays =
+        trend.where((point) => point.duration.inMilliseconds > 0).length;
+    final topApp = report.topApps.isNotEmpty ? report.topApps.first : null;
+    final trendDeltaLabel =
+        _trendDelta(todayMs: todayMs, yesterdayMs: yesterdayMs);
+
+    return Card(
+      child: Padding(
+        padding: const EdgeInsets.all(12),
+        child: Row(
+          children: [
+            Expanded(
+              child: _MiniMetric(
+                title: 'Vs Yesterday',
+                value: trendDeltaLabel,
+                subtitle: 'today trend',
+              ),
+            ),
+            const SizedBox(width: 8),
+            Expanded(
+              child: _MiniMetric(
+                title: 'Active Days',
+                value: '$activeDays',
+                subtitle: 'in this week',
+              ),
+            ),
+            const SizedBox(width: 8),
+            Expanded(
+              child: _MiniMetric(
+                title: 'Top App',
+                value: topApp?.appName ?? '—',
+                subtitle: topApp == null
+                    ? 'no usage yet'
+                    : _formatDuration(topApp.duration),
+              ),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+
+  String _trendDelta({
+    required int todayMs,
+    required int yesterdayMs,
+  }) {
+    if (todayMs <= 0 && yesterdayMs <= 0) {
+      return 'No data';
+    }
+    if (yesterdayMs <= 0) {
+      return 'New activity';
+    }
+    final deltaPercent =
+        (((todayMs - yesterdayMs) / yesterdayMs) * 100).round();
+    if (deltaPercent == 0) {
+      return 'No change';
+    }
+    final prefix = deltaPercent > 0 ? '+' : '';
+    return '$prefix$deltaPercent%';
+  }
+}
+
+class _MiniMetric extends StatelessWidget {
+  const _MiniMetric({
+    required this.title,
+    required this.value,
+    required this.subtitle,
+  });
+
+  final String title;
+  final String value;
+  final String subtitle;
+
+  @override
+  Widget build(BuildContext context) {
+    return Container(
+      padding: const EdgeInsets.all(10),
+      decoration: BoxDecoration(
+        borderRadius: BorderRadius.circular(12),
+        color: Theme.of(context).colorScheme.surfaceContainerHighest,
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Text(
+            title,
+            style: Theme.of(context).textTheme.labelMedium?.copyWith(
+                  color: Theme.of(context).colorScheme.onSurfaceVariant,
+                ),
+          ),
+          const SizedBox(height: 6),
+          Text(
+            value,
+            maxLines: 1,
+            overflow: TextOverflow.ellipsis,
+            style: Theme.of(context).textTheme.titleSmall?.copyWith(
+                  fontWeight: FontWeight.w800,
+                ),
+          ),
+          const SizedBox(height: 3),
+          Text(
+            subtitle,
+            maxLines: 1,
+            overflow: TextOverflow.ellipsis,
+            style: Theme.of(context).textTheme.bodySmall?.copyWith(
+                  color: Theme.of(context).colorScheme.onSurfaceVariant,
+                ),
           ),
         ],
       ),
@@ -913,9 +1130,11 @@ class _CategoryCard extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final slices = report.categorySlices.take(5).toList(growable: false);
-    final totalMs = report.totalScreenTime.inMilliseconds <= 0
-        ? 1
-        : report.totalScreenTime.inMilliseconds;
+    final totalMs = slices.fold<int>(
+      0,
+      (sum, item) => sum + item.duration.inMilliseconds,
+    );
+    final normalizedTotalMs = totalMs <= 0 ? 1 : totalMs;
 
     if (slices.isEmpty) {
       return const SizedBox.shrink();
@@ -948,7 +1167,8 @@ class _CategoryCard extends StatelessWidget {
                     final index = entry.key;
                     final item = entry.value;
                     return PieChartSectionData(
-                      value: item.duration.inMilliseconds / totalMs * 100,
+                      value:
+                          item.duration.inMilliseconds / normalizedTotalMs * 100,
                       color: _categoryColor(index),
                       title: '',
                       radius: 46,
@@ -961,6 +1181,9 @@ class _CategoryCard extends StatelessWidget {
             ...slices.asMap().entries.map((entry) {
               final index = entry.key;
               final item = entry.value;
+              final percent =
+                  ((item.duration.inMilliseconds / normalizedTotalMs) * 100)
+                      .round();
               return Padding(
                 padding: const EdgeInsets.only(bottom: 8),
                 child: Row(
@@ -976,16 +1199,15 @@ class _CategoryCard extends StatelessWidget {
                     const SizedBox(width: 8),
                     Expanded(
                       child: Text(
-                        item.label,
+                        '${item.label} · $percent%',
                         style: const TextStyle(fontWeight: FontWeight.w600),
                       ),
                     ),
                     Text(
                       _formatDuration(item.duration),
-                      style: const TextStyle(
-                        color: Colors.black87,
-                        fontWeight: FontWeight.w700,
-                      ),
+                      style: Theme.of(context).textTheme.bodyMedium?.copyWith(
+                            fontWeight: FontWeight.w700,
+                          ),
                     ),
                   ],
                 ),

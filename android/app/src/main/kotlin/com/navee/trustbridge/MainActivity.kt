@@ -20,6 +20,7 @@ import android.graphics.drawable.BitmapDrawable
 import android.graphics.drawable.Drawable
 import android.util.Base64
 import java.text.SimpleDateFormat
+import java.util.Calendar
 import java.util.Date
 import java.util.Locale
 import java.io.ByteArrayOutputStream
@@ -730,55 +731,52 @@ class MainActivity : FlutterFragmentActivity() {
             ?: return emptyList()
         val safePastDays = pastDays.coerceIn(1, 30)
         val endTime = System.currentTimeMillis()
-        val startTime = endTime - safePastDays * 24L * 60L * 60L * 1000L
-        val stats = usageStatsManager.queryUsageStats(
-            UsageStatsManager.INTERVAL_DAILY,
-            startTime,
-            endTime
-        )
-
-        if (stats.isNullOrEmpty()) {
-            return emptyList()
-        }
+        val dayMillis = 24L * 60L * 60L * 1000L
+        val todayStart = dayStartEpochMs(endTime)
 
         val aggregates = mutableMapOf<String, MutableMap<String, Any>>()
-        stats.forEach { stat ->
-            val packageName = stat.packageName ?: return@forEach
-            if (stat.totalTimeInForeground <= 0L) {
-                return@forEach
-            }
-            val appName = try {
-                val appInfo = packageManager.getApplicationInfo(packageName, 0)
-                packageManager.getApplicationLabel(appInfo).toString()
-            } catch (_: Exception) {
-                packageName
+        for (offset in 0 until safePastDays) {
+            val dayStart = todayStart - (offset * dayMillis)
+            val dayEnd = minOf(dayStart + dayMillis, endTime)
+            val dayKey = formatDateKey(dayStart)
+            val dayStats = usageStatsManager.queryAndAggregateUsageStats(dayStart, dayEnd)
+            if (dayStats.isNullOrEmpty()) {
+                continue
             }
 
-            val item = aggregates.getOrPut(packageName) {
-                mutableMapOf(
-                    "packageName" to packageName,
-                    "appName" to appName,
-                    "totalForegroundTimeMs" to 0L,
-                    "lastTimeUsedEpochMs" to 0L,
-                    "dailyUsageMs" to mutableMapOf<String, Long>()
-                )
+            dayStats.values.forEach { stat ->
+                val packageName = stat.packageName ?: return@forEach
+                val foregroundMs = stat.totalTimeInForeground
+                if (foregroundMs <= 0L) {
+                    return@forEach
+                }
+                val appName = try {
+                    val appInfo = packageManager.getApplicationInfo(packageName, 0)
+                    packageManager.getApplicationLabel(appInfo).toString()
+                } catch (_: Exception) {
+                    packageName
+                }
+
+                val item = aggregates.getOrPut(packageName) {
+                    mutableMapOf(
+                        "packageName" to packageName,
+                        "appName" to appName,
+                        "totalForegroundTimeMs" to 0L,
+                        "lastTimeUsedEpochMs" to 0L,
+                        "dailyUsageMs" to mutableMapOf<String, Long>()
+                    )
+                }
+
+                val previousTotal = (item["totalForegroundTimeMs"] as? Long) ?: 0L
+                item["totalForegroundTimeMs"] = previousTotal + foregroundMs
+
+                val previousLastUsed = (item["lastTimeUsedEpochMs"] as? Long) ?: 0L
+                item["lastTimeUsedEpochMs"] = maxOf(previousLastUsed, stat.lastTimeUsed)
+
+                val dailyMap = item["dailyUsageMs"] as MutableMap<String, Long>
+                val previousDayTotal = dailyMap[dayKey] ?: 0L
+                dailyMap[dayKey] = previousDayTotal + foregroundMs
             }
-
-            val previousTotal = (item["totalForegroundTimeMs"] as? Long) ?: 0L
-            item["totalForegroundTimeMs"] = previousTotal + stat.totalTimeInForeground
-
-            val previousLastUsed = (item["lastTimeUsedEpochMs"] as? Long) ?: 0L
-            item["lastTimeUsedEpochMs"] = maxOf(previousLastUsed, stat.lastTimeUsed)
-
-            val dailyMap = item["dailyUsageMs"] as MutableMap<String, Long>
-            val dayEpochMs = when {
-                stat.firstTimeStamp > 0L -> stat.firstTimeStamp
-                stat.lastTimeUsed > 0L -> stat.lastTimeUsed
-                else -> 0L
-            }
-            val dayKey = formatDateKey(dayEpochMs)
-            val previousDayTotal = dailyMap[dayKey] ?: 0L
-            dailyMap[dayKey] = previousDayTotal + stat.totalTimeInForeground
         }
 
         return aggregates.values
@@ -796,6 +794,17 @@ class MainActivity : FlutterFragmentActivity() {
                     "dailyUsageMs" to dailyMap
                 )
             }
+    }
+
+    private fun dayStartEpochMs(epochMs: Long): Long {
+        val calendar = Calendar.getInstance().apply {
+            timeInMillis = epochMs
+            set(Calendar.HOUR_OF_DAY, 0)
+            set(Calendar.MINUTE, 0)
+            set(Calendar.SECOND, 0)
+            set(Calendar.MILLISECOND, 0)
+        }
+        return calendar.timeInMillis
     }
 
     private fun getInstalledLaunchableApps(): List<Map<String, Any>> {
