@@ -3545,13 +3545,70 @@ class FirestoreService {
       final observed = observedPackageDomains[packageName];
       if (observed != null && observed.isNotEmpty) {
         result.addAll(
-          observed
-              .map((domain) => domain.trim().toLowerCase())
-              .where((domain) => domain.isNotEmpty),
+          observed.map((domain) => domain.trim().toLowerCase()).where(
+                (domain) =>
+                    domain.isNotEmpty &&
+                    _isPackageScopedObservedDomain(
+                      packageName: packageName,
+                      domain: domain,
+                    ),
+              ),
         );
       }
     }
     return result;
+  }
+
+  bool _isPackageScopedObservedDomain({
+    required String packageName,
+    required String domain,
+  }) {
+    final normalizedDomain = domain.trim().toLowerCase();
+    if (normalizedDomain.isEmpty) {
+      return false;
+    }
+
+    // Keep explicit package-scoped matches and drop generic shared infra
+    // domains (for example graph.facebook.com) to avoid collateral blocking.
+    const ignoredTokens = <String>{
+      'com',
+      'org',
+      'net',
+      'app',
+      'android',
+      'google',
+      'service',
+      'services',
+      'mobile',
+      'client',
+      'free',
+      'lite',
+      'global',
+      'india',
+      'official',
+      'inc',
+      'co',
+    };
+
+    final tokens = packageName
+        .split('.')
+        .map((token) => token.trim().toLowerCase())
+        .where((token) => token.length >= 4 && !ignoredTokens.contains(token))
+        .toSet();
+    if (tokens.isEmpty) {
+      return false;
+    }
+
+    for (final token in tokens) {
+      if (normalizedDomain == token ||
+          normalizedDomain.endsWith('.$token') ||
+          normalizedDomain.contains('$token.') ||
+          normalizedDomain.contains('-$token') ||
+          normalizedDomain.contains('$token-')) {
+        return true;
+      }
+    }
+    return false;
   }
 
   Map<String, ModeOverrideSet> _normalizeModeOverridesModel(
