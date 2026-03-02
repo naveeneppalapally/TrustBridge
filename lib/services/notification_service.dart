@@ -14,6 +14,9 @@ const bool _isFlutterTest = bool.fromEnvironment('FLUTTER_TEST');
 /// Background message handler - must be top-level.
 @pragma('vm:entry-point')
 Future<void> firebaseMessagingBackgroundHandler(RemoteMessage message) async {
+  AppLogger.debug(
+    '[FCM_ARRIVAL] background messageId=${message.messageId} data=${message.data}',
+  );
   AppLogger.debug('[FCM] Background message: ${message.messageId}');
   if (message.data['type'] == 'policy_update') {
     try {
@@ -214,6 +217,9 @@ class NotificationService {
   }
 
   void _onForegroundMessage(RemoteMessage message) {
+    AppLogger.debug(
+      '[FCM_ARRIVAL] foreground messageId=${message.messageId} data=${message.data}',
+    );
     AppLogger.debug('[FCM] Foreground message: ${message.messageId}');
     if (message.data['type'] == 'policy_update') {
       unawaited(
