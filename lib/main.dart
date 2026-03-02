@@ -42,6 +42,7 @@ import 'package:trustbridge_app/services/notification_service.dart';
 import 'package:trustbridge_app/services/blocklist_workmanager_service.dart';
 import 'package:trustbridge_app/services/onboarding_state_service.dart';
 import 'package:trustbridge_app/services/pairing_service.dart';
+import 'package:trustbridge_app/services/child_effective_policy_sync_service.dart';
 import 'package:trustbridge_app/services/policy_vpn_sync_service.dart';
 import 'package:trustbridge_app/theme/app_theme.dart';
 import 'package:trustbridge_app/widgets/child_shell.dart';
@@ -55,6 +56,7 @@ Future<void> main() async {
   runApp(MyApp(startupFuture: startupFuture));
   WidgetsBinding.instance.addPostFrameCallback((_) {
     unawaited(NotificationService().initialize());
+    unawaited(ChildEffectivePolicySyncService.instance.start());
     // Defer background scheduler registration until after first frame to
     // minimize startup jank and reduce ANR risk on lower-memory devices.
     unawaited(_initBlocklistWorkmanager());
@@ -122,7 +124,7 @@ Future<void> _syncBlocklistsOnForeground({
 Future<void> _initBlocklistWorkmanager() async {
   try {
     await BlocklistWorkmanagerService.initialize();
-    await BlocklistWorkmanagerService.registerWeeklySync(
+    await BlocklistWorkmanagerService.registerDailySync(
       List<BlocklistCategory>.from(BlocklistCategory.values),
     );
   } catch (_) {

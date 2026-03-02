@@ -194,34 +194,60 @@ class AuthService {
     return _runAuthOperationWithRetry<User?>(
       operationName: 'Google sign-in',
       action: () async {
-        final googleAccount = await _googleSignIn.signIn();
-        if (googleAccount == null) {
-          _lastErrorMessage = 'aborted-by-user';
-          return null;
-        }
+        try {
+          final googleAccount = await _googleSignIn.signIn();
+          if (googleAccount == null) {
+            _lastErrorMessage = 'aborted-by-user';
+            return null;
+          }
 
-        final googleAuth = await googleAccount.authentication;
-        if (googleAuth.idToken == null || googleAuth.idToken!.isEmpty) {
-          throw FirebaseAuthException(
-            code: 'missing-id-token',
-            message: 'Google sign-in did not return a valid ID token.',
+          final googleAuth = await googleAccount.authentication;
+          final idToken = googleAuth.idToken?.trim();
+          final accessToken = googleAuth.accessToken?.trim();
+          final hasIdToken = idToken != null && idToken.isNotEmpty;
+          final hasAccessToken = accessToken != null && accessToken.isNotEmpty;
+
+          if (!hasIdToken && !hasAccessToken) {
+            throw FirebaseAuthException(
+              code: 'missing-google-token',
+              message: 'Google sign-in did not return usable credentials.',
+            );
+          }
+
+          final credential = GoogleAuthProvider.credential(
+            accessToken: hasAccessToken ? accessToken : null,
+            idToken: hasIdToken ? idToken : null,
           );
-        }
 
-        final credential = GoogleAuthProvider.credential(
-          accessToken: googleAuth.accessToken,
-          idToken: googleAuth.idToken,
-        );
-
-        final userCredential = await _auth
-            .signInWithCredential(credential)
-            .timeout(_authRequestTimeout);
-        final user = userCredential.user;
-        if (user != null) {
-          unawaited(_ensureParentProfileSafely(user));
+          final userCredential = await _auth
+              .signInWithCredential(credential)
+              .timeout(_authRequestTimeout);
+          final user = userCredential.user;
+          if (user != null) {
+            unawaited(_ensureParentProfileSafely(user));
+          }
+          _log('Google sign-in succeeded');
+          return user;
+        } on FirebaseAuthException catch (error, stackTrace) {
+          if (error.code != 'missing-id-token' &&
+              error.code != 'missing-google-token') {
+            rethrow;
+          }
+          _log(
+            'Google credential flow returned ${error.code}; trying provider fallback',
+            error: error,
+            stackTrace: stackTrace,
+          );
+          final providerCredential = await _auth
+              .signInWithProvider(GoogleAuthProvider())
+              .timeout(_authRequestTimeout);
+          final user = providerCredential.user;
+          if (user != null) {
+            unawaited(_ensureParentProfileSafely(user));
+          }
+          _log('Google sign-in succeeded via provider fallback');
+          return user;
         }
-        _log('Google sign-in succeeded');
-        return user;
       },
     );
   }
@@ -301,6 +327,40 @@ class AuthService {
       _lastErrorMessage = _extractErrorCode(error);
       _log(
         'Password update failed',
+        error: error,
+        stackTrace: stackTrace,
+      );
+      rethrow;
+    }
+  }
+
+  Future<void> updateEmailAddress({
+    required String newEmail,
+  }) async {
+    _lastErrorMessage = null;
+    final user = _auth.currentUser;
+    if (user == null) {
+      throw StateError('Not logged in');
+    }
+
+    final normalizedEmail = newEmail.trim();
+    if (normalizedEmail.isEmpty) {
+      throw ArgumentError.value(newEmail, 'newEmail', 'Email is required.');
+    }
+
+    try {
+      // Prefer verify-before-update flow where available.
+      await user.verifyBeforeUpdateEmail(normalizedEmail);
+      _log('Email update verification sent');
+    } on UnimplementedError {
+      throw FirebaseAuthException(
+        code: 'operation-not-supported',
+        message: 'Email updates are not supported on this device build.',
+      );
+    } catch (error, stackTrace) {
+      _lastErrorMessage = _extractErrorCode(error);
+      _log(
+        'Email update failed',
         error: error,
         stackTrace: stackTrace,
       );

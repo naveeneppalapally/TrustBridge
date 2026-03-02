@@ -46,9 +46,15 @@ class BypassDetectionService {
   Timer? _vpnMonitorTimer;
   Timer? _privateDnsTimer;
   bool? _lastVpnRunning;
+  DateTime? _vpnOffSince;
+  int _vpnOffConsecutiveChecks = 0;
+  bool _vpnDisabledAlertSentForCurrentOutage = false;
   String? _lastPrivateDnsMode;
 
   final List<Map<String, dynamic>> _queuedEvents = <Map<String, dynamic>>[];
+
+  static const Duration _vpnDisabledAlertGrace = Duration(seconds: 70);
+  static const int _vpnDisabledMinConsecutiveChecks = 3;
 
   FirebaseFirestore get _firestore =>
       _firestoreOverride ?? FirebaseFirestore.instance;
@@ -227,13 +233,50 @@ class BypassDetectionService {
     try {
       final status = await _vpnService.getStatus();
       final isRunning = status.isRunning;
-      final previous = _lastVpnRunning;
-      _lastVpnRunning = isRunning;
-
-      if (previous == true && isRunning == false) {
-        await logBypassEvent('vpn_disabled');
-        await alertParent('vpn_disabled');
+      if (isRunning) {
+        _lastVpnRunning = true;
+        _vpnOffSince = null;
+        _vpnOffConsecutiveChecks = 0;
+        _vpnDisabledAlertSentForCurrentOutage = false;
+        return;
       }
+
+      // Initial unknown state should not create an alert.
+      if (_lastVpnRunning == null) {
+        _lastVpnRunning = false;
+        _vpnOffSince = _nowProvider();
+        _vpnOffConsecutiveChecks = 1;
+        return;
+      }
+
+      _lastVpnRunning = false;
+      _vpnOffConsecutiveChecks += 1;
+      _vpnOffSince ??= _nowProvider();
+
+      if (_vpnDisabledAlertSentForCurrentOutage) {
+        return;
+      }
+
+      final offDuration = _nowProvider().difference(_vpnOffSince!);
+      if (_vpnOffConsecutiveChecks < _vpnDisabledMinConsecutiveChecks ||
+          offDuration < _vpnDisabledAlertGrace) {
+        return;
+      }
+
+      // Confirm once more to avoid false alerts from transient status reads.
+      await Future<void>.delayed(const Duration(seconds: 2));
+      final confirmStatus = await _vpnService.getStatus();
+      if (confirmStatus.isRunning) {
+        _lastVpnRunning = true;
+        _vpnOffSince = null;
+        _vpnOffConsecutiveChecks = 0;
+        _vpnDisabledAlertSentForCurrentOutage = false;
+        return;
+      }
+
+      await logBypassEvent('vpn_disabled');
+      await alertParent('vpn_disabled');
+      _vpnDisabledAlertSentForCurrentOutage = true;
     } catch (_) {
       // Silent monitoring failure.
     }
