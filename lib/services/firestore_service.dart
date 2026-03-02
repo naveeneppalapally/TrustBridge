@@ -3444,12 +3444,14 @@ class FirestoreService {
     required int version,
     required int policySchemaVersion,
   }) async {
-    await _firestore
-        .collection('children')
-        .doc(childId)
-        .collection('effective_policy')
-        .doc('current')
-        .set(
+    final childDoc = _firestore.collection('children').doc(childId);
+    final effectivePolicyDoc =
+        childDoc.collection('effective_policy').doc('current');
+    final syncTriggerDoc = childDoc.collection('trigger').doc('sync');
+
+    final batch = _firestore.batch();
+    batch.set(
+      effectivePolicyDoc,
       <String, dynamic>{
         'parentId': parentId,
         'childId': childId,
@@ -3477,6 +3479,19 @@ class FirestoreService {
         'updatedAt': FieldValue.serverTimestamp(),
       },
     );
+    batch.set(
+      syncTriggerDoc,
+      <String, dynamic>{
+        'version': FieldValue.increment(1),
+        'policyVersion': version,
+        'parentId': parentId,
+        'childId': childId,
+        'sourceUpdatedAt': Timestamp.fromDate(sourceUpdatedAt),
+        'updatedAt': FieldValue.serverTimestamp(),
+      },
+      SetOptions(merge: true),
+    );
+    await batch.commit();
   }
 
   List<String> _normalizeStringIterable(Iterable<String> values) {

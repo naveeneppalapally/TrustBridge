@@ -326,6 +326,8 @@ class DnsVpnService : VpnService() {
     @Volatile
     private var lastPolicyPollSuccessAtEpochMs: Long = 0L
     @Volatile
+    private var lastPolicyTriggerVersion: Long = 0L
+    @Volatile
     private var policySyncAuthBootstrapInFlight: Boolean = false
     @Volatile
     private var lastPolicySyncAuthBootstrapAtEpochMs: Long = 0L
@@ -1424,14 +1426,18 @@ class DnsVpnService : VpnService() {
         stopEffectivePolicyListener()
         effectivePolicyChildId = childId
         val configuredParentId = config.parentId?.trim().orEmpty()
+        startEffectivePolicyPollingFallback(
+            childId = childId,
+            configuredParentId = configuredParentId
+        )
         effectivePolicyListener = FirebaseFirestore.getInstance()
             .collection("children")
             .document(childId)
-            .collection("effective_policy")
-            .document("current")
+            .collection("trigger")
+            .document("sync")
             .addSnapshotListener { snapshot, error ->
                 if (error != null) {
-                    Log.w(TAG, "effective_policy listener error", error)
+                    Log.w(TAG, "policy trigger listener error", error)
                     if (isPolicySyncAuthError(error)) {
                         maybeBootstrapPolicySyncAuth("listener_error")
                     }
@@ -1449,48 +1455,43 @@ class DnsVpnService : VpnService() {
                     snapshotParentId != configuredParentId
                 ) {
                     recordPolicyApplySkip(
-                        source = "listener",
-                        version = parsePolicyVersion(data["version"]),
+                        source = "trigger",
+                        version = parsePolicyVersion(data["policyVersion"]),
                         reason = "parent_id_mismatch"
                     )
                     return@addSnapshotListener
                 }
 
-                val incomingVersion = parsePolicyVersion(data["version"])
-                recordPolicySnapshotSeen("listener", incomingVersion)
-                val snapshotData = HashMap(data)
+                val triggerVersion = parsePolicyVersion(data["version"]) ?: 0L
+                if (triggerVersion <= 0L || triggerVersion <= lastPolicyTriggerVersion) {
+                    return@addSnapshotListener
+                }
+                lastPolicyTriggerVersion = triggerVersion
+                recordPolicySnapshotSeen(
+                    source = "trigger",
+                    version = parsePolicyVersion(data["policyVersion"])
+                )
                 policyApplyExecutor.execute {
                     try {
-                        applyEffectivePolicySnapshot(
-                            childId = childId,
-                            snapshotData = snapshotData,
-                            incomingVersion = incomingVersion,
-                            source = "listener"
-                        )
+                        pollEffectivePolicySnapshotOnce()
                     } catch (error: Exception) {
-                        Log.w(TAG, "Failed to apply effective policy snapshot", error)
+                        Log.w(TAG, "Failed to poll effective policy after trigger", error)
                         recordPolicyApplyError(
-                            source = "listener",
-                            version = incomingVersion,
+                            source = "trigger",
+                            version = parsePolicyVersion(data["policyVersion"]),
                             errorMessage = error.message
-                        )
-                        writePolicyApplyAck(
-                            childId = childId,
-                            parentId = snapshotParentId,
-                            appliedVersion = incomingVersion,
-                            applyStatus = "error",
-                            errorMessage = error.message,
-                            applyLatencyMs = null,
-                            servicesExpectedCount = parsePolicyStringList(snapshotData["blockedServices"]).size
                         )
                     }
                 }
             }
-        Log.d(TAG, "Started effective_policy listener childId=$childId")
-        startEffectivePolicyPollingFallback(
-            childId = childId,
-            configuredParentId = configuredParentId
-        )
+        Log.d(TAG, "Started policy trigger listener childId=$childId")
+        policyApplyExecutor.execute {
+            try {
+                pollEffectivePolicySnapshotOnce()
+            } catch (error: Exception) {
+                Log.w(TAG, "Initial effective policy poll failed", error)
+            }
+        }
     }
 
     private fun stopEffectivePolicyListener() {
@@ -1509,6 +1510,7 @@ class DnsVpnService : VpnService() {
         lastPolicyApplyErrorMessage = ""
         lastPolicyListenerEventAtEpochMs = 0L
         lastPolicyPollSuccessAtEpochMs = 0L
+        lastPolicyTriggerVersion = 0L
         cachedPolicyAckDeviceId = null
     }
 

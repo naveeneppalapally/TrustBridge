@@ -562,6 +562,35 @@ service cloud.firestore {
         allow delete: if false;
       }
 
+      // Tiny trigger document used for fast child sync wake-ups.
+      match /trigger/{triggerId} {
+        allow read: if isChildParent(childId) || isChildDevice(childId);
+
+        allow create, update: if isChildParent(childId) &&
+          hasOnlyKeys(
+            request.resource.data,
+            [
+              'version',
+              'policyVersion',
+              'parentId',
+              'childId',
+              'sourceUpdatedAt',
+              'updatedAt'
+            ]
+          ) &&
+          isRequiredInt(request.resource.data, 'version', 0, 4102444800000) &&
+          isOptionalInt(request.resource.data, 'policyVersion', 0, 4102444800000) &&
+          isRequiredString(request.resource.data, 'parentId', 128) &&
+          request.resource.data.parentId ==
+            get(/databases/$(database)/documents/children/$(childId)).data.parentId &&
+          isRequiredString(request.resource.data, 'childId', 128) &&
+          request.resource.data.childId == childId &&
+          isOptionalTimestamp(request.resource.data, 'sourceUpdatedAt') &&
+          isOptionalTimestamp(request.resource.data, 'updatedAt');
+
+        allow delete: if false;
+      }
+
       // Child acknowledgement of policy application result per device.
       match /policy_apply_acks/{deviceId} {
         allow read: if isChildParent(childId) || isChildDevice(childId);
