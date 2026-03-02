@@ -35,6 +35,7 @@ class _ChildControlScreenState extends State<ChildControlScreen> {
   AuthService? _authService;
   FirestoreService? _firestoreService;
   bool _saving = false;
+  ChildProfile? _latestChildForActions;
 
   static const List<_SimpleCategoryToggle> _simpleToggles =
       <_SimpleCategoryToggle>[
@@ -76,6 +77,20 @@ class _ChildControlScreenState extends State<ChildControlScreen> {
     return Scaffold(
       appBar: AppBar(
         title: const Text('Child Controls'),
+        actions: [
+          PopupMenuButton<_ChildControlMenuAction>(
+            onSelected: (action) => _handleMenuAction(
+              action: action,
+              parentId: parentId,
+            ),
+            itemBuilder: (context) => const [
+              PopupMenuItem<_ChildControlMenuAction>(
+                value: _ChildControlMenuAction.deleteProfile,
+                child: Text('Delete child profile'),
+              ),
+            ],
+          ),
+        ],
       ),
       body: StreamBuilder<ChildProfile?>(
         stream: _resolvedFirestoreService.getChildStream(
@@ -124,6 +139,7 @@ class _ChildControlScreenState extends State<ChildControlScreen> {
               ),
             );
           }
+          _latestChildForActions = child;
           final now = DateTime.now();
           final activeMode = _activeMode(child, now);
           final modeSummary = _modeSummary(activeMode);
@@ -396,7 +412,9 @@ class _ChildControlScreenState extends State<ChildControlScreen> {
             ),
             const SizedBox(height: 8),
             if (todaysSchedules.isEmpty)
-              const Text('No schedule for today.')
+              const Text(
+                'No schedule for today. Use a quick preset below to get started.',
+              )
             else
               ...todaysSchedules.map(
                 (schedule) => ListTile(
@@ -410,6 +428,63 @@ class _ChildControlScreenState extends State<ChildControlScreen> {
                 ),
               ),
             const SizedBox(height: 6),
+            Container(
+              padding: const EdgeInsets.all(12),
+              decoration: BoxDecoration(
+                color: Theme.of(context).colorScheme.primary.withValues(alpha: 0.08),
+                borderRadius: BorderRadius.circular(12),
+              ),
+              child: const Text(
+                'Quick setup: choose one routine and you are done. You can fine-tune later.',
+              ),
+            ),
+            const SizedBox(height: 10),
+            Wrap(
+              spacing: 8,
+              runSpacing: 8,
+              children: [
+                OutlinedButton.icon(
+                  onPressed: _saving
+                      ? null
+                      : () => _applySchedulePreset(
+                            parentId: parentId,
+                            child: child,
+                            preset: Schedule.bedtime(
+                              startTime: '21:30',
+                              endTime: '07:00',
+                            ),
+                          ),
+                  icon: const Icon(Icons.bedtime_rounded),
+                  label: const Text('Bedtime preset'),
+                ),
+                OutlinedButton.icon(
+                  onPressed: _saving
+                      ? null
+                      : () => _applySchedulePreset(
+                            parentId: parentId,
+                            child: child,
+                            preset: Schedule(
+                              id: '',
+                              name: 'Homework',
+                              type: ScheduleType.homework,
+                              days: const [
+                                Day.monday,
+                                Day.tuesday,
+                                Day.wednesday,
+                                Day.thursday,
+                                Day.friday,
+                              ],
+                              startTime: '16:00',
+                              endTime: '18:00',
+                              action: ScheduleAction.blockDistracting,
+                            ),
+                          ),
+                  icon: const Icon(Icons.menu_book_rounded),
+                  label: const Text('Homework preset'),
+                ),
+              ],
+            ),
+            const SizedBox(height: 8),
             SizedBox(
               width: double.infinity,
               child: FilledButton.icon(
@@ -426,13 +501,158 @@ class _ChildControlScreenState extends State<ChildControlScreen> {
                   );
                 },
                 icon: const Icon(Icons.edit_calendar_rounded),
-                label: const Text('Add or Edit Schedule'),
+                label: const Text('Edit Detailed Schedule'),
               ),
             ),
           ],
         ),
       ),
     );
+  }
+
+  Future<void> _applySchedulePreset({
+    required String parentId,
+    required ChildProfile child,
+    required Schedule preset,
+  }) async {
+    if (_saving) {
+      return;
+    }
+    final schedules = List<Schedule>.from(child.policy.schedules);
+    final existingIndex = schedules.indexWhere((s) => s.type == preset.type);
+    final generatedId =
+        'preset_${preset.type.name}_${DateTime.now().millisecondsSinceEpoch}';
+    final normalizedPreset = Schedule(
+      id: existingIndex >= 0
+          ? schedules[existingIndex].id
+          : (preset.id.trim().isEmpty ? generatedId : preset.id),
+      name: preset.name,
+      type: preset.type,
+      days: preset.days,
+      startTime: preset.startTime,
+      endTime: preset.endTime,
+      enabled: true,
+      action: preset.action,
+    );
+
+    if (existingIndex >= 0) {
+      schedules[existingIndex] = normalizedPreset;
+    } else {
+      schedules.add(normalizedPreset);
+    }
+
+    final updatedChild = child.copyWith(
+      policy: child.policy.copyWith(schedules: schedules),
+    );
+
+    setState(() {
+      _saving = true;
+    });
+    try {
+      await _resolvedFirestoreService.updateChild(
+        parentId: parentId,
+        child: updatedChild,
+      );
+      if (!mounted) {
+        return;
+      }
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text('${preset.name} preset applied.')),
+      );
+    } catch (_) {
+      if (!mounted) {
+        return;
+      }
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('Could not apply schedule preset.')),
+      );
+    } finally {
+      if (mounted) {
+        setState(() {
+          _saving = false;
+        });
+      }
+    }
+  }
+
+  Future<void> _handleMenuAction({
+    required _ChildControlMenuAction action,
+    required String parentId,
+  }) async {
+    switch (action) {
+      case _ChildControlMenuAction.deleteProfile:
+        await _confirmAndDeleteChild(parentId: parentId);
+        break;
+    }
+  }
+
+  Future<void> _confirmAndDeleteChild({
+    required String parentId,
+  }) async {
+    final child = _latestChildForActions;
+    if (child == null) {
+      if (!mounted) {
+        return;
+      }
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('Child profile is not loaded yet.')),
+      );
+      return;
+    }
+
+    final confirmed = await showDialog<bool>(
+          context: context,
+          builder: (context) => AlertDialog(
+            title: const Text('Delete child profile?'),
+            content: Text(
+              'This will remove ${child.nickname} and disconnect linked devices. This cannot be undone.',
+            ),
+            actions: [
+              TextButton(
+                onPressed: () => Navigator.of(context).pop(false),
+                child: const Text('Cancel'),
+              ),
+              FilledButton(
+                onPressed: () => Navigator.of(context).pop(true),
+                child: const Text('Delete'),
+              ),
+            ],
+          ),
+        ) ??
+        false;
+    if (!confirmed) {
+      return;
+    }
+
+    setState(() {
+      _saving = true;
+    });
+    try {
+      await _resolvedFirestoreService.deleteChild(
+        parentId: parentId,
+        childId: child.id,
+      );
+      if (!mounted) {
+        return;
+      }
+      Navigator.of(context).pop();
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text('${child.nickname} deleted.')),
+      );
+    } catch (_) {
+      if (!mounted) {
+        return;
+      }
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('Could not delete child profile.')),
+      );
+    } finally {
+      if (mounted) {
+        setState(() {
+          _saving = false;
+        });
+      }
+    }
   }
 
   Future<void> _setProtectionEnabled({
@@ -857,4 +1077,8 @@ class _SimpleCategoryToggle {
 
   final String id;
   final String label;
+}
+
+enum _ChildControlMenuAction {
+  deleteProfile,
 }
