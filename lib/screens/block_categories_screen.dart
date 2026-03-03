@@ -1052,6 +1052,7 @@ class _BlockCategoriesScreenState extends State<BlockCategoriesScreen>
   Widget _buildInstalledAppRow(InstalledAppInfo app) {
     final packageName = app.packageName.trim().toLowerCase();
     final effectiveState = _effectiveInstalledPackageState(app);
+    final explicitlyBlocked = _blockedPackages.contains(packageName);
     final iconBytes = _installedAppIconBytes(app);
     final observedDomains =
         _observedDomainsByPackage[packageName] ?? const <String>[];
@@ -1102,7 +1103,7 @@ class _BlockCategoriesScreenState extends State<BlockCategoriesScreen>
         ),
         trailing: Switch.adaptive(
           key: Key('installed_app_switch_$packageName'),
-          value: effectiveState.blocked,
+          value: explicitlyBlocked,
           onChanged: _isLoading || !_packageBlockingEnabled
               ? null
               : (enabled) => _toggleInstalledPackageWithPin(
@@ -1278,13 +1279,15 @@ class _BlockCategoriesScreenState extends State<BlockCategoriesScreen>
     }
     final modeContext = _activeModeContext();
     final activeModeKey = modeContext.modeKey;
-    final wasEffectivelyBlockedBeforeToggle = _effectiveInstalledPackageState(
-      InstalledAppInfo(
-        packageName: packageName,
-        appName: appName,
-        isSystemApp: false,
-      ),
-    ).blocked;
+    final match = _serviceMatchForPackage(packageName);
+    final matchedCategoryId = match.categoryId;
+    final categoryBlocked = matchedCategoryId != null &&
+        _isCategoryBlocked(normalizeCategoryId(matchedCategoryId));
+    final modeBlockingThisPackage = _isModeBlockingPackage(
+      packageName,
+      categoryId: matchedCategoryId,
+      serviceId: match.serviceId,
+    );
     setState(() {
       if (enabled) {
         _blockedPackages.add(packageName);
@@ -1297,7 +1300,7 @@ class _BlockCategoriesScreenState extends State<BlockCategoriesScreen>
       } else {
         _blockedPackages.remove(packageName);
         if (activeModeKey != null && RolloutFlags.modeAppOverrides) {
-          if (wasEffectivelyBlockedBeforeToggle) {
+          if (modeBlockingThisPackage) {
             _addModePackageAllowOverride(
               modeKey: activeModeKey,
               packageName: packageName,
@@ -1330,8 +1333,16 @@ class _BlockCategoriesScreenState extends State<BlockCategoriesScreen>
       ),
     );
     await _autoSaveToggleChanges();
-    if (!enabled &&
-        wasEffectivelyBlockedBeforeToggle &&
+    if (!enabled && categoryBlocked && mounted) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text(
+            '$appName is still blocked because ${_prettyLabel(matchedCategoryId)} is ON.',
+          ),
+        ),
+      );
+    } else if (!enabled &&
+        modeBlockingThisPackage &&
         modeContext.modeLabel != null &&
         mounted) {
       ScaffoldMessenger.of(context).showSnackBar(
@@ -1606,6 +1617,7 @@ class _BlockCategoriesScreenState extends State<BlockCategoriesScreen>
       categoryId: categoryId,
     );
     final effectiveBlocked = effectiveState.blocked;
+    final explicitlyBlocked = _isAppExplicitlyBlocked(appKey);
     final statusText = effectiveState.status;
     final statusColor = effectiveState.color;
 
@@ -1659,7 +1671,7 @@ class _BlockCategoriesScreenState extends State<BlockCategoriesScreen>
           ),
           Switch(
             key: Key('block_app_switch_${categoryId}_$appKey'),
-            value: effectiveBlocked,
+            value: explicitlyBlocked,
             onChanged: _isLoading || _isSyncingNextDns
                 ? null
                 : (enabled) => _toggleAppWithPin(
@@ -2339,6 +2351,46 @@ class _BlockCategoriesScreenState extends State<BlockCategoriesScreen>
             modeBlockedByCategory ||
             modeBlockedByOverride) &&
         !modeAllowedByOverride;
+  }
+
+  bool _isModeBlockingPackage(
+    String packageName, {
+    String? categoryId,
+    String? serviceId,
+  }) {
+    final normalizedPackage = packageName.trim().toLowerCase();
+    final normalizedService = serviceId?.trim().toLowerCase();
+    final normalizedCategory = categoryId == null || categoryId.trim().isEmpty
+        ? null
+        : normalizeCategoryId(categoryId);
+    final modeContext = _activeModeContext();
+    final modeOverride = modeContext.overrideSet;
+    final modeBlockedByCategory = normalizedCategory != null &&
+        modeContext.blockedCategories.contains(normalizedCategory);
+    final modeBlockedByService = normalizedService != null &&
+        (modeOverride?.forceBlockServices
+                .map((value) => value.trim().toLowerCase())
+                .contains(normalizedService) ==
+            true);
+    final modeBlockedByPackage = modeOverride?.forceBlockPackages
+            .map((value) => value.trim().toLowerCase())
+            .contains(normalizedPackage) ==
+        true;
+    final modeAllowedByService = normalizedService != null &&
+        (modeOverride?.forceAllowServices
+                .map((value) => value.trim().toLowerCase())
+                .contains(normalizedService) ==
+            true);
+    final modeAllowedByPackage = modeOverride?.forceAllowPackages
+            .map((value) => value.trim().toLowerCase())
+            .contains(normalizedPackage) ==
+        true;
+    final modeAllowed = modeAllowedByService || modeAllowedByPackage;
+    return (modeContext.blocksAll ||
+            modeBlockedByCategory ||
+            modeBlockedByService ||
+            modeBlockedByPackage) &&
+        !modeAllowed;
   }
 
   void _addModeServiceAllowOverride({
