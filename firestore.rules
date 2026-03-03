@@ -278,7 +278,6 @@ service cloud.firestore {
             'nickname',
             'ageBand',
             'deviceIds',
-            'policy',
             'createdAt',
             'updatedAt',
             'parentId',
@@ -293,7 +292,6 @@ service cloud.firestore {
         isRequiredString(request.resource.data, 'nickname', 30) &&
         isAllowedAgeBand(request.resource.data, 'ageBand') &&
         request.resource.data.deviceIds is list &&
-        request.resource.data.policy is map &&
         isRequiredTimestamp(request.resource.data, 'createdAt') &&
         isRequiredTimestamp(request.resource.data, 'updatedAt') &&
         isRequiredString(request.resource.data, 'parentId', 128) &&
@@ -329,7 +327,14 @@ service cloud.firestore {
           isRequiredString(request.resource.data, 'nickname', 30) &&
           isAllowedAgeBand(request.resource.data, 'ageBand') &&
           request.resource.data.deviceIds is list &&
-          request.resource.data.policy is map &&
+          (
+            !('policy' in request.resource.data) ||
+            (
+              'policy' in resource.data &&
+              resource.data.policy is map &&
+              request.resource.data.policy == resource.data.policy
+            )
+          ) &&
           isRequiredTimestamp(request.resource.data, 'createdAt') &&
           isRequiredTimestamp(request.resource.data, 'updatedAt') &&
           isOptionalBool(request.resource.data, 'protectionEnabled') &&
@@ -435,7 +440,7 @@ service cloud.firestore {
       // Optional policy documents used by diagnostics/experiments.
       match /policy/{policyDocId} {
         allow read: if isChildParent(childId) || isChildDevice(childId);
-        allow create, update, delete: if isChildParent(childId);
+        allow create, update, delete: if false;
       }
 
       // Append-only policy events to preserve each distinct state change.
@@ -464,12 +469,15 @@ service cloud.firestore {
               'modeBlockedPackagesResolved',
               'modeAllowedPackagesResolved',
               'policySchemaVersion',
+              'schedules',
+              'safeSearchEnabled',
               'manualMode',
               'pausedUntil',
               'sourceUpdatedAt',
               'eventEpochMs',
               'version',
-              'createdAt'
+              'createdAt',
+              'deleteAt'
             ]
           ) &&
           isRequiredString(request.resource.data, 'parentId', 128) &&
@@ -506,12 +514,16 @@ service cloud.firestore {
           (!('modeAllowedPackagesResolved' in request.resource.data) ||
             request.resource.data.modeAllowedPackagesResolved is list) &&
           isRequiredInt(request.resource.data, 'policySchemaVersion', 1, 100) &&
+          (!('schedules' in request.resource.data) ||
+            request.resource.data.schedules is list) &&
+          isOptionalBool(request.resource.data, 'safeSearchEnabled') &&
           isOptionalManualMode(request.resource.data, 'manualMode') &&
           isOptionalTimestamp(request.resource.data, 'pausedUntil') &&
           isRequiredTimestamp(request.resource.data, 'sourceUpdatedAt') &&
           isRequiredInt(request.resource.data, 'eventEpochMs', 0, 4102444800000) &&
           isRequiredInt(request.resource.data, 'version', 0, 4102444800000) &&
-          isRequiredTimestamp(request.resource.data, 'createdAt');
+          isRequiredTimestamp(request.resource.data, 'createdAt') &&
+          isRequiredTimestamp(request.resource.data, 'deleteAt');
 
         allow update, delete: if false;
       }
@@ -528,6 +540,11 @@ service cloud.firestore {
               'childId',
               'version',
               'protectionEnabled',
+              'baseBlockedCategories',
+              'baseBlockedServices',
+              'baseBlockedDomains',
+              'baseBlockedPackages',
+              'baseModeOverrides',
               'blockedCategories',
               'blockedServices',
               'blockedDomains',
@@ -542,6 +559,8 @@ service cloud.firestore {
               'modeBlockedPackagesResolved',
               'modeAllowedPackagesResolved',
               'policySchemaVersion',
+              'schedules',
+              'safeSearchEnabled',
               'manualMode',
               'pausedUntil',
               'sourceUpdatedAt',
@@ -555,6 +574,16 @@ service cloud.firestore {
           request.resource.data.childId == childId &&
           isRequiredInt(request.resource.data, 'version', 0, 4102444800000) &&
           isOptionalBool(request.resource.data, 'protectionEnabled') &&
+          ('baseBlockedCategories' in request.resource.data) &&
+          request.resource.data.baseBlockedCategories is list &&
+          ('baseBlockedServices' in request.resource.data) &&
+          request.resource.data.baseBlockedServices is list &&
+          ('baseBlockedDomains' in request.resource.data) &&
+          request.resource.data.baseBlockedDomains is list &&
+          ('baseBlockedPackages' in request.resource.data) &&
+          request.resource.data.baseBlockedPackages is list &&
+          (!('baseModeOverrides' in request.resource.data) ||
+            request.resource.data.baseModeOverrides is map) &&
           ('blockedCategories' in request.resource.data) &&
           request.resource.data.blockedCategories is list &&
           ('blockedServices' in request.resource.data) &&
@@ -581,6 +610,9 @@ service cloud.firestore {
           (!('modeAllowedPackagesResolved' in request.resource.data) ||
             request.resource.data.modeAllowedPackagesResolved is list) &&
           isRequiredInt(request.resource.data, 'policySchemaVersion', 1, 100) &&
+          (!('schedules' in request.resource.data) ||
+            request.resource.data.schedules is list) &&
+          isOptionalBool(request.resource.data, 'safeSearchEnabled') &&
           isOptionalManualMode(request.resource.data, 'manualMode') &&
           isOptionalTimestamp(request.resource.data, 'pausedUntil') &&
           isRequiredTimestamp(request.resource.data, 'sourceUpdatedAt') &&

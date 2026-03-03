@@ -137,24 +137,118 @@ class FirestoreService {
     return _childCacheByScopedId[key];
   }
 
-  List<ChildProfile> _childrenFromSnapshot(
+  Future<List<ChildProfile>> _childrenFromSnapshot(
     QuerySnapshot<Map<String, dynamic>> snapshot,
-  ) {
+  ) async {
     final children = <ChildProfile>[];
-    for (final doc in snapshot.docs) {
-      try {
-        children.add(ChildProfile.fromFirestore(doc));
-      } catch (error, stackTrace) {
-        developer.log(
-          'Skipping malformed child document: ${doc.id}',
-          name: 'FirestoreService',
-          error: error,
-          stackTrace: stackTrace,
-        );
+    final hydratedChildren = await Future.wait<ChildProfile?>(
+      snapshot.docs.map((doc) async {
+        try {
+          final child = ChildProfile.fromFirestore(doc);
+          return await _mergeEffectivePolicyIntoChild(child);
+        } catch (error, stackTrace) {
+          developer.log(
+            'Skipping malformed child document: ${doc.id}',
+            name: 'FirestoreService',
+            error: error,
+            stackTrace: stackTrace,
+          );
+          return null;
+        }
+      }),
+    );
+    for (final child in hydratedChildren) {
+      if (child != null) {
+        children.add(child);
       }
     }
     children.sort((a, b) => a.createdAt.compareTo(b.createdAt));
     return children;
+  }
+
+  Future<ChildProfile> _mergeEffectivePolicyIntoChild(
+      ChildProfile child) async {
+    final effective = await _loadEffectivePolicyCurrent(child.id);
+    if (effective.isEmpty) {
+      return child;
+    }
+
+    final modeOverrides = _dynamicMap(
+      effective['baseModeOverrides'] ?? effective['modeOverridesResolved'],
+    );
+    final policyMap = <String, dynamic>{
+      'blockedCategories': _dynamicStringList(
+        effective['baseBlockedCategories'] ?? effective['blockedCategories'],
+      ).toList(),
+      'blockedServices': _dynamicStringList(
+        effective['baseBlockedServices'] ?? effective['blockedServices'],
+      ).toList(),
+      'blockedDomains': _dynamicStringList(
+        effective['baseBlockedDomains'] ?? effective['blockedDomains'],
+      ).toList(),
+      'blockedPackages': _dynamicStringList(
+        effective['baseBlockedPackages'] ?? effective['blockedPackages'],
+      ).toList(),
+      'modeOverrides': modeOverrides,
+      'policySchemaVersion': _dynamicInt(effective['policySchemaVersion']) ??
+          child.policy.policySchemaVersion,
+      'schedules': _dynamicListOfMaps(
+        effective['schedules'],
+        fallback: child.policy.schedules.map((schedule) => schedule.toMap()),
+      ),
+      'safeSearchEnabled': _dynamicBool(
+        effective['safeSearchEnabled'],
+        fallback: child.policy.safeSearchEnabled,
+      ),
+    };
+    final mergedPolicy = Policy.fromMap(policyMap);
+
+    final hasPausedUntil = effective.containsKey('pausedUntil');
+    final mergedPausedUntil = hasPausedUntil
+        ? _dynamicDateTime(effective['pausedUntil'])
+        : child.pausedUntil;
+    final hasManualMode = effective.containsKey('manualMode');
+    final mergedManualMode = hasManualMode
+        ? (() {
+            final manualMode = _dynamicMap(effective['manualMode']);
+            return manualMode.isEmpty ? null : manualMode;
+          })()
+        : child.manualMode;
+    final mergedProtectionEnabled = _dynamicBool(
+      effective['protectionEnabled'],
+      fallback: child.protectionEnabled,
+    );
+
+    return ChildProfile(
+      id: child.id,
+      nickname: child.nickname,
+      ageBand: child.ageBand,
+      deviceIds: child.deviceIds,
+      nextDnsProfileId: child.nextDnsProfileId,
+      deviceMetadata: child.deviceMetadata,
+      nextDnsControls: child.nextDnsControls,
+      policy: mergedPolicy,
+      protectionEnabled: mergedProtectionEnabled,
+      createdAt: child.createdAt,
+      updatedAt: child.updatedAt,
+      pausedUntil: mergedPausedUntil,
+      manualMode: mergedManualMode,
+    );
+  }
+
+  Future<Map<String, dynamic>> _loadEffectivePolicyCurrent(
+      String childId) async {
+    try {
+      final snapshot = await _firestore
+          .collection('children')
+          .doc(childId.trim())
+          .collection('effective_policy')
+          .doc('current')
+          .get();
+      return _dynamicMap(snapshot.data());
+    } catch (_) {
+      return <String, dynamic>{};
+    }
   }
 
   void _upsertChildrenCache(String parentId, List<ChildProfile> children) {
@@ -1191,9 +1285,27 @@ class FirestoreService {
 
     try {
       await _firestore.collection('children').doc(child.id).set({
-        ...child.toFirestore(),
+        ...child.toFirestore(includePolicy: false),
         'parentId': parentId,
       });
+      await _recordPolicyEventSnapshot(
+        parentId: parentId,
+        childId: child.id,
+        blockedCategories: child.policy.blockedCategories,
+        blockedServices: child.policy.blockedServices,
+        blockedDomains: child.policy.blockedDomains,
+        blockedPackages: child.policy.blockedPackages,
+        modeOverrides: child.policy.modeOverrides.map(
+          (modeName, overrideSet) => MapEntry(modeName, overrideSet.toMap()),
+        ),
+        manualMode: null,
+        pausedUntil: null,
+        protectionEnabled: child.protectionEnabled,
+        sourceUpdatedAt: child.updatedAt,
+        policySchemaVersion: child.policy.policySchemaVersion,
+        schedules: child.policy.schedules.map((schedule) => schedule.toMap()),
+        safeSearchEnabled: child.policy.safeSearchEnabled,
+      );
       _upsertChildCache(parentId: parentId, child: child);
       await _crashlyticsService.setCustomKeys({
         'last_child_id': child.id,
@@ -1221,8 +1333,8 @@ class FirestoreService {
           .collection('children')
           .where('parentId', isEqualTo: normalizedParentId)
           .snapshots(includeMetadataChanges: true)
-          .map((snapshot) {
-        final children = _childrenFromSnapshot(snapshot);
+          .asyncMap((snapshot) async {
+        final children = await _childrenFromSnapshot(snapshot);
         _upsertChildrenCache(normalizedParentId, children);
         return children;
       }).asBroadcastStream();
@@ -1272,7 +1384,7 @@ class FirestoreService {
         .collection('children')
         .where('parentId', isEqualTo: normalizedParentId)
         .get();
-    final children = _childrenFromSnapshot(snapshot);
+    final children = await _childrenFromSnapshot(snapshot);
     _upsertChildrenCache(normalizedParentId, children);
     return children;
   }
@@ -1322,7 +1434,9 @@ class FirestoreService {
     if (data == null || data['parentId'] != parentId) {
       return null;
     }
-    final child = ChildProfile.fromFirestore(snapshot);
+    final child = await _mergeEffectivePolicyIntoChild(
+      ChildProfile.fromFirestore(snapshot),
+    );
     _upsertChildCache(parentId: parentId, child: child);
     return child;
   }
@@ -1349,7 +1463,7 @@ class FirestoreService {
           .collection('children')
           .doc(normalizedChildId)
           .snapshots(includeMetadataChanges: true)
-          .map((snapshot) {
+          .asyncMap((snapshot) async {
         if (!snapshot.exists) {
           _childCacheByScopedId.remove(key);
           return null;
@@ -1359,7 +1473,9 @@ class FirestoreService {
         if (ownerParentId == null || ownerParentId != normalizedParentId) {
           return null;
         }
-        final child = ChildProfile.fromFirestore(snapshot);
+        final child = await _mergeEffectivePolicyIntoChild(
+          ChildProfile.fromFirestore(snapshot),
+        );
         _upsertChildCache(parentId: normalizedParentId, child: child);
         return child;
       }).asBroadcastStream();
@@ -2172,7 +2288,7 @@ class FirestoreService {
         (deviceId, metadata) => MapEntry(deviceId, metadata.toMap()),
       ),
       'nextDnsControls': child.nextDnsControls,
-      'policy': normalizedPolicy.toMap(),
+      'policy': FieldValue.delete(),
       'protectionEnabled': child.protectionEnabled,
       'pausedUntil': child.pausedUntil != null
           ? Timestamp.fromDate(child.pausedUntil!)
@@ -2194,6 +2310,8 @@ class FirestoreService {
       protectionEnabled: child.protectionEnabled,
       sourceUpdatedAt: updatedAt,
       policySchemaVersion: normalizedPolicy.policySchemaVersion,
+      schedules: normalizedPolicy.schedules.map((schedule) => schedule.toMap()),
+      safeSearchEnabled: normalizedPolicy.safeSearchEnabled,
     );
     _upsertChildCache(
       parentId: parentId,
@@ -2364,6 +2482,45 @@ class FirestoreService {
     await childRef.delete();
   }
 
+  Future<Map<String, dynamic>> _loadPolicySnapshotForChild({
+    required String childId,
+    required Map<String, dynamic> fallbackChildData,
+  }) async {
+    final effectivePolicy = await _loadEffectivePolicyCurrent(childId);
+    if (effectivePolicy.isNotEmpty) {
+      return <String, dynamic>{
+        'blockedCategories': _dynamicStringList(
+          effectivePolicy['baseBlockedCategories'] ??
+              effectivePolicy['blockedCategories'],
+        ).toList(),
+        'blockedServices': _dynamicStringList(
+          effectivePolicy['baseBlockedServices'] ??
+              effectivePolicy['blockedServices'],
+        ).toList(),
+        'blockedDomains': _dynamicStringList(
+          effectivePolicy['baseBlockedDomains'] ??
+              effectivePolicy['blockedDomains'],
+        ).toList(),
+        'blockedPackages': _dynamicStringList(
+          effectivePolicy['baseBlockedPackages'] ??
+              effectivePolicy['blockedPackages'],
+        ).toList(),
+        'modeOverrides': _dynamicMap(
+          effectivePolicy['baseModeOverrides'] ??
+              effectivePolicy['modeOverridesResolved'],
+        ),
+        'policySchemaVersion':
+            _dynamicInt(effectivePolicy['policySchemaVersion']) ?? 1,
+        'schedules': _dynamicListOfMaps(effectivePolicy['schedules']),
+        'safeSearchEnabled': _dynamicBool(
+          effectivePolicy['safeSearchEnabled'],
+          fallback: true,
+        ),
+      };
+    }
+    return _dynamicMap(fallbackChildData['policy']);
+  }
+
   Future<void> pauseAllChildren(
     String parentId, {
     Duration duration = const Duration(hours: 8),
@@ -2403,7 +2560,10 @@ class FirestoreService {
 
     for (final doc in childrenForEvents) {
       final data = doc.data() ?? const <String, dynamic>{};
-      final policy = _dynamicMap(data['policy']);
+      final policy = await _loadPolicySnapshotForChild(
+        childId: doc.id,
+        fallbackChildData: data,
+      );
       final manualMode = _dynamicMap(data['manualMode']);
       final protectionEnabled = data['protectionEnabled'] != false;
       await _recordPolicyEventSnapshot(
@@ -2419,6 +2579,9 @@ class FirestoreService {
         protectionEnabled: protectionEnabled,
         sourceUpdatedAt: updatedAt,
         policySchemaVersion: _dynamicInt(policy['policySchemaVersion']) ?? 1,
+        schedules: _dynamicListOfMaps(policy['schedules']),
+        safeSearchEnabled:
+            _dynamicBool(policy['safeSearchEnabled'], fallback: true),
       );
     }
   }
@@ -2451,7 +2614,10 @@ class FirestoreService {
 
     for (final doc in childrenForEvents) {
       final data = doc.data() ?? const <String, dynamic>{};
-      final policy = _dynamicMap(data['policy']);
+      final policy = await _loadPolicySnapshotForChild(
+        childId: doc.id,
+        fallbackChildData: data,
+      );
       final manualMode = _dynamicMap(data['manualMode']);
       final protectionEnabled = data['protectionEnabled'] != false;
       await _recordPolicyEventSnapshot(
@@ -2467,6 +2633,9 @@ class FirestoreService {
         protectionEnabled: protectionEnabled,
         sourceUpdatedAt: updatedAt,
         policySchemaVersion: _dynamicInt(policy['policySchemaVersion']) ?? 1,
+        schedules: _dynamicListOfMaps(policy['schedules']),
+        safeSearchEnabled:
+            _dynamicBool(policy['safeSearchEnabled'], fallback: true),
       );
     }
   }
@@ -2489,7 +2658,10 @@ class FirestoreService {
       childId: childId,
     );
     final childData = childDoc.data() ?? const <String, dynamic>{};
-    final policy = _dynamicMap(childData['policy']);
+    final policy = await _loadPolicySnapshotForChild(
+      childId: childId,
+      fallbackChildData: childData,
+    );
     final manualMode = _dynamicMap(childData['manualMode']);
     final blockedCategories = _dynamicStringList(policy['blockedCategories']);
     final blockedServices = _dynamicStringList(policy['blockedServices']);
@@ -2517,6 +2689,9 @@ class FirestoreService {
       protectionEnabled: protectionEnabled,
       sourceUpdatedAt: updatedAt,
       policySchemaVersion: policySchemaVersion,
+      schedules: _dynamicListOfMaps(policy['schedules']),
+      safeSearchEnabled:
+          _dynamicBool(policy['safeSearchEnabled'], fallback: true),
     );
   }
 
@@ -2537,7 +2712,10 @@ class FirestoreService {
       childId: childId,
     );
     final childData = childDoc.data() ?? const <String, dynamic>{};
-    final policy = _dynamicMap(childData['policy']);
+    final policy = await _loadPolicySnapshotForChild(
+      childId: childId,
+      fallbackChildData: childData,
+    );
     final manualMode = _dynamicMap(childData['manualMode']);
     final blockedCategories = _dynamicStringList(policy['blockedCategories']);
     final blockedServices = _dynamicStringList(policy['blockedServices']);
@@ -2566,6 +2744,9 @@ class FirestoreService {
       protectionEnabled: enabled,
       sourceUpdatedAt: updatedAt,
       policySchemaVersion: policySchemaVersion,
+      schedules: _dynamicListOfMaps(policy['schedules']),
+      safeSearchEnabled:
+          _dynamicBool(policy['safeSearchEnabled'], fallback: true),
     );
   }
 
@@ -2590,7 +2771,10 @@ class FirestoreService {
       childId: childId,
     );
     final childData = childDoc.data() ?? const <String, dynamic>{};
-    final policy = _dynamicMap(childData['policy']);
+    final policy = await _loadPolicySnapshotForChild(
+      childId: childId,
+      fallbackChildData: childData,
+    );
     final blockedCategories = _dynamicStringList(policy['blockedCategories']);
     final blockedServices = _dynamicStringList(policy['blockedServices']);
     final blockedDomains = _dynamicStringList(policy['blockedDomains']);
@@ -2620,6 +2804,9 @@ class FirestoreService {
         protectionEnabled: protectionEnabled,
         sourceUpdatedAt: updatedAt,
         policySchemaVersion: policySchemaVersion,
+        schedules: _dynamicListOfMaps(policy['schedules']),
+        safeSearchEnabled:
+            _dynamicBool(policy['safeSearchEnabled'], fallback: true),
       );
       return;
     }
@@ -2646,6 +2833,9 @@ class FirestoreService {
       protectionEnabled: protectionEnabled,
       sourceUpdatedAt: updatedAt,
       policySchemaVersion: policySchemaVersion,
+      schedules: _dynamicListOfMaps(policy['schedules']),
+      safeSearchEnabled:
+          _dynamicBool(policy['safeSearchEnabled'], fallback: true),
     );
   }
 
@@ -3215,6 +3405,8 @@ class FirestoreService {
     required bool protectionEnabled,
     required DateTime sourceUpdatedAt,
     required int policySchemaVersion,
+    required Iterable<Map<String, dynamic>> schedules,
+    required bool safeSearchEnabled,
   }) async {
     final normalizedParentId = parentId.trim();
     final normalizedChildId = childId.trim();
@@ -3228,6 +3420,7 @@ class FirestoreService {
       final normalizedDomains = _normalizeStringIterable(blockedDomains);
       final normalizedPackages = _normalizePackageIds(blockedPackages);
       final normalizedModeOverrides = _normalizeModeOverridesMap(modeOverrides);
+      final normalizedSchedules = _dynamicListOfMaps(schedules);
       final normalizedManualMode =
           protectionEnabled ? _normalizeManualModeMap(manualMode) : null;
       final effectivePausedUntil = protectionEnabled ? pausedUntil : null;
@@ -3353,6 +3546,7 @@ class FirestoreService {
       final effectivePackages =
           protectionEnabled ? normalizedPackages : <String>[];
       final version = _nextPolicyEventEpochMs();
+      final deleteAt = DateTime.now().add(const Duration(days: 30));
 
       await _firestore
           .collection('children')
@@ -3378,6 +3572,8 @@ class FirestoreService {
         'modeAllowedPackagesResolved': modeAllowedPackages,
         'policySchemaVersion':
             policySchemaVersion <= 0 ? 2 : policySchemaVersion,
+        'schedules': normalizedSchedules,
+        'safeSearchEnabled': safeSearchEnabled,
         'manualMode': normalizedManualMode,
         'pausedUntil': effectivePausedUntil == null
             ? null
@@ -3386,10 +3582,16 @@ class FirestoreService {
         'eventEpochMs': version,
         'version': version,
         'createdAt': FieldValue.serverTimestamp(),
+        'deleteAt': Timestamp.fromDate(deleteAt),
       });
       await _writeEffectivePolicyCurrent(
         parentId: normalizedParentId,
         childId: normalizedChildId,
+        baseBlockedCategories: canonicalCategories,
+        baseBlockedServices: normalizedServices,
+        baseBlockedDomains: normalizedDomains,
+        baseBlockedPackages: normalizedPackages,
+        baseModeOverrides: normalizedModeOverrides,
         blockedCategories: effectiveCategories,
         blockedServices: effectiveServices,
         customBlockedDomains: effectiveDomains,
@@ -3409,6 +3611,8 @@ class FirestoreService {
         sourceUpdatedAt: sourceUpdatedAt,
         version: version,
         policySchemaVersion: policySchemaVersion <= 0 ? 2 : policySchemaVersion,
+        schedules: normalizedSchedules,
+        safeSearchEnabled: safeSearchEnabled,
       );
     } catch (error, stackTrace) {
       developer.log(
@@ -3424,6 +3628,11 @@ class FirestoreService {
   Future<void> _writeEffectivePolicyCurrent({
     required String parentId,
     required String childId,
+    required List<String> baseBlockedCategories,
+    required List<String> baseBlockedServices,
+    required List<String> baseBlockedDomains,
+    required List<String> baseBlockedPackages,
+    required Map<String, dynamic> baseModeOverrides,
     required List<String> blockedCategories,
     required List<String> blockedServices,
     required List<String> customBlockedDomains,
@@ -3443,6 +3652,8 @@ class FirestoreService {
     required DateTime sourceUpdatedAt,
     required int version,
     required int policySchemaVersion,
+    required Iterable<Map<String, dynamic>> schedules,
+    required bool safeSearchEnabled,
   }) async {
     final childDoc = _firestore.collection('children').doc(childId);
     final effectivePolicyDoc =
@@ -3457,6 +3668,11 @@ class FirestoreService {
         'childId': childId,
         'version': version,
         'protectionEnabled': protectionEnabled,
+        'baseBlockedCategories': baseBlockedCategories,
+        'baseBlockedServices': baseBlockedServices,
+        'baseBlockedDomains': baseBlockedDomains,
+        'baseBlockedPackages': baseBlockedPackages,
+        'baseModeOverrides': baseModeOverrides,
         'blockedCategories': blockedCategories,
         'blockedServices': blockedServices,
         'blockedDomains': customBlockedDomains,
@@ -3472,6 +3688,8 @@ class FirestoreService {
         'modeAllowedPackagesResolved': modeAllowedPackagesResolved,
         'policySchemaVersion':
             policySchemaVersion <= 0 ? 2 : policySchemaVersion,
+        'schedules': _dynamicListOfMaps(schedules),
+        'safeSearchEnabled': safeSearchEnabled,
         'manualMode': manualMode,
         'pausedUntil':
             pausedUntil == null ? null : Timestamp.fromDate(pausedUntil),
@@ -3755,6 +3973,41 @@ class FirestoreService {
       return raw.map((key, value) => MapEntry(key.toString(), value));
     }
     return <String, dynamic>{};
+  }
+
+  List<Map<String, dynamic>> _dynamicListOfMaps(
+    Object? raw, {
+    Iterable<Map<String, dynamic>> fallback = const <Map<String, dynamic>>[],
+  }) {
+    final source = raw is Iterable ? raw : fallback;
+    final result = <Map<String, dynamic>>[];
+    for (final item in source) {
+      final map = _dynamicMap(item);
+      if (map.isEmpty) {
+        continue;
+      }
+      result.add(map);
+    }
+    return List<Map<String, dynamic>>.unmodifiable(result);
+  }
+
+  bool _dynamicBool(
+    Object? raw, {
+    required bool fallback,
+  }) {
+    if (raw is bool) {
+      return raw;
+    }
+    if (raw is String) {
+      final normalized = raw.trim().toLowerCase();
+      if (normalized == 'true') {
+        return true;
+      }
+      if (normalized == 'false') {
+        return false;
+      }
+    }
+    return fallback;
   }
 
   Set<String> _dynamicStringList(Object? raw) {

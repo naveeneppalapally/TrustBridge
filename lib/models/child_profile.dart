@@ -100,14 +100,14 @@ class ChildProfile {
     );
   }
 
-  Map<String, dynamic> toFirestore() {
+  Map<String, dynamic> toFirestore({bool includePolicy = true}) {
     final map = <String, dynamic>{
       'nickname': nickname,
       'ageBand': ageBand.value,
       'deviceIds': deviceIds,
-      'policy': policy.toMap(),
       'createdAt': Timestamp.fromDate(createdAt),
       'updatedAt': Timestamp.fromDate(updatedAt),
+      if (includePolicy) 'policy': policy.toMap(),
       if (nextDnsProfileId != null && nextDnsProfileId!.trim().isNotEmpty)
         'nextDnsProfileId': nextDnsProfileId!.trim(),
       if (deviceMetadata.isNotEmpty)

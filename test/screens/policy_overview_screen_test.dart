@@ -101,10 +101,18 @@ void main() {
 
       expect(find.text('Not enabled'), findsOneWidget);
 
-      final snapshot =
-          await fakeFirestore.collection('children').doc(testChild.id).get();
-      final policyMap = snapshot.data()!['policy'] as Map<String, dynamic>;
+      final snapshot = await fakeFirestore
+          .collection('children')
+          .doc(testChild.id)
+          .collection('effective_policy')
+          .doc('current')
+          .get();
+      final policyMap = snapshot.data()!;
       expect(policyMap['safeSearchEnabled'], false);
+
+      final childSnapshot =
+          await fakeFirestore.collection('children').doc(testChild.id).get();
+      expect(childSnapshot.data()!.containsKey('policy'), false);
     });
   });
 }

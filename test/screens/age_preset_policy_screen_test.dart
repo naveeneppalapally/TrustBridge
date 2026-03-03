@@ -66,15 +66,23 @@ void main() {
       await tester.tap(find.text('Apply'));
       await tester.pumpAndSettle();
 
-      final snapshot =
-          await fakeFirestore.collection('children').doc(testChild.id).get();
-      final policyMap = snapshot.data()!['policy'] as Map<String, dynamic>;
+      final snapshot = await fakeFirestore
+          .collection('children')
+          .doc(testChild.id)
+          .collection('effective_policy')
+          .doc('current')
+          .get();
+      final policyMap = snapshot.data()!;
       final schedules = policyMap['schedules'] as List<dynamic>;
 
       expect(policyMap['blockedCategories'], isA<List<dynamic>>());
       expect(
           (policyMap['blockedCategories'] as List<dynamic>).isNotEmpty, true);
       expect(schedules.isNotEmpty, true);
+
+      final childSnapshot =
+          await fakeFirestore.collection('children').doc(testChild.id).get();
+      expect(childSnapshot.data()!.containsKey('policy'), false);
     });
   });
 }
