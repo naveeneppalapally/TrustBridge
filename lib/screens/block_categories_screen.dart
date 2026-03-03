@@ -102,7 +102,6 @@ class _BlockCategoriesScreenState extends State<BlockCategoriesScreen>
 
   AuthService? _authService;
   FirestoreService? _firestoreService;
-  VpnServiceBase? _vpnService;
   NextDnsApiService? _nextDnsApiService;
   final FeatureGateService _featureGateService = FeatureGateService();
 
@@ -159,11 +158,6 @@ class _BlockCategoriesScreenState extends State<BlockCategoriesScreen>
   FirestoreService get _resolvedFirestoreService {
     _firestoreService ??= widget.firestoreService ?? FirestoreService();
     return _firestoreService!;
-  }
-
-  VpnServiceBase get _resolvedVpnService {
-    _vpnService ??= widget.vpnService ?? VpnService();
-    return _vpnService!;
   }
 
   NextDnsApiService get _resolvedNextDnsApiService {
@@ -1277,41 +1271,16 @@ class _BlockCategoriesScreenState extends State<BlockCategoriesScreen>
     if (!mounted) {
       return;
     }
-    final modeContext = _activeModeContext();
-    final activeModeKey = modeContext.modeKey;
     final match = _serviceMatchForPackage(packageName);
     final matchedCategoryId = match.categoryId;
     final categoryBlocked = matchedCategoryId != null &&
         _isCategoryBlocked(normalizeCategoryId(matchedCategoryId));
-    final modeBlockingThisPackage = _isModeBlockingPackage(
-      packageName,
-      categoryId: matchedCategoryId,
-      serviceId: match.serviceId,
-    );
+    final previousBlockedPackages = Set<String>.from(_blockedPackages);
     setState(() {
       if (enabled) {
         _blockedPackages.add(packageName);
-        if (activeModeKey != null && RolloutFlags.modeAppOverrides) {
-          _removeModePackageAllowOverride(
-            modeKey: activeModeKey,
-            packageName: packageName,
-          );
-        }
       } else {
         _blockedPackages.remove(packageName);
-        if (activeModeKey != null && RolloutFlags.modeAppOverrides) {
-          if (modeBlockingThisPackage) {
-            _addModePackageAllowOverride(
-              modeKey: activeModeKey,
-              packageName: packageName,
-            );
-          } else {
-            _removeModePackageAllowOverride(
-              modeKey: activeModeKey,
-              packageName: packageName,
-            );
-          }
-        }
       }
     });
     unawaited(
@@ -1332,7 +1301,15 @@ class _BlockCategoriesScreenState extends State<BlockCategoriesScreen>
         },
       ),
     );
-    await _autoSaveToggleChanges();
+    final saved = await _autoSaveToggleChanges();
+    if (!saved) {
+      if (mounted) {
+        setState(() {
+          _blockedPackages = previousBlockedPackages;
+        });
+      }
+      return;
+    }
     if (!enabled && categoryBlocked && mounted) {
       ScaffoldMessenger.of(context).showSnackBar(
         SnackBar(
@@ -1341,82 +1318,13 @@ class _BlockCategoriesScreenState extends State<BlockCategoriesScreen>
           ),
         ),
       );
-    } else if (!enabled &&
-        modeBlockingThisPackage &&
-        modeContext.modeLabel != null &&
-        mounted) {
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(
-          content: Text(
-            '$appName is now allowed for ${modeContext.modeLabel}.',
-          ),
-        ),
-      );
-    }
-  }
-
-  void _addModePackageAllowOverride({
-    required String modeKey,
-    required String packageName,
-  }) {
-    final normalizedMode = modeKey.trim().toLowerCase();
-    final normalizedPackage = packageName.trim().toLowerCase();
-    final current = _modeOverrides[normalizedMode] ?? const ModeOverrideSet();
-    final nextAllowPackages = <String>{
-      ...current.forceAllowPackages
-          .map((value) => value.trim().toLowerCase())
-          .where((value) => value.isNotEmpty),
-      normalizedPackage,
-    }.toList()
-      ..sort();
-    final nextBlockPackages = current.forceBlockPackages
-        .map((value) => value.trim().toLowerCase())
-        .where(
-          (value) => value.isNotEmpty && value != normalizedPackage,
-        )
-        .toSet()
-        .toList()
-      ..sort();
-    final updated = current.copyWith(
-      forceAllowPackages: nextAllowPackages,
-      forceBlockPackages: nextBlockPackages,
-    );
-    if (updated.isEmpty) {
-      _modeOverrides.remove(normalizedMode);
-    } else {
-      _modeOverrides[normalizedMode] = updated;
-    }
-  }
-
-  void _removeModePackageAllowOverride({
-    required String modeKey,
-    required String packageName,
-  }) {
-    final normalizedMode = modeKey.trim().toLowerCase();
-    final normalizedPackage = packageName.trim().toLowerCase();
-    final current = _modeOverrides[normalizedMode];
-    if (current == null) {
-      return;
-    }
-    final nextAllowPackages = current.forceAllowPackages
-        .map((value) => value.trim().toLowerCase())
-        .where(
-          (value) => value.isNotEmpty && value != normalizedPackage,
-        )
-        .toSet()
-        .toList()
-      ..sort();
-    final updated = current.copyWith(forceAllowPackages: nextAllowPackages);
-    if (updated.isEmpty) {
-      _modeOverrides.remove(normalizedMode);
-    } else {
-      _modeOverrides[normalizedMode] = updated;
     }
   }
 
   Widget _buildCategoryCard(ContentCategory category) {
     final categoryState = _effectiveCategoryState(category.id);
     final isBlocked = categoryState.blocked;
+    final explicitlyBlocked = categoryState.blockedManually;
     final iconColor = _categoryColor(category.id);
     final enforcementBadge = _buildEnforcementBadgeForCategory(category.id);
     final modeSourceBadge = categoryState.blockedByMode
@@ -1513,7 +1421,7 @@ class _BlockCategoriesScreenState extends State<BlockCategoriesScreen>
                 ),
                 Switch(
                   key: Key('block_category_switch_${category.id}'),
-                  value: isBlocked,
+                  value: explicitlyBlocked,
                   onChanged: _isLoading || _isSyncingNextDns
                       ? null
                       : (enabled) => _toggleCategoryWithPin(
@@ -1851,17 +1759,25 @@ class _BlockCategoriesScreenState extends State<BlockCategoriesScreen>
         },
       ),
     );
-    await _autoSaveToggleChanges();
+    final saved = await _autoSaveToggleChanges();
+    if (!saved) {
+      if (mounted) {
+        setState(() {
+          _blockedDomains.remove(normalized);
+        });
+      }
+      return;
+    }
     await _syncNextDnsDomain(normalized, blocked: true);
   }
 
-  Future<void> _saveChanges({
+  Future<bool> _saveChanges({
     bool popOnSuccess = true,
     bool showSuccessSnackBar = true,
     String debugOrigin = 'manual_save',
   }) async {
     if (!_hasChanges) {
-      return;
+      return true;
     }
 
     setState(() {
@@ -1912,11 +1828,9 @@ class _BlockCategoriesScreenState extends State<BlockCategoriesScreen>
       );
 
       if (!mounted) {
-        return;
+        return true;
       }
 
-      // VPN sync is best-effort – don't let it block the save.
-      await _syncVpnRulesIfRunning(updatedPolicy);
 
       // Trigger remote command to child devices for immediate policy sync.
       // This ensures the child receives policy updates in real-time,
@@ -1970,7 +1884,7 @@ class _BlockCategoriesScreenState extends State<BlockCategoriesScreen>
       }
 
       if (!mounted) {
-        return;
+        return true;
       }
       if (showSuccessSnackBar) {
         ScaffoldMessenger.of(context).showSnackBar(
@@ -1992,6 +1906,7 @@ class _BlockCategoriesScreenState extends State<BlockCategoriesScreen>
           _initialModeOverrides = _cloneModeOverrides(saveModeOverrides);
         });
       }
+      return true;
     } catch (error) {
       unawaited(
         _emitBlockAppsDebugEvent(
@@ -2003,7 +1918,7 @@ class _BlockCategoriesScreenState extends State<BlockCategoriesScreen>
         ),
       );
       if (!mounted) {
-        return;
+        return false;
       }
       showDialog<void>(
         context: context,
@@ -2018,6 +1933,7 @@ class _BlockCategoriesScreenState extends State<BlockCategoriesScreen>
           ],
         ),
       );
+      return false;
     } finally {
       if (mounted) {
         setState(() {
@@ -2038,16 +1954,16 @@ class _BlockCategoriesScreenState extends State<BlockCategoriesScreen>
     }
   }
 
-  Future<void> _autoSaveToggleChanges() async {
+  Future<bool> _autoSaveToggleChanges() async {
     // Widget tests often render this screen without auth/Firebase.
     if (_resolvedParentId == null || !_hasChanges) {
-      return;
+      return true;
     }
     if (_isLoading) {
       _autoSaveQueued = true;
-      return;
+      return true;
     }
-    await _saveChanges(
+    return _saveChanges(
       popOnSuccess: false,
       showSuccessSnackBar: false,
       debugOrigin: 'auto_toggle',
@@ -2247,71 +2163,6 @@ class _BlockCategoriesScreenState extends State<BlockCategoriesScreen>
         .toSet();
   }
 
-  void _addModeCategoryAllowOverrides({
-    required String modeKey,
-    required String categoryId,
-  }) {
-    final normalizedMode = modeKey.trim().toLowerCase();
-    final services = _serviceIdsForCategory(categoryId);
-    if (services.isEmpty) {
-      return;
-    }
-    final current = _modeOverrides[normalizedMode] ?? const ModeOverrideSet();
-    final nextAllowServices = <String>{
-      ...current.forceAllowServices
-          .map((value) => value.trim().toLowerCase())
-          .where((value) => value.isNotEmpty),
-      ...services,
-    }.toList()
-      ..sort();
-    final nextBlockServices = current.forceBlockServices
-        .map((value) => value.trim().toLowerCase())
-        .where(
-          (value) => value.isNotEmpty && !services.contains(value),
-        )
-        .toSet()
-        .toList()
-      ..sort();
-    final updated = current.copyWith(
-      forceAllowServices: nextAllowServices,
-      forceBlockServices: nextBlockServices,
-    );
-    if (updated.isEmpty) {
-      _modeOverrides.remove(normalizedMode);
-    } else {
-      _modeOverrides[normalizedMode] = updated;
-    }
-  }
-
-  void _removeModeCategoryAllowOverrides({
-    required String modeKey,
-    required String categoryId,
-  }) {
-    final normalizedMode = modeKey.trim().toLowerCase();
-    final services = _serviceIdsForCategory(categoryId);
-    if (services.isEmpty) {
-      return;
-    }
-    final current = _modeOverrides[normalizedMode];
-    if (current == null) {
-      return;
-    }
-    final nextAllowServices = current.forceAllowServices
-        .map((value) => value.trim().toLowerCase())
-        .where(
-          (value) => value.isNotEmpty && !services.contains(value),
-        )
-        .toSet()
-        .toList()
-      ..sort();
-    final updated = current.copyWith(forceAllowServices: nextAllowServices);
-    if (updated.isEmpty) {
-      _modeOverrides.remove(normalizedMode);
-    } else {
-      _modeOverrides[normalizedMode] = updated;
-    }
-  }
-
   String? _categoryIdForService(String appKey) {
     final normalized = appKey.trim().toLowerCase();
     final service = ServiceDefinitions.byId[normalized];
@@ -2325,131 +2176,6 @@ class _BlockCategoriesScreenState extends State<BlockCategoriesScreen>
       }
     }
     return null;
-  }
-
-  bool _isModeBlockingService(
-    String appKey, {
-    String? categoryId,
-  }) {
-    final normalized = appKey.trim().toLowerCase();
-    final modeContext = _activeModeContext();
-    final modeOverride = modeContext.overrideSet;
-    final resolvedCategory = categoryId == null || categoryId.trim().isEmpty
-        ? _categoryIdForService(normalized)
-        : normalizeCategoryId(categoryId);
-    final modeBlockedByCategory = resolvedCategory != null &&
-        modeContext.blockedCategories.contains(resolvedCategory);
-    final modeBlockedByOverride = modeOverride?.forceBlockServices
-            .map((value) => value.trim().toLowerCase())
-            .contains(normalized) ==
-        true;
-    final modeAllowedByOverride = modeOverride?.forceAllowServices
-            .map((value) => value.trim().toLowerCase())
-            .contains(normalized) ==
-        true;
-    return (modeContext.blocksAll ||
-            modeBlockedByCategory ||
-            modeBlockedByOverride) &&
-        !modeAllowedByOverride;
-  }
-
-  bool _isModeBlockingPackage(
-    String packageName, {
-    String? categoryId,
-    String? serviceId,
-  }) {
-    final normalizedPackage = packageName.trim().toLowerCase();
-    final normalizedService = serviceId?.trim().toLowerCase();
-    final normalizedCategory = categoryId == null || categoryId.trim().isEmpty
-        ? null
-        : normalizeCategoryId(categoryId);
-    final modeContext = _activeModeContext();
-    final modeOverride = modeContext.overrideSet;
-    final modeBlockedByCategory = normalizedCategory != null &&
-        modeContext.blockedCategories.contains(normalizedCategory);
-    final modeBlockedByService = normalizedService != null &&
-        (modeOverride?.forceBlockServices
-                .map((value) => value.trim().toLowerCase())
-                .contains(normalizedService) ==
-            true);
-    final modeBlockedByPackage = modeOverride?.forceBlockPackages
-            .map((value) => value.trim().toLowerCase())
-            .contains(normalizedPackage) ==
-        true;
-    final modeAllowedByService = normalizedService != null &&
-        (modeOverride?.forceAllowServices
-                .map((value) => value.trim().toLowerCase())
-                .contains(normalizedService) ==
-            true);
-    final modeAllowedByPackage = modeOverride?.forceAllowPackages
-            .map((value) => value.trim().toLowerCase())
-            .contains(normalizedPackage) ==
-        true;
-    final modeAllowed = modeAllowedByService || modeAllowedByPackage;
-    return (modeContext.blocksAll ||
-            modeBlockedByCategory ||
-            modeBlockedByService ||
-            modeBlockedByPackage) &&
-        !modeAllowed;
-  }
-
-  void _addModeServiceAllowOverride({
-    required String modeKey,
-    required String serviceId,
-  }) {
-    final normalizedMode = modeKey.trim().toLowerCase();
-    final normalizedService = serviceId.trim().toLowerCase();
-    final current = _modeOverrides[normalizedMode] ?? const ModeOverrideSet();
-    final nextAllowServices = <String>{
-      ...current.forceAllowServices
-          .map((value) => value.trim().toLowerCase())
-          .where((value) => value.isNotEmpty),
-      normalizedService,
-    }.toList()
-      ..sort();
-    final nextBlockServices = current.forceBlockServices
-        .map((value) => value.trim().toLowerCase())
-        .where(
-          (value) => value.isNotEmpty && value != normalizedService,
-        )
-        .toSet()
-        .toList()
-      ..sort();
-    final updated = current.copyWith(
-      forceAllowServices: nextAllowServices,
-      forceBlockServices: nextBlockServices,
-    );
-    if (updated.isEmpty) {
-      _modeOverrides.remove(normalizedMode);
-    } else {
-      _modeOverrides[normalizedMode] = updated;
-    }
-  }
-
-  void _removeModeServiceAllowOverride({
-    required String modeKey,
-    required String serviceId,
-  }) {
-    final normalizedMode = modeKey.trim().toLowerCase();
-    final normalizedService = serviceId.trim().toLowerCase();
-    final current = _modeOverrides[normalizedMode];
-    if (current == null) {
-      return;
-    }
-    final nextAllowServices = current.forceAllowServices
-        .map((value) => value.trim().toLowerCase())
-        .where(
-          (value) => value.isNotEmpty && value != normalizedService,
-        )
-        .toSet()
-        .toList()
-      ..sort();
-    final updated = current.copyWith(forceAllowServices: nextAllowServices);
-    if (updated.isEmpty) {
-      _modeOverrides.remove(normalizedMode);
-    } else {
-      _modeOverrides[normalizedMode] = updated;
-    }
   }
 
   Future<void> _toggleAppWithPin({
@@ -2469,12 +2195,6 @@ class _BlockCategoriesScreenState extends State<BlockCategoriesScreen>
 
     final categoryBlocked =
         categoryId != null && _isCategoryBlocked(categoryId);
-    final modeContext = _activeModeContext();
-    final activeModeKey = modeContext.modeKey;
-    final modeBlockingThisService = _isModeBlockingService(
-      normalizedServiceId,
-      categoryId: categoryId,
-    );
     if (enabled && categoryBlocked && !_isAppExplicitlyBlocked(appKey)) {
       if (!mounted) {
         return;
@@ -2505,30 +2225,12 @@ class _BlockCategoriesScreenState extends State<BlockCategoriesScreen>
       }
     }
 
+    final previousBlockedServices = Set<String>.from(_blockedServices);
     setState(() {
       if (enabled) {
         _blockedServices.add(normalizedServiceId);
-        if (activeModeKey != null && RolloutFlags.modeAppOverrides) {
-          _removeModeServiceAllowOverride(
-            modeKey: activeModeKey,
-            serviceId: normalizedServiceId,
-          );
-        }
       } else {
         _blockedServices.remove(normalizedServiceId);
-        if (activeModeKey != null && RolloutFlags.modeAppOverrides) {
-          if (modeBlockingThisService) {
-            _addModeServiceAllowOverride(
-              modeKey: activeModeKey,
-              serviceId: normalizedServiceId,
-            );
-          } else {
-            _removeModeServiceAllowOverride(
-              modeKey: activeModeKey,
-              serviceId: normalizedServiceId,
-            );
-          }
-        }
       }
     });
     unawaited(
@@ -2546,26 +2248,23 @@ class _BlockCategoriesScreenState extends State<BlockCategoriesScreen>
         },
       ),
     );
-    await _autoSaveToggleChanges();
+    final saved = await _autoSaveToggleChanges();
+    if (!saved) {
+      if (mounted) {
+        setState(() {
+          _blockedServices = previousBlockedServices;
+        });
+      }
+      return;
+    }
     if (_nextDnsServiceToggles.containsKey(service.serviceId)) {
       await _toggleNextDnsService(service.serviceId, enabled);
     }
-    if (!enabled && categoryBlocked && !modeBlockingThisService && mounted) {
+    if (!enabled && categoryBlocked && mounted) {
       ScaffoldMessenger.of(context).showSnackBar(
         SnackBar(
           content: Text(
             '${_appLabel(appKey)} is still blocked because ${_prettyLabel(categoryId)} is ON.',
-          ),
-        ),
-      );
-    } else if (!enabled &&
-        modeBlockingThisService &&
-        modeContext.modeLabel != null &&
-        mounted) {
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(
-          content: Text(
-            '${_appLabel(appKey)} is now allowed for ${modeContext.modeLabel}.',
           ),
         ),
       );
@@ -2603,36 +2302,15 @@ class _BlockCategoriesScreenState extends State<BlockCategoriesScreen>
     }
 
     final normalizedCategoryId = normalizeCategoryId(categoryId);
-    final modeContext = _activeModeContext();
-    final activeModeKey = modeContext.modeKey;
-    final blockedByModeBeforeToggle =
-        _effectiveCategoryState(normalizedCategoryId).blockedByMode;
+    final previousBlockedCategories = Set<String>.from(_blockedCategories);
+    final previousExpandedCategoryIds = Set<String>.from(_expandedCategoryIds);
 
     setState(() {
       if (enabled) {
         _blockedCategories.add(normalizedCategoryId);
         _expandedCategoryIds.add(normalizedCategoryId);
-        if (activeModeKey != null && RolloutFlags.modeAppOverrides) {
-          _removeModeCategoryAllowOverrides(
-            modeKey: activeModeKey,
-            categoryId: normalizedCategoryId,
-          );
-        }
       } else {
         removeCategoryAndAliases(_blockedCategories, normalizedCategoryId);
-        if (activeModeKey != null && RolloutFlags.modeAppOverrides) {
-          if (blockedByModeBeforeToggle) {
-            _addModeCategoryAllowOverrides(
-              modeKey: activeModeKey,
-              categoryId: normalizedCategoryId,
-            );
-          } else {
-            _removeModeCategoryAllowOverrides(
-              modeKey: activeModeKey,
-              categoryId: normalizedCategoryId,
-            );
-          }
-        }
       }
     });
     unawaited(
@@ -2648,25 +2326,22 @@ class _BlockCategoriesScreenState extends State<BlockCategoriesScreen>
         },
       ),
     );
-    await _autoSaveToggleChanges();
+    final saved = await _autoSaveToggleChanges();
+    if (!saved) {
+      if (mounted) {
+        setState(() {
+          _blockedCategories = previousBlockedCategories;
+          _expandedCategoryIds = previousExpandedCategoryIds;
+        });
+      }
+      return;
+    }
     await _syncNextDnsCategoryForLocalToggle(
       localCategoryId: normalizeCategoryId(categoryId),
       blocked: enabled,
     );
     if (enabled && mounted) {
       _showNewConnectionsHint();
-    }
-    if (!enabled &&
-        blockedByModeBeforeToggle &&
-        modeContext.modeLabel != null &&
-        mounted) {
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(
-          content: Text(
-            '${_prettyLabel(normalizedCategoryId)} is now allowed for ${modeContext.modeLabel}.',
-          ),
-        ),
-      );
     }
   }
 
@@ -2688,32 +2363,6 @@ class _BlockCategoriesScreenState extends State<BlockCategoriesScreen>
     return categoryId == 'adult-content' ||
         categoryId == 'gambling' ||
         categoryId == 'malware';
-  }
-
-  Future<void> _syncVpnRulesIfRunning(Policy updatedPolicy) async {
-    try {
-      final resolvedDomains = ServiceDefinitions.resolveDomains(
-        blockedCategories: updatedPolicy.blockedCategories,
-        blockedServices: updatedPolicy.blockedServices,
-        customBlockedDomains: updatedPolicy.blockedDomains,
-      ).toList()
-        ..sort();
-      // Always push rules to the native layer so they are persisted and
-      // available when the VPN starts, even if it isn't running right now.
-      // On the parent device the VPN channel may not be registered, so we
-      // catch MissingPluginException and all other platform errors.
-      await _resolvedVpnService.applyPolicy(
-        policyJson: <String, dynamic>{
-          'blockedCategories': updatedPolicy.blockedCategories,
-          'blockedDomainsResolved': resolvedDomains,
-          'blockedDomains': updatedPolicy.blockedDomains,
-        },
-      );
-    } on MissingPluginException {
-      // Parent device – VPN channel not registered. Ignore.
-    } catch (_) {
-      // Non-fatal: saving policy should succeed even if VPN sync fails.
-    }
   }
 
   String _normalizeDomain(String value) {
@@ -3324,6 +2973,7 @@ class _BlockCategoriesScreenState extends State<BlockCategoriesScreen>
   }
 
   Future<void> _removeDomain(String domain) async {
+    final previousBlockedDomains = Set<String>.from(_blockedDomains);
     setState(() {
       _blockedDomains.remove(domain);
     });
@@ -3337,7 +2987,15 @@ class _BlockCategoriesScreenState extends State<BlockCategoriesScreen>
         },
       ),
     );
-    await _autoSaveToggleChanges();
+    final saved = await _autoSaveToggleChanges();
+    if (!saved) {
+      if (mounted) {
+        setState(() {
+          _blockedDomains = previousBlockedDomains;
+        });
+      }
+      return;
+    }
     await _syncNextDnsDomain(domain, blocked: false);
   }
 
@@ -3751,3 +3409,4 @@ Map<String, dynamic> _dynamicMap(Object? rawValue) {
   }
   return const <String, dynamic>{};
 }
+
