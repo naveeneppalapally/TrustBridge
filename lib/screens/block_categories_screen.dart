@@ -45,6 +45,7 @@ class BlockCategoriesScreen extends StatefulWidget {
     this.nextDnsApiService,
     this.parentIdOverride,
     this.showAppBar = true,
+    this.installedAppsOnly = false,
   });
 
   final ChildProfile child;
@@ -54,6 +55,7 @@ class BlockCategoriesScreen extends StatefulWidget {
   final NextDnsApiService? nextDnsApiService;
   final String? parentIdOverride;
   final bool showAppBar;
+  final bool installedAppsOnly;
 
   @override
   State<BlockCategoriesScreen> createState() => _BlockCategoriesScreenState();
@@ -344,6 +346,10 @@ class _BlockCategoriesScreenState extends State<BlockCategoriesScreen>
     WidgetsBinding.instance.addObserver(this);
     _liveChildContext = widget.child;
     _hydrateStateFromChild(widget.child);
+    if (_appInventoryEnabled && widget.installedAppsOnly) {
+      _installedAppsExpanded = true;
+      unawaited(_loadInstalledApps());
+    }
     _startPolicyTelemetryListeners();
   }
 
@@ -356,7 +362,8 @@ class _BlockCategoriesScreenState extends State<BlockCategoriesScreen>
     if (childChanged) {
       _liveChildContext = widget.child;
       _hydrateStateFromChild(widget.child);
-      if (_appInventoryEnabled && _installedAppsExpanded) {
+      if (_appInventoryEnabled &&
+          (widget.installedAppsOnly || _installedAppsExpanded)) {
         unawaited(_loadInstalledApps());
       }
     }
@@ -390,13 +397,15 @@ class _BlockCategoriesScreenState extends State<BlockCategoriesScreen>
       return;
     }
     if (_query.trim().isEmpty) {
-      if (_appInventoryEnabled && _installedAppsExpanded) {
+      if (_appInventoryEnabled &&
+          (widget.installedAppsOnly || _installedAppsExpanded)) {
         unawaited(_loadInstalledApps());
       }
       return;
     }
     _clearSearchFilter();
-    if (_appInventoryEnabled && _installedAppsExpanded) {
+    if (_appInventoryEnabled &&
+        (widget.installedAppsOnly || _installedAppsExpanded)) {
       unawaited(_loadInstalledApps());
     }
   }
@@ -840,11 +849,156 @@ class _BlockCategoriesScreenState extends State<BlockCategoriesScreen>
     return null;
   }
 
+  Future<void> _openInstalledAppsScreen() async {
+    if (!mounted) {
+      return;
+    }
+    if (_hasChanges) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(
+          content: Text(
+            'Save current category changes before opening Installed Apps.',
+          ),
+        ),
+      );
+      return;
+    }
+    await Navigator.of(context).push(
+      MaterialPageRoute<void>(
+        builder: (_) => BlockCategoriesScreen(
+          child: _currentChildContext,
+          authService: widget.authService,
+          firestoreService: widget.firestoreService,
+          vpnService: widget.vpnService,
+          nextDnsApiService: widget.nextDnsApiService,
+          parentIdOverride: widget.parentIdOverride,
+          showAppBar: true,
+          installedAppsOnly: true,
+        ),
+      ),
+    );
+  }
+
+  Widget _buildInstalledAppsEntryCard() {
+    return Container(
+      key: const Key('block_categories_installed_apps_entry'),
+      padding: const EdgeInsets.all(12),
+      decoration: BoxDecoration(
+        color: Theme.of(context).colorScheme.primary.withValues(alpha: 0.08),
+        borderRadius: BorderRadius.circular(12),
+        border: Border.all(
+          color: Theme.of(context).colorScheme.primary.withValues(alpha: 0.22),
+        ),
+      ),
+      child: Row(
+        children: [
+          Container(
+            width: 36,
+            height: 36,
+            decoration: BoxDecoration(
+              color: Theme.of(context)
+                  .colorScheme
+                  .primary
+                  .withValues(alpha: 0.12),
+              borderRadius: BorderRadius.circular(10),
+            ),
+            child: Icon(
+              Icons.apps_rounded,
+              color: Theme.of(context).colorScheme.primary,
+              size: 20,
+            ),
+          ),
+          const SizedBox(width: 12),
+          const Expanded(
+            child: Text(
+              'Installed apps are now on a separate screen for smoother category controls.',
+            ),
+          ),
+          TextButton(
+            key: const Key('block_categories_open_installed_apps'),
+            onPressed: (_isLoading || _isSyncingNextDns)
+                ? null
+                : () => unawaited(_openInstalledAppsScreen()),
+            child: const Text('Open'),
+          ),
+        ],
+      ),
+    );
+  }
+
   @override
   Widget build(BuildContext context) {
     final modeContext = _activeModeContext();
     final bottomInset = MediaQuery.paddingOf(context).bottom;
     final reservedBottomSpace = _hasChanges ? 112.0 : 56.0;
+
+    if (widget.installedAppsOnly) {
+      final installedOnlyContent = ListView(
+        controller: _contentScrollController,
+        physics: const RangeMaintainingScrollPhysics(
+          parent: ClampingScrollPhysics(),
+        ),
+        padding: EdgeInsets.fromLTRB(
+          16,
+          12,
+          16,
+          24 + bottomInset + reservedBottomSpace,
+        ),
+        children: [
+          TextField(
+            key: const Key('block_categories_search'),
+            controller: _searchController,
+            onChanged: (value) => setState(() => _query = value),
+            decoration: InputDecoration(
+              hintText: 'Search installed apps',
+              prefixIcon: const Icon(Icons.search),
+              suffixIcon: _query.trim().isEmpty
+                  ? null
+                  : IconButton(
+                      tooltip: 'Clear search',
+                      onPressed: _clearSearchFilter,
+                      icon: const Icon(Icons.close_rounded),
+                    ),
+              border: OutlineInputBorder(
+                borderRadius: BorderRadius.circular(14),
+              ),
+            ),
+          ),
+          if (_query.trim().isNotEmpty) ...[
+            const SizedBox(height: 8),
+            Row(
+              children: [
+                Expanded(
+                  child: Text(
+                    'Filtered by "${_query.trim()}".',
+                    style: Theme.of(context).textTheme.bodySmall,
+                  ),
+                ),
+                TextButton(
+                  onPressed: _clearSearchFilter,
+                  child: const Text('Show all apps'),
+                ),
+              ],
+            ),
+          ],
+          const SizedBox(height: 16),
+          _buildInstalledAppsSection(
+            modeContext,
+            showHeaderToggle: false,
+            forceExpanded: true,
+          ),
+        ],
+      );
+
+      return Scaffold(
+        appBar: AppBar(
+          title: const Text('Installed App Blocking'),
+        ),
+        bottomNavigationBar: _hasChanges ? _buildSaveBar() : null,
+        body: installedOnlyContent,
+      );
+    }
+
     final content = ListView(
       controller: _contentScrollController,
       physics:
@@ -979,7 +1133,7 @@ class _BlockCategoriesScreenState extends State<BlockCategoriesScreen>
               .map((category) => _buildCategoryCard(category, modeContext)),
         const SizedBox(height: 18),
         if (_appInventoryEnabled) ...[
-          _buildInstalledAppsSection(modeContext),
+          _buildInstalledAppsEntryCard(),
           const SizedBox(height: 18),
         ],
         Text(
@@ -1018,14 +1172,19 @@ class _BlockCategoriesScreenState extends State<BlockCategoriesScreen>
     );
   }
 
-  Widget _buildInstalledAppsSection(_ModeContext modeContext) {
+  Widget _buildInstalledAppsSection(
+    _ModeContext modeContext, {
+    bool showHeaderToggle = true,
+    bool forceExpanded = false,
+  }) {
     final apps = _visibleInstalledApps;
     final activeQuery = _query.trim();
     final filtered = activeQuery.isNotEmpty;
     final totalApps = _installedApps.length;
     final countLabel = _hasLoadedInstalledApps ? '$totalApps loaded' : 'not loaded';
+    final sectionExpanded = forceExpanded || _installedAppsExpanded;
 
-    if (!_installedAppsExpanded) {
+    if (!sectionExpanded) {
       return Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
@@ -1037,15 +1196,16 @@ class _BlockCategoriesScreenState extends State<BlockCategoriesScreen>
                   style: Theme.of(context).textTheme.titleSmall?.copyWith(
                         fontWeight: FontWeight.w800,
                         letterSpacing: 0.5,
-                      ),
+                  ),
                 ),
               ),
-              TextButton.icon(
-                key: const Key('block_categories_toggle_installed_apps'),
-                onPressed: _toggleInstalledAppsSection,
-                icon: const Icon(Icons.expand_more_rounded),
-                label: const Text('Show'),
-              ),
+              if (showHeaderToggle)
+                TextButton.icon(
+                  key: const Key('block_categories_toggle_installed_apps'),
+                  onPressed: _toggleInstalledAppsSection,
+                  icon: const Icon(Icons.expand_more_rounded),
+                  label: const Text('Show'),
+                ),
             ],
           ),
           const SizedBox(height: 8),
@@ -1087,12 +1247,13 @@ class _BlockCategoriesScreenState extends State<BlockCategoriesScreen>
                     ),
               ),
             ),
-            TextButton.icon(
-              key: const Key('block_categories_toggle_installed_apps'),
-              onPressed: _toggleInstalledAppsSection,
-              icon: const Icon(Icons.expand_less_rounded),
-              label: const Text('Hide'),
-            ),
+            if (showHeaderToggle)
+              TextButton.icon(
+                key: const Key('block_categories_toggle_installed_apps'),
+                onPressed: _toggleInstalledAppsSection,
+                icon: const Icon(Icons.expand_less_rounded),
+                label: const Text('Hide'),
+              ),
             IconButton(
               tooltip: 'Refresh installed apps',
               onPressed: _isLoadingInstalledApps
