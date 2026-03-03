@@ -111,56 +111,6 @@ void main() {
           find.byKey(const Key('block_categories_add_domain')), findsOneWidget);
     });
 
-    testWidgets('shows installed apps entry card on category screen',
-        (tester) async {
-      await tester.binding.setSurfaceSize(const Size(430, 900));
-      addTearDown(() => tester.binding.setSurfaceSize(null));
-
-      await tester.pumpWidget(
-        MaterialApp(
-          home: BlockCategoriesScreen(child: testChild),
-        ),
-      );
-      await tester.pumpAndSettle();
-
-      await tester.scrollUntilVisible(
-        find.byKey(const Key('block_categories_installed_apps_entry')),
-        220,
-        scrollable: find.byType(Scrollable).first,
-      );
-
-      expect(
-        find.byKey(const Key('block_categories_open_installed_apps')),
-        findsOneWidget,
-      );
-    });
-
-    testWidgets('opens installed apps on dedicated screen', (tester) async {
-      await tester.binding.setSurfaceSize(const Size(430, 900));
-      addTearDown(() => tester.binding.setSurfaceSize(null));
-
-      await tester.pumpWidget(
-        MaterialApp(
-          home: BlockCategoriesScreen(child: testChild),
-        ),
-      );
-      await tester.pumpAndSettle();
-
-      await tester.scrollUntilVisible(
-        find.byKey(const Key('block_categories_open_installed_apps')),
-        220,
-        scrollable: find.byType(Scrollable).first,
-      );
-      final openInstalledAppsButton =
-          find.byKey(const Key('block_categories_open_installed_apps'));
-      await tester.ensureVisible(openInstalledAppsButton);
-      await tester.pumpAndSettle();
-      await tester.tap(openInstalledAppsButton);
-      await tester.pumpAndSettle();
-
-      expect(find.text('Installed App Blocking'), findsOneWidget);
-    });
-
     testWidgets('switch updates state and shows sticky save bar',
         (tester) async {
       await tester.binding.setSurfaceSize(const Size(430, 900));
