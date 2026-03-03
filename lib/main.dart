@@ -782,7 +782,16 @@ Future<_LaunchRoute> _loadLaunchRoute({
         .timeout(const Duration(seconds: 12));
     final remoteCompletion =
         (parentPrefs?['onboardingComplete'] as bool?) ?? false;
-    final onboardingComplete = remoteCompletion || localCompletion;
+    var onboardingComplete = remoteCompletion || localCompletion;
+
+    if (!onboardingComplete) {
+      final hasExistingChildren = await firestoreService
+          .hasAnyChildProfiles(user.uid)
+          .timeout(const Duration(seconds: 12));
+      if (hasExistingChildren) {
+        onboardingComplete = true;
+      }
+    }
 
     if (remoteCompletion && !localCompletion) {
       unawaited(onboardingStateService.markCompleteLocally(user.uid));

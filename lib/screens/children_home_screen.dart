@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 
+import '../models/child_profile.dart';
 import '../models/dashboard_state.dart';
 import '../services/auth_service.dart';
 import '../services/firestore_service.dart';
@@ -30,6 +31,8 @@ class _ChildrenHomeScreenState extends State<ChildrenHomeScreen> {
   AuthService? _authService;
   FirestoreService? _firestoreService;
   bool _updatingPause = false;
+  Future<List<ChildProfile>>? _fallbackChildrenFuture;
+  String? _fallbackChildrenParentId;
 
   AuthService get _resolvedAuthService {
     _authService ??= widget.authService ?? AuthService();
@@ -47,6 +50,129 @@ class _ChildrenHomeScreenState extends State<ChildrenHomeScreen> {
       return override;
     }
     return _resolvedAuthService.currentUser?.uid;
+  }
+
+  void _ensureFallbackChildrenFuture(String parentId) {
+    if (_fallbackChildrenFuture != null &&
+        _fallbackChildrenParentId == parentId) {
+      return;
+    }
+    _fallbackChildrenParentId = parentId;
+    _fallbackChildrenFuture =
+        _resolvedFirestoreService.getChildrenOnce(parentId);
+  }
+
+  void _retryFallbackChildren(String parentId) {
+    setState(() {
+      _fallbackChildrenParentId = null;
+      _fallbackChildrenFuture = null;
+    });
+    _ensureFallbackChildrenFuture(parentId);
+  }
+
+  List<DashboardChildSummary> _summariesFromChildProfiles(
+    List<ChildProfile> children,
+  ) {
+    final now = DateTime.now();
+    return children
+        .map(
+          (child) => DashboardChildSummary(
+            childId: child.id,
+            name: child.nickname,
+            protectionEnabled: child.protectionEnabled,
+            protectionStatus:
+                child.protectionEnabled ? 'protected' : 'disabled',
+            activeMode: _activeModeFromChild(child, now),
+            screenTimeTodayMs: 0,
+            pendingRequestCount: 0,
+            online: false,
+            vpnActive: false,
+            lastSeenEpochMs: null,
+            updatedAtEpochMs: child.updatedAt.millisecondsSinceEpoch,
+          ),
+        )
+        .toList(growable: false)
+      ..sort((a, b) => a.name.compareTo(b.name));
+  }
+
+  String _activeModeFromChild(ChildProfile child, DateTime now) {
+    final pausedUntil = child.pausedUntil;
+    if (pausedUntil != null && pausedUntil.isAfter(now)) {
+      return 'paused';
+    }
+
+    final manualMode = child.manualMode;
+    if (manualMode == null || manualMode.isEmpty) {
+      return 'free';
+    }
+
+    final mode = (manualMode['mode'] as String?)?.trim().toLowerCase();
+    if (mode == null || mode.isEmpty) {
+      return 'free';
+    }
+    return mode;
+  }
+
+  Widget _buildChildrenList({
+    required String parentId,
+    required List<DashboardChildSummary> children,
+  }) {
+    if (children.isEmpty) {
+      return Center(
+        child: Padding(
+          padding: const EdgeInsets.all(20),
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              const Icon(
+                Icons.family_restroom,
+                size: 56,
+                color: AppColors.textMuted,
+              ),
+              const SizedBox(height: 16),
+              Text(
+                'No children added yet.',
+                style: AppTextStyles.headingMedium(),
+              ),
+              const SizedBox(height: 8),
+              Text(
+                'Add a child to start protection controls.',
+                textAlign: TextAlign.center,
+                style: AppTextStyles.body(
+                  color: AppColors.textSecondary,
+                ),
+              ),
+              const SizedBox(height: 20),
+              _CalmButton(
+                label: 'Add Child',
+                icon: Icons.add,
+                onTap: _openAddChild,
+              ),
+            ],
+          ),
+        ),
+      );
+    }
+
+    return ListView.separated(
+      padding: const EdgeInsets.fromLTRB(
+        20,
+        4,
+        20,
+        24,
+      ),
+      itemBuilder: (context, index) {
+        final child = children[index];
+        return _ChildOverviewCard(
+          child: child,
+          pauseBusy: _updatingPause,
+          onPausePressed: () => _togglePause(child, parentId),
+          onTap: () => _openChildControl(child, parentId),
+        );
+      },
+      separatorBuilder: (_, __) => const SizedBox(height: 12),
+      itemCount: children.length,
+    );
   }
 
   @override
@@ -67,6 +193,9 @@ class _ChildrenHomeScreenState extends State<ChildrenHomeScreen> {
     final children =
         dashboardState?.children ?? const <DashboardChildSummary>[];
     final isLoading = dashboardState == null;
+    if (isLoading) {
+      _ensureFallbackChildrenFuture(parentId);
+    }
 
     return Scaffold(
       body: SafeArea(
@@ -113,76 +242,72 @@ class _ChildrenHomeScreenState extends State<ChildrenHomeScreen> {
               child: Builder(
                 builder: (context) {
                   if (isLoading) {
-                    return ListView(
-                      padding: const EdgeInsets.fromLTRB(
-                        20,
-                        8,
-                        20,
-                        24,
-                      ),
-                      children: const <Widget>[
-                        _StaticPlaceholderCard(),
-                        SizedBox(height: 12),
-                        _StaticPlaceholderCard(),
-                      ],
-                    );
-                  }
+                    return FutureBuilder<List<ChildProfile>>(
+                      future: _fallbackChildrenFuture,
+                      builder: (context, fallbackSnapshot) {
+                        if (fallbackSnapshot.connectionState ==
+                                ConnectionState.waiting &&
+                            !fallbackSnapshot.hasData) {
+                          return ListView(
+                            padding: const EdgeInsets.fromLTRB(
+                              20,
+                              8,
+                              20,
+                              24,
+                            ),
+                            children: const <Widget>[
+                              _StaticPlaceholderCard(),
+                              SizedBox(height: 12),
+                              _StaticPlaceholderCard(),
+                            ],
+                          );
+                        }
 
-                  if (children.isEmpty) {
-                    return Center(
-                      child: Padding(
-                        padding: const EdgeInsets.all(20),
-                        child: Column(
-                          mainAxisSize: MainAxisSize.min,
-                          children: [
-                            const Icon(
-                              Icons.family_restroom,
-                              size: 56,
-                              color: AppColors.textMuted,
-                            ),
-                            const SizedBox(height: 16),
-                            Text(
-                              'No children added yet.',
-                              style: AppTextStyles.headingMedium(),
-                            ),
-                            const SizedBox(height: 8),
-                            Text(
-                              'Add a child to start protection controls.',
-                              textAlign: TextAlign.center,
-                              style: AppTextStyles.body(
-                                color: AppColors.textSecondary,
+                        if (fallbackSnapshot.hasError) {
+                          return Center(
+                            child: Padding(
+                              padding: const EdgeInsets.all(20),
+                              child: Column(
+                                mainAxisSize: MainAxisSize.min,
+                                children: [
+                                  const Icon(
+                                    Icons.wifi_tethering_error_rounded,
+                                    size: 48,
+                                    color: AppColors.textMuted,
+                                  ),
+                                  const SizedBox(height: 12),
+                                  Text(
+                                    'Could not load children right now.',
+                                    textAlign: TextAlign.center,
+                                    style: AppTextStyles.headingMedium(),
+                                  ),
+                                  const SizedBox(height: 12),
+                                  _CalmButton(
+                                    label: 'Retry',
+                                    icon: Icons.refresh_rounded,
+                                    onTap: () =>
+                                        _retryFallbackChildren(parentId),
+                                  ),
+                                ],
                               ),
                             ),
-                            const SizedBox(height: 20),
-                            _CalmButton(
-                              label: 'Add Child',
-                              icon: Icons.add,
-                              onTap: _openAddChild,
-                            ),
-                          ],
-                        ),
-                      ),
+                          );
+                        }
+
+                        final fallbackChildren = _summariesFromChildProfiles(
+                          fallbackSnapshot.data ?? const <ChildProfile>[],
+                        );
+                        return _buildChildrenList(
+                          parentId: parentId,
+                          children: fallbackChildren,
+                        );
+                      },
                     );
                   }
 
-                  return ListView.separated(
-                    padding: const EdgeInsets.fromLTRB(
-                      20,
-                      4,
-                      20,
-                      24,
-                    ),
-                    itemBuilder: (context, index) {
-                      final child = children[index];
-                      return _ChildOverviewCard(
-                        child: child,
-                        pauseBusy: _updatingPause,
-                        onPausePressed: () => _togglePause(child, parentId),
-                        onTap: () => _openChildControl(child, parentId),
-                      );
-                    },
-                    separatorBuilder: (_, __) => const SizedBox(height: 12),
-                    itemCount: children.length,
+                  return _buildChildrenList(
+                    parentId: parentId,
+                    children: children,
                   );
                 },
               ),

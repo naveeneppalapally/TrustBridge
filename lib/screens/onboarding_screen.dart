@@ -167,9 +167,12 @@ class _OnboardingScreenState extends State<OnboardingScreen> {
             nickname: _childNameController.text.trim(),
             ageBand: _selectedAgeBand,
           );
-      final pairingCode = await _pairingService.generatePairingCode(child.id);
+      final pairingCode = await _pairingService.generatePairingCode(
+        child.id,
+        parentIdOverride: parentId,
+      );
 
-      if (existingChild == null) {
+      if (!widget.isRevisit) {
         try {
           await _resolvedOnboardingStateService.markCompleteLocally(parentId);
         } catch (_) {
@@ -177,10 +180,12 @@ class _OnboardingScreenState extends State<OnboardingScreen> {
         }
 
         unawaited(() async {
-          try {
-            await _resolvedFirestoreService.recordGuardianConsent(parentId);
-          } catch (_) {
-            // Cloud consent sync is best effort.
+          if (_consentAccepted || !_requiresConsent) {
+            try {
+              await _resolvedFirestoreService.recordGuardianConsent(parentId);
+            } catch (_) {
+              // Cloud consent sync is best effort.
+            }
           }
           try {
             await _completeOnboardingForParent(parentId);
@@ -218,9 +223,30 @@ class _OnboardingScreenState extends State<OnboardingScreen> {
     }
   }
 
-  void _openHome() {
+  Future<void> _openHome() async {
     if (widget.isRevisit) {
+      if (!mounted) {
+        return;
+      }
       Navigator.of(context).pop();
+      return;
+    }
+
+    final parentId = _resolvedParentId;
+    unawaited(() async {
+      try {
+        await _resolvedOnboardingStateService.markCompleteLocally(parentId);
+      } catch (_) {
+        // Best-effort local completion.
+      }
+      try {
+        await _completeOnboardingForParent(parentId);
+      } catch (_) {
+        // Best-effort cloud completion.
+      }
+    }());
+
+    if (!mounted) {
       return;
     }
     Navigator.of(context).pushReplacementNamed('/dashboard');

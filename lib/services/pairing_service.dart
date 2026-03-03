@@ -195,15 +195,21 @@ class PairingService {
   }
 
   /// Generates and persists an 8-character secure pairing code.
-  Future<String> generatePairingCode(String childId) async {
+  Future<String> generatePairingCode(
+    String childId, {
+    String? parentIdOverride,
+  }) async {
     final trimmedChildId = childId.trim();
     if (trimmedChildId.isEmpty) {
       throw ArgumentError.value(childId, 'childId', 'Child ID is required.');
     }
 
-    final parentId = (_currentUserIdResolver?.call() ??
-            FirebaseAuth.instance.currentUser?.uid)
-        ?.trim();
+    final overrideParentId = parentIdOverride?.trim();
+    final parentId = (overrideParentId != null && overrideParentId.isNotEmpty)
+        ? overrideParentId
+        : (_currentUserIdResolver?.call() ??
+                FirebaseAuth.instance.currentUser?.uid)
+            ?.trim();
     if (parentId == null || parentId.isEmpty) {
       throw StateError('Parent must be signed in to generate pairing codes.');
     }

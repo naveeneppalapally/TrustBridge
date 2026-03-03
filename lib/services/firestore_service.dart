@@ -1414,6 +1414,26 @@ class FirestoreService {
     return children;
   }
 
+  /// Returns true when the parent has at least one child profile.
+  Future<bool> hasAnyChildProfiles(String parentId) async {
+    final normalizedParentId = parentId.trim();
+    if (normalizedParentId.isEmpty) {
+      throw ArgumentError.value(parentId, 'parentId', 'Parent ID is required.');
+    }
+
+    final cachedChildren = _childrenCacheByParentId[normalizedParentId];
+    if (cachedChildren != null && cachedChildren.isNotEmpty) {
+      return true;
+    }
+
+    final snapshot = await _firestore
+        .collection('children')
+        .where('parentId', isEqualTo: normalizedParentId)
+        .limit(1)
+        .get();
+    return snapshot.docs.isNotEmpty;
+  }
+
   /// One-shot fetch of all children without subscribing to stream updates.
   Future<List<ChildProfile>> getChildrenOnce(String parentId) {
     return _performanceService.traceOperation<List<ChildProfile>>(
