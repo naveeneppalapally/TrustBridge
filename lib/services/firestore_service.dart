@@ -1907,6 +1907,28 @@ class FirestoreService {
     });
   }
 
+  /// One-shot snapshot of merged device statuses used for lightweight
+  /// hydration paths (for example, parent fallback UI after relogin).
+  Future<Map<String, DeviceStatusSnapshot>> getDeviceStatusesOnce(
+    List<String> deviceIds, {
+    String? parentId,
+    Map<String, String>? childIdByDeviceId,
+    Duration timeout = const Duration(seconds: 6),
+  }) async {
+    try {
+      return await watchDeviceStatuses(
+        deviceIds,
+        parentId: parentId,
+        childIdByDeviceId: childIdByDeviceId,
+      ).first.timeout(
+            timeout,
+            onTimeout: () => const <String, DeviceStatusSnapshot>{},
+          );
+    } catch (_) {
+      return const <String, DeviceStatusSnapshot>{};
+    }
+  }
+
   bool _isNewerStatusSnapshot(
     DeviceStatusSnapshot candidate,
     DeviceStatusSnapshot? existing,

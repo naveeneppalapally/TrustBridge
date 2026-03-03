@@ -28,11 +28,15 @@ class ChildrenHomeScreen extends StatefulWidget {
 }
 
 class _ChildrenHomeScreenState extends State<ChildrenHomeScreen> {
+  static const Duration _fallbackOnlineWindow = Duration(minutes: 10);
+
   AuthService? _authService;
   FirestoreService? _firestoreService;
   bool _updatingPause = false;
   Future<List<ChildProfile>>? _fallbackChildrenFuture;
   String? _fallbackChildrenParentId;
+  Map<String, _FallbackRuntimeStatus> _fallbackRuntimeByChildId =
+      const <String, _FallbackRuntimeStatus>{};
 
   AuthService get _resolvedAuthService {
     _authService ??= widget.authService ?? AuthService();
@@ -58,39 +62,127 @@ class _ChildrenHomeScreenState extends State<ChildrenHomeScreen> {
       return;
     }
     _fallbackChildrenParentId = parentId;
-    _fallbackChildrenFuture =
-        _resolvedFirestoreService.getChildrenOnce(parentId);
+    _fallbackChildrenFuture = _resolvedFirestoreService
+        .getChildrenOnce(parentId)
+        .then((children) async {
+      _fallbackRuntimeByChildId =
+          await _loadFallbackRuntimeStatus(parentId, children);
+      return children;
+    });
   }
 
   void _retryFallbackChildren(String parentId) {
     setState(() {
       _fallbackChildrenParentId = null;
       _fallbackChildrenFuture = null;
+      _fallbackRuntimeByChildId = const <String, _FallbackRuntimeStatus>{};
     });
     _ensureFallbackChildrenFuture(parentId);
+  }
+
+  Future<Map<String, _FallbackRuntimeStatus>> _loadFallbackRuntimeStatus(
+    String parentId,
+    List<ChildProfile> children,
+  ) async {
+    if (children.isEmpty) {
+      return const <String, _FallbackRuntimeStatus>{};
+    }
+
+    final deviceIds = <String>{};
+    final childIdByDeviceId = <String, String>{};
+    for (final child in children) {
+      for (final rawDeviceId in child.deviceIds) {
+        final deviceId = rawDeviceId.trim();
+        if (deviceId.isEmpty) {
+          continue;
+        }
+        deviceIds.add(deviceId);
+        childIdByDeviceId[deviceId] = child.id;
+      }
+    }
+    if (deviceIds.isEmpty) {
+      return const <String, _FallbackRuntimeStatus>{};
+    }
+
+    final statusByDeviceId =
+        await _resolvedFirestoreService.getDeviceStatusesOnce(
+      deviceIds.toList(growable: false),
+      parentId: parentId,
+      childIdByDeviceId: childIdByDeviceId,
+    );
+    if (statusByDeviceId.isEmpty) {
+      return const <String, _FallbackRuntimeStatus>{};
+    }
+
+    final now = DateTime.now();
+    final runtimeByChildId = <String, _FallbackRuntimeStatus>{};
+    for (final child in children) {
+      var online = false;
+      var vpnActive = false;
+      int? lastSeenEpochMs;
+      for (final rawDeviceId in child.deviceIds) {
+        final deviceId = rawDeviceId.trim();
+        if (deviceId.isEmpty) {
+          continue;
+        }
+        final status = statusByDeviceId[deviceId];
+        if (status == null) {
+          continue;
+        }
+        final seenAt = status.lastSeen ?? status.updatedAt;
+        if (seenAt != null) {
+          final seenEpochMs = seenAt.millisecondsSinceEpoch;
+          if (lastSeenEpochMs == null || seenEpochMs > lastSeenEpochMs) {
+            lastSeenEpochMs = seenEpochMs;
+          }
+          final isFresh = now.difference(seenAt) <= _fallbackOnlineWindow;
+          if (isFresh) {
+            online = true;
+            if (status.vpnActive) {
+              vpnActive = true;
+            }
+          }
+        }
+      }
+
+      if (lastSeenEpochMs != null) {
+        runtimeByChildId[child.id] = _FallbackRuntimeStatus(
+          online: online,
+          vpnActive: vpnActive,
+          lastSeenEpochMs: lastSeenEpochMs,
+        );
+      }
+    }
+    return runtimeByChildId;
   }
 
   List<DashboardChildSummary> _summariesFromChildProfiles(
     List<ChildProfile> children,
   ) {
     final now = DateTime.now();
-    return children
-        .map(
-          (child) => DashboardChildSummary(
-            childId: child.id,
-            name: child.nickname,
-            protectionEnabled: child.protectionEnabled,
-            protectionStatus: child.protectionEnabled ? 'offline' : 'disabled',
-            activeMode: _activeModeFromChild(child, now),
-            screenTimeTodayMs: 0,
-            pendingRequestCount: 0,
-            online: false,
-            vpnActive: false,
-            lastSeenEpochMs: null,
-            updatedAtEpochMs: child.updatedAt.millisecondsSinceEpoch,
-          ),
-        )
-        .toList(growable: false)
+    return children.map(
+      (child) {
+        final runtime = _fallbackRuntimeByChildId[child.id];
+        final online = runtime?.online ?? false;
+        final vpnActive = runtime?.vpnActive ?? false;
+        final protectionStatus = !child.protectionEnabled
+            ? 'disabled'
+            : (online ? (vpnActive ? 'protected' : 'unprotected') : 'offline');
+        return DashboardChildSummary(
+          childId: child.id,
+          name: child.nickname,
+          protectionEnabled: child.protectionEnabled,
+          protectionStatus: protectionStatus,
+          activeMode: _activeModeFromChild(child, now),
+          screenTimeTodayMs: 0,
+          pendingRequestCount: 0,
+          online: online,
+          vpnActive: vpnActive,
+          lastSeenEpochMs: runtime?.lastSeenEpochMs,
+          updatedAtEpochMs: child.updatedAt.millisecondsSinceEpoch,
+        );
+      },
+    ).toList(growable: false)
       ..sort((a, b) => a.name.compareTo(b.name));
   }
 
@@ -114,6 +206,10 @@ class _ChildrenHomeScreenState extends State<ChildrenHomeScreen> {
         // Child no longer exists in source collection; hide stale dashboard row.
         continue;
       }
+      final fallbackSeen = fallback.lastSeenEpochMs;
+      final dashboardSeen = child.lastSeenEpochMs;
+      final preferFallbackRuntime = fallbackSeen != null &&
+          (dashboardSeen == null || fallbackSeen > dashboardSeen);
       reconciled.add(
         DashboardChildSummary(
           childId: child.childId,
@@ -123,9 +219,12 @@ class _ChildrenHomeScreenState extends State<ChildrenHomeScreen> {
           activeMode: child.activeMode,
           screenTimeTodayMs: child.screenTimeTodayMs,
           pendingRequestCount: child.pendingRequestCount,
-          online: child.online,
-          vpnActive: child.vpnActive,
-          lastSeenEpochMs: child.lastSeenEpochMs,
+          online: preferFallbackRuntime ? fallback.online : child.online,
+          vpnActive:
+              preferFallbackRuntime ? fallback.vpnActive : child.vpnActive,
+          lastSeenEpochMs: preferFallbackRuntime
+              ? fallback.lastSeenEpochMs
+              : child.lastSeenEpochMs,
           updatedAtEpochMs: child.updatedAtEpochMs >= fallback.updatedAtEpochMs
               ? child.updatedAtEpochMs
               : fallback.updatedAtEpochMs,
@@ -665,6 +764,18 @@ class _ChildOverviewCard extends StatelessWidget {
     }
     return summary.vpnActive ? 'protected' : 'unprotected';
   }
+}
+
+class _FallbackRuntimeStatus {
+  const _FallbackRuntimeStatus({
+    required this.online,
+    required this.vpnActive,
+    required this.lastSeenEpochMs,
+  });
+
+  final bool online;
+  final bool vpnActive;
+  final int lastSeenEpochMs;
 }
 
 class _CalmButton extends StatelessWidget {
