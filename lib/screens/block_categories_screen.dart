@@ -23,6 +23,18 @@ import 'package:trustbridge_app/services/remote_command_service.dart';
 import 'package:trustbridge_app/services/vpn_service.dart';
 import 'package:trustbridge_app/widgets/empty_state.dart';
 
+typedef _ModeContext = ({
+  String? modeKey,
+  String? modeLabel,
+  bool blocksAll,
+  Set<String> blockedCategories,
+  ModeOverrideSet? overrideSet,
+  Set<String> forceBlockServices,
+  Set<String> forceAllowServices,
+  Set<String> forceBlockPackages,
+  Set<String> forceAllowPackages,
+});
+
 class BlockCategoriesScreen extends StatefulWidget {
   const BlockCategoriesScreen({
     super.key,
@@ -138,7 +150,10 @@ class _BlockCategoriesScreenState extends State<BlockCategoriesScreen>
   bool _isLoading = false;
   bool _isSyncingNextDns = false;
   bool _isLoadingInstalledApps = false;
+  bool _installedAppsExpanded = false;
+  bool _hasLoadedInstalledApps = false;
   bool _autoSaveQueued = false;
+  final ScrollController _contentScrollController = ScrollController();
   String _query = '';
   final TextEditingController _searchController = TextEditingController();
   List<InstalledAppInfo> _installedApps = const <InstalledAppInfo>[];
@@ -329,9 +344,6 @@ class _BlockCategoriesScreenState extends State<BlockCategoriesScreen>
     WidgetsBinding.instance.addObserver(this);
     _liveChildContext = widget.child;
     _hydrateStateFromChild(widget.child);
-    if (_appInventoryEnabled) {
-      unawaited(_loadInstalledApps());
-    }
     _startPolicyTelemetryListeners();
   }
 
@@ -344,7 +356,7 @@ class _BlockCategoriesScreenState extends State<BlockCategoriesScreen>
     if (childChanged) {
       _liveChildContext = widget.child;
       _hydrateStateFromChild(widget.child);
-      if (_appInventoryEnabled) {
+      if (_appInventoryEnabled && _installedAppsExpanded) {
         unawaited(_loadInstalledApps());
       }
     }
@@ -356,6 +368,7 @@ class _BlockCategoriesScreenState extends State<BlockCategoriesScreen>
   @override
   void dispose() {
     WidgetsBinding.instance.removeObserver(this);
+    _contentScrollController.dispose();
     _searchController.dispose();
     _effectivePolicySubscription?.cancel();
     _effectivePolicySubscription = null;
@@ -377,13 +390,13 @@ class _BlockCategoriesScreenState extends State<BlockCategoriesScreen>
       return;
     }
     if (_query.trim().isEmpty) {
-      if (_appInventoryEnabled) {
+      if (_appInventoryEnabled && _installedAppsExpanded) {
         unawaited(_loadInstalledApps());
       }
       return;
     }
     _clearSearchFilter();
-    if (_appInventoryEnabled) {
+    if (_appInventoryEnabled && _installedAppsExpanded) {
       unawaited(_loadInstalledApps());
     }
   }
@@ -424,18 +437,29 @@ class _BlockCategoriesScreenState extends State<BlockCategoriesScreen>
     _blockedDomains = Set<String>.from(customDomains);
     _blockedPackages = Set<String>.from(_initialBlockedPackages);
     _modeOverrides = _cloneModeOverrides(normalizedModeOverrides);
-    _expandedCategoryIds = <String>{
-      ..._blockedCategories,
-    };
-    for (final entry in _serviceOrderByCategory.entries) {
-      final hasBlockedApp =
-          entry.value.any((appKey) => _isAppExplicitlyBlocked(appKey));
-      if (hasBlockedApp) {
-        _expandedCategoryIds.add(entry.key);
+    _expandedCategoryIds = <String>{};
+    String? initialExpandedCategoryId;
+    for (final category in ContentCategories.allCategories) {
+      final normalizedCategoryId = normalizeCategoryId(category.id);
+      if (_blockedCategories.contains(normalizedCategoryId)) {
+        initialExpandedCategoryId = normalizedCategoryId;
+        break;
       }
     }
-    if (_expandedCategoryIds.isEmpty) {
-      _expandedCategoryIds.add('social-networks');
+    if (initialExpandedCategoryId == null) {
+      for (final category in ContentCategories.allCategories) {
+        final normalizedCategoryId = normalizeCategoryId(category.id);
+        final hasBlockedApp = _appsForCategory(normalizedCategoryId)
+            .any((appKey) => _isAppExplicitlyBlocked(appKey));
+        if (hasBlockedApp) {
+          initialExpandedCategoryId = normalizedCategoryId;
+          break;
+        }
+      }
+    }
+    if (initialExpandedCategoryId != null &&
+        initialExpandedCategoryId.isNotEmpty) {
+      _expandedCategoryIds = <String>{initialExpandedCategoryId};
     }
     _nextDnsServiceToggles = <String, bool>{
       for (final id in _nextDnsServiceIds) id: false,
@@ -448,6 +472,9 @@ class _BlockCategoriesScreenState extends State<BlockCategoriesScreen>
 
   Future<void> _loadInstalledApps() async {
     if (!_appInventoryEnabled) {
+      return;
+    }
+    if (_isLoadingInstalledApps) {
       return;
     }
     final parentId = _resolvedParentId?.trim();
@@ -533,6 +560,7 @@ class _BlockCategoriesScreenState extends State<BlockCategoriesScreen>
         _installedApps = mergedApps;
         _observedDomainsByPackage = observedDomains;
         _installedAppIconBytesCache.clear();
+        _hasLoadedInstalledApps = true;
       });
     } catch (error) {
       AppLogger.debug('[BlockApps] refresh failed: $error');
@@ -542,6 +570,16 @@ class _BlockCategoriesScreenState extends State<BlockCategoriesScreen>
           _isLoadingInstalledApps = false;
         });
       }
+    }
+  }
+
+  void _toggleInstalledAppsSection() {
+    final nextExpanded = !_installedAppsExpanded;
+    setState(() {
+      _installedAppsExpanded = nextExpanded;
+    });
+    if (nextExpanded && !_hasLoadedInstalledApps) {
+      unawaited(_loadInstalledApps());
     }
   }
 
@@ -587,6 +625,17 @@ class _BlockCategoriesScreenState extends State<BlockCategoriesScreen>
     _policyApplyAckSubscription = null;
     _vpnDiagnosticsSubscription?.cancel();
     _vpnDiagnosticsSubscription = null;
+
+    // Parent-facing advanced blocking UI does not render live policy telemetry.
+    // Keep this screen static to avoid frequent stream-driven rebuilds that
+    // cause scroll jitter on long app lists.
+    if (widget.showAppBar) {
+      _latestEffectivePolicyVersion = null;
+      _latestEffectivePolicyUpdatedAt = null;
+      _latestPolicyApplyAck = null;
+      _latestVpnDiagnostics = null;
+      return;
+    }
 
     final parentId = _resolvedParentId?.trim();
     final childId = _currentChildContext.id.trim();
@@ -793,8 +842,19 @@ class _BlockCategoriesScreenState extends State<BlockCategoriesScreen>
 
   @override
   Widget build(BuildContext context) {
+    final modeContext = _activeModeContext();
+    final bottomInset = MediaQuery.paddingOf(context).bottom;
+    final reservedBottomSpace = _hasChanges ? 112.0 : 56.0;
     final content = ListView(
-      padding: const EdgeInsets.fromLTRB(16, 12, 16, 24),
+      controller: _contentScrollController,
+      physics:
+          const RangeMaintainingScrollPhysics(parent: ClampingScrollPhysics()),
+      padding: EdgeInsets.fromLTRB(
+        16,
+        12,
+        16,
+        24 + bottomInset + reservedBottomSpace,
+      ),
       children: [
         TextField(
           key: const Key('block_categories_search'),
@@ -915,10 +975,11 @@ class _BlockCategoriesScreenState extends State<BlockCategoriesScreen>
             ),
           )
         else
-          ..._visibleCategories.map((category) => _buildCategoryCard(category)),
+          ..._visibleCategories
+              .map((category) => _buildCategoryCard(category, modeContext)),
         const SizedBox(height: 18),
         if (_appInventoryEnabled) ...[
-          _buildInstalledAppsSection(),
+          _buildInstalledAppsSection(modeContext),
           const SizedBox(height: 18),
         ],
         Text(
@@ -957,11 +1018,59 @@ class _BlockCategoriesScreenState extends State<BlockCategoriesScreen>
     );
   }
 
-  Widget _buildInstalledAppsSection() {
+  Widget _buildInstalledAppsSection(_ModeContext modeContext) {
     final apps = _visibleInstalledApps;
     final activeQuery = _query.trim();
     final filtered = activeQuery.isNotEmpty;
     final totalApps = _installedApps.length;
+    final countLabel = _hasLoadedInstalledApps ? '$totalApps loaded' : 'not loaded';
+
+    if (!_installedAppsExpanded) {
+      return Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Row(
+            children: [
+              Expanded(
+                child: Text(
+                  'INSTALLED APPS ($countLabel)',
+                  style: Theme.of(context).textTheme.titleSmall?.copyWith(
+                        fontWeight: FontWeight.w800,
+                        letterSpacing: 0.5,
+                      ),
+                ),
+              ),
+              TextButton.icon(
+                key: const Key('block_categories_toggle_installed_apps'),
+                onPressed: _toggleInstalledAppsSection,
+                icon: const Icon(Icons.expand_more_rounded),
+                label: const Text('Show'),
+              ),
+            ],
+          ),
+          const SizedBox(height: 8),
+          Container(
+            padding: const EdgeInsets.all(12),
+            decoration: BoxDecoration(
+              color:
+                  Theme.of(context).colorScheme.primary.withValues(alpha: 0.08),
+              borderRadius: BorderRadius.circular(12),
+              border: Border.all(
+                color: Theme.of(context)
+                    .colorScheme
+                    .primary
+                    .withValues(alpha: 0.22),
+              ),
+            ),
+            child: const Text(
+              'Collapsed for smoother category scrolling. '
+              'Tap Show to load and manage installed apps.',
+            ),
+          ),
+        ],
+      );
+    }
+
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
@@ -977,6 +1086,12 @@ class _BlockCategoriesScreenState extends State<BlockCategoriesScreen>
                       letterSpacing: 0.5,
                     ),
               ),
+            ),
+            TextButton.icon(
+              key: const Key('block_categories_toggle_installed_apps'),
+              onPressed: _toggleInstalledAppsSection,
+              icon: const Icon(Icons.expand_less_rounded),
+              label: const Text('Hide'),
             ),
             IconButton(
               tooltip: 'Refresh installed apps',
@@ -1038,14 +1153,17 @@ class _BlockCategoriesScreenState extends State<BlockCategoriesScreen>
             ),
           )
         else
-          ...apps.map(_buildInstalledAppRow),
+          ...apps.map((app) => _buildInstalledAppRow(app, modeContext)),
       ],
     );
   }
 
-  Widget _buildInstalledAppRow(InstalledAppInfo app) {
+  Widget _buildInstalledAppRow(InstalledAppInfo app, _ModeContext modeContext) {
     final packageName = app.packageName.trim().toLowerCase();
-    final effectiveState = _effectiveInstalledPackageState(app);
+    final effectiveState = _effectiveInstalledPackageState(
+      app,
+      modeContext: modeContext,
+    );
     final explicitlyBlocked = _blockedPackages.contains(packageName);
     final iconBytes = _installedAppIconBytes(app);
     final observedDomains =
@@ -1112,44 +1230,36 @@ class _BlockCategoriesScreenState extends State<BlockCategoriesScreen>
 
   ({bool blocked, String status, Color color}) _effectiveInstalledPackageState(
     InstalledAppInfo app,
+    {
+    _ModeContext? modeContext,
+  }
   ) {
     final packageName = app.packageName.trim().toLowerCase();
     final match = _serviceMatchForPackage(packageName);
-    final matchedServiceId = match.serviceId;
-    final matchedCategoryId = match.categoryId;
+    final matchedServiceId = match.serviceId?.trim().toLowerCase();
+    final matchedCategoryId = match.categoryId == null
+        ? null
+        : normalizeCategoryId(match.categoryId!);
 
     final serviceBlocked =
         matchedServiceId != null && _isAppExplicitlyBlocked(matchedServiceId);
     final categoryBlocked = matchedCategoryId != null &&
-        _isCategoryBlocked(normalizeCategoryId(matchedCategoryId));
+        _isCategoryBlocked(matchedCategoryId);
     final packageBlocked = _blockedPackages.contains(packageName);
 
-    final modeContext = _activeModeContext();
-    final modeOverride = modeContext.overrideSet;
+    final activeModeContext = modeContext ?? _activeModeContext();
     final modeBlockedByCategory = matchedCategoryId != null &&
-        modeContext.blockedCategories.contains(
-          normalizeCategoryId(matchedCategoryId),
-        );
+        activeModeContext.blockedCategories.contains(matchedCategoryId);
     final modeBlockedByService = matchedServiceId != null &&
-        (modeOverride?.forceBlockServices
-                .map((value) => value.trim().toLowerCase())
-                .contains(matchedServiceId) ==
-            true);
-    final modeBlockedByPackage = modeOverride?.forceBlockPackages
-            .map((value) => value.trim().toLowerCase())
-            .contains(packageName) ==
-        true;
+        activeModeContext.forceBlockServices.contains(matchedServiceId);
+    final modeBlockedByPackage =
+        activeModeContext.forceBlockPackages.contains(packageName);
     final modeAllowedByService = matchedServiceId != null &&
-        (modeOverride?.forceAllowServices
-                .map((value) => value.trim().toLowerCase())
-                .contains(matchedServiceId) ==
-            true);
-    final modeAllowedByPackage = modeOverride?.forceAllowPackages
-            .map((value) => value.trim().toLowerCase())
-            .contains(packageName) ==
-        true;
+        activeModeContext.forceAllowServices.contains(matchedServiceId);
+    final modeAllowedByPackage =
+        activeModeContext.forceAllowPackages.contains(packageName);
     final modeAllowed = modeAllowedByService || modeAllowedByPackage;
-    final blockedByMode = (modeContext.blocksAll ||
+    final blockedByMode = (activeModeContext.blocksAll ||
             modeBlockedByCategory ||
             modeBlockedByService ||
             modeBlockedByPackage) &&
@@ -1188,13 +1298,7 @@ class _BlockCategoriesScreenState extends State<BlockCategoriesScreen>
     return (serviceId: null, categoryId: null);
   }
 
-  ({
-    String? modeKey,
-    String? modeLabel,
-    bool blocksAll,
-    Set<String> blockedCategories,
-    ModeOverrideSet? overrideSet,
-  }) _activeModeContext() {
+  _ModeContext _activeModeContext() {
     final modeKey = _activeModeOverrideKeyForParent();
     final blockedCategories = <String>{};
     var blocksAll = false;
@@ -1216,13 +1320,35 @@ class _BlockCategoriesScreenState extends State<BlockCategoriesScreen>
     final overrideSet = !RolloutFlags.modeAppOverrides || modeKey == null
         ? null
         : _modeOverrides[modeKey];
+    final forceBlockServices =
+        _normalizedModeEntries(overrideSet?.forceBlockServices);
+    final forceAllowServices =
+        _normalizedModeEntries(overrideSet?.forceAllowServices);
+    final forceBlockPackages =
+        _normalizedModeEntries(overrideSet?.forceBlockPackages);
+    final forceAllowPackages =
+        _normalizedModeEntries(overrideSet?.forceAllowPackages);
     return (
       modeKey: modeKey,
       modeLabel: modeLabel,
       blocksAll: blocksAll,
       blockedCategories: blockedCategories,
       overrideSet: overrideSet,
+      forceBlockServices: forceBlockServices,
+      forceAllowServices: forceAllowServices,
+      forceBlockPackages: forceBlockPackages,
+      forceAllowPackages: forceAllowPackages,
     );
+  }
+
+  Set<String> _normalizedModeEntries(Iterable<String>? values) {
+    if (values == null) {
+      return <String>{};
+    }
+    return values
+        .map((value) => value.trim().toLowerCase())
+        .where((value) => value.isNotEmpty)
+        .toSet();
   }
 
   String? _activeModeOverrideKeyForParent() {
@@ -1321,8 +1447,9 @@ class _BlockCategoriesScreenState extends State<BlockCategoriesScreen>
     }
   }
 
-  Widget _buildCategoryCard(ContentCategory category) {
-    final categoryState = _effectiveCategoryState(category.id);
+  Widget _buildCategoryCard(ContentCategory category, _ModeContext modeContext) {
+    final categoryState =
+        _effectiveCategoryState(category.id, modeContext: modeContext);
     final isBlocked = categoryState.blocked;
     final explicitlyBlocked = categoryState.blockedManually;
     final iconColor = _categoryColor(category.id);
@@ -1333,14 +1460,17 @@ class _BlockCategoriesScreenState extends State<BlockCategoriesScreen>
     final appKeys = _visibleAppsForCategory(category.id);
     final hasApps = appKeys.isNotEmpty;
     final isExpanded = _expandedCategoryIds.contains(category.id);
-    final blockedApps = appKeys
-        .where(
-          (appKey) => _isAppEffectivelyBlocked(
-            appKey,
-            categoryId: category.id,
-          ),
-        )
-        .length;
+    final blockedApps = isExpanded
+        ? appKeys
+            .where(
+              (appKey) => _isAppEffectivelyBlocked(
+                appKey,
+                categoryId: category.id,
+                modeContext: modeContext,
+              ),
+            )
+            .length
+        : 0;
 
     return Card(
       key: Key('block_category_card_${category.id}'),
@@ -1403,7 +1533,7 @@ class _BlockCategoriesScreenState extends State<BlockCategoriesScreen>
                           fontWeight: FontWeight.w600,
                         ),
                       ),
-                      if (hasApps) ...[
+                      if (hasApps && isExpanded) ...[
                         const SizedBox(height: 6),
                         Text(
                           '$blockedApps/${appKeys.length} apps currently blocked',
@@ -1437,7 +1567,9 @@ class _BlockCategoriesScreenState extends State<BlockCategoriesScreen>
                         if (isExpanded) {
                           _expandedCategoryIds.remove(category.id);
                         } else {
-                          _expandedCategoryIds.add(category.id);
+                          // Keep one expanded section at a time to reduce
+                          // heavy rebuild/paint work while scrolling.
+                          _expandedCategoryIds = <String>{category.id};
                         }
                       });
                     },
@@ -1460,6 +1592,7 @@ class _BlockCategoriesScreenState extends State<BlockCategoriesScreen>
                       (appKey) => _buildCategoryAppRow(
                         categoryId: category.id,
                         appKey: appKey,
+                        modeContext: modeContext,
                       ),
                     )
                     .toList(growable: false),
@@ -1519,10 +1652,12 @@ class _BlockCategoriesScreenState extends State<BlockCategoriesScreen>
   Widget _buildCategoryAppRow({
     required String categoryId,
     required String appKey,
+    required _ModeContext modeContext,
   }) {
     final effectiveState = _effectiveServiceState(
       appKey: appKey,
       categoryId: categoryId,
+      modeContext: modeContext,
     );
     final effectiveBlocked = effectiveState.blocked;
     final explicitlyBlocked = _isAppExplicitlyBlocked(appKey);
@@ -1908,6 +2043,8 @@ class _BlockCategoriesScreenState extends State<BlockCategoriesScreen>
       }
       return true;
     } catch (error) {
+      final permissionDenied = error is FirebaseException &&
+          error.code.trim().toLowerCase() == 'permission-denied';
       unawaited(
         _emitBlockAppsDebugEvent(
           eventType: 'policy_save_failed',
@@ -1923,8 +2060,13 @@ class _BlockCategoriesScreenState extends State<BlockCategoriesScreen>
       showDialog<void>(
         context: context,
         builder: (dialogContext) => AlertDialog(
-          title: const Text('Save Failed'),
-          content: Text('Failed to update categories: $error'),
+          title: Text(permissionDenied ? 'Permission Required' : 'Save Failed'),
+          content: Text(
+            permissionDenied
+                ? 'This account no longer has access to this child profile. '
+                    'Refresh children or pair the child again.'
+                : 'Failed to update categories: $error',
+          ),
           actions: [
             TextButton(
               onPressed: () => Navigator.of(dialogContext).pop(),
@@ -1998,10 +2140,12 @@ class _BlockCategoriesScreenState extends State<BlockCategoriesScreen>
   bool _isAppEffectivelyBlocked(
     String appKey, {
     String? categoryId,
+    _ModeContext? modeContext,
   }) {
     return _effectiveServiceState(
       appKey: appKey,
       categoryId: categoryId,
+      modeContext: modeContext,
     ).blocked;
   }
 
@@ -2012,6 +2156,7 @@ class _BlockCategoriesScreenState extends State<BlockCategoriesScreen>
   }) _effectiveServiceState({
     required String appKey,
     String? categoryId,
+    _ModeContext? modeContext,
   }) {
     final normalizedApp = appKey.trim().toLowerCase();
     final resolvedCategory = categoryId == null || categoryId.trim().isEmpty
@@ -2021,19 +2166,14 @@ class _BlockCategoriesScreenState extends State<BlockCategoriesScreen>
         resolvedCategory != null && _isCategoryBlocked(resolvedCategory);
     final explicitBlocked = _blockedServices.contains(normalizedApp);
 
-    final modeContext = _activeModeContext();
-    final modeOverride = modeContext.overrideSet;
+    final activeModeContext = modeContext ?? _activeModeContext();
     final modeBlockedByCategory = resolvedCategory != null &&
-        modeContext.blockedCategories.contains(resolvedCategory);
-    final modeBlockedByOverride = modeOverride?.forceBlockServices
-            .map((value) => value.trim().toLowerCase())
-            .contains(normalizedApp) ==
-        true;
-    final modeAllowedByOverride = modeOverride?.forceAllowServices
-            .map((value) => value.trim().toLowerCase())
-            .contains(normalizedApp) ==
-        true;
-    final blockedByMode = (modeContext.blocksAll ||
+        activeModeContext.blockedCategories.contains(resolvedCategory);
+    final modeBlockedByOverride =
+        activeModeContext.forceBlockServices.contains(normalizedApp);
+    final modeAllowedByOverride =
+        activeModeContext.forceAllowServices.contains(normalizedApp);
+    final blockedByMode = (activeModeContext.blocksAll ||
             modeBlockedByCategory ||
             modeBlockedByOverride) &&
         !modeAllowedByOverride;
@@ -2054,7 +2194,7 @@ class _BlockCategoriesScreenState extends State<BlockCategoriesScreen>
       );
     }
     if (blockedByMode) {
-      final modeLabel = modeContext.modeLabel ?? 'active mode';
+      final modeLabel = activeModeContext.modeLabel ?? 'active mode';
       return (
         blocked: true,
         status: 'Blocked from $modeLabel',
@@ -2079,30 +2219,22 @@ class _BlockCategoriesScreenState extends State<BlockCategoriesScreen>
     String status,
     Color color,
     String? modeLabel,
-  }) _effectiveCategoryState(String categoryId) {
+  }) _effectiveCategoryState(
+    String categoryId, {
+    _ModeContext? modeContext,
+  }) {
     final normalizedCategory = normalizeCategoryId(categoryId);
     final blockedManually = _blockedCategories.contains(normalizedCategory);
-    final modeContext = _activeModeContext();
-    final modeOverride = modeContext.overrideSet;
-    final modeLabel = modeContext.modeLabel;
+    final activeModeContext = modeContext ?? _activeModeContext();
+    final modeLabel = activeModeContext.modeLabel;
     final servicesForCategory = _serviceIdsForCategory(normalizedCategory);
-    final modeBlockedByCategory = modeContext.blocksAll ||
-        modeContext.blockedCategories.contains(normalizedCategory);
+    final modeBlockedByCategory = activeModeContext.blocksAll ||
+        activeModeContext.blockedCategories.contains(normalizedCategory);
     final modeBlockedByService = servicesForCategory.any(
-      (serviceId) =>
-          modeOverride?.forceBlockServices
-              .map((value) => value.trim().toLowerCase())
-              .contains(serviceId) ==
-          true,
+      activeModeContext.forceBlockServices.contains,
     );
     final modeForceAllowedServices = servicesForCategory
-        .where(
-          (serviceId) =>
-              modeOverride?.forceAllowServices
-                  .map((value) => value.trim().toLowerCase())
-                  .contains(serviceId) ==
-              true,
-        )
+        .where(activeModeContext.forceAllowServices.contains)
         .toSet();
     final modeAllowsAllKnownServices = servicesForCategory.isNotEmpty &&
         modeForceAllowedServices.length == servicesForCategory.length;
