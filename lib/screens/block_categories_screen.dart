@@ -152,6 +152,7 @@ class _BlockCategoriesScreenState extends State<BlockCategoriesScreen>
   bool _isLoadingInstalledApps = false;
   bool _installedAppsExpanded = false;
   bool _hasLoadedInstalledApps = false;
+  bool _shownInstalledAppsAccessWarning = false;
   bool _autoSaveQueued = false;
   final ScrollController _contentScrollController = ScrollController();
   String _query = '';
@@ -487,6 +488,7 @@ class _BlockCategoriesScreenState extends State<BlockCategoriesScreen>
     try {
       List<InstalledAppInfo>? fetchedApps;
       Map<String, List<String>>? fetchedObservedDomains;
+      var accessDenied = false;
 
       try {
         fetchedApps = await _resolvedFirestoreService.getChildInstalledAppsOnce(
@@ -495,6 +497,9 @@ class _BlockCategoriesScreenState extends State<BlockCategoriesScreen>
         );
       } catch (error) {
         AppLogger.debug('[BlockApps] installed apps refresh failed: $error');
+        if (_isPermissionDeniedError(error)) {
+          accessDenied = true;
+        }
       }
 
       try {
@@ -505,14 +510,20 @@ class _BlockCategoriesScreenState extends State<BlockCategoriesScreen>
         );
       } catch (error) {
         AppLogger.debug('[BlockApps] observed domains refresh failed: $error');
+        if (_isPermissionDeniedError(error)) {
+          accessDenied = true;
+        }
       }
 
-      final baseApps = fetchedApps ??
-          (_installedApps.isNotEmpty
-              ? _installedApps
-              : const <InstalledAppInfo>[]);
-      final observedDomains =
-          fetchedObservedDomains ?? _observedDomainsByPackage;
+      final baseApps = accessDenied
+          ? const <InstalledAppInfo>[]
+          : (fetchedApps ??
+              (_installedApps.isNotEmpty
+                  ? _installedApps
+                  : const <InstalledAppInfo>[]));
+      final observedDomains = accessDenied
+          ? const <String, List<String>>{}
+          : (fetchedObservedDomains ?? _observedDomainsByPackage);
 
       final appsByPackage = <String, InstalledAppInfo>{
         for (final app in baseApps)
@@ -560,8 +571,21 @@ class _BlockCategoriesScreenState extends State<BlockCategoriesScreen>
         _installedApps = mergedApps;
         _observedDomainsByPackage = observedDomains;
         _installedAppIconBytesCache.clear();
-        _hasLoadedInstalledApps = true;
+        _hasLoadedInstalledApps = !accessDenied;
       });
+
+      if (accessDenied && mounted && !_shownInstalledAppsAccessWarning) {
+        _shownInstalledAppsAccessWarning = true;
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(
+            content: Text(
+              'This child profile changed. Refresh children and open it again.',
+            ),
+          ),
+        );
+      } else if (!accessDenied && _shownInstalledAppsAccessWarning) {
+        _shownInstalledAppsAccessWarning = false;
+      }
     } catch (error) {
       AppLogger.debug('[BlockApps] refresh failed: $error');
     } finally {
@@ -838,6 +862,17 @@ class _BlockCategoriesScreenState extends State<BlockCategoriesScreen>
       return int.tryParse(rawValue.trim());
     }
     return null;
+  }
+
+  bool _isPermissionDeniedError(Object error) {
+    if (error is FirebaseException) {
+      final code = error.code.trim().toLowerCase();
+      return code == 'permission-denied' || code == 'permission_denied';
+    }
+    final text = '$error'.toLowerCase();
+    return text.contains('permission-denied') ||
+        text.contains('permission_denied') ||
+        text.contains('insufficient permissions');
   }
 
   @override
@@ -1944,7 +1979,16 @@ class _BlockCategoriesScreenState extends State<BlockCategoriesScreen>
         ),
       );
 
-      final sourceChild = _currentChildContext;
+      var sourceChild = _currentChildContext;
+      final latestOwnedChild = await _resolvedFirestoreService.getChild(
+        parentId: parentId,
+        childId: sourceChild.id,
+      );
+      if (latestOwnedChild == null) {
+        throw StateError('child_access_revoked');
+      }
+      sourceChild = latestOwnedChild;
+      _liveChildContext = latestOwnedChild;
       final updatedPolicy = sourceChild.policy.copyWith(
         blockedCategories: _orderedBlockedCategories(saveBlockedCategories),
         blockedServices: _orderedBlockedServices(saveBlockedServices),
@@ -2045,8 +2089,9 @@ class _BlockCategoriesScreenState extends State<BlockCategoriesScreen>
       }
       return true;
     } catch (error) {
-      final permissionDenied = error is FirebaseException &&
-          error.code.trim().toLowerCase() == 'permission-denied';
+      final permissionDenied = _isPermissionDeniedError(error) ||
+          (error is StateError &&
+              '$error'.toLowerCase().contains('child_access_revoked'));
       unawaited(
         _emitBlockAppsDebugEvent(
           eventType: 'policy_save_failed',
@@ -2065,8 +2110,8 @@ class _BlockCategoriesScreenState extends State<BlockCategoriesScreen>
           title: Text(permissionDenied ? 'Permission Required' : 'Save Failed'),
           content: Text(
             permissionDenied
-                ? 'This account no longer has access to this child profile. '
-                    'Refresh children or pair the child again.'
+                ? 'This child profile is stale or no longer linked to this '
+                    'account. Go back, refresh children, and open the child again.'
                 : 'Failed to update categories: $error',
           ),
           actions: [
