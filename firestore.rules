@@ -193,6 +193,11 @@ service cloud.firestore {
 
       allow delete: if false;
 
+      match /dashboard_state/{dashboardDocId} {
+        allow read: if isParent(parentId);
+        allow create, update, delete: if false;
+      }
+
       // Access requests live under each parent.
       match /access_requests/{requestId} {
         allow read: if isParent(parentId) ||

@@ -16,6 +16,7 @@ const OFFLINE_LOSS_EVENT_TYPE = "device_offline_30m";
 const OFFLINE_LOSS_SWEEP_LIMIT = 200;
 const OFFLINE_LOSS_STATE_DOC_ID = "offline_loss";
 const OFFLINE_LOSS_MAX_LOOKBACK_MS = 7 * 24 * 60 * 60 * 1000;
+const DASHBOARD_ONLINE_WINDOW_MS = 10 * 60 * 1000;
 
 function asTrimmedString(value) {
   return typeof value === "string" ? value.trim() : "";
@@ -68,6 +69,286 @@ function uninstallAlertsEnabled(parentData) {
   }
   return prefs.uninstallAttempt !== false;
 }
+
+function asObject(value) {
+  if (!value || typeof value !== "object" || Array.isArray(value)) {
+    return {};
+  }
+  return value;
+}
+
+function readBool(value, fallback = false) {
+  if (typeof value === "boolean") {
+    return value;
+  }
+  return fallback;
+}
+
+function normalizeMode(mode) {
+  const normalized = asTrimmedString(mode).toLowerCase();
+  if (!normalized) {
+    return "";
+  }
+  if (normalized === "free") {
+    return "free_play";
+  }
+  if (normalized === "homework") {
+    return "homework";
+  }
+  if (normalized === "bedtime") {
+    return "bedtime";
+  }
+  return "focus";
+}
+
+function resolveActiveMode({
+  protectionEnabled,
+  pausedUntilEpochMs,
+  manualMode,
+  nowEpochMs,
+}) {
+  if (!protectionEnabled) {
+    return "off";
+  }
+  if (pausedUntilEpochMs && pausedUntilEpochMs > nowEpochMs) {
+    return "paused";
+  }
+  const manual = asObject(manualMode);
+  const manualModeName = normalizeMode(manual.mode);
+  if (!manualModeName) {
+    return "free_play";
+  }
+  const expiresAtEpochMs = readEpochMs(manual.expiresAt);
+  if (expiresAtEpochMs && expiresAtEpochMs <= nowEpochMs) {
+    return "free_play";
+  }
+  return manualModeName;
+}
+
+function summarizeDeviceProtection(devices, protectionEnabled, nowEpochMs) {
+  if (!protectionEnabled) {
+    return {
+      protectionStatus: "disabled",
+      online: false,
+      vpnActive: false,
+      lastSeenEpochMs: null,
+    };
+  }
+  if (!Array.isArray(devices) || devices.length === 0) {
+    return {
+      protectionStatus: "unprotected",
+      online: false,
+      vpnActive: false,
+      lastSeenEpochMs: null,
+    };
+  }
+
+  let freshestSeenEpochMs = null;
+  let online = false;
+  let vpnActive = false;
+  for (const rawDevice of devices) {
+    const device = asObject(rawDevice);
+    const lastSeenEpochMs =
+      readEpochMs(device.lastSeenEpochMs) ||
+      readEpochMs(device.lastSeen) ||
+      readEpochMs(device.updatedAt);
+    if (!lastSeenEpochMs) {
+      continue;
+    }
+    if (!freshestSeenEpochMs || lastSeenEpochMs > freshestSeenEpochMs) {
+      freshestSeenEpochMs = lastSeenEpochMs;
+    }
+    const isOnline = nowEpochMs - lastSeenEpochMs <= DASHBOARD_ONLINE_WINDOW_MS;
+    if (isOnline) {
+      online = true;
+      if (readBool(device.vpnActive, false)) {
+        vpnActive = true;
+      }
+    }
+  }
+
+  if (!online) {
+    return {
+      protectionStatus: "offline",
+      online,
+      vpnActive,
+      lastSeenEpochMs: freshestSeenEpochMs,
+    };
+  }
+  return {
+    protectionStatus: vpnActive ? "protected" : "unprotected",
+    online,
+    vpnActive,
+    lastSeenEpochMs: freshestSeenEpochMs,
+  };
+}
+
+function readScreenTimeTodayMs(usageData) {
+  const data = asObject(usageData);
+  const fromTotal = parseVersion(data.totalScreenTimeMs);
+  if (fromTotal > 0) {
+    return fromTotal;
+  }
+  const fromAverage = parseVersion(data.averageDailyScreenTimeMs);
+  if (fromAverage > 0) {
+    return fromAverage;
+  }
+  return 0;
+}
+
+async function rebuildDashboardStateForParent(parentId, source) {
+  const normalizedParentId = asTrimmedString(parentId);
+  if (!normalizedParentId) {
+    return;
+  }
+
+  const nowEpochMs = Date.now();
+  const [childrenSnapshot, pendingRequestsSnapshot] = await Promise.all([
+    db.collection("children")
+        .where("parentId", "==", normalizedParentId)
+        .get(),
+    db.collection("parents")
+        .doc(normalizedParentId)
+        .collection("access_requests")
+        .where("status", "==", "pending")
+        .get(),
+  ]);
+
+  const pendingCountByChildId = new Map();
+  for (const pendingDoc of pendingRequestsSnapshot.docs) {
+    const pendingData = pendingDoc.data() || {};
+    const childId = asTrimmedString(pendingData.childId);
+    if (!childId) {
+      continue;
+    }
+    pendingCountByChildId.set(
+        childId,
+        (pendingCountByChildId.get(childId) || 0) + 1,
+    );
+  }
+
+  const children = await Promise.all(childrenSnapshot.docs.map(async (childDoc) => {
+    const childData = childDoc.data() || {};
+    const childId = childDoc.id;
+    const childName = asTrimmedString(childData.nickname) || "Child";
+
+    const [effectiveSnapshot, usageSnapshot, devicesSnapshot] = await Promise.all([
+      childDoc.ref.collection("effective_policy").doc("current").get(),
+      childDoc.ref.collection("usage_reports").doc("latest").get(),
+      childDoc.ref.collection("devices").get(),
+    ]);
+    const effectiveData = effectiveSnapshot.exists ? (effectiveSnapshot.data() || {}) : {};
+    const usageData = usageSnapshot.exists ? (usageSnapshot.data() || {}) : {};
+    const devices = devicesSnapshot.docs.map((doc) => doc.data() || {});
+
+    const protectionEnabled = readBool(
+        effectiveData.protectionEnabled,
+        readBool(childData.protectionEnabled, true),
+    );
+    const activeMode = resolveActiveMode({
+      protectionEnabled,
+      pausedUntilEpochMs: readEpochMs(
+          effectiveData.pausedUntil || childData.pausedUntil,
+      ),
+      manualMode: effectiveData.manualMode || childData.manualMode,
+      nowEpochMs,
+    });
+    const deviceSummary = summarizeDeviceProtection(
+        devices,
+        protectionEnabled,
+        nowEpochMs,
+    );
+    return {
+      childId,
+      name: childName,
+      protectionEnabled,
+      protectionStatus: deviceSummary.protectionStatus,
+      activeMode,
+      screenTimeTodayMs: readScreenTimeTodayMs(usageData),
+      pendingRequestCount: pendingCountByChildId.get(childId) || 0,
+      online: deviceSummary.online,
+      vpnActive: deviceSummary.vpnActive,
+      lastSeenEpochMs: deviceSummary.lastSeenEpochMs,
+      updatedAtEpochMs:
+        readEpochMs(childData.updatedAt) || nowEpochMs,
+    };
+  }));
+
+  children.sort((a, b) => a.name.localeCompare(b.name));
+  const totalPendingRequests = children.reduce(
+      (sum, child) => sum + (parseVersion(child.pendingRequestCount) || 0),
+      0,
+  );
+  const totalScreenTimeTodayMs = children.reduce(
+      (sum, child) => sum + (parseVersion(child.screenTimeTodayMs) || 0),
+      0,
+  );
+
+  await db
+      .collection("parents")
+      .doc(normalizedParentId)
+      .collection("dashboard_state")
+      .doc("current")
+      .set({
+        parentId: normalizedParentId,
+        children,
+        childrenCount: children.length,
+        totalPendingRequests,
+        totalScreenTimeTodayMs,
+        generatedAtEpochMs: nowEpochMs,
+        updatedAt: admin.firestore.FieldValue.serverTimestamp(),
+        source,
+      }, {merge: true});
+}
+
+exports.updateDashboardState = onDocumentWritten(
+    {
+      document: "children/{childId}/{subcollectionId}/{docId}",
+      region: "asia-south1",
+      retry: false,
+    },
+    async (event) => {
+      const childId = asTrimmedString(event.params.childId);
+      const subcollectionId =
+      asTrimmedString(event.params.subcollectionId).toLowerCase();
+      const docId = asTrimmedString(event.params.docId).toLowerCase();
+      const isDeviceChange = subcollectionId === "devices";
+      const isEffectivePolicyCurrentChange =
+      subcollectionId === "effective_policy" && docId === "current";
+      if (!childId || (!isDeviceChange && !isEffectivePolicyCurrentChange)) {
+        return;
+      }
+
+      const after = event.data && event.data.after;
+      const before = event.data && event.data.before;
+      const afterData = after && after.exists ? (after.data() || {}) : {};
+      const beforeData = before && before.exists ? (before.data() || {}) : {};
+      let parentId =
+      asTrimmedString(afterData.parentId) || asTrimmedString(beforeData.parentId);
+
+      if (!parentId) {
+        const childSnapshot = await db.collection("children").doc(childId).get();
+        if (childSnapshot.exists) {
+          const childData = childSnapshot.data() || {};
+          parentId = asTrimmedString(childData.parentId);
+        }
+      }
+
+      if (!parentId) {
+        logger.warn("Dashboard aggregation skipped: missing parentId.", {
+          childId,
+          subcollectionId,
+          docId,
+        });
+        return;
+      }
+
+      await rebuildDashboardStateForParent(
+          parentId,
+          isDeviceChange ? "child_device_write" : "effective_policy_write",
+      );
+    },
+);
 
 exports.sendParentNotificationFromQueue = onDocumentCreated(
   {
