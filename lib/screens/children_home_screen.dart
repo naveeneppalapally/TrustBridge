@@ -80,8 +80,7 @@ class _ChildrenHomeScreenState extends State<ChildrenHomeScreen> {
             childId: child.id,
             name: child.nickname,
             protectionEnabled: child.protectionEnabled,
-            protectionStatus:
-                child.protectionEnabled ? 'protected' : 'disabled',
+            protectionStatus: child.protectionEnabled ? 'offline' : 'disabled',
             activeMode: _activeModeFromChild(child, now),
             screenTimeTodayMs: 0,
             pendingRequestCount: 0,
@@ -437,7 +436,7 @@ class _ChildOverviewCard extends StatelessWidget {
   Widget build(BuildContext context) {
     final paused = child.isPaused;
     final initial = child.name.isNotEmpty ? child.name[0].toUpperCase() : '?';
-    final status = child.protectionStatus.trim().toLowerCase();
+    final status = _resolvedStatus(child);
     final isOffline = status == 'offline';
     final protectedNow = status == 'protected';
     final statusDotColor = protectedNow ? AppColors.success : AppColors.danger;
@@ -593,6 +592,16 @@ class _ChildOverviewCard extends StatelessWidget {
         ),
       ),
     );
+  }
+
+  String _resolvedStatus(DashboardChildSummary summary) {
+    if (!summary.protectionEnabled) {
+      return 'disabled';
+    }
+    if (!summary.online) {
+      return 'offline';
+    }
+    return summary.vpnActive ? 'protected' : 'unprotected';
   }
 }
 

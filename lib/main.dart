@@ -8,6 +8,7 @@ import 'package:firebase_crashlytics/firebase_crashlytics.dart';
 import 'package:firebase_performance/firebase_performance.dart';
 import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 import 'package:trustbridge_app/l10n/app_localizations.dart';
 import 'package:flutter_localizations/flutter_localizations.dart';
 import 'package:provider/provider.dart';
@@ -52,6 +53,11 @@ import 'package:trustbridge_app/widgets/skeleton_loaders.dart';
 
 Future<void> main() async {
   WidgetsFlutterBinding.ensureInitialized();
+  await SystemChrome.setPreferredOrientations(
+    const <DeviceOrientation>[
+      DeviceOrientation.portraitUp,
+    ],
+  );
   NotificationService.navigatorKey = GlobalKey<NavigatorState>();
   final startupFuture = _bootstrapStartupServices();
   runApp(MyApp(startupFuture: startupFuture));
