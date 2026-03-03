@@ -210,12 +210,18 @@ class _ChildrenHomeScreenState extends State<ChildrenHomeScreen> {
       final dashboardSeen = child.lastSeenEpochMs;
       final preferFallbackRuntime = fallbackSeen != null &&
           (dashboardSeen == null || fallbackSeen > dashboardSeen);
+      final mergedProtectionStatus = _mergeProtectionStatus(
+        protectionEnabled: child.protectionEnabled,
+        dashboardStatus: child.protectionStatus,
+        fallbackStatus: fallback.protectionStatus,
+        preferFallbackRuntime: preferFallbackRuntime,
+      );
       reconciled.add(
         DashboardChildSummary(
           childId: child.childId,
           name: fallback.name,
           protectionEnabled: child.protectionEnabled,
-          protectionStatus: child.protectionStatus,
+          protectionStatus: mergedProtectionStatus,
           activeMode: child.activeMode,
           screenTimeTodayMs: child.screenTimeTodayMs,
           pendingRequestCount: child.pendingRequestCount,
@@ -236,6 +242,50 @@ class _ChildrenHomeScreenState extends State<ChildrenHomeScreen> {
     reconciled.addAll(fallbackById.values);
     reconciled.sort((a, b) => a.name.compareTo(b.name));
     return reconciled;
+  }
+
+  String _mergeProtectionStatus({
+    required bool protectionEnabled,
+    required String dashboardStatus,
+    required String fallbackStatus,
+    required bool preferFallbackRuntime,
+  }) {
+    if (!protectionEnabled) {
+      return 'disabled';
+    }
+    final normalizedDashboard = _normalizeProtectionStatus(dashboardStatus);
+    final normalizedFallback = _normalizeProtectionStatus(fallbackStatus);
+
+    if (!preferFallbackRuntime) {
+      return normalizedDashboard.isNotEmpty
+          ? normalizedDashboard
+          : (normalizedFallback.isNotEmpty ? normalizedFallback : 'unprotected');
+    }
+
+    // Use fresher fallback data to downgrade stale "protected" states, but
+    // avoid optimistic upgrades to "protected" from fallback snapshots.
+    if (normalizedFallback == 'offline') {
+      return 'offline';
+    }
+    if (normalizedFallback == 'unprotected') {
+      return 'unprotected';
+    }
+    if (normalizedDashboard.isNotEmpty) {
+      return normalizedDashboard;
+    }
+    return normalizedFallback.isNotEmpty ? normalizedFallback : 'unprotected';
+  }
+
+  String _normalizeProtectionStatus(String rawStatus) {
+    switch (rawStatus.trim().toLowerCase()) {
+      case 'protected':
+      case 'unprotected':
+      case 'offline':
+      case 'disabled':
+        return rawStatus.trim().toLowerCase();
+      default:
+        return '';
+    }
   }
 
   String _activeModeFromChild(ChildProfile child, DateTime now) {
@@ -758,6 +808,13 @@ class _ChildOverviewCard extends StatelessWidget {
   String _resolvedStatus(DashboardChildSummary summary) {
     if (!summary.protectionEnabled) {
       return 'disabled';
+    }
+    final normalized = summary.protectionStatus.trim().toLowerCase();
+    if (normalized == 'protected' ||
+        normalized == 'unprotected' ||
+        normalized == 'offline' ||
+        normalized == 'disabled') {
+      return normalized;
     }
     if (!summary.online) {
       return 'offline';
