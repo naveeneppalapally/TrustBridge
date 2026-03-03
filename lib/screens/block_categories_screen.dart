@@ -2650,9 +2650,12 @@ class _BlockCategoriesScreenState extends State<BlockCategoriesScreen>
       // available when the VPN starts, even if it isn't running right now.
       // On the parent device the VPN channel may not be registered, so we
       // catch MissingPluginException and all other platform errors.
-      await _resolvedVpnService.updateFilterRules(
-        blockedCategories: updatedPolicy.blockedCategories,
-        blockedDomains: resolvedDomains,
+      await _resolvedVpnService.applyPolicy(
+        policyJson: <String, dynamic>{
+          'blockedCategories': updatedPolicy.blockedCategories,
+          'blockedDomainsResolved': resolvedDomains,
+          'blockedDomains': updatedPolicy.blockedDomains,
+        },
       );
     } on MissingPluginException {
       // Parent device – VPN channel not registered. Ignore.

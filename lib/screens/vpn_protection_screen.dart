@@ -8,8 +8,6 @@ import 'package:intl/intl.dart';
 import 'package:permission_handler/permission_handler.dart';
 import 'package:provider/provider.dart';
 import 'package:trustbridge_app/services/auth_service.dart';
-import 'package:trustbridge_app/services/dns_filter_engine.dart';
-import 'package:trustbridge_app/services/dns_packet_parser.dart';
 import 'package:trustbridge_app/services/firestore_service.dart';
 import 'package:trustbridge_app/services/nextdns_service.dart';
 import 'package:trustbridge_app/services/performance_service.dart';
@@ -45,9 +43,16 @@ class _VpnProtectionScreenState extends State<VpnProtectionScreen> {
   AuthService? _authService;
   FirestoreService? _firestoreService;
   VpnServiceBase? _vpnService;
-  late final DnsFilterEngine _dnsFilterEngine;
   final NextDnsService _nextDnsService = const NextDnsService();
   final PerformanceService _performanceService = PerformanceService();
+  static const Set<String> _seedBlockedDomains = <String>{
+    'facebook.com',
+    'instagram.com',
+    'tiktok.com',
+    'snapchat.com',
+    'discord.com',
+    'x.com',
+  };
 
   VpnStatus _status = const VpnStatus.unsupported();
   bool _isBusy = false;
@@ -92,9 +97,6 @@ class _VpnProtectionScreenState extends State<VpnProtectionScreen> {
   @override
   void initState() {
     super.initState();
-    _dnsFilterEngine = DnsFilterEngine(
-      blockedDomains: DnsFilterEngine.defaultSeedDomains,
-    );
     _refreshStatus();
     _startStatusAutoRefresh();
   }
@@ -1579,9 +1581,12 @@ class _VpnProtectionScreenState extends State<VpnProtectionScreen> {
       final resolverUpdated = await _resolvedVpnService.setUpstreamDns(
         upstreamDns: rules.upstreamDns,
       );
-      final updated = await _resolvedVpnService.updateFilterRules(
-        blockedCategories: rules.blockedCategories,
-        blockedDomains: rules.blockedDomains,
+      final updated = await _resolvedVpnService.applyPolicy(
+        policyJson: <String, dynamic>{
+          'blockedCategories': rules.blockedCategories,
+          'blockedDomainsResolved': rules.blockedDomains,
+          'blockedDomains': rules.blockedDomains,
+        },
       );
       if (!mounted) {
         return;
@@ -1657,7 +1662,7 @@ class _VpnProtectionScreenState extends State<VpnProtectionScreen> {
 
   Future<_VpnStartConfig> _loadRulesForVpnStart() async {
     final blockedCategories = <String>{'social-networks', 'adult-content'};
-    final blockedDomains = <String>{...DnsFilterEngine.defaultSeedDomains};
+    final blockedDomains = <String>{..._seedBlockedDomains};
     String? upstreamDns;
     final parentId = _parentId;
 
@@ -1718,23 +1723,19 @@ class _VpnProtectionScreenState extends State<VpnProtectionScreen> {
       _dnsSelfCheckMessage = null;
     });
 
-    final queryPacket = DnsPacketParser.buildQueryPacket('m.facebook.com');
-    final decision = _dnsFilterEngine.evaluatePacket(queryPacket);
-    final nxDomainPacket = decision.blocked
-        ? DnsPacketParser.buildNxDomainResponse(queryPacket)
-        : null;
-
-    if (!mounted) {
-      return;
+    String message;
+    try {
+      final decision =
+          await _resolvedVpnService.evaluateDomainPolicy('m.facebook.com');
+      final resolvedDomain = decision.normalizedDomain.trim().isNotEmpty
+          ? decision.normalizedDomain
+          : 'm.facebook.com';
+      message = decision.blocked
+          ? 'Self-check passed: $resolvedDomain -> BLOCKED.'
+          : 'Self-check passed: $resolvedDomain -> ALLOWED.';
+    } catch (_) {
+      message = 'Self-check failed: unable to query native policy evaluator.';
     }
-
-    final message = decision.parseError
-        ? 'Self-check failed: parser could not decode sample query.'
-        : decision.blocked &&
-                nxDomainPacket != null &&
-                nxDomainPacket.isNotEmpty
-            ? 'Self-check passed: ${decision.domain} -> BLOCKED (NXDOMAIN ready).'
-            : 'Self-check passed: ${decision.domain} -> ALLOWED.';
 
     setState(() {
       _isCheckingDns = false;

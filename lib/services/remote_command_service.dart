@@ -240,10 +240,12 @@ class RemoteCommandService {
     }
 
     try {
-      await _vpnService.updateFilterRules(
-        blockedCategories: const <String>[],
-        blockedDomains: const <String>[],
-        temporaryAllowedDomains: const <String>[],
+      await _vpnService.applyPolicy(
+        policyJson: const <String, dynamic>{
+          'blockedCategories': <String>[],
+          'blockedDomainsResolved': <String>[],
+          'temporaryAllowedDomainsResolved': <String>[],
+        },
       );
     } catch (_) {
       // Best-effort cleanup.

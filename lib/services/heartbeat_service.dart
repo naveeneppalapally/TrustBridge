@@ -226,7 +226,8 @@ class HeartbeatService {
       } catch (error) {
         // Root heartbeat telemetry is best-effort. Child-level device linkage
         // and local protection must remain active even if this write is denied.
-        AppLogger.debug('[Heartbeat] root device heartbeat write skipped: $error');
+        AppLogger.debug(
+            '[Heartbeat] root device heartbeat write skipped: $error');
       }
 
       try {
@@ -261,7 +262,8 @@ class HeartbeatService {
           'vpnActive=${status.isRunning} atEpochMs=$nowEpochMs',
         );
       } catch (error) {
-        AppLogger.debug('[Heartbeat] child device heartbeat write skipped: $error');
+        AppLogger.debug(
+            '[Heartbeat] child device heartbeat write skipped: $error');
       }
     } catch (error) {
       // Heartbeat failures are intentionally silent.
@@ -308,10 +310,12 @@ class HeartbeatService {
 
   static Future<void> _clearStalePairingAndProtection() async {
     try {
-      await _vpnService.updateFilterRules(
-        blockedCategories: const <String>[],
-        blockedDomains: const <String>[],
-        temporaryAllowedDomains: const <String>[],
+      await _vpnService.applyPolicy(
+        policyJson: const <String, dynamic>{
+          'blockedCategories': <String>[],
+          'blockedDomainsResolved': <String>[],
+          'temporaryAllowedDomainsResolved': <String>[],
+        },
       );
     } catch (_) {
       // Best-effort cleanup.

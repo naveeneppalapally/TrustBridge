@@ -379,9 +379,12 @@ class _CustomDomainsScreenState extends State<CustomDomainsScreen> {
         return;
       }
 
-      await _resolvedVpnService.updateFilterRules(
-        blockedCategories: updatedPolicy.blockedCategories,
-        blockedDomains: updatedPolicy.blockedDomains,
+      await _resolvedVpnService.applyPolicy(
+        policyJson: <String, dynamic>{
+          'blockedCategories': updatedPolicy.blockedCategories,
+          'blockedDomainsResolved': updatedPolicy.blockedDomains,
+          'blockedDomains': updatedPolicy.blockedDomains,
+        },
       );
     } catch (_) {
       // Saving policy should succeed even if VPN sync is unavailable.

@@ -185,7 +185,8 @@ class PolicyVpnSyncService extends ChangeNotifier {
   void startListening() {
     final parentId = _resolveParentId();
     if (parentId == null || parentId.isEmpty) {
-      AppLogger.debug('[PolicyVpnSync] No user logged in; listener not started.');
+      AppLogger.debug(
+          '[PolicyVpnSync] No user logged in; listener not started.');
       return;
     }
 
@@ -483,10 +484,13 @@ class PolicyVpnSyncService extends ChangeNotifier {
     required List<String> blockedDomains,
     required List<String> temporaryAllowedDomains,
   }) async {
-    return _vpnService.updateFilterRules(
-      blockedCategories: blockedCategories,
-      blockedDomains: blockedDomains,
-      temporaryAllowedDomains: temporaryAllowedDomains,
+    return _vpnService.applyPolicy(
+      policyJson: <String, dynamic>{
+        'blockedCategories': blockedCategories,
+        'blockedDomainsResolved': blockedDomains,
+        'blockedDomains': blockedDomains,
+        'temporaryAllowedDomainsResolved': temporaryAllowedDomains,
+      },
     );
   }
 

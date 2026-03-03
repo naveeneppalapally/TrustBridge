@@ -343,6 +343,39 @@ class MainActivity : FlutterFragmentActivity() {
                 }
             }
 
+            "applyPolicy" -> {
+                val policyJson = call.argument<String>("policyJson")
+                    ?.trim()
+                    ?.takeIf { it.isNotEmpty() }
+                if (policyJson == null) {
+                    result.error(
+                        "invalid_policy",
+                        "applyPolicy requires a non-empty policyJson payload.",
+                        null
+                    )
+                    return
+                }
+                val parentId = call.argument<String>("parentId")
+                    ?.trim()
+                    ?.takeIf { it.isNotEmpty() }
+                val childId = call.argument<String>("childId")
+                    ?.trim()
+                    ?.takeIf { it.isNotEmpty() }
+                persistPolicyContext(call)
+                val serviceIntent = Intent(this, DnsVpnService::class.java).apply {
+                    action = DnsVpnService.ACTION_APPLY_POLICY
+                    putExtra(DnsVpnService.EXTRA_POLICY_JSON, policyJson)
+                    if (parentId != null) {
+                        putExtra(DnsVpnService.EXTRA_PARENT_ID, parentId)
+                    }
+                    if (childId != null) {
+                        putExtra(DnsVpnService.EXTRA_CHILD_ID, childId)
+                    }
+                }
+                startServiceCompat(serviceIntent)
+                result.success(true)
+            }
+
             "updateFilterRules" -> {
                 val blockedCategories =
                     call.argument<List<String>>("blockedCategories") ?: emptyList()

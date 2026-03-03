@@ -1,3 +1,4 @@
+import 'dart:convert';
 import 'dart:io';
 
 import 'package:flutter/services.dart';
@@ -827,6 +828,77 @@ class VpnService implements VpnServiceBase {
     }
   }
 
+  Future<bool> applyPolicy({
+    required Map<String, dynamic> policyJson,
+    String? parentId,
+    String? childId,
+  }) async {
+    if (!_supported) {
+      return false;
+    }
+
+    Object? sanitize(Object? raw) {
+      if (raw == null ||
+          raw is String ||
+          raw is num ||
+          raw is bool ||
+          raw is int ||
+          raw is double) {
+        return raw;
+      }
+      if (raw is DateTime) {
+        return raw.millisecondsSinceEpoch;
+      }
+      if (raw is List) {
+        return raw.map(sanitize).toList(growable: false);
+      }
+      if (raw is Map) {
+        return raw.map(
+          (key, value) => MapEntry(key.toString(), sanitize(value)),
+        );
+      }
+
+      final dynamic dynamicRaw = raw;
+      try {
+        final DateTime date = dynamicRaw.toDate();
+        return date.millisecondsSinceEpoch;
+      } catch (_) {}
+      try {
+        final Object? epoch = dynamicRaw.millisecondsSinceEpoch;
+        if (epoch is num) {
+          return epoch.toInt();
+        }
+      } catch (_) {}
+      return raw.toString();
+    }
+
+    final normalizedParentId = parentId?.trim();
+    final normalizedChildId = childId?.trim();
+    final normalizedPolicyRaw = sanitize(policyJson);
+    if (normalizedPolicyRaw is! Map) {
+      return false;
+    }
+    final normalizedPolicy = normalizedPolicyRaw.map(
+      (key, value) => MapEntry(key.toString(), value),
+    );
+
+    final payload = <String, dynamic>{
+      'policyJson': jsonEncode(normalizedPolicy),
+      if (normalizedParentId != null && normalizedParentId.isNotEmpty)
+        'parentId': normalizedParentId,
+      if (normalizedChildId != null && normalizedChildId.isNotEmpty)
+        'childId': normalizedChildId,
+    };
+
+    try {
+      return await _channel.invokeMethod<bool>('applyPolicy', payload) ?? false;
+    } on PlatformException {
+      return false;
+    } on MissingPluginException {
+      return false;
+    }
+  }
+
   Future<bool> syncEffectivePolicyNow({
     String? parentId,
     String? childId,
@@ -1075,5 +1147,54 @@ class VpnService implements VpnServiceBase {
     } on MissingPluginException {
       return const DomainPolicyEvaluation.empty();
     }
+  }
+}
+
+extension VpnServicePolicyApply on VpnServiceBase {
+  Future<bool> applyPolicy({
+    required Map<String, dynamic> policyJson,
+    String? parentId,
+    String? childId,
+  }) async {
+    if (this is VpnService) {
+      return (this as VpnService).applyPolicy(
+        policyJson: policyJson,
+        parentId: parentId,
+        childId: childId,
+      );
+    }
+
+    List<String> readStringList(String key) {
+      final raw = policyJson[key];
+      if (raw is! List) {
+        return const <String>[];
+      }
+      return raw
+          .map((value) => value.toString().trim().toLowerCase())
+          .where((value) => value.isNotEmpty)
+          .toSet()
+          .toList()
+        ..sort();
+    }
+
+    final blockedCategories = readStringList('blockedCategories');
+    var blockedDomains = readStringList('blockedDomainsResolved');
+    if (blockedDomains.isEmpty) {
+      blockedDomains = readStringList('blockedDomains');
+    }
+    var temporaryAllowedDomains = readStringList(
+      'temporaryAllowedDomainsResolved',
+    );
+    if (temporaryAllowedDomains.isEmpty) {
+      temporaryAllowedDomains = readStringList('temporaryAllowedDomains');
+    }
+
+    return updateFilterRules(
+      blockedCategories: blockedCategories,
+      blockedDomains: blockedDomains,
+      temporaryAllowedDomains: temporaryAllowedDomains,
+      parentId: parentId,
+      childId: childId,
+    );
   }
 }

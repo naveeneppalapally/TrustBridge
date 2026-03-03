@@ -48,6 +48,8 @@ import java.util.LinkedHashMap
 import java.util.concurrent.Executors
 import java.util.concurrent.TimeUnit
 import kotlin.concurrent.thread
+import org.json.JSONArray
+import org.json.JSONObject
 
 class DnsVpnService : VpnService() {
     companion object {
@@ -132,6 +134,7 @@ class DnsVpnService : VpnService() {
         const val ACTION_RESTART = "com.navee.trustbridge.vpn.RESTART"
         const val ACTION_UPDATE_RULES = "com.navee.trustbridge.vpn.UPDATE_RULES"
         const val ACTION_INCREMENTAL_UPDATE = "com.navee.trustbridge.vpn.INCREMENTAL_UPDATE"
+        const val ACTION_APPLY_POLICY = "com.navee.trustbridge.vpn.APPLY_POLICY"
         const val ACTION_POLICY_PUSH_SYNC = "com.navee.trustbridge.vpn.POLICY_PUSH_SYNC"
         const val ACTION_SET_UPSTREAM_DNS = "com.navee.trustbridge.vpn.SET_UPSTREAM_DNS"
         const val ACTION_CLEAR_QUERY_LOGS = "com.navee.trustbridge.vpn.CLEAR_QUERY_LOGS"
@@ -149,6 +152,7 @@ class DnsVpnService : VpnService() {
         const val EXTRA_UPSTREAM_DNS = "upstreamDns"
         const val EXTRA_PARENT_ID = "parentId"
         const val EXTRA_CHILD_ID = "childId"
+        const val EXTRA_POLICY_JSON = "policyJson"
         const val EXTRA_BOOT_RESTORE = "bootRestore"
         const val EXTRA_BOOT_RESTORE_ATTEMPT = "bootRestoreAttempt"
         const val EXTRA_TRANSIENT_RETRY_ATTEMPT = "transientRetryAttempt"
@@ -447,9 +451,35 @@ class DnsVpnService : VpnService() {
                         ?: lastAppliedBlockedPackages
                 val upstreamDns =
                     intent?.getStringExtra(EXTRA_UPSTREAM_DNS) ?: lastAppliedUpstreamDns
+                val configured = vpnPreferencesStore.loadConfig()
+                val contextParentId = intent?.getStringExtra(EXTRA_PARENT_ID)
+                    ?.trim()
+                    .orEmpty()
+                val contextChildId = intent?.getStringExtra(EXTRA_CHILD_ID)
+                    ?.trim()
+                    .orEmpty()
+                val resolvedParentId = if (contextParentId.isNotEmpty()) {
+                    contextParentId
+                } else {
+                    configured.parentId?.trim().orEmpty()
+                }
+                val resolvedChildId = if (contextChildId.isNotEmpty()) {
+                    contextChildId
+                } else {
+                    configured.childId?.trim().orEmpty()
+                }
                 applyUpstreamDns(upstreamDns)
-                applyFilterRules(categories, domains, allowedDomains, blockedPackages)
                 startVpn()
+                applyPolicySnapshotFromRuleInputs(
+                    parentId = resolvedParentId,
+                    childId = resolvedChildId,
+                    categories = categories,
+                    domains = domains,
+                    temporaryAllowedDomains = allowedDomains,
+                    blockedPackages = blockedPackages,
+                    source = "start_intent",
+                    incomingVersion = null
+                )
                 scheduleWatchdogPing()
                 START_STICKY
             }
@@ -472,7 +502,6 @@ class DnsVpnService : VpnService() {
                     .orEmpty()
                 val hasChildPolicyContext =
                     contextParentId.isNotEmpty() && contextChildId.isNotEmpty()
-                applyFilterRules(categories, domains, allowedDomains, blockedPackages)
                 vpnPreferencesStore.setEnabled(true)
                 if (!serviceRunning && hasChildPolicyContext) {
                     val hasPermission = VpnService.prepare(this) == null
@@ -498,6 +527,27 @@ class DnsVpnService : VpnService() {
                         "Skipping VPN auto-start on rule update: missing child policy context"
                     )
                 }
+                val configured = vpnPreferencesStore.loadConfig()
+                val resolvedParentId = if (contextParentId.isNotEmpty()) {
+                    contextParentId
+                } else {
+                    configured.parentId?.trim().orEmpty()
+                }
+                val resolvedChildId = if (contextChildId.isNotEmpty()) {
+                    contextChildId
+                } else {
+                    configured.childId?.trim().orEmpty()
+                }
+                applyPolicySnapshotFromRuleInputs(
+                    parentId = resolvedParentId,
+                    childId = resolvedChildId,
+                    categories = categories,
+                    domains = domains,
+                    temporaryAllowedDomains = allowedDomains,
+                    blockedPackages = blockedPackages,
+                    source = "update_rules",
+                    incomingVersion = null
+                )
                 startEffectivePolicyListenerIfConfigured()
                 flushDnsCacheBestEffort()
                 scheduleInstalledAppInventoryWrite()
@@ -509,6 +559,93 @@ class DnsVpnService : VpnService() {
                 applyIncrementalUpdate(intent)
                 startEffectivePolicyListenerIfConfigured()
                 flushDnsCacheBestEffort()
+                scheduleWatchdogPing()
+                START_STICKY
+            }
+
+            ACTION_APPLY_POLICY -> {
+                val policyJson = intent?.getStringExtra(EXTRA_POLICY_JSON)
+                    ?.trim()
+                    .orEmpty()
+                if (policyJson.isEmpty()) {
+                    Log.w(TAG, "applyPolicy ignored: empty policy payload")
+                    return START_STICKY
+                }
+
+                val contextParentId = intent?.getStringExtra(EXTRA_PARENT_ID)
+                    ?.trim()
+                    ?.takeIf { it.isNotEmpty() }
+                val contextChildId = intent?.getStringExtra(EXTRA_CHILD_ID)
+                    ?.trim()
+                    ?.takeIf { it.isNotEmpty() }
+                if (contextParentId != null || contextChildId != null) {
+                    vpnPreferencesStore.savePolicyContext(
+                        parentId = contextParentId,
+                        childId = contextChildId
+                    )
+                }
+
+                maybeBootstrapPolicySyncAuth("apply_policy")
+                if (!serviceRunning) {
+                    val hasPermission = VpnService.prepare(this) == null
+                    if (hasPermission) {
+                        ensureForegroundStarted()
+                        startVpn()
+                    } else {
+                        Log.w(TAG, "Skipping applyPolicy: VPN permission missing")
+                        return START_STICKY
+                    }
+                }
+
+                val snapshotData = parsePolicyJson(policyJson)
+                if (snapshotData == null) {
+                    Log.w(TAG, "applyPolicy ignored: invalid JSON payload")
+                    return START_STICKY
+                }
+
+                val configured = vpnPreferencesStore.loadConfig()
+                val payloadParentId = (snapshotData["parentId"] as? String)
+                    ?.trim()
+                    .orEmpty()
+                val payloadChildId = (snapshotData["childId"] as? String)
+                    ?.trim()
+                    .orEmpty()
+                val resolvedParentId = contextParentId
+                    ?: payloadParentId.takeIf { it.isNotEmpty() }
+                    ?: configured.parentId?.trim()
+                    ?: ""
+                val resolvedChildId = contextChildId
+                    ?: payloadChildId.takeIf { it.isNotEmpty() }
+                    ?: configured.childId?.trim()
+                    ?: ""
+                if (resolvedChildId.isEmpty()) {
+                    Log.w(TAG, "applyPolicy ignored: missing childId context")
+                    return START_STICKY
+                }
+                snapshotData["childId"] = resolvedChildId
+                if (resolvedParentId.isNotEmpty()) {
+                    snapshotData["parentId"] = resolvedParentId
+                }
+
+                startEffectivePolicyListenerIfConfigured()
+                policyApplyExecutor.execute {
+                    try {
+                        applyEffectivePolicySnapshot(
+                            childId = resolvedChildId,
+                            snapshotData = snapshotData,
+                            incomingVersion = parsePolicyVersion(snapshotData["version"]),
+                            source = "apply_policy"
+                        )
+                    } catch (error: Exception) {
+                        Log.w(TAG, "applyPolicy failed", error)
+                        recordPolicyApplyError(
+                            source = "apply_policy",
+                            version = parsePolicyVersion(snapshotData["version"]),
+                            errorMessage = error.message
+                        )
+                    }
+                }
+                scheduleInstalledAppInventoryWrite()
                 scheduleWatchdogPing()
                 START_STICKY
             }
@@ -589,11 +726,37 @@ class DnsVpnService : VpnService() {
                 } else {
                     lastAppliedUpstreamDns
                 }
+                val configured = vpnPreferencesStore.loadConfig()
+                val contextParentId = intent?.getStringExtra(EXTRA_PARENT_ID)
+                    ?.trim()
+                    .orEmpty()
+                val contextChildId = intent?.getStringExtra(EXTRA_CHILD_ID)
+                    ?.trim()
+                    .orEmpty()
+                val resolvedParentId = if (contextParentId.isNotEmpty()) {
+                    contextParentId
+                } else {
+                    configured.parentId?.trim().orEmpty()
+                }
+                val resolvedChildId = if (contextChildId.isNotEmpty()) {
+                    contextChildId
+                } else {
+                    configured.childId?.trim().orEmpty()
+                }
 
                 stopVpn(stopService = false, markDisabled = false)
                 applyUpstreamDns(upstreamDns)
-                applyFilterRules(categories, domains, allowedDomains, blockedPackages)
                 startVpn()
+                applyPolicySnapshotFromRuleInputs(
+                    parentId = resolvedParentId,
+                    childId = resolvedChildId,
+                    categories = categories,
+                    domains = domains,
+                    temporaryAllowedDomains = allowedDomains,
+                    blockedPackages = blockedPackages,
+                    source = "restart",
+                    incomingVersion = null
+                )
                 scheduleWatchdogPing()
                 START_STICKY
             }
@@ -1657,6 +1820,45 @@ class DnsVpnService : VpnService() {
         }
     }
 
+    private fun parsePolicyJson(raw: String): HashMap<String, Any>? {
+        return try {
+            val jsonObject = JSONObject(raw)
+            jsonToMap(jsonObject)
+        } catch (_: Exception) {
+            null
+        }
+    }
+
+    private fun jsonToMap(jsonObject: JSONObject): HashMap<String, Any> {
+        val output = hashMapOf<String, Any>()
+        val keys = jsonObject.keys()
+        while (keys.hasNext()) {
+            val key = keys.next()
+            val value = jsonObject.opt(key) ?: continue
+            when (value) {
+                JSONObject.NULL -> Unit
+                is JSONObject -> output[key] = jsonToMap(value)
+                is JSONArray -> output[key] = jsonToList(value)
+                else -> output[key] = value
+            }
+        }
+        return output
+    }
+
+    private fun jsonToList(jsonArray: JSONArray): List<Any> {
+        val output = arrayListOf<Any>()
+        for (index in 0 until jsonArray.length()) {
+            val value = jsonArray.opt(index) ?: continue
+            when (value) {
+                JSONObject.NULL -> Unit
+                is JSONObject -> output.add(jsonToMap(value))
+                is JSONArray -> output.add(jsonToList(value))
+                else -> output.add(value)
+            }
+        }
+        return output
+    }
+
     private fun parseEpochMillis(raw: Any?): Long? {
         return when (raw) {
             is Timestamp -> raw.toDate().time
@@ -1666,6 +1868,56 @@ class DnsVpnService : VpnService() {
             is Double -> raw.toLong()
             is String -> raw.toLongOrNull()
             else -> null
+        }
+    }
+
+    private fun applyPolicySnapshotFromRuleInputs(
+        parentId: String,
+        childId: String,
+        categories: List<String>,
+        domains: List<String>,
+        temporaryAllowedDomains: List<String>,
+        blockedPackages: List<String>,
+        source: String,
+        incomingVersion: Long?
+    ) {
+        if (!serviceRunning) {
+            return
+        }
+        if (childId.trim().isEmpty()) {
+            return
+        }
+
+        val snapshotData = hashMapOf<String, Any>(
+            "childId" to childId.trim(),
+            "blockedCategories" to categories,
+            "blockedServices" to emptyList<String>(),
+            "blockedDomainsResolved" to domains,
+            "blockedDomains" to domains,
+            "blockedPackagesResolved" to blockedPackages,
+            "blockedPackages" to blockedPackages,
+            "temporaryAllowedDomainsResolved" to temporaryAllowedDomains,
+            "modeBlockedDomainsResolved" to emptyList<String>(),
+            "modeAllowedDomainsResolved" to emptyList<String>(),
+            "modeBlockedPackagesResolved" to emptyList<String>(),
+            "modeAllowedPackagesResolved" to emptyList<String>(),
+            "version" to (incomingVersion ?: System.currentTimeMillis())
+        )
+        if (parentId.trim().isNotEmpty()) {
+            snapshotData["parentId"] = parentId.trim()
+        }
+
+        policyApplyExecutor.execute {
+            try {
+                applyEffectivePolicySnapshot(
+                    childId = childId.trim(),
+                    snapshotData = snapshotData,
+                    incomingVersion = parsePolicyVersion(snapshotData["version"]),
+                    source = source
+                )
+            } catch (error: Exception) {
+                Log.w(TAG, "Failed applying policy snapshot from $source", error)
+            }
         }
     }
 

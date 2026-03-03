@@ -22,6 +22,7 @@ import '../../services/app_usage_service.dart';
 import '../../services/blocklist_sync_service.dart';
 import '../../services/browser_dns_bypass_heuristic.dart';
 import '../../services/child_app_inventory_sync_service.dart';
+import '../../services/child_effective_policy_sync_service.dart';
 import '../../services/child_usage_upload_service.dart';
 import '../../services/device_admin_service.dart';
 import '../../services/firestore_service.dart';
@@ -902,10 +903,12 @@ class _ChildStatusScreenState extends State<ChildStatusScreen>
           NotificationService().onTokenRefresh.listen((nextToken) {
         unawaited(writeToken(nextToken));
       }, onError: (Object error) {
-        AppLogger.debug('[ChildStatus] FCM token refresh listener failed: $error');
+        AppLogger.debug(
+            '[ChildStatus] FCM token refresh listener failed: $error');
       });
     } catch (error) {
-      AppLogger.debug('[ChildStatus] Unable to attach FCM token listener: $error');
+      AppLogger.debug(
+          '[ChildStatus] Unable to attach FCM token listener: $error');
     }
   }
 
@@ -1445,96 +1448,32 @@ class _ChildStatusScreenState extends State<ChildStatusScreen>
     int? policyVersion,
     bool forceRecheck = false,
   }) async {
-    var sourceChild = child;
-    var sourceManualMode = manualMode;
-    var sourcePolicyVersion = policyVersion;
-    if (sourcePolicyVersion != null && sourcePolicyVersion <= 0) {
-      sourcePolicyVersion = null;
-    }
+    _pendingProtectionApplies.clear();
+    _isApplyingProtectionRules = false;
+    _effectiveBlockedPackages = child.policy.blockedPackages
+        .map((value) => value.trim().toLowerCase())
+        .where((value) => value.isNotEmpty)
+        .toSet();
 
-    final effectiveSnapshot = _lastEffectivePolicySnapshot;
-    final childManualMode =
-        sourceManualMode ?? _manualModeFromRaw(child.manualMode);
-    if (effectiveSnapshot != null &&
-        (sourcePolicyVersion == null ||
-            sourcePolicyVersion < effectiveSnapshot.version)) {
-      final snapshotIsStale = _isEffectiveSnapshotStale(
-        child: child,
-        manualMode: childManualMode,
-        snapshot: effectiveSnapshot,
-      );
-      if (snapshotIsStale) {
-        AppLogger.debug(
-          '[ChildStatus] ignoring stale effective_policy snapshot '
-          'version=${effectiveSnapshot.version} childUpdatedAt=${child.updatedAt.toIso8601String()} '
-          'sourceUpdatedAt=${effectiveSnapshot.sourceUpdatedAt?.toIso8601String() ?? '<null>'}',
-        );
-        _lastEffectivePolicySnapshot = null;
-      } else {
-        sourceChild = child.copyWith(
-          policy: child.policy.copyWith(
-            blockedCategories: effectiveSnapshot.blockedCategories,
-            blockedServices: effectiveSnapshot.blockedServices,
-            blockedDomains: effectiveSnapshot.blockedDomains,
-            blockedPackages: effectiveSnapshot.blockedPackages,
-            modeOverrides: effectiveSnapshot.modeOverridesResolved,
-            policySchemaVersion: effectiveSnapshot.policySchemaVersion,
-          ),
-          pausedUntil: effectiveSnapshot.pausedUntil,
-        );
-        sourceManualMode = childManualMode ?? effectiveSnapshot.manualMode;
-        sourcePolicyVersion = effectiveSnapshot.version;
-      }
-    }
+    final payload = <String, dynamic>{
+      'childId': child.id,
+      if (_parentId != null && _parentId!.trim().isNotEmpty)
+        'parentId': _parentId!.trim(),
+      if (policyVersion != null && policyVersion > 0) 'version': policyVersion,
+      if (manualMode != null)
+        'manualMode': <String, dynamic>{
+          'mode': manualMode.mode,
+          if (manualMode.setAt != null)
+            'setAt': manualMode.setAt!.millisecondsSinceEpoch,
+          if (manualMode.expiresAt != null)
+            'expiresAt': manualMode.expiresAt!.millisecondsSinceEpoch,
+        },
+    };
 
-    final now = DateTime.now();
-    final resolvedManualMode = sourceManualMode ?? _lastManualModeOverride;
-    final effectiveRules = _buildEffectiveProtectionRules(
-      child: sourceChild,
-      now: now,
-      manualMode: resolvedManualMode,
+    await ChildEffectivePolicySyncService.instance.handlePolicyUpdatePush(
+      payload: payload,
+      source: forceRecheck ? 'child_status_recheck' : 'child_status',
     );
-    final categories = effectiveRules.categories.toList()..sort();
-    final services = effectiveRules.services.toList()..sort();
-    final domains = effectiveRules.domains.toList()..sort();
-    final packages = effectiveRules.blockedPackages.toList()..sort();
-    _effectiveBlockedPackages = effectiveRules.blockedPackages.toSet();
-    unawaited(_refreshAppBlockingUsageAccessState());
-    final policySignature = '${categories.join('|')}::${services.join('|')}::'
-        '${domains.join('|')}::${packages.join('|')}';
-    _scheduleNextProtectionRecheck(
-      child: sourceChild,
-      manualMode: resolvedManualMode,
-      now: now,
-      nextApprovedExceptionExpiry: _nextApprovedExceptionExpiry,
-    );
-
-    if (!forceRecheck &&
-        _lastAppliedPolicySignature != null &&
-        _lastAppliedPolicySignature!.startsWith('$policySignature::') &&
-        !_isApplyingProtectionRules &&
-        _pendingProtectionApplies.isEmpty) {
-      if (sourcePolicyVersion != null && sourcePolicyVersion > 0) {
-        _lastAppliedPolicyVersion = sourcePolicyVersion;
-      }
-      return;
-    }
-
-    _enqueueProtectionApply(
-      _QueuedProtectionApply(
-        child: sourceChild,
-        manualMode: resolvedManualMode,
-        categories: categories,
-        services: services,
-        domains: domains,
-        policySignature: policySignature,
-        policyVersion:
-            sourcePolicyVersion ?? _lastEffectivePolicySnapshot?.version,
-        blockedPackages: packages,
-        forceRecheck: forceRecheck,
-      ),
-    );
-    await _drainProtectionApplyQueue();
   }
 
   bool _isEffectiveSnapshotStale({
@@ -1704,7 +1643,8 @@ class _ChildStatusScreenState extends State<ChildStatusScreen>
 
   Future<void> _drainProtectionApplyQueue() async {
     if (_isApplyingProtectionRules) {
-      AppLogger.debug('[ChildStatus] drainProtection skipped (already applying)');
+      AppLogger.debug(
+          '[ChildStatus] drainProtection skipped (already applying)');
       return;
     }
     AppLogger.debug(
@@ -1900,11 +1840,13 @@ class _ChildStatusScreenState extends State<ChildStatusScreen>
     String? parentId,
     String? childId,
   }) async {
-    // Native layer replaces in-memory and persisted rules atomically.
-    return _vpnService.updateFilterRules(
-      blockedCategories: blockedCategories,
-      blockedDomains: blockedDomains,
-      temporaryAllowedDomains: temporaryAllowedDomains,
+    return _vpnService.applyPolicy(
+      policyJson: <String, dynamic>{
+        'blockedCategories': blockedCategories,
+        'blockedDomainsResolved': blockedDomains,
+        'blockedDomains': blockedDomains,
+        'temporaryAllowedDomainsResolved': temporaryAllowedDomains,
+      },
       parentId: parentId,
       childId: childId,
     );
@@ -2131,7 +2073,8 @@ class _ChildStatusScreenState extends State<ChildStatusScreen>
           // Fall through to logging below.
         }
       }
-      AppLogger.debug('[ChildStatus] policy_apply_acks write failed: $ackError');
+      AppLogger.debug(
+          '[ChildStatus] policy_apply_acks write failed: $ackError');
     }
   }
 
@@ -2734,10 +2677,12 @@ class _ChildStatusScreenState extends State<ChildStatusScreen>
     _nextApprovedExceptionExpiry = null;
 
     try {
-      await _vpnService.updateFilterRules(
-        blockedCategories: const <String>[],
-        blockedDomains: const <String>[],
-        temporaryAllowedDomains: const <String>[],
+      await _vpnService.applyPolicy(
+        policyJson: const <String, dynamic>{
+          'blockedCategories': <String>[],
+          'blockedDomainsResolved': <String>[],
+          'temporaryAllowedDomainsResolved': <String>[],
+        },
       );
     } catch (_) {
       // Best-effort cleanup.
