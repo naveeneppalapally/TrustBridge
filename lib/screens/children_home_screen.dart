@@ -94,6 +94,51 @@ class _ChildrenHomeScreenState extends State<ChildrenHomeScreen> {
       ..sort((a, b) => a.name.compareTo(b.name));
   }
 
+  List<DashboardChildSummary> _reconcileDashboardWithFallback({
+    required List<DashboardChildSummary> dashboardChildren,
+    required List<ChildProfile> fallbackChildren,
+  }) {
+    if (fallbackChildren.isEmpty) {
+      return dashboardChildren;
+    }
+
+    final fallbackSummaries = _summariesFromChildProfiles(fallbackChildren);
+    final fallbackById = <String, DashboardChildSummary>{
+      for (final child in fallbackSummaries) child.childId: child,
+    };
+
+    final reconciled = <DashboardChildSummary>[];
+    for (final child in dashboardChildren) {
+      final fallback = fallbackById.remove(child.childId);
+      if (fallback == null) {
+        // Child no longer exists in source collection; hide stale dashboard row.
+        continue;
+      }
+      reconciled.add(
+        DashboardChildSummary(
+          childId: child.childId,
+          name: fallback.name,
+          protectionEnabled: child.protectionEnabled,
+          protectionStatus: child.protectionStatus,
+          activeMode: child.activeMode,
+          screenTimeTodayMs: child.screenTimeTodayMs,
+          pendingRequestCount: child.pendingRequestCount,
+          online: child.online,
+          vpnActive: child.vpnActive,
+          lastSeenEpochMs: child.lastSeenEpochMs,
+          updatedAtEpochMs: child.updatedAtEpochMs >= fallback.updatedAtEpochMs
+              ? child.updatedAtEpochMs
+              : fallback.updatedAtEpochMs,
+        ),
+      );
+    }
+
+    // New child profile exists but dashboard aggregate has not caught up yet.
+    reconciled.addAll(fallbackById.values);
+    reconciled.sort((a, b) => a.name.compareTo(b.name));
+    return reconciled;
+  }
+
   String _activeModeFromChild(ChildProfile child, DateTime now) {
     final pausedUntil = child.pausedUntil;
     if (pausedUntil != null && pausedUntil.isAfter(now)) {
@@ -192,9 +237,7 @@ class _ChildrenHomeScreenState extends State<ChildrenHomeScreen> {
     final children =
         dashboardState?.children ?? const <DashboardChildSummary>[];
     final isLoading = dashboardState == null;
-    if (isLoading) {
-      _ensureFallbackChildrenFuture(parentId);
-    }
+    _ensureFallbackChildrenFuture(parentId);
 
     return Scaffold(
       body: SafeArea(
@@ -240,73 +283,81 @@ class _ChildrenHomeScreenState extends State<ChildrenHomeScreen> {
             Expanded(
               child: Builder(
                 builder: (context) {
-                  if (isLoading) {
-                    return FutureBuilder<List<ChildProfile>>(
-                      future: _fallbackChildrenFuture,
-                      builder: (context, fallbackSnapshot) {
-                        if (fallbackSnapshot.connectionState ==
-                                ConnectionState.waiting &&
-                            !fallbackSnapshot.hasData) {
-                          return ListView(
-                            padding: const EdgeInsets.fromLTRB(
-                              20,
-                              8,
-                              20,
-                              24,
-                            ),
-                            children: const <Widget>[
-                              _StaticPlaceholderCard(),
-                              SizedBox(height: 12),
-                              _StaticPlaceholderCard(),
-                            ],
-                          );
-                        }
-
-                        if (fallbackSnapshot.hasError) {
-                          return Center(
-                            child: Padding(
-                              padding: const EdgeInsets.all(20),
-                              child: Column(
-                                mainAxisSize: MainAxisSize.min,
-                                children: [
-                                  const Icon(
-                                    Icons.wifi_tethering_error_rounded,
-                                    size: 48,
-                                    color: AppColors.textMuted,
-                                  ),
-                                  const SizedBox(height: 12),
-                                  Text(
-                                    'Could not load children right now.',
-                                    textAlign: TextAlign.center,
-                                    style: AppTextStyles.headingMedium(),
-                                  ),
-                                  const SizedBox(height: 12),
-                                  _CalmButton(
-                                    label: 'Retry',
-                                    icon: Icons.refresh_rounded,
-                                    onTap: () =>
-                                        _retryFallbackChildren(parentId),
-                                  ),
-                                ],
-                              ),
-                            ),
-                          );
-                        }
-
-                        final fallbackChildren = _summariesFromChildProfiles(
-                          fallbackSnapshot.data ?? const <ChildProfile>[],
+                  return FutureBuilder<List<ChildProfile>>(
+                    future: _fallbackChildrenFuture,
+                    builder: (context, fallbackSnapshot) {
+                      if (isLoading &&
+                          fallbackSnapshot.connectionState ==
+                              ConnectionState.waiting &&
+                          !fallbackSnapshot.hasData) {
+                        return ListView(
+                          padding: const EdgeInsets.fromLTRB(
+                            20,
+                            8,
+                            20,
+                            24,
+                          ),
+                          children: const <Widget>[
+                            _StaticPlaceholderCard(),
+                            SizedBox(height: 12),
+                            _StaticPlaceholderCard(),
+                          ],
                         );
+                      }
+
+                      if (isLoading && fallbackSnapshot.hasError) {
+                        return Center(
+                          child: Padding(
+                            padding: const EdgeInsets.all(20),
+                            child: Column(
+                              mainAxisSize: MainAxisSize.min,
+                              children: [
+                                const Icon(
+                                  Icons.wifi_tethering_error_rounded,
+                                  size: 48,
+                                  color: AppColors.textMuted,
+                                ),
+                                const SizedBox(height: 12),
+                                Text(
+                                  'Could not load children right now.',
+                                  textAlign: TextAlign.center,
+                                  style: AppTextStyles.headingMedium(),
+                                ),
+                                const SizedBox(height: 12),
+                                _CalmButton(
+                                  label: 'Retry',
+                                  icon: Icons.refresh_rounded,
+                                  onTap: () => _retryFallbackChildren(parentId),
+                                ),
+                              ],
+                            ),
+                          ),
+                        );
+                      }
+
+                      final fallbackChildren =
+                          fallbackSnapshot.data ?? const <ChildProfile>[];
+                      final fallbackSummaries =
+                          _summariesFromChildProfiles(fallbackChildren);
+
+                      if (isLoading) {
                         return _buildChildrenList(
                           parentId: parentId,
-                          children: fallbackChildren,
+                          children: fallbackSummaries,
                         );
-                      },
-                    );
-                  }
+                      }
 
-                  return _buildChildrenList(
-                    parentId: parentId,
-                    children: children,
+                      final reconciledChildren = fallbackSnapshot.hasData
+                          ? _reconcileDashboardWithFallback(
+                              dashboardChildren: children,
+                              fallbackChildren: fallbackChildren,
+                            )
+                          : children;
+                      return _buildChildrenList(
+                        parentId: parentId,
+                        children: reconciledChildren,
+                      );
+                    },
                   );
                 },
               ),
@@ -355,6 +406,9 @@ class _ChildrenHomeScreenState extends State<ChildrenHomeScreen> {
         ),
       ),
     );
+    if (mounted) {
+      _retryFallbackChildren(parentId);
+    }
   }
 
   Future<void> _togglePause(
@@ -407,7 +461,9 @@ class _ChildrenHomeScreenState extends State<ChildrenHomeScreen> {
   }
 
   void _openAddChild() {
-    Navigator.of(context).push(
+    final parentId = _parentId;
+    Navigator.of(context)
+        .push(
       MaterialPageRoute<void>(
         builder: (_) => AddChildScreen(
           authService: widget.authService,
@@ -415,7 +471,13 @@ class _ChildrenHomeScreenState extends State<ChildrenHomeScreen> {
           parentIdOverride: widget.parentIdOverride,
         ),
       ),
-    );
+    )
+        .then((_) {
+      if (!mounted || parentId == null || parentId.isEmpty) {
+        return;
+      }
+      _retryFallbackChildren(parentId);
+    });
   }
 }
 

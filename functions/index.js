@@ -350,6 +350,36 @@ exports.updateDashboardState = onDocumentWritten(
     },
 );
 
+exports.updateDashboardStateForChildProfile = onDocumentWritten(
+    {
+      document: "children/{childId}",
+      region: "asia-south1",
+      retry: false,
+    },
+    async (event) => {
+      const childId = asTrimmedString(event.params.childId);
+      if (!childId) {
+        return;
+      }
+
+      const after = event.data && event.data.after;
+      const before = event.data && event.data.before;
+      const afterData = after && after.exists ? (after.data() || {}) : {};
+      const beforeData = before && before.exists ? (before.data() || {}) : {};
+      const parentId =
+      asTrimmedString(afterData.parentId) || asTrimmedString(beforeData.parentId);
+
+      if (!parentId) {
+        logger.warn("Dashboard aggregation skipped on child profile write: missing parentId.", {
+          childId,
+        });
+        return;
+      }
+
+      await rebuildDashboardStateForParent(parentId, "child_profile_write");
+    },
+);
+
 exports.sendParentNotificationFromQueue = onDocumentCreated(
   {
     document: "notification_queue/{queueId}",

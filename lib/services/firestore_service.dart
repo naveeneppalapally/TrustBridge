@@ -297,6 +297,34 @@ class FirestoreService {
         List<ChildProfile>.unmodifiable(next);
   }
 
+  void _evictChildCache({
+    required String parentId,
+    required String childId,
+  }) {
+    final normalizedParentId = parentId.trim();
+    final normalizedChildId = childId.trim();
+    if (normalizedParentId.isEmpty || normalizedChildId.isEmpty) {
+      return;
+    }
+
+    final scopedKey = _scopedChildCacheKey(
+      parentId: normalizedParentId,
+      childId: normalizedChildId,
+    );
+    _childCacheByScopedId.remove(scopedKey);
+
+    final existing = _childrenCacheByParentId[normalizedParentId];
+    if (existing == null || existing.isEmpty) {
+      return;
+    }
+
+    final next = existing
+        .where((child) => child.id != normalizedChildId)
+        .toList(growable: false);
+    _childrenCacheByParentId[normalizedParentId] =
+        List<ChildProfile>.unmodifiable(next);
+  }
+
   Future<void> ensureParentProfile({
     required String parentId,
     required String? phoneNumber,
@@ -2521,10 +2549,12 @@ class FirestoreService {
       }
       batch.delete(childRef);
       await batch.commit();
+      _evictChildCache(parentId: parentId, childId: childId);
       return;
     }
 
     await childRef.delete();
+    _evictChildCache(parentId: parentId, childId: childId);
   }
 
   Future<Map<String, dynamic>> _loadPolicySnapshotForChild({
@@ -3745,7 +3775,9 @@ class FirestoreService {
     batch.set(
       syncTriggerDoc,
       <String, dynamic>{
-        'version': FieldValue.increment(1),
+        // Use the policy version directly so create/update writes are rule-safe
+        // even when transform evaluation differs across SDK/runtime versions.
+        'version': version,
         'policyVersion': version,
         'parentId': parentId,
         'childId': childId,

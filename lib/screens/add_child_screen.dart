@@ -394,17 +394,45 @@ class _AddChildScreenState extends State<AddChildScreen> {
     });
 
     try {
-      final parentId =
-          widget.parentIdOverride ?? _resolvedAuthService.currentUser?.uid;
-      if (parentId == null) {
+      final parentId = _resolveParentIdForWrite();
+      if (parentId == null || parentId.isEmpty) {
         throw Exception('Not logged in');
       }
 
-      final existingChildren =
-          await _resolvedFirestoreService.getChildrenOnce(parentId);
+      try {
+        await _resolvedFirestoreService.ensureParentProfile(
+          parentId: parentId,
+          phoneNumber: _resolvedAuthService.currentUser?.phoneNumber,
+        );
+      } catch (_) {
+        // Non-blocking best effort; add-child should still proceed.
+      }
+
+      List<ChildProfile> existingChildren = const <ChildProfile>[];
+      try {
+        existingChildren = await _resolvedFirestoreService.getChildrenOnce(
+          parentId,
+        );
+      } on FirebaseException catch (error) {
+        if (!_isPermissionDeniedError(error)) {
+          rethrow;
+        }
+        // If gate precheck reads are blocked transiently, continue and rely on
+        // addChild write result for the final authority.
+        existingChildren = const <ChildProfile>[];
+      }
+
       if (existingChildren.isNotEmpty) {
-        final gateResult =
-            await FeatureGateService().checkGate(AppFeature.additionalChildren);
+        GateResult gateResult;
+        try {
+          gateResult = await FeatureGateService()
+              .checkGate(AppFeature.additionalChildren);
+        } on FirebaseException catch (error) {
+          if (!_isPermissionDeniedError(error)) {
+            rethrow;
+          }
+          gateResult = const GateResult(allowed: true);
+        }
         if (!gateResult.allowed) {
           if (mounted) {
             final upgraded = await UpgradeScreen.maybeShow(
@@ -466,6 +494,32 @@ class _AddChildScreenState extends State<AddChildScreen> {
         );
       });
     }
+  }
+
+  String? _resolveParentIdForWrite() {
+    final authUid = _resolvedAuthService.currentUser?.uid.trim();
+    if (authUid != null && authUid.isNotEmpty) {
+      return authUid;
+    }
+    final override = widget.parentIdOverride?.trim();
+    if (override != null && override.isNotEmpty) {
+      return override;
+    }
+    return null;
+  }
+
+  bool _isPermissionDeniedError(Object error) {
+    if (error is FirebaseException) {
+      final code = error.code.trim().toLowerCase();
+      if (code == 'permission-denied' || code == 'permission_denied') {
+        return true;
+      }
+    }
+    final message = error.toString().toLowerCase();
+    return message.contains('permission_denied') ||
+        message.contains('permission-denied') ||
+        message.contains('insufficient permissions') ||
+        message.contains("doesn't have permission");
   }
 
   String _messageFromError(Object error) {
