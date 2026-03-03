@@ -2,7 +2,7 @@ import 'dart:async';
 
 import 'package:flutter/material.dart';
 
-import '../models/access_request.dart';
+import '../models/dashboard_state.dart';
 import '../screens/children_home_screen.dart';
 import '../screens/parent_settings_screen.dart';
 import '../services/app_lock_service.dart';
@@ -31,9 +31,8 @@ class ParentShell extends StatefulWidget {
 class _ParentShellState extends State<ParentShell> with WidgetsBindingObserver {
   AuthService? _authService;
   FirestoreService? _firestoreService;
-  Stream<List<AccessRequest>>? _pendingRequestsStream;
-  Stream<int>? _unreadBypassAlertCountStream;
-  String? _pendingStreamParentId;
+  Stream<DashboardStateSnapshot?>? _dashboardStateStream;
+  String? _dashboardStateParentId;
   late int _currentIndex;
   bool _lockPromptVisible = false;
 
@@ -145,17 +144,14 @@ class _ParentShellState extends State<ParentShell> with WidgetsBindingObserver {
   }
 
   void _ensureStreams(String parentId) {
-    if (_pendingRequestsStream != null &&
-        _unreadBypassAlertCountStream != null &&
-        _pendingStreamParentId == parentId) {
+    if (_dashboardStateStream != null && _dashboardStateParentId == parentId) {
       return;
     }
 
-    _pendingStreamParentId = parentId;
-    _pendingRequestsStream =
-        _resolvedFirestoreService.getPendingRequestsStream(parentId);
-    _unreadBypassAlertCountStream =
-        _resolvedFirestoreService.getUnreadBypassAlertCountStream(parentId);
+    _dashboardStateParentId = parentId;
+    _dashboardStateStream = _resolvedFirestoreService.watchDashboardState(
+      parentId,
+    );
   }
 
   @override
@@ -172,60 +168,32 @@ class _ParentShellState extends State<ParentShell> with WidgetsBindingObserver {
 
     _ensureStreams(parentId);
 
-    final pages = <Widget>[
-      ChildrenHomeScreen(
-        authService: widget.authService,
-        firestoreService: widget.firestoreService,
-        parentIdOverride: widget.parentIdOverride,
-      ),
-      ParentSettingsScreen(
-        authService: widget.authService,
-        firestoreService: widget.firestoreService,
-        parentIdOverride: widget.parentIdOverride,
-      ),
-    ];
+    return StreamBuilder<DashboardStateSnapshot?>(
+      key: ValueKey<String>('parent_shell_dashboard_state_$parentId'),
+      stream: _dashboardStateStream,
+      builder: (context, snapshot) {
+        final dashboardState = snapshot.data;
+        final activePage = _currentIndex == 0
+            ? ChildrenHomeScreen(
+                authService: widget.authService,
+                firestoreService: widget.firestoreService,
+                parentIdOverride: widget.parentIdOverride,
+                dashboardState: dashboardState,
+              )
+            : ParentSettingsScreen(
+                authService: widget.authService,
+                firestoreService: widget.firestoreService,
+                parentIdOverride: widget.parentIdOverride,
+              );
 
-    return StreamBuilder<List<AccessRequest>>(
-      key: ValueKey<String>('parent_shell_pending_$parentId'),
-      stream: _pendingRequestsStream,
-      builder: (context, pendingSnapshot) {
-        final pendingCount = pendingSnapshot.data?.length ?? 0;
-
-        return StreamBuilder<int>(
-          key: ValueKey<String>('parent_shell_unread_alerts_$parentId'),
-          stream: _unreadBypassAlertCountStream,
-          builder: (context, alertSnapshot) {
-            final unreadAlertCount = alertSnapshot.data ?? 0;
-            final totalBadgeCount = pendingCount + unreadAlertCount;
-
-            return Scaffold(
-              body: IndexedStack(
-                index: _currentIndex,
-                children: pages,
-              ),
-              bottomNavigationBar: BottomNavigationBar(
-                key: const Key('parent_shell_bottom_nav'),
-                currentIndex: _currentIndex,
-                type: BottomNavigationBarType.fixed,
-                selectedItemColor: AppColors.primary,
-                unselectedItemColor: AppColors.navUnselected,
-                backgroundColor:
-                    Theme.of(context).bottomNavigationBarTheme.backgroundColor,
-                elevation: 8,
-                onTap: _handleTabTap,
-                items: <BottomNavigationBarItem>[
-                  BottomNavigationBarItem(
-                    icon: _ChildrenNavIcon(badgeCount: totalBadgeCount),
-                    label: 'Children',
-                  ),
-                  const BottomNavigationBarItem(
-                    icon: Icon(Icons.settings_outlined),
-                    label: 'Settings',
-                  ),
-                ],
-              ),
-            );
-          },
+        return Scaffold(
+          body: activePage,
+          bottomNavigationBar: _CalmBottomNav(
+            key: const Key('parent_shell_bottom_nav'),
+            currentIndex: _currentIndex,
+            badgeCount: dashboardState?.totalPendingRequests ?? 0,
+            onTap: _handleTabTap,
+          ),
         );
       },
     );
@@ -242,32 +210,110 @@ class _ParentShellState extends State<ParentShell> with WidgetsBindingObserver {
   }
 }
 
-class _ChildrenNavIcon extends StatelessWidget {
-  const _ChildrenNavIcon({required this.badgeCount});
+/// Redesigned bottom navigation: 64px, icon-only, pill indicator, no labels.
+class _CalmBottomNav extends StatelessWidget {
+  const _CalmBottomNav({
+    super.key,
+    required this.currentIndex,
+    required this.badgeCount,
+    required this.onTap,
+  });
 
+  final int currentIndex;
   final int badgeCount;
+  final ValueChanged<int> onTap;
 
   @override
   Widget build(BuildContext context) {
-    return Stack(
-      clipBehavior: Clip.none,
-      children: <Widget>[
-        const Icon(Icons.family_restroom_rounded),
-        if (badgeCount > 0)
-          Positioned(
-            right: -2,
-            top: -2,
-            child: Container(
-              key: const Key('parent_shell_dashboard_badge'),
-              width: 8,
-              height: 8,
-              decoration: const BoxDecoration(
-                color: Colors.red,
-                shape: BoxShape.circle,
+    return Container(
+      height: 64 + MediaQuery.of(context).padding.bottom,
+      padding: EdgeInsets.only(bottom: MediaQuery.of(context).padding.bottom),
+      decoration: const BoxDecoration(
+        color: AppColors.surface,
+      ),
+      child: Row(
+        mainAxisAlignment: MainAxisAlignment.spaceAround,
+        children: [
+          _NavItem(
+            icon: Icons.family_restroom_rounded,
+            isSelected: currentIndex == 0,
+            badgeCount: badgeCount,
+            onTap: () => onTap(0),
+          ),
+          _NavItem(
+            icon: Icons.settings_outlined,
+            isSelected: currentIndex == 1,
+            badgeCount: 0,
+            onTap: () => onTap(1),
+          ),
+        ],
+      ),
+    );
+  }
+}
+
+class _NavItem extends StatelessWidget {
+  const _NavItem({
+    required this.icon,
+    required this.isSelected,
+    required this.badgeCount,
+    required this.onTap,
+  });
+
+  final IconData icon;
+  final bool isSelected;
+  final int badgeCount;
+  final VoidCallback onTap;
+
+  @override
+  Widget build(BuildContext context) {
+    return GestureDetector(
+      onTap: onTap,
+      behavior: HitTestBehavior.opaque,
+      child: SizedBox(
+        width: 64,
+        height: 64,
+        child: Column(
+          mainAxisAlignment: MainAxisAlignment.center,
+          children: [
+            Stack(
+              clipBehavior: Clip.none,
+              children: [
+                Icon(
+                  icon,
+                  color: isSelected ? AppColors.primary : AppColors.textMuted,
+                  size: 24,
+                ),
+                if (badgeCount > 0)
+                  Positioned(
+                    right: -4,
+                    top: -4,
+                    child: Container(
+                      key: const Key('parent_shell_dashboard_badge'),
+                      width: 8,
+                      height: 8,
+                      decoration: const BoxDecoration(
+                        color: AppColors.danger,
+                        shape: BoxShape.circle,
+                      ),
+                    ),
+                  ),
+              ],
+            ),
+            const SizedBox(height: 4),
+            // Pill indicator
+            AnimatedContainer(
+              duration: const Duration(milliseconds: 200),
+              width: isSelected ? 16 : 0,
+              height: 2,
+              decoration: BoxDecoration(
+                color: isSelected ? AppColors.primary : Colors.transparent,
+                borderRadius: BorderRadius.circular(1),
               ),
             ),
-          ),
-      ],
+          ],
+        ),
+      ),
     );
   }
 }

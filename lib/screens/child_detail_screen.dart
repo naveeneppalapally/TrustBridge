@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 import 'package:intl/intl.dart';
+import 'dart:async';
 import 'package:trustbridge_app/models/child_profile.dart';
 import 'package:trustbridge_app/models/schedule.dart';
 import 'package:trustbridge_app/screens/add_child_device_screen.dart';
@@ -37,6 +38,7 @@ class _ChildDetailScreenState extends State<ChildDetailScreen> {
   FirestoreService? _firestoreService;
   _QuickMode? _quickModeOverride;
   final Set<String> _pressedQuickActions = <String>{};
+  StreamSubscription<ChildProfile?>? _childSubscription;
 
   AuthService get _resolvedAuthService =>
       _authService ??= widget.authService ?? AuthService();
@@ -44,13 +46,68 @@ class _ChildDetailScreenState extends State<ChildDetailScreen> {
   FirestoreService get _resolvedFirestoreService =>
       _firestoreService ??= widget.firestoreService ?? FirestoreService();
 
-  String? get _resolvedParentId =>
-      widget.parentIdOverride ?? _resolvedAuthService.currentUser?.uid;
+  String? get _resolvedParentId {
+    final override = widget.parentIdOverride?.trim();
+    if (override != null && override.isNotEmpty) {
+      return override;
+    }
+    if (widget.authService != null) {
+      return widget.authService!.currentUser?.uid;
+    }
+    try {
+      return _resolvedAuthService.currentUser?.uid;
+    } catch (_) {
+      return null;
+    }
+  }
 
   @override
   void initState() {
     super.initState();
     _child = widget.child;
+    _startChildListener();
+  }
+
+  @override
+  void didUpdateWidget(covariant ChildDetailScreen oldWidget) {
+    super.didUpdateWidget(oldWidget);
+    if (widget.child.id != oldWidget.child.id) {
+      _child = widget.child;
+    }
+    if (widget.child.id != oldWidget.child.id ||
+        widget.parentIdOverride != oldWidget.parentIdOverride) {
+      _startChildListener();
+    }
+  }
+
+  @override
+  void dispose() {
+    _childSubscription?.cancel();
+    super.dispose();
+  }
+
+  void _startChildListener() {
+    final parentId = _resolvedParentId?.trim();
+    if (parentId == null || parentId.isEmpty) {
+      _childSubscription?.cancel();
+      _childSubscription = null;
+      return;
+    }
+
+    _childSubscription?.cancel();
+    _childSubscription = _resolvedFirestoreService
+        .getChildStream(parentId: parentId, childId: _child.id)
+        .listen((snapshotChild) {
+      if (!mounted || snapshotChild == null) {
+        return;
+      }
+      if (snapshotChild == _child) {
+        return;
+      }
+      setState(() {
+        _child = snapshotChild;
+      });
+    });
   }
 
   @override

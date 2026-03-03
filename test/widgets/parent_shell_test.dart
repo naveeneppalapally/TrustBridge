@@ -4,7 +4,6 @@ import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:provider/provider.dart';
 import 'package:trustbridge_app/config/rollout_flags.dart';
-import 'package:trustbridge_app/models/access_request.dart';
 import 'package:trustbridge_app/models/child_profile.dart';
 import 'package:trustbridge_app/models/policy.dart';
 import 'package:trustbridge_app/services/firestore_service.dart';
@@ -37,19 +36,20 @@ void main() {
     }
 
     Future<void> seedPendingRequest(String parentId) {
-      final request = AccessRequest.create(
-        childId: 'child-shell-1',
-        parentId: parentId,
-        childNickname: 'Leo',
-        appOrSite: 'instagram.com',
-        duration: RequestDuration.thirtyMin,
-      );
       return fakeFirestore
           .collection('parents')
           .doc(parentId)
-          .collection('access_requests')
-          .doc(request.id)
-          .set(request.toFirestore());
+          .collection('dashboard_state')
+          .doc('current')
+          .set({
+        'parentId': parentId,
+        'children': const <Map<String, dynamic>>[],
+        'childrenCount': 0,
+        'totalPendingRequests': 1,
+        'totalScreenTimeTodayMs': 0,
+        'generatedAtEpochMs': 1741411200000,
+        'updatedAt': Timestamp.fromDate(DateTime(2026, 2, 20, 9, 0, 0)),
+      });
     }
 
     Widget buildTestShell({
@@ -76,11 +76,8 @@ void main() {
       await tester.pump(const Duration(milliseconds: 300));
 
       expect(find.byKey(const Key('parent_shell_bottom_nav')), findsOneWidget);
-      expect(find.text('Children'), findsWidgets);
-      expect(find.text('Settings'), findsWidgets);
-      expect(find.text('Dashboard'), findsNothing);
-      expect(find.text('Modes'), findsNothing);
-      expect(find.text('Reports'), findsNothing);
+      expect(find.byIcon(Icons.family_restroom_rounded), findsOneWidget);
+      expect(find.byIcon(Icons.settings_outlined), findsOneWidget);
     });
 
     testWidgets('hides advanced drawer button when adaptive nav flag is off',
@@ -122,7 +119,7 @@ void main() {
           initialIndex: 5,
         ),
       );
-      await tester.pump(const Duration(milliseconds: 500));
+      await tester.pumpAndSettle(const Duration(milliseconds: 300));
 
       expect(find.byKey(const Key('settings_profile_card')), findsOneWidget);
     });

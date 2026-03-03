@@ -6,6 +6,7 @@ import 'package:trustbridge_app/config/category_ids.dart';
 import 'package:trustbridge_app/config/service_definitions.dart';
 import 'package:trustbridge_app/models/access_request.dart';
 import 'package:trustbridge_app/models/child_profile.dart';
+import 'package:trustbridge_app/models/dashboard_state.dart';
 import 'package:trustbridge_app/models/installed_app_info.dart';
 import 'package:trustbridge_app/models/policy.dart';
 import 'package:trustbridge_app/models/support_ticket.dart';
@@ -532,6 +533,30 @@ class FirestoreService {
         .doc(parentId)
         .snapshots()
         .map((snapshot) => snapshot.data());
+  }
+
+  Stream<DashboardStateSnapshot?> watchDashboardState(String parentId) {
+    final normalizedParentId = parentId.trim();
+    if (normalizedParentId.isEmpty) {
+      return Stream<DashboardStateSnapshot?>.value(null);
+    }
+
+    return _firestore
+        .collection('parents')
+        .doc(normalizedParentId)
+        .collection('dashboard_state')
+        .doc('current')
+        .snapshots()
+        .map((snapshot) {
+      if (!snapshot.exists) {
+        return null;
+      }
+      final data = snapshot.data();
+      if (data == null || data.isEmpty) {
+        return null;
+      }
+      return DashboardStateSnapshot.fromMap(data);
+    });
   }
 
   Future<void> updateParentSecurityMetadata({
