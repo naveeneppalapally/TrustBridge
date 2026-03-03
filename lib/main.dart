@@ -41,7 +41,7 @@ import 'package:trustbridge_app/services/crashlytics_service.dart';
 import 'package:trustbridge_app/services/firestore_service.dart';
 import 'package:trustbridge_app/services/notification_service.dart';
 import 'package:trustbridge_app/services/blocklist_workmanager_service.dart';
-import 'package:trustbridge_app/services/onboarding_state_service.dart';
+import 'package:trustbridge_app/services/launch_route_service.dart';
 import 'package:trustbridge_app/services/pairing_service.dart';
 import 'package:trustbridge_app/services/child_effective_policy_sync_service.dart';
 import 'package:trustbridge_app/services/policy_vpn_sync_service.dart';
@@ -545,9 +545,10 @@ class AuthWrapper extends StatefulWidget {
 class _AuthWrapperState extends State<AuthWrapper> {
   final AuthService _authService = AuthService();
   final FirestoreService _firestoreService = FirestoreService();
+  final LaunchRouteService _launchRouteService = LaunchRouteService();
   final NotificationService _notificationService = NotificationService();
   final CrashlyticsService _crashlyticsService = CrashlyticsService();
-  Future<_LaunchRoute>? _launchRouteFuture;
+  Future<LaunchRoute>? _launchRouteFuture;
   String? _launchRouteUserId;
   String? _lastSyncUserId;
   String? _lastNotificationUserId;
@@ -674,11 +675,8 @@ class _AuthWrapperState extends State<AuthWrapper> {
     _launchRouteFuture = _resolveLaunchRoute(user);
   }
 
-  Future<_LaunchRoute> _resolveLaunchRoute(User user) async {
-    return _loadLaunchRoute(
-      firestoreService: _firestoreService,
-      user: user,
-    );
+  Future<LaunchRoute> _resolveLaunchRoute(User user) async {
+    return _launchRouteService.resolveForUser(user);
   }
 
   @override
@@ -706,7 +704,7 @@ class _AuthWrapperState extends State<AuthWrapper> {
 
         _ensureLaunchRouteFuture(user);
 
-        return FutureBuilder<_LaunchRoute>(
+        return FutureBuilder<LaunchRoute>(
           key: ValueKey<String>('onboarding-${user.uid}'),
           future: _launchRouteFuture,
           builder: (context, launchSnapshot) {
@@ -731,117 +729,6 @@ class _AuthWrapperState extends State<AuthWrapper> {
   }
 }
 
-class _LaunchRoute {
-  const _LaunchRoute({
-    required this.parentId,
-    required this.onboardingComplete,
-  });
-
-  final String parentId;
-  final bool onboardingComplete;
-}
-
-Future<_LaunchRoute> _loadLaunchRoute({
-  required FirestoreService firestoreService,
-  required User user,
-}) async {
-  final onboardingStateService = OnboardingStateService();
-  var localCompletion = false;
-  try {
-    localCompletion = await onboardingStateService
-        .isCompleteLocally(user.uid)
-        .timeout(const Duration(seconds: 2));
-  } catch (_) {
-    localCompletion = false;
-  }
-
-  if (localCompletion) {
-    unawaited(
-      _reconcileOnboardingStateWithCloud(
-        firestoreService: firestoreService,
-        onboardingStateService: onboardingStateService,
-        user: user,
-      ),
-    );
-    return _LaunchRoute(
-      parentId: user.uid,
-      onboardingComplete: true,
-    );
-  }
-
-  try {
-    await firestoreService
-        .ensureParentProfile(
-          parentId: user.uid,
-          phoneNumber: user.phoneNumber,
-        )
-        .timeout(const Duration(seconds: 12));
-
-    final parentPrefs = await firestoreService
-        .getParentPreferences(user.uid)
-        .timeout(const Duration(seconds: 12));
-    final remoteCompletion =
-        (parentPrefs?['onboardingComplete'] as bool?) ?? false;
-    var onboardingComplete = remoteCompletion || localCompletion;
-
-    if (!onboardingComplete) {
-      final hasExistingChildren = await firestoreService
-          .hasAnyChildProfiles(user.uid)
-          .timeout(const Duration(seconds: 12));
-      if (hasExistingChildren) {
-        onboardingComplete = true;
-      }
-    }
-
-    if (remoteCompletion && !localCompletion) {
-      unawaited(onboardingStateService.markCompleteLocally(user.uid));
-    } else if (onboardingComplete && !remoteCompletion) {
-      unawaited(firestoreService.completeOnboarding(user.uid));
-    }
-
-    return _LaunchRoute(
-      parentId: user.uid,
-      onboardingComplete: onboardingComplete,
-    );
-  } catch (_) {
-    return _LaunchRoute(
-      parentId: user.uid,
-      onboardingComplete: localCompletion,
-    );
-  }
-}
-
-Future<void> _reconcileOnboardingStateWithCloud({
-  required FirestoreService firestoreService,
-  required OnboardingStateService onboardingStateService,
-  required User user,
-}) async {
-  try {
-    await firestoreService
-        .ensureParentProfile(
-          parentId: user.uid,
-          phoneNumber: user.phoneNumber,
-        )
-        .timeout(const Duration(seconds: 12));
-    final parentPrefs = await firestoreService
-        .getParentPreferences(user.uid)
-        .timeout(const Duration(seconds: 12));
-    final remoteCompletion =
-        (parentPrefs?['onboardingComplete'] as bool?) ?? false;
-    if (!remoteCompletion) {
-      await firestoreService.completeOnboarding(user.uid).timeout(
-            const Duration(seconds: 12),
-          );
-    } else {
-      await onboardingStateService.markCompleteLocally(user.uid).timeout(
-            const Duration(seconds: 2),
-          );
-    }
-  } catch (_) {
-    // Best-effort reconciliation.
-  }
-}
-
 class _DashboardEntryScreen extends StatefulWidget {
   const _DashboardEntryScreen();
 
@@ -851,8 +738,8 @@ class _DashboardEntryScreen extends StatefulWidget {
 
 class _DashboardEntryScreenState extends State<_DashboardEntryScreen> {
   final AuthService _authService = AuthService();
-  final FirestoreService _firestoreService = FirestoreService();
-  Future<_LaunchRoute>? _launchRouteFuture;
+  final LaunchRouteService _launchRouteService = LaunchRouteService();
+  Future<LaunchRoute>? _launchRouteFuture;
   String? _launchRouteUserId;
 
   @override
@@ -864,13 +751,10 @@ class _DashboardEntryScreenState extends State<_DashboardEntryScreen> {
 
     if (_launchRouteFuture == null || _launchRouteUserId != user.uid) {
       _launchRouteUserId = user.uid;
-      _launchRouteFuture = _loadLaunchRoute(
-        firestoreService: _firestoreService,
-        user: user,
-      );
+      _launchRouteFuture = _launchRouteService.resolveForUser(user);
     }
 
-    return FutureBuilder<_LaunchRoute>(
+    return FutureBuilder<LaunchRoute>(
       future: _launchRouteFuture,
       builder: (context, snapshot) {
         if (snapshot.connectionState == ConnectionState.waiting) {
