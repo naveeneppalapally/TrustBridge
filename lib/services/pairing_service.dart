@@ -21,6 +21,9 @@ enum PairingError {
   /// Code has already been consumed.
   alreadyUsed,
 
+  /// Too many failed attempts from the same device in a short window.
+  tooManyAttempts,
+
   /// Caller is authenticated but missing permission for the pairing operation.
   permissionDenied,
 
@@ -86,10 +89,33 @@ class PairingContext {
   final String parentId;
 }
 
-class _PairingGuardException implements Exception {
-  const _PairingGuardException(this.error);
+class _PairingTransactionOutcome {
+  const _PairingTransactionOutcome({
+    required this.success,
+    this.childId,
+    this.parentId,
+    this.error,
+  });
 
-  final PairingError error;
+  final bool success;
+  final String? childId;
+  final String? parentId;
+  final PairingError? error;
+
+  const _PairingTransactionOutcome.success({
+    required String childId,
+    required String parentId,
+  }) : this(
+          success: true,
+          childId: childId,
+          parentId: parentId,
+        );
+
+  const _PairingTransactionOutcome.failure(PairingError error)
+      : this(
+          success: false,
+          error: error,
+        );
 }
 
 /// Parent-child device pairing service.
@@ -114,6 +140,13 @@ class PairingService {
   static const String _pairedChildIdKey = 'paired_child_id';
   static const String _pairedParentIdKey = 'paired_parent_id';
   static const Duration _expiryWindow = Duration(minutes: 15);
+  static const Duration _lookupAttemptWindow = Duration(minutes: 10);
+  static const int _maxLookupAttemptsPerWindow = 5;
+  static const int pairingCodeLength = 8;
+  static const String _pairingAlphabet = '23456789ABCDEFGHJKMNPQRSTUVWXYZ';
+  static final RegExp _pairingCodePattern = RegExp(
+    '^[$_pairingAlphabet]{$pairingCodeLength}\$',
+  );
 
   final FirebaseFirestore? _firestoreOverride;
   final FlutterSecureStorage _secureStorage;
@@ -131,7 +164,37 @@ class PairingService {
   AppModeService get _appModeService =>
       _appModeServiceOverride ?? AppModeService();
 
-  /// Generates and persists a 6-digit pairing code for a child profile.
+  /// Normalizes raw user input into uppercase, non-ambiguous pairing chars.
+  static String normalizePairingCodeInput(String raw) {
+    final upper = raw.trim().toUpperCase();
+    if (upper.isEmpty) {
+      return '';
+    }
+
+    final buffer = StringBuffer();
+    for (final rune in upper.runes) {
+      final character = String.fromCharCode(rune);
+      if (_pairingAlphabet.contains(character)) {
+        buffer.write(character);
+      }
+    }
+    return buffer.toString();
+  }
+
+  /// Returns true when [code] matches the secure pairing format.
+  static bool isValidPairingCode(String code) {
+    return _pairingCodePattern.hasMatch(code.trim().toUpperCase());
+  }
+
+  /// Returns true when [character] is allowed in a pairing code.
+  static bool isAllowedPairingCharacter(String character) {
+    if (character.length != 1) {
+      return false;
+    }
+    return _pairingAlphabet.contains(character.toUpperCase());
+  }
+
+  /// Generates and persists an 8-character secure pairing code.
   Future<String> generatePairingCode(String childId) async {
     final trimmedChildId = childId.trim();
     if (trimmedChildId.isEmpty) {
@@ -161,7 +224,7 @@ class PairingService {
       );
     }
 
-    final code = await _generateUniqueSixDigitCode();
+    final code = await _generateUniquePairingCode();
     final expiresAt = _nowProvider().add(_expiryWindow);
     final createdAt = Timestamp.fromDate(_nowProvider());
 
@@ -175,6 +238,9 @@ class PairingService {
       'createdAt': createdAt,
       'expiresAt': Timestamp.fromDate(expiresAt),
       'used': false,
+      'lookupAttempts': 0,
+      'firstAttemptAt': null,
+      'lookupDeviceId': null,
     });
 
     return code;
@@ -182,9 +248,9 @@ class PairingService {
 
   /// Validates a pairing code and links this device to child profile.
   Future<PairingResult> validateAndPair(String code, String deviceId) async {
-    final normalizedCode = code.trim();
+    final normalizedCode = normalizePairingCodeInput(code);
     final normalizedDeviceId = deviceId.trim();
-    if (!_isSixDigitCode(normalizedCode)) {
+    if (!isValidPairingCode(normalizedCode)) {
       return PairingResult.failure(PairingError.invalidCode);
     }
     if (normalizedDeviceId.isEmpty) {
@@ -192,45 +258,98 @@ class PairingService {
     }
 
     try {
-      String? childId;
-      String? parentId;
+      var authUid = '';
+      try {
+        authUid = FirebaseAuth.instance.currentUser?.uid.trim() ?? '';
+      } catch (_) {
+        authUid = '';
+      }
+      if (authUid.isEmpty) {
+        authUid = _currentUserIdResolver?.call()?.trim() ?? '';
+      }
+      final lookupDeviceId = authUid.isNotEmpty ? authUid : normalizedDeviceId;
+      final outcome =
+          await _firestore.runTransaction<_PairingTransactionOutcome>(
+        (transaction) async {
+          final now = _nowProvider();
+          final codeRef = _firestore.collection('pairing_codes').doc(
+                normalizedCode,
+              );
+          final codeSnapshot = await transaction.get(codeRef);
+          if (!codeSnapshot.exists) {
+            return const _PairingTransactionOutcome.failure(
+              PairingError.invalidCode,
+            );
+          }
 
-      await _firestore.runTransaction((transaction) async {
-        final codeRef =
-            _firestore.collection('pairing_codes').doc(normalizedCode);
-        final codeSnapshot = await transaction.get(codeRef);
-        if (!codeSnapshot.exists) {
-          throw const _PairingGuardException(PairingError.invalidCode);
-        }
+          final data = codeSnapshot.data() ?? const <String, dynamic>{};
+          final used = data['used'] == true;
+          final expiresAt = _asDateTime(data['expiresAt']);
+          final resolvedChildId = (data['childId'] as String?)?.trim() ?? '';
+          final resolvedParentId = (data['parentId'] as String?)?.trim() ?? '';
 
-        final data = codeSnapshot.data() ?? const <String, dynamic>{};
-        final used = data['used'] == true;
-        if (used) {
-          throw const _PairingGuardException(PairingError.alreadyUsed);
-        }
+          final throttled = _isLookupThrottled(
+            data: data,
+            lookupDeviceId: lookupDeviceId,
+            now: now,
+          );
+          if (throttled) {
+            return const _PairingTransactionOutcome.failure(
+              PairingError.tooManyAttempts,
+            );
+          }
 
-        final expiresAt = _asDateTime(data['expiresAt']);
-        if (expiresAt == null || !expiresAt.isAfter(_nowProvider())) {
-          throw const _PairingGuardException(PairingError.expiredCode);
-        }
+          if (used || expiresAt == null || !expiresAt.isAfter(now)) {
+            transaction.update(
+              codeRef,
+              _nextLookupAttemptPayload(
+                data: data,
+                lookupDeviceId: lookupDeviceId,
+                now: now,
+              ),
+            );
+            return _PairingTransactionOutcome.failure(
+              used ? PairingError.alreadyUsed : PairingError.expiredCode,
+            );
+          }
 
-        final resolvedChildId = (data['childId'] as String?)?.trim() ?? '';
-        final resolvedParentId = (data['parentId'] as String?)?.trim() ?? '';
-        if (resolvedChildId.isEmpty || resolvedParentId.isEmpty) {
-          throw const _PairingGuardException(PairingError.invalidCode);
-        }
+          if (resolvedChildId.isEmpty || resolvedParentId.isEmpty) {
+            transaction.update(
+              codeRef,
+              _nextLookupAttemptPayload(
+                data: data,
+                lookupDeviceId: lookupDeviceId,
+                now: now,
+              ),
+            );
+            return const _PairingTransactionOutcome.failure(
+              PairingError.invalidCode,
+            );
+          }
 
-        childId = resolvedChildId;
-        parentId = resolvedParentId;
-        final usedAt = Timestamp.fromDate(_nowProvider());
+          transaction.update(codeRef, <String, dynamic>{
+            'used': true,
+            'usedAt': Timestamp.fromDate(now),
+            'usedByDeviceId': normalizedDeviceId,
+            'lookupAttempts': 0,
+            'firstAttemptAt': null,
+            'lookupDeviceId': null,
+          });
 
-        transaction.update(codeRef, <String, dynamic>{
-          'used': true,
-          'usedAt': usedAt,
-          'usedByDeviceId': normalizedDeviceId,
-        });
-      });
+          return _PairingTransactionOutcome.success(
+            childId: resolvedChildId,
+            parentId: resolvedParentId,
+          );
+        },
+      );
 
+      if (!outcome.success) {
+        return PairingResult.failure(
+            outcome.error ?? PairingError.networkError);
+      }
+
+      final childId = outcome.childId;
+      final parentId = outcome.parentId;
       if (childId == null || parentId == null) {
         return PairingResult.failure(PairingError.networkError);
       }
@@ -241,8 +360,8 @@ class PairingService {
 
       try {
         await _saveDeviceRecord(
-          childId: childId!,
-          parentId: parentId!,
+          childId: childId,
+          parentId: parentId,
           deviceId: normalizedDeviceId,
         );
       } catch (_) {
@@ -265,14 +384,12 @@ class PairingService {
       }
 
       return PairingResult.success(
-        childId: childId!,
-        parentId: parentId!,
+        childId: childId,
+        parentId: parentId,
       );
       // Note: The caller (child setup screen) should trigger an immediate
       // HeartbeatService.sendHeartbeat() after receiving this success result
       // so that the parent dashboard shows the device as online right away.
-    } on _PairingGuardException catch (error) {
-      return PairingResult.failure(error.error);
     } on FirebaseException catch (error) {
       final code = error.code.trim().toLowerCase();
       if (code == 'permission-denied' || code == 'unauthenticated') {
@@ -282,6 +399,73 @@ class PairingService {
     } catch (_) {
       return PairingResult.failure(PairingError.networkError);
     }
+  }
+
+  bool _isLookupThrottled({
+    required Map<String, dynamic> data,
+    required String lookupDeviceId,
+    required DateTime now,
+  }) {
+    if (lookupDeviceId.isEmpty) {
+      return false;
+    }
+    final trackedDeviceId = (data['lookupDeviceId'] as String?)?.trim() ?? '';
+    if (trackedDeviceId.isEmpty || trackedDeviceId != lookupDeviceId) {
+      return false;
+    }
+    final firstAttemptAt = _asDateTime(data['firstAttemptAt']);
+    if (firstAttemptAt == null) {
+      return false;
+    }
+    if (now.difference(firstAttemptAt) > _lookupAttemptWindow) {
+      return false;
+    }
+    final attempts = _asInt(data['lookupAttempts']);
+    return attempts >= _maxLookupAttemptsPerWindow;
+  }
+
+  Map<String, dynamic> _nextLookupAttemptPayload({
+    required Map<String, dynamic> data,
+    required String lookupDeviceId,
+    required DateTime now,
+  }) {
+    final trackedDeviceId = (data['lookupDeviceId'] as String?)?.trim() ?? '';
+    final firstAttemptAt = _asDateTime(data['firstAttemptAt']);
+    final attempts = _asInt(data['lookupAttempts']);
+    final withinActiveWindow = trackedDeviceId == lookupDeviceId &&
+        firstAttemptAt != null &&
+        now.difference(firstAttemptAt) <= _lookupAttemptWindow;
+
+    if (withinActiveWindow) {
+      return <String, dynamic>{
+        'lookupDeviceId': lookupDeviceId,
+        'firstAttemptAt': Timestamp.fromDate(firstAttemptAt),
+        'lookupAttempts': attempts + 1,
+      };
+    }
+
+    return <String, dynamic>{
+      'lookupDeviceId': lookupDeviceId,
+      'firstAttemptAt': FieldValue.serverTimestamp(),
+      'lookupAttempts': 1,
+    };
+  }
+
+  int _asInt(Object? raw) {
+    if (raw is int) {
+      return raw < 0 ? 0 : raw;
+    }
+    if (raw is num) {
+      final value = raw.toInt();
+      return value < 0 ? 0 : value;
+    }
+    if (raw is String) {
+      final parsed = int.tryParse(raw.trim());
+      if (parsed != null && parsed >= 0) {
+        return parsed;
+      }
+    }
+    return 0;
   }
 
   /// Returns persisted device ID or creates one on first run.
@@ -463,8 +647,8 @@ class PairingService {
 
   /// Watches pairing-code usage state.
   Stream<bool> watchCodeUsed(String code) {
-    final normalizedCode = code.trim();
-    if (!_isSixDigitCode(normalizedCode)) {
+    final normalizedCode = normalizePairingCodeInput(code);
+    if (!isValidPairingCode(normalizedCode)) {
       return const Stream<bool>.empty();
     }
     return _firestore
@@ -497,24 +681,25 @@ class PairingService {
         .set(record, SetOptions(merge: true));
   }
 
-  Future<String> _generateUniqueSixDigitCode() async {
+  Future<String> _generateUniquePairingCode() async {
     for (var attempt = 0; attempt < 8; attempt++) {
-      final candidate = _generateSixDigitCode();
+      final candidate = _generatePairingCode();
       final snapshot =
           await _firestore.collection('pairing_codes').doc(candidate).get();
       if (!snapshot.exists) {
         return candidate;
       }
     }
-    return _generateSixDigitCode();
+    return _generatePairingCode();
   }
 
-  String _generateSixDigitCode() {
-    return _random.nextInt(1000000).toString().padLeft(6, '0');
-  }
-
-  bool _isSixDigitCode(String code) {
-    return RegExp(r'^\d{6}$').hasMatch(code);
+  String _generatePairingCode() {
+    final characters = List<String>.generate(
+      pairingCodeLength,
+      (_) => _pairingAlphabet[_random.nextInt(_pairingAlphabet.length)],
+      growable: false,
+    );
+    return characters.join();
   }
 
   DateTime? _asDateTime(Object? value) {

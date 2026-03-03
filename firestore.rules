@@ -9,8 +9,35 @@ service cloud.firestore {
       return isAuthed() && request.auth.uid == parentId;
     }
 
-    function isSixDigitCode(value) {
-      return value is string && value.matches('^[0-9]{6}$');
+    function isPairingCode(value) {
+      return value is string && value.matches('^[2-9A-HJ-NP-Z]{8}$');
+    }
+
+    function pairingLookupAttempts(data) {
+      return (
+        ('lookupAttempts' in data) &&
+        data.lookupAttempts is int &&
+        data.lookupAttempts >= 0
+      ) ? data.lookupAttempts : 0;
+    }
+
+    function pairingFirstAttemptAt(data) {
+      return (
+        ('firstAttemptAt' in data) &&
+        data.firstAttemptAt is timestamp
+      ) ? data.firstAttemptAt : null;
+    }
+
+    function pairingLookupDeviceId(data) {
+      return (
+        ('lookupDeviceId' in data) &&
+        data.lookupDeviceId is string
+      ) ? data.lookupDeviceId : '';
+    }
+
+    function pairingLookupWindowActive(data) {
+      return pairingFirstAttemptAt(data) != null &&
+        request.time < pairingFirstAttemptAt(data) + duration.value(10, 'm');
     }
 
     function isChildParent(childId) {
@@ -992,10 +1019,20 @@ service cloud.firestore {
       allow read: if isAuthed();
 
       allow create: if isAuthed() &&
-        isSixDigitCode(code) &&
+        isPairingCode(code) &&
         hasOnlyKeys(
           request.resource.data,
-          ['code', 'childId', 'parentId', 'createdAt', 'expiresAt', 'used']
+          [
+            'code',
+            'childId',
+            'parentId',
+            'createdAt',
+            'expiresAt',
+            'used',
+            'lookupAttempts',
+            'firstAttemptAt',
+            'lookupDeviceId'
+          ]
         ) &&
         request.resource.data.code == code &&
         isRequiredString(request.resource.data, 'childId', 128) &&
@@ -1004,17 +1041,70 @@ service cloud.firestore {
         isRequiredTimestamp(request.resource.data, 'createdAt') &&
         isRequiredTimestamp(request.resource.data, 'expiresAt') &&
         isRequiredBool(request.resource.data, 'used') &&
-        request.resource.data.used == false;
+        request.resource.data.used == false &&
+        isRequiredInt(request.resource.data, 'lookupAttempts', 0, 5) &&
+        request.resource.data.lookupAttempts == 0 &&
+        (!('firstAttemptAt' in request.resource.data) ||
+          request.resource.data.firstAttemptAt == null) &&
+        (!('lookupDeviceId' in request.resource.data) ||
+          request.resource.data.lookupDeviceId == null);
 
       allow update: if isAuthed() &&
-        request.resource.data.diff(resource.data).affectedKeys().hasOnly(
-          ['used', 'usedAt', 'usedByDeviceId']
-        ) &&
         resource.data.used == false &&
-        isRequiredBool(request.resource.data, 'used') &&
-        request.resource.data.used == true &&
-        isOptionalTimestamp(request.resource.data, 'usedAt') &&
-        isOptionalString(request.resource.data, 'usedByDeviceId', 128);
+        request.resource.data.code == resource.data.code &&
+        request.resource.data.childId == resource.data.childId &&
+        request.resource.data.parentId == resource.data.parentId &&
+        request.resource.data.createdAt == resource.data.createdAt &&
+        request.resource.data.expiresAt == resource.data.expiresAt &&
+        (
+          (
+            request.resource.data.diff(resource.data).affectedKeys().hasOnly(
+              [
+                'used',
+                'usedAt',
+                'usedByDeviceId',
+                'lookupAttempts',
+                'firstAttemptAt',
+                'lookupDeviceId'
+              ]
+            ) &&
+            isRequiredBool(request.resource.data, 'used') &&
+            request.resource.data.used == true &&
+            isOptionalTimestamp(request.resource.data, 'usedAt') &&
+            isOptionalString(request.resource.data, 'usedByDeviceId', 128) &&
+            isRequiredInt(request.resource.data, 'lookupAttempts', 0, 5) &&
+            request.resource.data.lookupAttempts == 0 &&
+            request.resource.data.firstAttemptAt == null &&
+            request.resource.data.lookupDeviceId == null
+          ) ||
+          (
+            request.resource.data.diff(resource.data).affectedKeys().hasOnly(
+              ['lookupAttempts', 'firstAttemptAt', 'lookupDeviceId']
+            ) &&
+            request.resource.data.used == false &&
+            request.resource.data.lookupDeviceId == request.auth.uid &&
+            request.resource.data.firstAttemptAt is timestamp &&
+            isRequiredInt(request.resource.data, 'lookupAttempts', 1, 5) &&
+            (
+              (
+                pairingLookupWindowActive(resource.data) &&
+                pairingLookupDeviceId(resource.data) == request.auth.uid &&
+                request.resource.data.firstAttemptAt ==
+                  pairingFirstAttemptAt(resource.data) &&
+                request.resource.data.lookupAttempts ==
+                  pairingLookupAttempts(resource.data) + 1
+              ) ||
+              (
+                (
+                  !pairingLookupWindowActive(resource.data) ||
+                  pairingLookupDeviceId(resource.data) != request.auth.uid
+                ) &&
+                request.resource.data.firstAttemptAt == request.time &&
+                request.resource.data.lookupAttempts == 1
+              )
+            )
+          )
+        );
 
       allow delete: if false;
     }

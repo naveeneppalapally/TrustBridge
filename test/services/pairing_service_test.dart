@@ -48,37 +48,42 @@ void main() {
       });
     });
 
-    test('generatePairingCode writes Firestore doc and returns 6-digit code',
+    test('generatePairingCode writes Firestore doc and returns secure code',
         () async {
       final code = await service.generatePairingCode(childId);
 
-      expect(code, matches(r'^\d{6}$'));
+      expect(code, matches(r'^[2-9A-HJ-NP-Z]{8}$'));
       final doc = await firestore.collection('pairing_codes').doc(code).get();
       expect(doc.exists, true);
       expect(doc.data()!['childId'], childId);
       expect(doc.data()!['parentId'], parentId);
       expect(doc.data()!['used'], false);
+      expect(doc.data()!['lookupAttempts'], 0);
+      expect(doc.data()!['firstAttemptAt'], isNull);
     });
 
     test('validateAndPair success marks used and switches mode to child',
         () async {
-      await firestore.collection('pairing_codes').doc('123456').set({
-        'code': '123456',
+      await firestore.collection('pairing_codes').doc('ABCD2345').set({
+        'code': 'ABCD2345',
         'childId': childId,
         'parentId': parentId,
         'createdAt': Timestamp.fromDate(now),
         'expiresAt': Timestamp.fromDate(now.add(const Duration(minutes: 15))),
         'used': false,
+        'lookupAttempts': 0,
+        'firstAttemptAt': null,
+        'lookupDeviceId': null,
       });
 
-      final result = await service.validateAndPair('123456', 'device-1');
+      final result = await service.validateAndPair('ABCD2345', 'device-1');
 
       expect(result.success, true);
       expect(result.childId, childId);
       expect(result.parentId, parentId);
 
       final codeDoc =
-          await firestore.collection('pairing_codes').doc('123456').get();
+          await firestore.collection('pairing_codes').doc('ABCD2345').get();
       expect(codeDoc.data()!['used'], true);
 
       final childDoc =
@@ -99,43 +104,53 @@ void main() {
     });
 
     test('validateAndPair returns expiredCode for expired code', () async {
-      await firestore.collection('pairing_codes').doc('222222').set({
-        'code': '222222',
+      await firestore.collection('pairing_codes').doc('BCDE2346').set({
+        'code': 'BCDE2346',
         'childId': childId,
         'parentId': parentId,
         'createdAt': Timestamp.fromDate(now.subtract(const Duration(hours: 1))),
         'expiresAt':
             Timestamp.fromDate(now.subtract(const Duration(minutes: 1))),
         'used': false,
+        'lookupAttempts': 0,
+        'firstAttemptAt': null,
+        'lookupDeviceId': null,
       });
 
-      final result = await service.validateAndPair('222222', 'device-1');
+      final result = await service.validateAndPair('BCDE2346', 'device-1');
       expect(result.success, false);
       expect(result.error, PairingError.expiredCode);
+
+      final codeDoc =
+          await firestore.collection('pairing_codes').doc('BCDE2346').get();
+      expect(codeDoc.data()!['lookupAttempts'], 1);
     });
 
     test('validateAndPair returns alreadyUsed for used code', () async {
-      await firestore.collection('pairing_codes').doc('333333').set({
-        'code': '333333',
+      await firestore.collection('pairing_codes').doc('CDEF2347').set({
+        'code': 'CDEF2347',
         'childId': childId,
         'parentId': parentId,
         'createdAt': Timestamp.fromDate(now),
         'expiresAt': Timestamp.fromDate(now.add(const Duration(minutes: 5))),
         'used': true,
+        'lookupAttempts': 0,
+        'firstAttemptAt': null,
+        'lookupDeviceId': null,
       });
 
-      final result = await service.validateAndPair('333333', 'device-1');
+      final result = await service.validateAndPair('CDEF2347', 'device-1');
       expect(result.success, false);
       expect(result.error, PairingError.alreadyUsed);
     });
 
     test('validateAndPair returns invalidCode for unknown code', () async {
-      final result = await service.validateAndPair('999999', 'device-1');
+      final result = await service.validateAndPair('ZZZZ9999', 'device-1');
       expect(result.success, false);
       expect(result.error, PairingError.invalidCode);
     });
 
-    test('generated pairing code is always numeric and length 6', () async {
+    test('generated pairing code uses secure alphabet and length 8', () async {
       for (var index = 0; index < 20; index++) {
         final loopChildId = 'child-$index';
         await firestore.collection('children').doc(loopChildId).set({
@@ -154,9 +169,38 @@ void main() {
           'updatedAt': Timestamp.fromDate(now),
         });
         final code = await service.generatePairingCode(loopChildId);
-        expect(code.length, 6);
-        expect(RegExp(r'^\d{6}$').hasMatch(code), true);
+        expect(code.length, PairingService.pairingCodeLength);
+        expect(RegExp(r'^[2-9A-HJ-NP-Z]{8}$').hasMatch(code), true);
       }
+    });
+
+    test('validateAndPair throttles after 5 failed lookups in 10 minutes',
+        () async {
+      await firestore.collection('pairing_codes').doc('DEFG2348').set({
+        'code': 'DEFG2348',
+        'childId': childId,
+        'parentId': parentId,
+        'createdAt': Timestamp.fromDate(now),
+        'expiresAt': Timestamp.fromDate(now.add(const Duration(minutes: 5))),
+        'used': true,
+        'lookupAttempts': 0,
+        'firstAttemptAt': null,
+        'lookupDeviceId': null,
+      });
+
+      for (var attempt = 0; attempt < 5; attempt++) {
+        final result = await service.validateAndPair('DEFG2348', 'device-1');
+        expect(result.success, false);
+        expect(result.error, PairingError.alreadyUsed);
+      }
+
+      final throttled = await service.validateAndPair('DEFG2348', 'device-1');
+      expect(throttled.success, false);
+      expect(throttled.error, PairingError.tooManyAttempts);
+
+      final codeDoc =
+          await firestore.collection('pairing_codes').doc('DEFG2348').get();
+      expect(codeDoc.data()!['lookupAttempts'], 5);
     });
 
     test('recoverPairingFromCloud ignores orphaned child devices subcollection',

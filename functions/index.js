@@ -6,6 +6,7 @@ const {
   onDocumentWritten,
 } = require("firebase-functions/v2/firestore");
 const {onSchedule} = require("firebase-functions/v2/scheduler");
+const {onCall} = require("firebase-functions/v2/https");
 
 admin.initializeApp();
 
@@ -339,6 +340,19 @@ exports.sendParentNotificationFromQueue = onDocumentCreated(
       });
     }
   },
+);
+
+exports.appCheckPing = onCall(
+    {
+      region: "asia-south1",
+      enforceAppCheck: true,
+    },
+    async () => {
+      return {
+        ok: true,
+        nowEpochMs: Date.now(),
+      };
+    },
 );
 
 exports.pushChildPolicyUpdate = onDocumentWritten(

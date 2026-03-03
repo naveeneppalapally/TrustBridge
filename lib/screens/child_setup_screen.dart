@@ -63,10 +63,13 @@ class _ChildSetupScreenState extends State<ChildSetupScreen> {
   void initState() {
     super.initState();
     _controllers = List<TextEditingController>.generate(
-      6,
+      PairingService.pairingCodeLength,
       (_) => TextEditingController(),
     );
-    _focusNodes = List<FocusNode>.generate(6, (_) => FocusNode());
+    _focusNodes = List<FocusNode>.generate(
+      PairingService.pairingCodeLength,
+      (_) => FocusNode(),
+    );
     _ensureAuthenticatedSession();
   }
 
@@ -154,10 +157,18 @@ class _ChildSetupScreenState extends State<ChildSetupScreen> {
     }
   }
 
-  void _onDigitChanged(int index, String value) {
-    if (value.length > 1) {
-      final char = value.substring(value.length - 1);
-      _controllers[index].text = char;
+  void _onCodeCharChanged(int index, String value) {
+    var normalized = value.trim().toUpperCase();
+    if (normalized.length > 1) {
+      normalized = normalized.substring(normalized.length - 1);
+    }
+    if (normalized.isNotEmpty &&
+        !PairingService.isAllowedPairingCharacter(normalized)) {
+      normalized = '';
+    }
+
+    if (_controllers[index].text != normalized) {
+      _controllers[index].text = normalized;
       _controllers[index].selection = TextSelection.fromPosition(
         TextPosition(offset: _controllers[index].text.length),
       );
@@ -167,7 +178,6 @@ class _ChildSetupScreenState extends State<ChildSetupScreen> {
       _errorMessage = null;
     });
 
-    final normalized = _controllers[index].text.trim();
     if (normalized.isNotEmpty && index < _focusNodes.length - 1) {
       _focusNodes[index + 1].requestFocus();
     } else if (normalized.isEmpty && index > 0) {
@@ -241,6 +251,8 @@ class _ChildSetupScreenState extends State<ChildSetupScreen> {
         return 'That code has expired. Ask your parent to generate a new one.';
       case PairingError.alreadyUsed:
         return 'That code has already been used.';
+      case PairingError.tooManyAttempts:
+        return 'Too many tries. Wait 10 minutes, then try again.';
       case PairingError.permissionDenied:
         return 'Setup permission is blocked. Ask your parent to check app setup.';
       case PairingError.networkError:
@@ -310,23 +322,27 @@ class _ChildSetupScreenState extends State<ChildSetupScreen> {
                 child: Center(child: CircularProgressIndicator()),
               )
             else
-              Row(
-                mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                children: List<Widget>.generate(6, (index) {
+              Wrap(
+                alignment: WrapAlignment.center,
+                spacing: 8,
+                runSpacing: 8,
+                children: List<Widget>.generate(
+                    PairingService.pairingCodeLength, (index) {
                   return SizedBox(
                     width: 44,
                     child: TextField(
                       controller: _controllers[index],
                       focusNode: _focusNodes[index],
                       enabled: !_isConnecting && _isReady,
-                      keyboardType: TextInputType.number,
+                      keyboardType: TextInputType.text,
+                      textCapitalization: TextCapitalization.characters,
                       textAlign: TextAlign.center,
                       maxLength: 1,
                       decoration: const InputDecoration(
                         counterText: '',
                         border: OutlineInputBorder(),
                       ),
-                      onChanged: (value) => _onDigitChanged(index, value),
+                      onChanged: (value) => _onCodeCharChanged(index, value),
                     ),
                   );
                 }),

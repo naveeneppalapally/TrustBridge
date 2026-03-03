@@ -235,7 +235,7 @@ class _AddChildDeviceScreenState extends State<AddChildDeviceScreen> {
                   ),
                   child: Center(
                     child: Text(
-                      _code == null ? '------' : _spacedCode(_code!),
+                      _code == null ? '--------' : _spacedCode(_code!),
                       style: const TextStyle(
                         fontSize: 28,
                         fontWeight: FontWeight.w800,
@@ -326,7 +326,7 @@ class _AddChildDeviceScreenState extends State<AddChildDeviceScreen> {
                 ),
                 const _InstructionStep(
                   number: '3',
-                  text: 'Enter the 6-digit code shown here.',
+                  text: 'Enter the 8-character code shown here.',
                 ),
               ],
             ),

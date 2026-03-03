@@ -2,6 +2,7 @@ import 'dart:async';
 import 'dart:ui';
 
 import 'package:firebase_auth/firebase_auth.dart';
+import 'package:firebase_app_check/firebase_app_check.dart';
 import 'package:firebase_core/firebase_core.dart';
 import 'package:firebase_crashlytics/firebase_crashlytics.dart';
 import 'package:firebase_performance/firebase_performance.dart';
@@ -75,6 +76,10 @@ Future<void> _bootstrapStartupServices() async {
   }
 
   await Future.wait<void>([
+    _initAppCheck().timeout(
+      const Duration(seconds: 4),
+      onTimeout: () {},
+    ),
     AppModeService().primeCache().timeout(
           const Duration(seconds: 3),
           onTimeout: () {},
@@ -89,6 +94,19 @@ Future<void> _bootstrapStartupServices() async {
         onTimeout: () {},
       ),
   ], eagerError: false);
+}
+
+Future<void> _initAppCheck() async {
+  try {
+    await FirebaseAppCheck.instance.activate(
+      providerAndroid: kDebugMode
+          ? const AndroidDebugProvider()
+          : const AndroidPlayIntegrityProvider(),
+    );
+    await FirebaseAppCheck.instance.setTokenAutoRefreshEnabled(true);
+  } catch (_) {
+    // Non-blocking: app should remain functional while App Check is staged.
+  }
 }
 
 bool _blocklistForegroundSyncInFlight = false;
@@ -270,11 +288,14 @@ class _MyAppState extends State<MyApp> {
           final normalizedUserScale = userScale.clamp(0.90, 1.10);
           final clampedScale =
               (baseScale * normalizedUserScale).clamp(0.90, 1.12);
-          return MediaQuery(
-            data: media.copyWith(
-              textScaler: TextScaler.linear(clampedScale),
+          return ScrollConfiguration(
+            behavior: const _BouncingScrollBehavior(),
+            child: MediaQuery(
+              data: media.copyWith(
+                textScaler: TextScaler.linear(clampedScale),
+              ),
+              child: child ?? const SizedBox.shrink(),
             ),
-            child: child ?? const SizedBox.shrink(),
           );
         },
         home: _ModeRootScreen(startupFuture: widget.startupFuture),
@@ -860,4 +881,12 @@ class _DashboardEntryScreenState extends State<_DashboardEntryScreen> {
       },
     );
   }
+}
+
+class _BouncingScrollBehavior extends ScrollBehavior {
+  const _BouncingScrollBehavior();
+
+  @override
+  ScrollPhysics getScrollPhysics(BuildContext context) =>
+      const BouncingScrollPhysics();
 }
