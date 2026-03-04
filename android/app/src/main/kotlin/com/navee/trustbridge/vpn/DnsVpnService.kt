@@ -388,6 +388,7 @@ class DnsVpnService : VpnService() {
     private var lastBrowserDnsBypassSignalReasonCode: String = ""
     @Volatile
     private var lastBrowserDnsBypassSignalForegroundPackage: String? = null
+    private lateinit var policySyncManager: PolicySyncManager
 
     private fun registerDnsFlushReceiver() {
         if (dnsFlushReceiverRegistered) {
@@ -454,6 +455,7 @@ class DnsVpnService : VpnService() {
             // Parent-only devices should never show child protection-off alerts.
             dismissProtectionAttentionNotification()
         }
+        policySyncManager = createPolicySyncManager()
         filterEngine = DnsFilterEngine(this)
         blockedCategoryCount = filterEngine.blockedCategoryCount()
         blockedDomainCount = filterEngine.effectiveBlockedDomainCount()
@@ -1584,358 +1586,226 @@ class DnsVpnService : VpnService() {
         appGuardThread = null
     }
 
-    private fun firestoreAuthReadyForPolicySync(): Boolean {
-        return try {
-            FirebaseAuth.getInstance().currentUser != null
-        } catch (_: Exception) {
-            false
-        }
+    private fun createPolicySyncManager(): PolicySyncManager {
+        return PolicySyncManager(
+            object : PolicySyncManager.Host {
+                override val tag: String
+                    get() = TAG
+                override val serviceRunning: Boolean
+                    get() = this@DnsVpnService.serviceRunning
+                override val vpnPreferencesStore: VpnPreferencesStore
+                    get() = this@DnsVpnService.vpnPreferencesStore
+                override val policyApplyExecutor = this@DnsVpnService.policyApplyExecutor
+
+                override var policySyncAuthBootstrapInFlight: Boolean
+                    get() = this@DnsVpnService.policySyncAuthBootstrapInFlight
+                    set(value) {
+                        this@DnsVpnService.policySyncAuthBootstrapInFlight = value
+                    }
+
+                override var lastPolicySyncAuthBootstrapAtEpochMs: Long
+                    get() = this@DnsVpnService.lastPolicySyncAuthBootstrapAtEpochMs
+                    set(value) {
+                        this@DnsVpnService.lastPolicySyncAuthBootstrapAtEpochMs = value
+                    }
+
+                override var cachedPolicyAckDeviceId: String?
+                    get() = this@DnsVpnService.cachedPolicyAckDeviceId
+                    set(value) {
+                        this@DnsVpnService.cachedPolicyAckDeviceId = value
+                    }
+
+                override var effectivePolicyListener: ListenerRegistration?
+                    get() = this@DnsVpnService.effectivePolicyListener
+                    set(value) {
+                        this@DnsVpnService.effectivePolicyListener = value
+                    }
+
+                override var effectivePolicyChildId: String?
+                    get() = this@DnsVpnService.effectivePolicyChildId
+                    set(value) {
+                        this@DnsVpnService.effectivePolicyChildId = value
+                    }
+
+                override var effectivePolicyPollRunning: Boolean
+                    get() = this@DnsVpnService.effectivePolicyPollRunning
+                    set(value) {
+                        this@DnsVpnService.effectivePolicyPollRunning = value
+                    }
+
+                override var effectivePolicyPollThread: Thread?
+                    get() = this@DnsVpnService.effectivePolicyPollThread
+                    set(value) {
+                        this@DnsVpnService.effectivePolicyPollThread = value
+                    }
+
+                override var effectivePolicyPollChildId: String?
+                    get() = this@DnsVpnService.effectivePolicyPollChildId
+                    set(value) {
+                        this@DnsVpnService.effectivePolicyPollChildId = value
+                    }
+
+                override var effectivePolicyPollParentId: String?
+                    get() = this@DnsVpnService.effectivePolicyPollParentId
+                    set(value) {
+                        this@DnsVpnService.effectivePolicyPollParentId = value
+                    }
+
+                override var lastEffectivePolicyVersion: Long
+                    get() = this@DnsVpnService.lastEffectivePolicyVersion
+                    set(value) {
+                        this@DnsVpnService.lastEffectivePolicyVersion = value
+                    }
+
+                override var lastPolicySnapshotSeenVersion: Long
+                    get() = this@DnsVpnService.lastPolicySnapshotSeenVersion
+                    set(value) {
+                        this@DnsVpnService.lastPolicySnapshotSeenVersion = value
+                    }
+
+                override var lastPolicySnapshotSeenAtEpochMs: Long
+                    get() = this@DnsVpnService.lastPolicySnapshotSeenAtEpochMs
+                    set(value) {
+                        this@DnsVpnService.lastPolicySnapshotSeenAtEpochMs = value
+                    }
+
+                override var lastPolicySnapshotSource: String
+                    get() = this@DnsVpnService.lastPolicySnapshotSource
+                    set(value) {
+                        this@DnsVpnService.lastPolicySnapshotSource = value
+                    }
+
+                override var lastPolicyApplyAttemptAtEpochMs: Long
+                    get() = this@DnsVpnService.lastPolicyApplyAttemptAtEpochMs
+                    set(value) {
+                        this@DnsVpnService.lastPolicyApplyAttemptAtEpochMs = value
+                    }
+
+                override var lastPolicyApplySuccessAtEpochMs: Long
+                    get() = this@DnsVpnService.lastPolicyApplySuccessAtEpochMs
+                    set(value) {
+                        this@DnsVpnService.lastPolicyApplySuccessAtEpochMs = value
+                    }
+
+                override var lastPolicyApplySource: String
+                    get() = this@DnsVpnService.lastPolicyApplySource
+                    set(value) {
+                        this@DnsVpnService.lastPolicyApplySource = value
+                    }
+
+                override var lastPolicyApplySkipReason: String
+                    get() = this@DnsVpnService.lastPolicyApplySkipReason
+                    set(value) {
+                        this@DnsVpnService.lastPolicyApplySkipReason = value
+                    }
+
+                override var lastPolicyApplyErrorMessage: String
+                    get() = this@DnsVpnService.lastPolicyApplyErrorMessage
+                    set(value) {
+                        this@DnsVpnService.lastPolicyApplyErrorMessage = value
+                    }
+
+                override var lastPolicyListenerEventAtEpochMs: Long
+                    get() = this@DnsVpnService.lastPolicyListenerEventAtEpochMs
+                    set(value) {
+                        this@DnsVpnService.lastPolicyListenerEventAtEpochMs = value
+                    }
+
+                override var lastPolicyPollSuccessAtEpochMs: Long
+                    get() = this@DnsVpnService.lastPolicyPollSuccessAtEpochMs
+                    set(value) {
+                        this@DnsVpnService.lastPolicyPollSuccessAtEpochMs = value
+                    }
+
+                override var lastPolicyTriggerVersion: Long
+                    get() = this@DnsVpnService.lastPolicyTriggerVersion
+                    set(value) {
+                        this@DnsVpnService.lastPolicyTriggerVersion = value
+                    }
+
+                override fun scheduleInstalledAppInventoryWrite(force: Boolean) {
+                    this@DnsVpnService.scheduleInstalledAppInventoryWrite(force)
+                }
+
+                override fun applyEffectivePolicySnapshotFromManager(
+                    childId: String,
+                    snapshotData: HashMap<String, Any>,
+                    incomingVersion: Long?,
+                    source: String
+                ) {
+                    this@DnsVpnService.applyEffectivePolicySnapshot(
+                        childId = childId,
+                        snapshotData = snapshotData,
+                        incomingVersion = incomingVersion,
+                        source = source
+                    )
+                }
+
+                override fun recordPolicySnapshotSeen(source: String, version: Long?) {
+                    this@DnsVpnService.recordPolicySnapshotSeen(source = source, version = version)
+                }
+
+                override fun recordPolicyApplySkip(source: String, version: Long?, reason: String) {
+                    this@DnsVpnService.recordPolicyApplySkip(
+                        source = source,
+                        version = version,
+                        reason = reason
+                    )
+                }
+
+                override fun recordPolicyApplyError(
+                    source: String,
+                    version: Long?,
+                    errorMessage: String?
+                ) {
+                    this@DnsVpnService.recordPolicyApplyError(
+                        source = source,
+                        version = version,
+                        errorMessage = errorMessage
+                    )
+                }
+
+                override fun writePolicyApplyAck(
+                    childId: String,
+                    parentId: String,
+                    appliedVersion: Long?,
+                    applyStatus: String,
+                    errorMessage: String?,
+                    applyLatencyMs: Int?,
+                    servicesExpectedCount: Int
+                ) {
+                    this@DnsVpnService.writePolicyApplyAck(
+                        childId = childId,
+                        parentId = parentId,
+                        appliedVersion = appliedVersion,
+                        applyStatus = applyStatus,
+                        errorMessage = errorMessage,
+                        applyLatencyMs = applyLatencyMs,
+                        servicesExpectedCount = servicesExpectedCount
+                    )
+                }
+            }
+        )
     }
 
     private fun maybeBootstrapPolicySyncAuth(reason: String): Boolean {
-        if (firestoreAuthReadyForPolicySync()) {
-            return true
-        }
-
-        val now = System.currentTimeMillis()
-        if (policySyncAuthBootstrapInFlight) {
-            return false
-        }
-        if (now - lastPolicySyncAuthBootstrapAtEpochMs < 8_000L) {
-            return false
-        }
-
-        lastPolicySyncAuthBootstrapAtEpochMs = now
-        policySyncAuthBootstrapInFlight = true
-        val auth = try {
-            FirebaseAuth.getInstance()
-        } catch (error: Exception) {
-            policySyncAuthBootstrapInFlight = false
-            Log.w(TAG, "Policy sync auth bootstrap unavailable", error)
-            return false
-        }
-
-        Log.w(TAG, "Policy sync auth missing. Bootstrapping anonymous auth ($reason)")
-        auth.signInAnonymously()
-            .addOnSuccessListener {
-                policySyncAuthBootstrapInFlight = false
-                Log.i(TAG, "Policy sync auth bootstrap succeeded ($reason)")
-                if (serviceRunning) {
-                    ensurePolicySyncDeviceRegistration()
-                    startEffectivePolicyListenerIfConfigured()
-                    scheduleInstalledAppInventoryWrite(force = true)
-                }
-            }
-            .addOnFailureListener { error ->
-                policySyncAuthBootstrapInFlight = false
-                Log.w(TAG, "Policy sync auth bootstrap failed ($reason)", error)
-            }
-        return false
+        return policySyncManager.maybeBootstrapPolicySyncAuth(reason)
     }
 
     private fun ensurePolicySyncDeviceRegistration() {
-        val authUid = try {
-            FirebaseAuth.getInstance().currentUser?.uid?.trim().orEmpty()
-        } catch (_: Exception) {
-            ""
-        }
-        if (authUid.isEmpty()) {
-            return
-        }
-
-        val config = try {
-            vpnPreferencesStore.loadConfig()
-        } catch (_: Exception) {
-            return
-        }
-        val childId = config.childId?.trim().orEmpty()
-        val parentId = config.parentId?.trim().orEmpty()
-        if (childId.isEmpty() || parentId.isEmpty()) {
-            return
-        }
-
-        cachedPolicyAckDeviceId = authUid
-        val firestore = FirebaseFirestore.getInstance()
-        firestore.collection("children")
-            .document(childId)
-            .collection("devices")
-            .document(authUid)
-            .set(
-                mapOf(
-                    "parentId" to parentId,
-                    "pairedAt" to Timestamp.now()
-                ),
-                SetOptions.merge()
-            )
-            .addOnSuccessListener {
-                firestore.collection("children")
-                    .document(childId)
-                    .update(
-                        mapOf(
-                            "deviceIds" to FieldValue.arrayUnion(authUid),
-                            "updatedAt" to Timestamp.now()
-                        )
-                    )
-                    .addOnFailureListener { error ->
-                        Log.w(TAG, "Failed to refresh child deviceIds for policy sync auth", error)
-                    }
-            }
-            .addOnFailureListener { error ->
-                Log.w(TAG, "Failed to upsert child device record for policy sync auth", error)
-            }
-    }
-
-    private fun extractFirestoreException(error: Throwable?): FirebaseFirestoreException? {
-        if (error == null) {
-            return null
-        }
-        if (error is FirebaseFirestoreException) {
-            return error
-        }
-        return extractFirestoreException(error.cause)
-    }
-
-    private fun isPolicySyncAuthError(error: Throwable?): Boolean {
-        val firestoreError = extractFirestoreException(error) ?: return false
-        return firestoreError.code == FirebaseFirestoreException.Code.UNAUTHENTICATED ||
-            firestoreError.code == FirebaseFirestoreException.Code.PERMISSION_DENIED
+        policySyncManager.ensurePolicySyncDeviceRegistration()
     }
 
     private fun startEffectivePolicyListenerIfConfigured() {
-        if (!serviceRunning) {
-            return
-        }
-        val config = vpnPreferencesStore.loadConfig()
-        val childId = config.childId?.trim().orEmpty()
-        if (childId.isEmpty()) {
-            stopEffectivePolicyListener()
-            return
-        }
-        if (!maybeBootstrapPolicySyncAuth("listener_start")) {
-            return
-        }
-        ensurePolicySyncDeviceRegistration()
-        if (effectivePolicyListener != null && effectivePolicyChildId == childId) {
-            startEffectivePolicyPollingFallback(
-                childId = childId,
-                configuredParentId = config.parentId?.trim().orEmpty()
-            )
-            return
-        }
-
-        stopEffectivePolicyListener()
-        effectivePolicyChildId = childId
-        val configuredParentId = config.parentId?.trim().orEmpty()
-        startEffectivePolicyPollingFallback(
-            childId = childId,
-            configuredParentId = configuredParentId
-        )
-        effectivePolicyListener = FirebaseFirestore.getInstance()
-            .collection("children")
-            .document(childId)
-            .collection("trigger")
-            .document("sync")
-            .addSnapshotListener { snapshot, error ->
-                if (error != null) {
-                    Log.w(TAG, "policy trigger listener error", error)
-                    if (isPolicySyncAuthError(error)) {
-                        maybeBootstrapPolicySyncAuth("listener_error")
-                    }
-                    return@addSnapshotListener
-                }
-                val data = snapshot?.data ?: return@addSnapshotListener
-                if (!serviceRunning) {
-                    return@addSnapshotListener
-                }
-                lastPolicyListenerEventAtEpochMs = System.currentTimeMillis()
-
-                val snapshotParentId = (data["parentId"] as? String)?.trim().orEmpty()
-                if (configuredParentId.isNotEmpty() &&
-                    snapshotParentId.isNotEmpty() &&
-                    snapshotParentId != configuredParentId
-                ) {
-                    recordPolicyApplySkip(
-                        source = "trigger",
-                        version = parsePolicyVersion(data["policyVersion"]),
-                        reason = "parent_id_mismatch"
-                    )
-                    return@addSnapshotListener
-                }
-
-                val triggerVersion = parsePolicyVersion(data["version"]) ?: 0L
-                if (triggerVersion <= 0L || triggerVersion <= lastPolicyTriggerVersion) {
-                    return@addSnapshotListener
-                }
-                lastPolicyTriggerVersion = triggerVersion
-                recordPolicySnapshotSeen(
-                    source = "trigger",
-                    version = parsePolicyVersion(data["policyVersion"])
-                )
-                policyApplyExecutor.execute {
-                    try {
-                        pollEffectivePolicySnapshotOnce()
-                    } catch (error: Exception) {
-                        Log.w(TAG, "Failed to poll effective policy after trigger", error)
-                        recordPolicyApplyError(
-                            source = "trigger",
-                            version = parsePolicyVersion(data["policyVersion"]),
-                            errorMessage = error.message
-                        )
-                    }
-                }
-            }
-        Log.d(TAG, "Started policy trigger listener childId=$childId")
-        policyApplyExecutor.execute {
-            try {
-                pollEffectivePolicySnapshotOnce()
-            } catch (error: Exception) {
-                Log.w(TAG, "Initial effective policy poll failed", error)
-            }
-        }
+        policySyncManager.startEffectivePolicyListenerIfConfigured()
     }
 
     private fun stopEffectivePolicyListener() {
-        effectivePolicyListener?.remove()
-        effectivePolicyListener = null
-        stopEffectivePolicyPollingFallback()
-        effectivePolicyChildId = null
-        lastEffectivePolicyVersion = 0L
-        lastPolicySnapshotSeenVersion = 0L
-        lastPolicySnapshotSeenAtEpochMs = 0L
-        lastPolicySnapshotSource = ""
-        lastPolicyApplyAttemptAtEpochMs = 0L
-        lastPolicyApplySuccessAtEpochMs = 0L
-        lastPolicyApplySource = ""
-        lastPolicyApplySkipReason = ""
-        lastPolicyApplyErrorMessage = ""
-        lastPolicyListenerEventAtEpochMs = 0L
-        lastPolicyPollSuccessAtEpochMs = 0L
-        lastPolicyTriggerVersion = 0L
-        cachedPolicyAckDeviceId = null
-    }
-
-    private fun startEffectivePolicyPollingFallback(
-        childId: String,
-        configuredParentId: String
-    ) {
-        val normalizedChildId = childId.trim()
-        if (normalizedChildId.isEmpty()) {
-            stopEffectivePolicyPollingFallback()
-            return
-        }
-        val normalizedParentId = configuredParentId.trim()
-        if (effectivePolicyPollRunning &&
-            effectivePolicyPollChildId == normalizedChildId &&
-            effectivePolicyPollParentId == normalizedParentId
-        ) {
-            return
-        }
-
-        stopEffectivePolicyPollingFallback()
-        effectivePolicyPollRunning = true
-        effectivePolicyPollChildId = normalizedChildId
-        effectivePolicyPollParentId = normalizedParentId
-        effectivePolicyPollThread = thread(name = "dns-vpn-policy-poll") {
-            while (effectivePolicyPollRunning) {
-                try {
-                    pollEffectivePolicySnapshotOnce()
-                } catch (error: Exception) {
-                    Log.w(TAG, "effective_policy poll error", error)
-                }
-                try {
-                    Thread.sleep(EFFECTIVE_POLICY_POLL_INTERVAL_MS)
-                } catch (_: InterruptedException) {
-                    break
-                }
-            }
-        }
-        Log.d(TAG, "Started effective_policy polling fallback childId=$normalizedChildId")
-    }
-
-    private fun stopEffectivePolicyPollingFallback() {
-        effectivePolicyPollRunning = false
-        effectivePolicyPollThread?.interrupt()
-        effectivePolicyPollThread = null
-        effectivePolicyPollChildId = null
-        effectivePolicyPollParentId = null
+        policySyncManager.stopEffectivePolicyListener()
     }
 
     private fun pollEffectivePolicySnapshotOnce() {
-        if (!serviceRunning) {
-            return
-        }
-        val childId = effectivePolicyPollChildId?.trim().orEmpty()
-        if (childId.isEmpty()) {
-            return
-        }
-        val configuredParentId = effectivePolicyPollParentId?.trim().orEmpty()
-
-        val snapshot = try {
-            Tasks.await(
-                FirebaseFirestore.getInstance()
-                    .collection("children")
-                    .document(childId)
-                    .collection("effective_policy")
-                    .document("current")
-                    .get(),
-                EFFECTIVE_POLICY_POLL_TIMEOUT_MS,
-                TimeUnit.MILLISECONDS
-            )
-        } catch (error: Exception) {
-            Log.w(TAG, "effective_policy poll get failed childId=$childId", error)
-            if (isPolicySyncAuthError(error)) {
-                maybeBootstrapPolicySyncAuth("poll_get")
-            }
-            return
-        }
-        val data = snapshot.data ?: return
-        if (!serviceRunning) {
-            return
-        }
-
-        val snapshotParentId = (data["parentId"] as? String)?.trim().orEmpty()
-        if (configuredParentId.isNotEmpty() &&
-            snapshotParentId.isNotEmpty() &&
-            snapshotParentId != configuredParentId
-        ) {
-            recordPolicyApplySkip(
-                source = "poll",
-                version = parsePolicyVersion(data["version"]),
-                reason = "parent_id_mismatch"
-            )
-            return
-        }
-        val incomingVersion = parsePolicyVersion(data["version"])
-        lastPolicyPollSuccessAtEpochMs = System.currentTimeMillis()
-        recordPolicySnapshotSeen("poll", incomingVersion)
-
-        val snapshotData = HashMap(data)
-        policyApplyExecutor.execute {
-            try {
-                applyEffectivePolicySnapshot(
-                    childId = childId,
-                    snapshotData = snapshotData,
-                    incomingVersion = incomingVersion,
-                    source = "poll"
-                )
-            } catch (error: Exception) {
-                Log.w(TAG, "Failed to apply effective policy snapshot from poll", error)
-                recordPolicyApplyError(
-                    source = "poll",
-                    version = incomingVersion,
-                    errorMessage = error.message
-                )
-                writePolicyApplyAck(
-                    childId = childId,
-                    parentId = snapshotParentId,
-                    appliedVersion = incomingVersion,
-                    applyStatus = "error",
-                    errorMessage = error.message,
-                    applyLatencyMs = null,
-                    servicesExpectedCount = parsePolicyStringList(snapshotData["blockedServices"]).size
-                )
-            }
-        }
+        policySyncManager.pollEffectivePolicySnapshotOnce()
     }
 
     private fun parsePolicyStringList(raw: Any?): List<String> {
