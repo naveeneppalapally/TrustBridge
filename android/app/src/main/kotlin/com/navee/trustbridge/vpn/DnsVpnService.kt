@@ -1,6 +1,5 @@
 package com.navee.trustbridge.vpn
 
-import android.Manifest
 import android.app.AlarmManager
 import android.app.AppOpsManager
 import android.app.ActivityManager
@@ -14,7 +13,6 @@ import android.content.BroadcastReceiver
 import android.content.Context
 import android.content.Intent
 import android.content.IntentFilter
-import android.content.pm.ApplicationInfo
 import android.content.pm.PackageManager
 import android.net.ConnectivityManager
 import android.net.Network
@@ -25,7 +23,6 @@ import android.os.Build
 import android.os.ParcelFileDescriptor
 import android.os.PowerManager
 import android.os.Process
-import android.system.OsConstants
 import android.provider.Settings
 import android.util.Log
 import androidx.core.app.NotificationCompat
@@ -39,9 +36,7 @@ import com.google.firebase.firestore.FirebaseFirestoreSettings
 import com.google.firebase.firestore.ListenerRegistration
 import java.io.FileInputStream
 import java.io.FileOutputStream
-import java.io.File
 import java.net.InetAddress
-import java.net.InetSocketAddress
 import java.util.LinkedHashMap
 import java.util.concurrent.Executors
 import java.util.concurrent.TimeUnit
@@ -86,8 +81,6 @@ class DnsVpnService : VpnService() {
         private const val ENABLE_FORCE_SYSTEM_DNS_FLUSH = true
         private const val APP_DOMAIN_USAGE_MAX_PACKAGES = 180
         private const val APP_DOMAIN_USAGE_MAX_DOMAINS_PER_PACKAGE = 120
-        private const val PORT_UID_CACHE_TTL_MS = 15_000L
-        private const val UID_PACKAGE_CACHE_TTL_MS = 60_000L
         private const val BLOCK_ALL_CATEGORY_TOKEN = "__block_all__"
         private val DISTRACTING_MODE_CATEGORIES = setOf(
             "social-networks",
@@ -334,8 +327,6 @@ class DnsVpnService : VpnService() {
         }
     }
     private val appDomainUsageByPackage = linkedMapOf<String, LinkedHashMap<String, Long>>()
-    private val sourcePortUidCache = linkedMapOf<Int, Pair<Int, Long>>()
-    private val uidPackageCache = linkedMapOf<Int, Pair<String, Long>>()
     @Volatile
     private var appDomainUsageWriteQueued = false
     @Volatile
@@ -360,6 +351,7 @@ class DnsVpnService : VpnService() {
     private var lastBrowserDnsBypassSignalReasonCode: String = ""
     @Volatile
     private var lastBrowserDnsBypassSignalForegroundPackage: String? = null
+    private lateinit var networkIdentityResolver: NetworkIdentityResolver
     private lateinit var telemetryManager: VpnTelemetryManager
     private lateinit var policyApplyManager: PolicyApplyManager
     private lateinit var policySyncManager: PolicySyncManager
@@ -429,6 +421,7 @@ class DnsVpnService : VpnService() {
             // Parent-only devices should never show child protection-off alerts.
             dismissProtectionAttentionNotification()
         }
+        networkIdentityResolver = createNetworkIdentityResolver()
         telemetryManager = createTelemetryManager()
         policyApplyManager = createPolicyApplyManager()
         policySyncManager = createPolicySyncManager()
@@ -1576,6 +1569,24 @@ class DnsVpnService : VpnService() {
     private fun telemetryBlockedCategoryCountSnapshot(): Int = blockedCategoryCount
     private fun telemetryBlockedDomainCountSnapshot(): Int = blockedDomainCount
 
+    private fun createNetworkIdentityResolver(): NetworkIdentityResolver {
+        return NetworkIdentityResolver(
+            object : NetworkIdentityResolver.Host {
+                override val appPackageName: String
+                    get() = this@DnsVpnService.packageName
+                override val packageManager: PackageManager
+                    get() = this@DnsVpnService.packageManager
+                override val infrastructurePackages: Set<String>
+                    get() = INFRASTRUCTURE_PACKAGES
+
+                override fun connectivityManagerOrNull(): ConnectivityManager? {
+                    return this@DnsVpnService.getSystemService(Context.CONNECTIVITY_SERVICE)
+                        as? ConnectivityManager
+                }
+            }
+        )
+    }
+
     private fun createTelemetryManager(): VpnTelemetryManager {
         return VpnTelemetryManager(
             object : VpnTelemetryManager.Host {
@@ -1748,11 +1759,13 @@ class DnsVpnService : VpnService() {
                 }
 
                 override fun isParentControllablePackage(packageName: String): Boolean {
-                    return this@DnsVpnService.isParentControllablePackage(packageName)
+                    return this@DnsVpnService.networkIdentityResolver
+                        .isParentControllablePackage(packageName)
                 }
 
                 override fun hasInternetPermission(packageName: String): Boolean {
-                    return this@DnsVpnService.hasInternetPermission(packageName)
+                    return this@DnsVpnService.networkIdentityResolver
+                        .hasInternetPermission(packageName)
                 }
             }
         )
@@ -3092,7 +3105,7 @@ class DnsVpnService : VpnService() {
         if (normalizedDomain.isEmpty() || normalizedDomain == "<unknown>") {
             return
         }
-        val packageName = resolvePackageForQuery(
+        val packageName = networkIdentityResolver.resolvePackageForQuery(
             sourcePort = sourcePort,
             sourceIp = sourceIp,
             destPort = destPort,
@@ -3245,211 +3258,6 @@ class DnsVpnService : VpnService() {
             }
         }
         return false
-    }
-
-    private fun resolvePackageForQuery(
-        sourcePort: Int,
-        sourceIp: String,
-        destPort: Int,
-        destIp: String
-    ): String? {
-        val connectivityUid = resolveUidForConnection(
-            sourcePort = sourcePort,
-            sourceIp = sourceIp,
-            destPort = destPort,
-            destIp = destIp
-        )
-        if (connectivityUid != null) {
-            val packageFromConnectivity = resolvePackageForUid(
-                uid = connectivityUid,
-                now = System.currentTimeMillis()
-            )
-            if (!packageFromConnectivity.isNullOrBlank()) {
-                return packageFromConnectivity
-            }
-        }
-        return resolvePackageForSourcePort(sourcePort)
-    }
-
-    private fun resolvePackageForSourcePort(sourcePort: Int): String? {
-        if (sourcePort <= 0) {
-            return null
-        }
-        val now = System.currentTimeMillis()
-        val cachedUid = synchronized(sourcePortUidCache) {
-            val cached = sourcePortUidCache[sourcePort]
-            if (cached != null && now - cached.second <= PORT_UID_CACHE_TTL_MS) {
-                cached.first
-            } else {
-                null
-            }
-        }
-        val uid = cachedUid ?: findUidForSourcePort(sourcePort)?.also { resolved ->
-            synchronized(sourcePortUidCache) {
-                sourcePortUidCache[sourcePort] = resolved to now
-                if (sourcePortUidCache.size > 512) {
-                    val oldestKey = sourcePortUidCache.entries
-                        .minByOrNull { it.value.second }
-                        ?.key
-                    if (oldestKey != null) {
-                        sourcePortUidCache.remove(oldestKey)
-                    }
-                }
-            }
-        } ?: return null
-
-        return resolvePackageForUid(uid = uid, now = now)
-    }
-
-    private fun resolveUidForConnection(
-        sourcePort: Int,
-        sourceIp: String,
-        destPort: Int,
-        destIp: String
-    ): Int? {
-        if (Build.VERSION.SDK_INT < Build.VERSION_CODES.Q) {
-            return null
-        }
-        if (sourcePort <= 0 || destPort <= 0 || sourceIp.isBlank() || destIp.isBlank()) {
-            return null
-        }
-        val connectivityManager =
-            getSystemService(Context.CONNECTIVITY_SERVICE) as? ConnectivityManager
-                ?: return null
-        return try {
-            val uid = connectivityManager.getConnectionOwnerUid(
-                OsConstants.IPPROTO_UDP,
-                InetSocketAddress(sourceIp, sourcePort),
-                InetSocketAddress(destIp, destPort)
-            )
-            if (uid > 0) uid else null
-        } catch (_: SecurityException) {
-            null
-        } catch (_: IllegalArgumentException) {
-            null
-        } catch (_: Exception) {
-            null
-        }
-    }
-
-    private fun resolvePackageForUid(uid: Int, now: Long): String? {
-        if (uid <= 0) {
-            return null
-        }
-        val cachedPackage = synchronized(uidPackageCache) {
-            val cached = uidPackageCache[uid]
-            if (cached != null && now - cached.second <= UID_PACKAGE_CACHE_TTL_MS) {
-                cached.first
-            } else {
-                null
-            }
-        }
-        if (!cachedPackage.isNullOrBlank()) {
-            return cachedPackage
-        }
-
-        val packages = try {
-            packageManager.getPackagesForUid(uid)
-        } catch (_: Exception) {
-            null
-        } ?: return null
-        val resolvedPackage = packages
-            .mapNotNull { it?.trim()?.lowercase()?.takeIf { value -> value.isNotEmpty() } }
-            .firstOrNull { packageName ->
-                packageName != this.packageName &&
-                    isParentControllablePackage(packageName) &&
-                    hasInternetPermission(packageName)
-            } ?: return null
-
-        synchronized(uidPackageCache) {
-            uidPackageCache[uid] = resolvedPackage to now
-            if (uidPackageCache.size > 512) {
-                val oldestKey = uidPackageCache.entries
-                    .minByOrNull { it.value.second }
-                    ?.key
-                if (oldestKey != null) {
-                    uidPackageCache.remove(oldestKey)
-                }
-            }
-        }
-        return resolvedPackage
-    }
-
-    private fun findUidForSourcePort(sourcePort: Int): Int? {
-        return parseUidFromProcNet(path = "/proc/net/udp", sourcePort = sourcePort)
-            ?: parseUidFromProcNet(path = "/proc/net/udp6", sourcePort = sourcePort)
-    }
-
-    private fun parseUidFromProcNet(path: String, sourcePort: Int): Int? {
-        return try {
-            var matchedUid: Int? = null
-            File(path).useLines { lines ->
-                for (line in lines.drop(1)) {
-                    val fields = line.trim().split(Regex("\\s+"))
-                    if (fields.size < 8) {
-                        continue
-                    }
-                    val localAddress = fields[1]
-                    val localPortHex = localAddress.substringAfterLast(':', "")
-                    val localPort = localPortHex.toIntOrNull(16) ?: continue
-                    if (localPort != sourcePort) {
-                        continue
-                    }
-                    val uid = fields[7].toIntOrNull()
-                    if (uid != null && uid > 0) {
-                        matchedUid = uid
-                        break
-                    }
-                }
-            }
-            matchedUid
-        } catch (_: Exception) {
-            null
-        }
-    }
-
-    private fun isParentControllablePackage(packageName: String): Boolean {
-        val normalizedPackage = packageName.trim().lowercase()
-        if (normalizedPackage in INFRASTRUCTURE_PACKAGES ||
-            normalizedPackage.startsWith("com.vivo.") ||
-            normalizedPackage.startsWith("com.bbk.")
-        ) {
-            return false
-        }
-        return try {
-            val appInfo = packageManager.getApplicationInfo(packageName, 0)
-            val isSystem = appInfo.flags and ApplicationInfo.FLAG_SYSTEM != 0
-            if (!isSystem) {
-                return true
-            }
-
-            val isUpdatedSystem =
-                appInfo.flags and ApplicationInfo.FLAG_UPDATED_SYSTEM_APP != 0
-            if (!isUpdatedSystem) {
-                return false
-            }
-
-            val installer = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.R) {
-                packageManager.getInstallSourceInfo(packageName).installingPackageName
-            } else {
-                @Suppress("DEPRECATION")
-                packageManager.getInstallerPackageName(packageName)
-            }?.trim()?.lowercase()
-            installer == "com.android.vending"
-        } catch (_: Exception) {
-            false
-        }
-    }
-
-    private fun hasInternetPermission(packageName: String): Boolean {
-        return try {
-            packageManager.checkPermission(
-                Manifest.permission.INTERNET,
-                packageName
-            ) == PackageManager.PERMISSION_GRANTED
-        } catch (_: Exception) {
-            false
-        }
     }
 
     private fun scheduleObservedAppDomainWrite(force: Boolean = false) {
