@@ -6,6 +6,7 @@ import java.net.DatagramSocket
 import java.net.InetAddress
 import java.net.SocketTimeoutException
 import java.nio.ByteBuffer
+import java.util.Collections
 import java.util.ArrayDeque
 import java.util.LinkedHashMap
 import kotlin.math.min
@@ -27,6 +28,11 @@ class DnsPacketHandler(
         private const val MAX_QUERY_LOG_ENTRIES = 250
         private const val BLOCKED_DEDUP_WINDOW_MS = 1_000L
         private const val MAX_BLOCKED_DEDUP_ENTRIES = 512
+        private const val REWRITE_TTL_SECONDS = 5
+        private const val MAX_DOMAIN_IP_CACHE_ENTRIES = 512
+        private const val MAX_ACTIVE_BLOCKED_IPS = 256
+        private const val ENABLE_TTL_REWRITE = true
+        private const val ENABLE_ACTIVE_TCP_RST = true
     }
 
     @Volatile
@@ -46,6 +52,34 @@ class DnsPacketHandler(
 
     private val recentQueries = ArrayDeque<QueryLogEntry>()
     private val recentBlockedDomains = LinkedHashMap<String, Long>()
+    private val recentDomainIps = LinkedHashMap<String, LinkedHashSet<String>>()
+    private val activeBlockedDomains = linkedSetOf<String>()
+    private val activelyBlockedIps = linkedSetOf<String>()
+
+    @Synchronized
+    fun updateBlockedDomains(domains: Set<String>) {
+        activeBlockedDomains.clear()
+        domains
+            .map(::normalizeDomainForLog)
+            .filter { it.isNotEmpty() && it != "<unknown>" }
+            .forEach(activeBlockedDomains::add)
+        recomputeActivelyBlockedIps()
+    }
+
+    @Synchronized
+    fun seedActivelyBlockedIps(ips: Set<String>) {
+        activelyBlockedIps.clear()
+        ips
+            .map(::normalizeIpv4)
+            .filter { it.isNotEmpty() }
+            .take(MAX_ACTIVE_BLOCKED_IPS)
+            .forEach(activelyBlockedIps::add)
+    }
+
+    @Synchronized
+    fun snapshotActivelyBlockedIps(): Set<String> {
+        return Collections.unmodifiableSet(LinkedHashSet(activelyBlockedIps))
+    }
 
     data class PacketStats(
         val processedQueries: Long,
@@ -87,15 +121,7 @@ class DnsPacketHandler(
             }
 
             val protocol = packet[9].toInt() and 0xFF
-            if (protocol != 17) { // UDP only
-                return null
-            }
-
             val ipHeaderLength = (packet[0].toInt() and 0x0F) * 4
-            if (length < ipHeaderLength + 8) {
-                return null
-            }
-
             val sourceIp = packet.copyOfRange(12, 16)
             val destIp = packet.copyOfRange(16, 20)
             val sourceIpText = try {
@@ -107,6 +133,25 @@ class DnsPacketHandler(
                 InetAddress.getByAddress(destIp).hostAddress ?: ""
             } catch (_: Exception) {
                 ""
+            }
+
+            if (protocol == 6) {
+                return handleTcpPacket(
+                    packet = packet,
+                    length = length,
+                    ipHeaderLength = ipHeaderLength,
+                    sourceIp = sourceIp,
+                    destIp = destIp,
+                    sourceIpText = sourceIpText,
+                    destIpText = destIpText
+                )
+            }
+
+            if (protocol != 17) { // DNS-over-UDP only
+                return null
+            }
+            if (length < ipHeaderLength + 8) {
+                return null
             }
 
             val udpOffset = ipHeaderLength
@@ -157,7 +202,7 @@ class DnsPacketHandler(
             )
 
             val dnsResponse = if (isBlocked) {
-                Log.d(
+                Log.i(
                     TAG,
                     "BLOCKED domain=$normalizedDomain reason=${decision.reasonCode}" +
                         (decision.matchedRule?.let { " rule=$it" } ?: "")
@@ -172,7 +217,10 @@ class DnsPacketHandler(
                     "ALLOWED domain=$normalizedDomain reason=${decision.reasonCode}" +
                         (decision.matchedRule?.let { " rule=$it" } ?: "")
                 )
-                forwardToUpstreamDns(dnsQuery)
+                forwardToUpstreamDns(
+                    query = dnsQuery,
+                    queriedDomain = normalizedDomain
+                )
             }
 
             return buildResponsePacket(
@@ -326,14 +374,20 @@ class DnsPacketHandler(
         return answer.array()
     }
 
-    private fun forwardToUpstreamDns(query: ByteArray): ByteArray {
+    private fun forwardToUpstreamDns(
+        query: ByteArray,
+        queriedDomain: String
+    ): ByteArray {
         val primaryResponse = queryUpstream(
             host = upstreamDns,
             query = query,
             timeoutMs = PRIMARY_TIMEOUT_MS
         )
         if (primaryResponse != null) {
-            return primaryResponse
+            return rewriteAndCacheUpstreamResponse(
+                response = primaryResponse,
+                queriedDomain = queriedDomain
+            )
         }
 
         incrementUpstreamFailure()
@@ -351,7 +405,10 @@ class DnsPacketHandler(
                     TAG,
                     "Primary upstream DNS failed for '$upstreamDns'. Served via fallback '$FALLBACK_DNS'."
                 )
-                return fallbackResponse
+                return rewriteAndCacheUpstreamResponse(
+                    response = fallbackResponse,
+                    queriedDomain = queriedDomain
+                )
             }
         }
 
@@ -361,6 +418,358 @@ class DnsPacketHandler(
                 if (useFallback) " and fallback '$FALLBACK_DNS'" else ""
         )
         return createBlockedResponse(query)
+    }
+
+    private fun rewriteAndCacheUpstreamResponse(
+        response: ByteArray,
+        queriedDomain: String
+    ): ByteArray {
+        val rewritten = if (ENABLE_TTL_REWRITE) {
+            rewriteDnsResponseTtl(
+                response = response,
+                ttlSeconds = REWRITE_TTL_SECONDS
+            )
+        } else {
+            response
+        }
+        val resolvedIps = extractIpv4AnswerIps(rewritten)
+        if (resolvedIps.isNotEmpty()) {
+            rememberDomainIps(
+                domain = queriedDomain,
+                ips = resolvedIps
+            )
+        }
+        return rewritten
+    }
+
+    private fun handleTcpPacket(
+        packet: ByteArray,
+        length: Int,
+        ipHeaderLength: Int,
+        sourceIp: ByteArray,
+        destIp: ByteArray,
+        sourceIpText: String,
+        destIpText: String
+    ): ByteArray? {
+        if (!ENABLE_ACTIVE_TCP_RST) {
+            return null
+        }
+        if (ipHeaderLength < 20 || length < ipHeaderLength + 20) {
+            return null
+        }
+
+        val normalizedDestIp = normalizeIpv4(destIpText)
+        if (normalizedDestIp.isEmpty() || !isActivelyBlockedIp(normalizedDestIp)) {
+            return null
+        }
+
+        val tcpOffset = ipHeaderLength
+        val sourcePort = readUInt16(packet, tcpOffset)
+        val destPort = readUInt16(packet, tcpOffset + 2)
+        val sequenceNumber = readUInt32(packet, tcpOffset + 4)
+        val acknowledgementNumber = readUInt32(packet, tcpOffset + 8)
+        val tcpHeaderLength = ((packet[tcpOffset + 12].toInt() ushr 4) and 0x0F) * 4
+        if (tcpHeaderLength < 20 || length < tcpOffset + tcpHeaderLength) {
+            return null
+        }
+
+        val flags = packet[tcpOffset + 13].toInt() and 0xFF
+        if ((flags and 0x04) != 0) { // Ignore packets that are already RST.
+            return null
+        }
+
+        val totalLength = readUInt16(packet, 2)
+        val payloadLength = (totalLength - ipHeaderLength - tcpHeaderLength).coerceAtLeast(0)
+        val syn = (flags and 0x02) != 0
+        val fin = (flags and 0x01) != 0
+        val ackIncrement = payloadLength +
+            if (syn) 1 else 0 +
+            if (fin) 1 else 0
+
+        val rstSequence = if ((flags and 0x10) != 0) { // ACK present.
+            acknowledgementNumber
+        } else {
+            0
+        }
+        val rstAck = (sequenceNumber + ackIncrement) and 0xFFFFFFFFL
+
+        Log.i(
+            TAG,
+            "RST active session ip=$normalizedDestIp src=$sourceIpText:$sourcePort dst=$destIpText:$destPort"
+        )
+        return buildTcpRstResponse(
+            sourceIp = sourceIp,
+            destIp = destIp,
+            sourcePort = sourcePort,
+            destPort = destPort,
+            sequenceNumber = rstSequence,
+            acknowledgementNumber = rstAck
+        )
+    }
+
+    private fun buildTcpRstResponse(
+        sourceIp: ByteArray,
+        destIp: ByteArray,
+        sourcePort: Int,
+        destPort: Int,
+        sequenceNumber: Long,
+        acknowledgementNumber: Long
+    ): ByteArray {
+        val ipHeaderLength = 20
+        val tcpHeaderLength = 20
+        val totalLength = ipHeaderLength + tcpHeaderLength
+        val packet = ByteBuffer.allocate(totalLength)
+
+        // IPv4 header
+        packet.put(0x45.toByte()) // Version + IHL
+        packet.put(0x00.toByte()) // DSCP/ECN
+        packet.putShort(totalLength.toShort())
+        packet.putShort(0x0000) // Identification
+        packet.putShort(0x4000.toShort()) // Don't fragment
+        packet.put(64.toByte()) // TTL
+        packet.put(6.toByte()) // TCP
+        packet.putShort(0x0000) // IPv4 checksum placeholder
+        packet.put(destIp) // Response source (remote)
+        packet.put(sourceIp) // Response destination (local app)
+
+        // TCP header
+        packet.putShort(destPort.toShort()) // Source port (remote)
+        packet.putShort(sourcePort.toShort()) // Destination port (local app)
+        packet.putInt((sequenceNumber and 0xFFFFFFFFL).toInt())
+        packet.putInt((acknowledgementNumber and 0xFFFFFFFFL).toInt())
+        packet.put(0x50.toByte()) // Data offset = 5, no options
+        packet.put(0x14.toByte()) // RST + ACK
+        packet.putShort(0x0000) // Window size
+        packet.putShort(0x0000) // TCP checksum placeholder
+        packet.putShort(0x0000) // Urgent pointer
+
+        val bytes = packet.array()
+        val ipChecksum = calculateIpv4Checksum(bytes, ipHeaderLength)
+        bytes[10] = ((ipChecksum ushr 8) and 0xFF).toByte()
+        bytes[11] = (ipChecksum and 0xFF).toByte()
+
+        val tcpChecksum = calculateTcpChecksum(
+            packet = bytes,
+            ipHeaderLength = ipHeaderLength,
+            tcpLength = tcpHeaderLength
+        )
+        bytes[ipHeaderLength + 16] = ((tcpChecksum ushr 8) and 0xFF).toByte()
+        bytes[ipHeaderLength + 17] = (tcpChecksum and 0xFF).toByte()
+        return bytes
+    }
+
+    private fun calculateTcpChecksum(
+        packet: ByteArray,
+        ipHeaderLength: Int,
+        tcpLength: Int
+    ): Int {
+        val pseudoHeader = ByteBuffer.allocate(12 + tcpLength)
+        pseudoHeader.put(packet, 12, 8) // Source + destination IP
+        pseudoHeader.put(0x00.toByte())
+        pseudoHeader.put(0x06.toByte()) // Protocol TCP
+        pseudoHeader.putShort(tcpLength.toShort())
+        pseudoHeader.put(packet, ipHeaderLength, tcpLength)
+
+        val checksumData = pseudoHeader.array()
+        var sum = 0L
+        var index = 0
+        while (index + 1 < checksumData.size) {
+            val word = ((checksumData[index].toInt() and 0xFF) shl 8) or
+                (checksumData[index + 1].toInt() and 0xFF)
+            sum += word.toLong()
+            while ((sum ushr 16) != 0L) {
+                sum = (sum and 0xFFFF) + (sum ushr 16)
+            }
+            index += 2
+        }
+        if (index < checksumData.size) {
+            sum += ((checksumData[index].toInt() and 0xFF) shl 8).toLong()
+            while ((sum ushr 16) != 0L) {
+                sum = (sum and 0xFFFF) + (sum ushr 16)
+            }
+        }
+        return sum.inv().toInt() and 0xFFFF
+    }
+
+    private fun rewriteDnsResponseTtl(
+        response: ByteArray,
+        ttlSeconds: Int
+    ): ByteArray {
+        if (response.size < 12) {
+            return response
+        }
+        val rewritten = response.copyOf()
+        val qdCount = readUInt16(rewritten, 4)
+        val anCount = readUInt16(rewritten, 6)
+        val nsCount = readUInt16(rewritten, 8)
+        val arCount = readUInt16(rewritten, 10)
+
+        var offset = 12
+        repeat(qdCount) {
+            offset = skipDnsName(rewritten, offset) ?: return response
+            if (offset + 4 > rewritten.size) {
+                return response
+            }
+            offset += 4 // QTYPE + QCLASS
+        }
+
+        val ttlValue = ttlSeconds.coerceAtLeast(0)
+        val recordCount = anCount + nsCount + arCount
+        repeat(recordCount) {
+            offset = skipDnsName(rewritten, offset) ?: return response
+            if (offset + 10 > rewritten.size) {
+                return response
+            }
+            rewritten[offset + 4] = ((ttlValue ushr 24) and 0xFF).toByte()
+            rewritten[offset + 5] = ((ttlValue ushr 16) and 0xFF).toByte()
+            rewritten[offset + 6] = ((ttlValue ushr 8) and 0xFF).toByte()
+            rewritten[offset + 7] = (ttlValue and 0xFF).toByte()
+
+            val rdLength = readUInt16(rewritten, offset + 8)
+            offset += 10
+            if (offset + rdLength > rewritten.size) {
+                return response
+            }
+            offset += rdLength
+        }
+        return rewritten
+    }
+
+    private fun extractIpv4AnswerIps(response: ByteArray): Set<String> {
+        if (response.size < 12) {
+            return emptySet()
+        }
+        val qdCount = readUInt16(response, 4)
+        val anCount = readUInt16(response, 6)
+
+        var offset = 12
+        repeat(qdCount) {
+            offset = skipDnsName(response, offset) ?: return emptySet()
+            if (offset + 4 > response.size) {
+                return emptySet()
+            }
+            offset += 4
+        }
+
+        val resolved = linkedSetOf<String>()
+        repeat(anCount) {
+            offset = skipDnsName(response, offset) ?: return@repeat
+            if (offset + 10 > response.size) {
+                return@repeat
+            }
+            val type = readUInt16(response, offset)
+            val rdLength = readUInt16(response, offset + 8)
+            val rdataOffset = offset + 10
+            if (rdataOffset + rdLength > response.size) {
+                return@repeat
+            }
+            if (type == 0x0001 && rdLength == 4) { // A record
+                val ip = try {
+                    normalizeIpv4(
+                        InetAddress.getByAddress(
+                            response.copyOfRange(rdataOffset, rdataOffset + 4)
+                        ).hostAddress ?: ""
+                    )
+                } catch (_: Exception) {
+                    ""
+                }
+                if (ip.isNotEmpty()) {
+                    resolved.add(ip)
+                }
+            }
+            offset = rdataOffset + rdLength
+        }
+        return resolved
+    }
+
+    @Synchronized
+    private fun rememberDomainIps(
+        domain: String,
+        ips: Set<String>
+    ) {
+        val normalizedDomain = normalizeDomainForLog(domain)
+        if (normalizedDomain.isEmpty() || normalizedDomain == "<unknown>") {
+            return
+        }
+        if (ips.isEmpty()) {
+            return
+        }
+        val normalizedIps = ips
+            .map(::normalizeIpv4)
+            .filter { it.isNotEmpty() }
+            .toCollection(linkedSetOf())
+        if (normalizedIps.isEmpty()) {
+            return
+        }
+
+        recentDomainIps[normalizedDomain] = LinkedHashSet(normalizedIps)
+        while (recentDomainIps.size > MAX_DOMAIN_IP_CACHE_ENTRIES) {
+            val oldestKey = recentDomainIps.keys.firstOrNull() ?: break
+            recentDomainIps.remove(oldestKey)
+        }
+        if (activeBlockedDomains.contains(normalizedDomain)) {
+            normalizedIps.forEach(activelyBlockedIps::add)
+            trimActivelyBlockedIps()
+        }
+    }
+
+    @Synchronized
+    private fun recomputeActivelyBlockedIps() {
+        activelyBlockedIps.clear()
+        for ((domain, ips) in recentDomainIps) {
+            val shouldForceBlock = activeBlockedDomains.contains(domain) || filterEngine.shouldBlock(domain)
+            if (!shouldForceBlock) {
+                continue
+            }
+            ips.forEach(activelyBlockedIps::add)
+            if (activelyBlockedIps.size >= MAX_ACTIVE_BLOCKED_IPS) {
+                break
+            }
+        }
+        trimActivelyBlockedIps()
+    }
+
+    @Synchronized
+    private fun trimActivelyBlockedIps() {
+        while (activelyBlockedIps.size > MAX_ACTIVE_BLOCKED_IPS) {
+            val oldest = activelyBlockedIps.firstOrNull() ?: break
+            activelyBlockedIps.remove(oldest)
+        }
+    }
+
+    @Synchronized
+    private fun isActivelyBlockedIp(ip: String): Boolean {
+        return activelyBlockedIps.contains(normalizeIpv4(ip))
+    }
+
+    private fun skipDnsName(packet: ByteArray, startOffset: Int): Int? {
+        var offset = startOffset
+        var jumps = 0
+        while (offset < packet.size) {
+            val length = packet[offset].toInt() and 0xFF
+            if (length == 0) {
+                return offset + 1
+            }
+            if ((length and 0xC0) == 0xC0) {
+                if (offset + 1 >= packet.size) {
+                    return null
+                }
+                return offset + 2
+            }
+            if (length > 63) {
+                return null
+            }
+            offset += 1 + length
+            jumps += 1
+            if (jumps > 128) {
+                return null
+            }
+        }
+        return null
+    }
+
+    private fun normalizeIpv4(rawIp: String): String {
+        return rawIp.substringBefore('%').trim()
     }
 
     private fun queryUpstream(host: String, query: ByteArray, timeoutMs: Int): ByteArray? {
@@ -470,6 +879,13 @@ class DnsPacketHandler(
     private fun readUInt16(bytes: ByteArray, offset: Int): Int {
         return ((bytes[offset].toInt() and 0xFF) shl 8) or
             (bytes[offset + 1].toInt() and 0xFF)
+    }
+
+    private fun readUInt32(bytes: ByteArray, offset: Int): Long {
+        return ((bytes[offset].toLong() and 0xFF) shl 24) or
+            ((bytes[offset + 1].toLong() and 0xFF) shl 16) or
+            ((bytes[offset + 2].toLong() and 0xFF) shl 8) or
+            (bytes[offset + 3].toLong() and 0xFF)
     }
 
     private fun findQuestionEndOffset(query: ByteArray): Int? {

@@ -10,8 +10,10 @@ import android.app.NotificationManager
 import android.app.PendingIntent
 import android.app.usage.UsageEvents
 import android.app.usage.UsageStatsManager
+import android.content.BroadcastReceiver
 import android.content.Context
 import android.content.Intent
+import android.content.IntentFilter
 import android.content.pm.ApplicationInfo
 import android.content.pm.PackageManager
 import android.net.ConnectivityManager
@@ -86,6 +88,8 @@ class DnsVpnService : VpnService() {
         private const val APP_GUARD_BLOCKED_EVENT_WINDOW_MS = 4_000L
         private const val EFFECTIVE_POLICY_POLL_INTERVAL_MS = 5_000L
         private const val EFFECTIVE_POLICY_POLL_TIMEOUT_MS = 6_000L
+        private const val INTERFACE_REFRESH_DELAY_MS = 200L
+        private const val ENABLE_FORCE_SYSTEM_DNS_FLUSH = true
         private const val WEB_DIAGNOSTICS_WRITE_MIN_INTERVAL_MS = 5_000L
         private const val WEB_DIAGNOSTICS_RECENT_DNS_WINDOW_MS = 20_000L
         private const val APP_DOMAIN_USAGE_WRITE_MIN_INTERVAL_MS = 5_000L
@@ -138,6 +142,7 @@ class DnsVpnService : VpnService() {
         const val ACTION_POLICY_PUSH_SYNC = "com.navee.trustbridge.vpn.POLICY_PUSH_SYNC"
         const val ACTION_SET_UPSTREAM_DNS = "com.navee.trustbridge.vpn.SET_UPSTREAM_DNS"
         const val ACTION_CLEAR_QUERY_LOGS = "com.navee.trustbridge.vpn.CLEAR_QUERY_LOGS"
+        const val ACTION_FLUSH_DNS = "com.navee.trustbridge.vpn.FLUSH_DNS"
         const val ACTION_FLUSH_DNS_CACHE = "com.navee.trustbridge.vpn.FLUSH_DNS_CACHE"
         const val EXTRA_BLOCKED_CATEGORIES = "blockedCategories"
         const val EXTRA_BLOCKED_DOMAINS = "blockedDomains"
@@ -338,8 +343,24 @@ class DnsVpnService : VpnService() {
     @Volatile
     private var cachedPolicyAckDeviceId: String? = null
     private val policyApplyExecutor = Executors.newSingleThreadExecutor()
+    private val vpnExecutor = Executors.newSingleThreadScheduledExecutor()
     private val webDiagnosticsExecutor = Executors.newSingleThreadExecutor()
     private val appDomainUsageExecutor = Executors.newSingleThreadExecutor()
+    @Volatile
+    private var interfaceRefreshScheduled: Boolean = false
+    @Volatile
+    private var vpnInterfaceRebuildInFlight: Boolean = false
+    @Volatile
+    private var dnsFlushReceiverRegistered: Boolean = false
+    private var lastKnownActivelyBlockedIps: Set<String> = emptySet()
+    private val dnsFlushReceiver = object : BroadcastReceiver() {
+        override fun onReceive(context: Context?, intent: Intent?) {
+            if (intent?.action != ACTION_FLUSH_DNS) {
+                return
+            }
+            flushDnsCacheBestEffort()
+        }
+    }
     private val appDomainUsageByPackage = linkedMapOf<String, LinkedHashMap<String, Long>>()
     private val sourcePortUidCache = linkedMapOf<Int, Pair<Int, Long>>()
     private val uidPackageCache = linkedMapOf<Int, Pair<String, Long>>()
@@ -367,6 +388,41 @@ class DnsVpnService : VpnService() {
     private var lastBrowserDnsBypassSignalReasonCode: String = ""
     @Volatile
     private var lastBrowserDnsBypassSignalForegroundPackage: String? = null
+
+    private fun registerDnsFlushReceiver() {
+        if (dnsFlushReceiverRegistered) {
+            return
+        }
+        try {
+            val filter = IntentFilter(ACTION_FLUSH_DNS)
+            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
+                registerReceiver(
+                    dnsFlushReceiver,
+                    filter,
+                    Context.RECEIVER_NOT_EXPORTED
+                )
+            } else {
+                @Suppress("DEPRECATION")
+                registerReceiver(dnsFlushReceiver, filter)
+            }
+            dnsFlushReceiverRegistered = true
+        } catch (error: Exception) {
+            Log.w(TAG, "Unable to register DNS flush receiver", error)
+        }
+    }
+
+    private fun unregisterDnsFlushReceiver() {
+        if (!dnsFlushReceiverRegistered) {
+            return
+        }
+        try {
+            unregisterReceiver(dnsFlushReceiver)
+        } catch (_: Exception) {
+            // Ignore receiver cleanup failures.
+        } finally {
+            dnsFlushReceiverRegistered = false
+        }
+    }
 
     override fun onCreate() {
         super.onCreate()
@@ -402,6 +458,7 @@ class DnsVpnService : VpnService() {
         blockedCategoryCount = filterEngine.blockedCategoryCount()
         blockedDomainCount = filterEngine.effectiveBlockedDomainCount()
         lastRuleUpdateEpochMs = System.currentTimeMillis()
+        registerDnsFlushReceiver()
         Log.d(TAG, "DNS VPN service created")
     }
 
@@ -787,6 +844,7 @@ class DnsVpnService : VpnService() {
                 START_STICKY
             }
 
+            ACTION_FLUSH_DNS,
             ACTION_FLUSH_DNS_CACHE -> {
                 flushDnsCacheBestEffort()
                 START_STICKY
@@ -901,6 +959,8 @@ class DnsVpnService : VpnService() {
                     )
                 }
             )
+            packetHandler?.updateBlockedDomains(lastAppliedDomains.toSet())
+            packetHandler?.seedActivelyBlockedIps(lastKnownActivelyBlockedIps)
 
             serviceRunning = true
             isRunning = true
@@ -1347,6 +1407,69 @@ class DnsVpnService : VpnService() {
             Log.w(TAG, "DNS cache flush unavailable on this device/build")
         }
         return flushed
+    }
+
+    private fun forceSystemDnsFlush() {
+        if (!ENABLE_FORCE_SYSTEM_DNS_FLUSH) {
+            return
+        }
+        try {
+            sendBroadcast(
+                Intent(ACTION_FLUSH_DNS).setPackage(packageName)
+            )
+        } catch (_: Exception) {
+            // Broadcast dispatch is best-effort.
+        }
+        flushDnsCacheBestEffort()
+
+        try {
+            val network = connectivityManager.activeNetwork
+            if (network != null) {
+                connectivityManager.reportNetworkConnectivity(network, false)
+                connectivityManager.reportNetworkConnectivity(network, true)
+            }
+        } catch (_: Exception) {
+            // Not supported on every build.
+        }
+
+        scheduleInterfaceRefresh()
+    }
+
+    private fun scheduleInterfaceRefresh() {
+        if (!serviceRunning || !isRunning || interfaceRefreshScheduled) {
+            return
+        }
+        interfaceRefreshScheduled = true
+        vpnExecutor.schedule(
+            {
+                interfaceRefreshScheduled = false
+                if (serviceRunning && isRunning) {
+                    rebuildVpnInterface()
+                }
+            },
+            INTERFACE_REFRESH_DELAY_MS,
+            TimeUnit.MILLISECONDS
+        )
+    }
+
+    private fun rebuildVpnInterface() {
+        if (!serviceRunning || vpnInterfaceRebuildInFlight) {
+            return
+        }
+        vpnInterfaceRebuildInFlight = true
+        val blockedDomainSnapshot = lastAppliedDomains.toSet()
+        val blockedIpSnapshot = lastKnownActivelyBlockedIps.toSet()
+        try {
+            stopVpn(stopService = false, markDisabled = false)
+            startVpn()
+            packetHandler?.updateBlockedDomains(blockedDomainSnapshot)
+            packetHandler?.seedActivelyBlockedIps(blockedIpSnapshot)
+            Log.d(TAG, "Rebuilt VPN interface to force DNS re-resolution")
+        } catch (error: Exception) {
+            Log.w(TAG, "Failed rebuilding VPN interface for DNS flush", error)
+        } finally {
+            vpnInterfaceRebuildInFlight = false
+        }
     }
 
     private fun collectDnsCaptureRoutes(network: Network?): Set<String> {
@@ -2190,7 +2313,7 @@ class DnsVpnService : VpnService() {
         }
 
         val applyStartedAt = System.currentTimeMillis()
-        Log.d(
+        Log.i(
             TAG,
             "Applying effective_policy from $source " +
                 "childId=$childId version=${incomingVersion ?: 0L} " +
@@ -2204,7 +2327,7 @@ class DnsVpnService : VpnService() {
             temporaryAllowedDomains = allowedDomains,
             blockedPackages = blockedPackages
         )
-        flushDnsCacheBestEffort()
+        forceSystemDnsFlush()
         if (incomingVersion != null && incomingVersion > lastEffectivePolicyVersion) {
             lastEffectivePolicyVersion = incomingVersion
         }
@@ -3068,6 +3191,10 @@ class DnsVpnService : VpnService() {
             normalizedDomains,
             normalizedAllowedDomains
         )
+        packetHandler?.let { handler ->
+            handler.updateBlockedDomains(normalizedDomains.toSet())
+            lastKnownActivelyBlockedIps = handler.snapshotActivelyBlockedIps()
+        }
         blockedCategoryCount = filterEngine.blockedCategoryCount()
         blockedDomainCount = filterEngine.effectiveBlockedDomainCount()
         lastRuleUpdateEpochMs = System.currentTimeMillis()
@@ -3126,6 +3253,10 @@ class DnsVpnService : VpnService() {
             domains = nextDomains.toSet(),
             allowedDomains = nextAllowedDomains.toSet()
         )
+        packetHandler?.let { handler ->
+            handler.updateBlockedDomains(nextDomains.toSet())
+            lastKnownActivelyBlockedIps = handler.snapshotActivelyBlockedIps()
+        }
 
         lastAppliedCategories = nextCategories
         lastAppliedDomains = nextDomains
@@ -3472,7 +3603,9 @@ class DnsVpnService : VpnService() {
         scheduleInstalledAppInventoryWrite(force = true)
         scheduleUnexpectedStopRecovery(reason = "onDestroy")
         stopVpn(stopService = false, markDisabled = false)
+        unregisterDnsFlushReceiver()
         policyApplyExecutor.shutdownNow()
+        vpnExecutor.shutdownNow()
         webDiagnosticsExecutor.shutdownNow()
         appDomainUsageExecutor.shutdownNow()
         try {

@@ -883,8 +883,8 @@ class _BlockCategoriesScreenState extends State<BlockCategoriesScreen>
 
     final content = ListView(
       controller: _contentScrollController,
-      physics:
-          const RangeMaintainingScrollPhysics(parent: ClampingScrollPhysics()),
+      physics: const ClampingScrollPhysics(),
+      cacheExtent: 1200,
       padding: EdgeInsets.fromLTRB(
         16,
         12,
@@ -1055,12 +1055,14 @@ class _BlockCategoriesScreenState extends State<BlockCategoriesScreen>
   }
 
   Widget _buildInstalledAppsSection(_ModeContext modeContext) {
-    final apps = _visibleInstalledApps;
+    final sectionExpanded = _installedAppsExpanded;
     final activeQuery = _query.trim();
     final filtered = activeQuery.isNotEmpty;
     final totalApps = _installedApps.length;
-    final countLabel = _hasLoadedInstalledApps ? '$totalApps loaded' : 'not loaded';
-    final sectionExpanded = _installedAppsExpanded;
+    final countLabel =
+        _hasLoadedInstalledApps ? '$totalApps loaded' : 'not loaded';
+    final apps =
+        sectionExpanded ? _visibleInstalledApps : const <InstalledAppInfo>[];
 
     if (!sectionExpanded) {
       return Column(
@@ -1074,7 +1076,7 @@ class _BlockCategoriesScreenState extends State<BlockCategoriesScreen>
                   style: Theme.of(context).textTheme.titleSmall?.copyWith(
                         fontWeight: FontWeight.w800,
                         letterSpacing: 0.5,
-                  ),
+                      ),
                 ),
               ),
               TextButton.icon(
@@ -1207,70 +1209,71 @@ class _BlockCategoriesScreenState extends State<BlockCategoriesScreen>
         _observedDomainsByPackage[packageName] ?? const <String>[];
     final domainPreview = observedDomains.take(3).join(', ');
 
-    return Card(
+    return RepaintBoundary(
       key: Key('installed_app_row_$packageName'),
-      margin: const EdgeInsets.only(bottom: 8),
-      child: ListTile(
-        leading: CircleAvatar(
-          backgroundColor: effectiveState.blocked
-              ? Colors.red.withValues(alpha: 0.12)
-              : Theme.of(context).colorScheme.primary.withValues(alpha: 0.12),
-          foregroundColor: effectiveState.blocked
-              ? Colors.red.shade700
-              : Theme.of(context).colorScheme.primary,
-          backgroundImage: iconBytes == null ? null : MemoryImage(iconBytes),
-          child: iconBytes == null
-              ? Icon(_installedAppIcon(packageName), size: 20)
-              : null,
-        ),
-        title: Text(
-          app.appName.isEmpty ? packageName : app.appName,
-          maxLines: 1,
-          overflow: TextOverflow.ellipsis,
-        ),
-        subtitle: Column(
-          crossAxisAlignment: CrossAxisAlignment.start,
-          mainAxisSize: MainAxisSize.min,
-          children: [
-            Text(
-              effectiveState.status,
-              maxLines: 1,
-              overflow: TextOverflow.ellipsis,
-              style: TextStyle(
-                color: effectiveState.color,
-                fontWeight: FontWeight.w700,
-              ),
-            ),
-            if (domainPreview.isNotEmpty)
+      child: Card(
+        margin: const EdgeInsets.only(bottom: 8),
+        elevation: 0,
+        child: ListTile(
+          leading: CircleAvatar(
+            backgroundColor: effectiveState.blocked
+                ? Colors.red.withValues(alpha: 0.12)
+                : Theme.of(context).colorScheme.primary.withValues(alpha: 0.12),
+            foregroundColor: effectiveState.blocked
+                ? Colors.red.shade700
+                : Theme.of(context).colorScheme.primary,
+            backgroundImage: iconBytes == null ? null : MemoryImage(iconBytes),
+            child: iconBytes == null
+                ? Icon(_installedAppIcon(packageName), size: 20)
+                : null,
+          ),
+          title: Text(
+            app.appName.isEmpty ? packageName : app.appName,
+            maxLines: 1,
+            overflow: TextOverflow.ellipsis,
+          ),
+          subtitle: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            mainAxisSize: MainAxisSize.min,
+            children: [
               Text(
-                'Domains: $domainPreview${observedDomains.length > 3 ? ', ...' : ''}',
+                effectiveState.status,
                 maxLines: 1,
                 overflow: TextOverflow.ellipsis,
-                style: Theme.of(context).textTheme.bodySmall,
+                style: TextStyle(
+                  color: effectiveState.color,
+                  fontWeight: FontWeight.w700,
+                ),
               ),
-          ],
-        ),
-        trailing: Switch.adaptive(
-          key: Key('installed_app_switch_$packageName'),
-          value: explicitlyBlocked,
-          onChanged: _isLoading || !_packageBlockingEnabled
-              ? null
-              : (enabled) => _toggleInstalledPackageWithPin(
-                    packageName: packageName,
-                    enabled: enabled,
-                    appName: app.appName.isEmpty ? packageName : app.appName,
-                  ),
+              if (domainPreview.isNotEmpty)
+                Text(
+                  'Domains: $domainPreview${observedDomains.length > 3 ? ', ...' : ''}',
+                  maxLines: 1,
+                  overflow: TextOverflow.ellipsis,
+                  style: Theme.of(context).textTheme.bodySmall,
+                ),
+            ],
+          ),
+          trailing: Switch.adaptive(
+            key: Key('installed_app_switch_$packageName'),
+            value: explicitlyBlocked,
+            onChanged: _isLoading || !_packageBlockingEnabled
+                ? null
+                : (enabled) => _toggleInstalledPackageWithPin(
+                      packageName: packageName,
+                      enabled: enabled,
+                      appName: app.appName.isEmpty ? packageName : app.appName,
+                    ),
+          ),
         ),
       ),
     );
   }
 
   ({bool blocked, String status, Color color}) _effectiveInstalledPackageState(
-    InstalledAppInfo app,
-    {
+    InstalledAppInfo app, {
     _ModeContext? modeContext,
-  }
-  ) {
+  }) {
     final packageName = app.packageName.trim().toLowerCase();
     final match = _serviceMatchForPackage(packageName);
     final matchedServiceId = match.serviceId?.trim().toLowerCase();
@@ -1280,8 +1283,8 @@ class _BlockCategoriesScreenState extends State<BlockCategoriesScreen>
 
     final serviceBlocked =
         matchedServiceId != null && _isAppExplicitlyBlocked(matchedServiceId);
-    final categoryBlocked = matchedCategoryId != null &&
-        _isCategoryBlocked(matchedCategoryId);
+    final categoryBlocked =
+        matchedCategoryId != null && _isCategoryBlocked(matchedCategoryId);
     final packageBlocked = _blockedPackages.contains(packageName);
 
     final activeModeContext = modeContext ?? _activeModeContext();
@@ -1484,7 +1487,8 @@ class _BlockCategoriesScreenState extends State<BlockCategoriesScreen>
     }
   }
 
-  Widget _buildCategoryCard(ContentCategory category, _ModeContext modeContext) {
+  Widget _buildCategoryCard(
+      ContentCategory category, _ModeContext modeContext) {
     final categoryState =
         _effectiveCategoryState(category.id, modeContext: modeContext);
     final isBlocked = categoryState.blocked;
@@ -1509,134 +1513,137 @@ class _BlockCategoriesScreenState extends State<BlockCategoriesScreen>
             .length
         : 0;
 
-    return Card(
+    return RepaintBoundary(
       key: Key('block_category_card_${category.id}'),
-      margin: const EdgeInsets.only(bottom: 10),
-      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(14)),
-      child: Column(
-        children: [
-          Padding(
-            padding: const EdgeInsets.all(12),
-            child: Row(
-              children: [
-                Container(
-                  width: 38,
-                  height: 38,
-                  decoration: BoxDecoration(
-                    color: iconColor.withValues(alpha: 0.14),
-                    borderRadius: BorderRadius.circular(10),
+      child: Card(
+        margin: const EdgeInsets.only(bottom: 10),
+        elevation: 0,
+        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(14)),
+        child: Column(
+          children: [
+            Padding(
+              padding: const EdgeInsets.all(12),
+              child: Row(
+                children: [
+                  Container(
+                    width: 38,
+                    height: 38,
+                    decoration: BoxDecoration(
+                      color: iconColor.withValues(alpha: 0.14),
+                      borderRadius: BorderRadius.circular(10),
+                    ),
+                    child: Icon(category.icon, color: iconColor),
                   ),
-                  child: Icon(category.icon, color: iconColor),
-                ),
-                const SizedBox(width: 12),
-                Expanded(
-                  child: Column(
-                    crossAxisAlignment: CrossAxisAlignment.start,
-                    children: [
-                      Text(
-                        category.name,
-                        maxLines: 2,
-                        overflow: TextOverflow.ellipsis,
-                        style: const TextStyle(fontWeight: FontWeight.w700),
-                      ),
-                      if (enforcementBadge != null || modeSourceBadge != null)
-                        Padding(
-                          padding: const EdgeInsets.only(top: 4),
-                          child: Wrap(
-                            spacing: 6,
-                            runSpacing: 6,
-                            children: [
-                              if (enforcementBadge != null) enforcementBadge,
-                              if (modeSourceBadge != null) modeSourceBadge,
-                            ],
+                  const SizedBox(width: 12),
+                  Expanded(
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        Text(
+                          category.name,
+                          maxLines: 2,
+                          overflow: TextOverflow.ellipsis,
+                          style: const TextStyle(fontWeight: FontWeight.w700),
+                        ),
+                        if (enforcementBadge != null || modeSourceBadge != null)
+                          Padding(
+                            padding: const EdgeInsets.only(top: 4),
+                            child: Wrap(
+                              spacing: 6,
+                              runSpacing: 6,
+                              children: [
+                                if (enforcementBadge != null) enforcementBadge,
+                                if (modeSourceBadge != null) modeSourceBadge,
+                              ],
+                            ),
+                          ),
+                        const SizedBox(height: 2),
+                        Text(
+                          _categoryExamples(category.id),
+                          maxLines: 2,
+                          overflow: TextOverflow.ellipsis,
+                          style: TextStyle(
+                            color: Colors.grey[600],
+                            fontSize: 12,
                           ),
                         ),
-                      const SizedBox(height: 2),
-                      Text(
-                        _categoryExamples(category.id),
-                        maxLines: 2,
-                        overflow: TextOverflow.ellipsis,
-                        style: TextStyle(
-                          color: Colors.grey[600],
-                          fontSize: 12,
-                        ),
-                      ),
-                      const SizedBox(height: 5),
-                      Text(
-                        categoryState.status,
-                        style: TextStyle(
-                          color: categoryState.color,
-                          fontSize: 12,
-                          fontWeight: FontWeight.w600,
-                        ),
-                      ),
-                      if (hasApps && isExpanded) ...[
-                        const SizedBox(height: 6),
+                        const SizedBox(height: 5),
                         Text(
-                          '$blockedApps/${appKeys.length} apps currently blocked',
+                          categoryState.status,
                           style: TextStyle(
-                            color: isBlocked
-                                ? Colors.red.shade700
-                                : Colors.grey[700],
+                            color: categoryState.color,
                             fontSize: 12,
                             fontWeight: FontWeight.w600,
                           ),
                         ),
-                      ],
-                    ],
-                  ),
-                ),
-                Switch(
-                  key: Key('block_category_switch_${category.id}'),
-                  value: explicitlyBlocked,
-                  onChanged: _isLoading || _isSyncingNextDns
-                      ? null
-                      : (enabled) => _toggleCategoryWithPin(
-                            categoryId: category.id,
-                            enabled: enabled,
+                        if (hasApps && isExpanded) ...[
+                          const SizedBox(height: 6),
+                          Text(
+                            '$blockedApps/${appKeys.length} apps currently blocked',
+                            style: TextStyle(
+                              color: isBlocked
+                                  ? Colors.red.shade700
+                                  : Colors.grey[700],
+                              fontSize: 12,
+                              fontWeight: FontWeight.w600,
+                            ),
                           ),
-                ),
-                if (hasApps)
-                  IconButton(
-                    tooltip: isExpanded ? 'Collapse apps' : 'Expand apps',
-                    onPressed: () {
-                      setState(() {
-                        if (isExpanded) {
-                          _expandedCategoryIds.remove(category.id);
-                        } else {
-                          // Keep one expanded section at a time to reduce
-                          // heavy rebuild/paint work while scrolling.
-                          _expandedCategoryIds = <String>{category.id};
-                        }
-                      });
-                    },
-                    icon: Icon(
-                      isExpanded
-                          ? Icons.keyboard_arrow_up_rounded
-                          : Icons.keyboard_arrow_down_rounded,
+                        ],
+                      ],
                     ),
                   ),
-              ],
-            ),
-          ),
-          if (hasApps && isExpanded) ...[
-            Divider(height: 1, color: Colors.grey.withValues(alpha: 0.2)),
-            Padding(
-              padding: const EdgeInsets.fromLTRB(12, 10, 12, 12),
-              child: Column(
-                children: appKeys
-                    .map(
-                      (appKey) => _buildCategoryAppRow(
-                        categoryId: category.id,
-                        appKey: appKey,
-                        modeContext: modeContext,
+                  Switch(
+                    key: Key('block_category_switch_${category.id}'),
+                    value: explicitlyBlocked,
+                    onChanged: _isLoading || _isSyncingNextDns
+                        ? null
+                        : (enabled) => _toggleCategoryWithPin(
+                              categoryId: category.id,
+                              enabled: enabled,
+                            ),
+                  ),
+                  if (hasApps)
+                    IconButton(
+                      tooltip: isExpanded ? 'Collapse apps' : 'Expand apps',
+                      onPressed: () {
+                        setState(() {
+                          if (isExpanded) {
+                            _expandedCategoryIds.remove(category.id);
+                          } else {
+                            // Keep one expanded section at a time to reduce
+                            // heavy rebuild/paint work while scrolling.
+                            _expandedCategoryIds = <String>{category.id};
+                          }
+                        });
+                      },
+                      icon: Icon(
+                        isExpanded
+                            ? Icons.keyboard_arrow_up_rounded
+                            : Icons.keyboard_arrow_down_rounded,
                       ),
-                    )
-                    .toList(growable: false),
+                    ),
+                ],
               ),
             ),
+            if (hasApps && isExpanded) ...[
+              Divider(height: 1, color: Colors.grey.withValues(alpha: 0.2)),
+              Padding(
+                padding: const EdgeInsets.fromLTRB(12, 10, 12, 12),
+                child: Column(
+                  children: appKeys
+                      .map(
+                        (appKey) => _buildCategoryAppRow(
+                          categoryId: category.id,
+                          appKey: appKey,
+                          modeContext: modeContext,
+                        ),
+                      )
+                      .toList(growable: false),
+                ),
+              ),
+            ],
           ],
-        ],
+        ),
       ),
     );
   }
@@ -2011,7 +2018,6 @@ class _BlockCategoriesScreenState extends State<BlockCategoriesScreen>
       if (!mounted) {
         return true;
       }
-
 
       // Trigger remote command to child devices for immediate policy sync.
       // This ensures the child receives policy updates in real-time,
@@ -3588,4 +3594,3 @@ Map<String, dynamic> _dynamicMap(Object? rawValue) {
   }
   return const <String, dynamic>{};
 }
-
