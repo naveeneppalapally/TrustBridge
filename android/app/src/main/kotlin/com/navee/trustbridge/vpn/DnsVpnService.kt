@@ -412,7 +412,11 @@ class DnsVpnService : VpnService() {
             // Keep notification pinned whenever protection is enabled so OEM
             // battery managers are less likely to reclaim the service.
             ensureForegroundStarted()
-            VpnHealthCheckJobService.schedule(this)
+            // Health-check scheduling is only needed for lifecycle transitions.
+            // Scheduling on every push/apply intent can exceed platform limits.
+            if (action == ACTION_START || action == ACTION_RESTART) {
+                VpnHealthCheckJobService.schedule(this)
+            }
         }
 
         return when (action) {
@@ -622,6 +626,11 @@ class DnsVpnService : VpnService() {
                     Log.w(TAG, "applyPolicy ignored: missing childId context")
                     return START_STICKY
                 }
+                val incomingVersion = parsePolicyVersion(snapshotData["version"])
+                if (incomingVersion == null || incomingVersion <= 0L) {
+                    Log.w(TAG, "applyPolicy ignored: missing/non-positive version")
+                    return START_STICKY
+                }
                 snapshotData["childId"] = resolvedChildId
                 if (resolvedParentId.isNotEmpty()) {
                     snapshotData["parentId"] = resolvedParentId
@@ -633,7 +642,7 @@ class DnsVpnService : VpnService() {
                         applyEffectivePolicySnapshot(
                             childId = resolvedChildId,
                             snapshotData = snapshotData,
-                            incomingVersion = parsePolicyVersion(snapshotData["version"]),
+                            incomingVersion = incomingVersion,
                             source = "apply_policy"
                         )
                     } catch (error: Exception) {
@@ -1307,25 +1316,30 @@ class DnsVpnService : VpnService() {
             // Optional fallback.
         }
 
+        if (flushed) {
+            return true
+        }
+
         val commandCandidates = listOf(
             listOf("cmd", "connectivity", "flush-dns-cache"),
-            listOf("ndc", "resolver", "flushdefaultif"),
-            listOf("su", "-c", "cmd connectivity flush-dns-cache"),
-            listOf("su", "-c", "ndc resolver flushdefaultif")
+            listOf("ndc", "resolver", "flushdefaultif")
         )
         for (command in commandCandidates) {
             try {
                 val process = ProcessBuilder(command)
                     .redirectErrorStream(true)
                     .start()
-                val completed = process.waitFor(2, TimeUnit.SECONDS)
+                val completed = process.waitFor(300, TimeUnit.MILLISECONDS)
                 if (completed && process.exitValue() == 0) {
                     flushed = true
                     Log.d(TAG, "DNS cache flush command succeeded: ${command.joinToString(" ")}")
                     break
                 }
+                if (!completed) {
+                    process.destroy()
+                }
             } catch (_: Exception) {
-                // Best-effort shell/root command fallback.
+                // Best-effort shell command fallback.
             }
         }
 
@@ -2190,6 +2204,7 @@ class DnsVpnService : VpnService() {
             temporaryAllowedDomains = allowedDomains,
             blockedPackages = blockedPackages
         )
+        flushDnsCacheBestEffort()
         if (incomingVersion != null && incomingVersion > lastEffectivePolicyVersion) {
             lastEffectivePolicyVersion = incomingVersion
         }
