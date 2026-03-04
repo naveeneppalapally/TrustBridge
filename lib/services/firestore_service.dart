@@ -541,237 +541,29 @@ class FirestoreService {
     required String message,
     String? childId,
   }) async {
-    if (parentId.trim().isEmpty) {
-      throw ArgumentError.value(parentId, 'parentId', 'Parent ID is required.');
-    }
-
-    final normalizedSubject = subject.trim();
-    if (normalizedSubject.isEmpty) {
-      throw ArgumentError.value(subject, 'subject', 'Subject is required.');
-    }
-
-    final normalizedMessage = message.trim();
-    if (normalizedMessage.isEmpty) {
-      throw ArgumentError.value(message, 'message', 'Message is required.');
-    }
-
-    final ticketRef = _firestore.collection('supportTickets').doc();
-    await ticketRef.set({
-      'parentId': parentId,
-      'subject': normalizedSubject,
-      'message': normalizedMessage,
-      'childId': childId,
-      'status': 'open',
-      'createdAt': Timestamp.fromDate(DateTime.now()),
-      'updatedAt': Timestamp.fromDate(DateTime.now()),
-    });
-    return ticketRef.id;
+    return _parentRepository.createSupportTicket(
+      parentId: parentId,
+      subject: subject,
+      message: message,
+      childId: childId,
+    );
   }
 
   Stream<List<SupportTicket>> getSupportTicketsStream(
     String parentId, {
     int limit = 50,
   }) {
-    if (parentId.trim().isEmpty) {
-      throw ArgumentError.value(parentId, 'parentId', 'Parent ID is required.');
-    }
-    if (limit <= 0) {
-      throw ArgumentError.value(
-          limit, 'limit', 'Limit must be greater than 0.');
-    }
-
-    return _firestore
-        .collection('supportTickets')
-        .where('parentId', isEqualTo: parentId)
-        .limit(limit)
-        .snapshots()
-        .map((snapshot) {
-      final tickets = <SupportTicket>[];
-      for (final doc in snapshot.docs) {
-        try {
-          tickets.add(SupportTicket.fromFirestore(doc));
-        } catch (error, stackTrace) {
-          developer.log(
-            'Skipping malformed support ticket document: ${doc.id}',
-            name: 'FirestoreService',
-            error: error,
-            stackTrace: stackTrace,
-          );
-        }
-      }
-      tickets.sort((a, b) => b.createdAt.compareTo(a.createdAt));
-      return tickets;
-    });
+    return _parentRepository.getSupportTicketsStream(parentId, limit: limit);
   }
 
   /// Returns duplicate-ticket analytics summary for roadmap planning.
   Future<Map<String, dynamic>> getDuplicateAnalytics(String parentId) async {
-    if (parentId.trim().isEmpty) {
-      throw ArgumentError.value(parentId, 'parentId', 'Parent ID is required.');
-    }
-
-    try {
-      final snapshot = await _firestore
-          .collection('supportTickets')
-          .where('parentId', isEqualTo: parentId)
-          .limit(500)
-          .get();
-
-      final allTickets = <SupportTicket>[];
-      for (final doc in snapshot.docs) {
-        try {
-          allTickets.add(SupportTicket.fromFirestore(doc));
-        } catch (_) {
-          // Skip malformed tickets.
-        }
-      }
-
-      final clusterMap = <String, List<SupportTicket>>{};
-      for (final ticket in allTickets) {
-        final key = ticket.duplicateKey;
-        if (key.isEmpty) {
-          continue;
-        }
-        clusterMap.putIfAbsent(key, () => <SupportTicket>[]).add(ticket);
-      }
-
-      final duplicateClusters =
-          clusterMap.entries.where((entry) => entry.value.length >= 2).toList();
-      duplicateClusters
-          .sort((a, b) => b.value.length.compareTo(a.value.length));
-
-      final duplicateTickets = duplicateClusters
-          .expand((entry) => entry.value)
-          .toList(growable: false);
-      final totalDuplicateReports = duplicateTickets.length;
-
-      final resolvedDuplicateReports =
-          duplicateTickets.where((ticket) => ticket.isResolved).length;
-      final resolutionRate = totalDuplicateReports == 0
-          ? 0.0
-          : resolvedDuplicateReports / totalDuplicateReports;
-
-      final velocities =
-          duplicateTickets.where((ticket) => ticket.isResolved).map((ticket) {
-        final days =
-            ticket.updatedAt.difference(ticket.createdAt).inHours.toDouble() /
-                24.0;
-        return days < 0 ? 0.0 : days;
-      }).toList();
-
-      final avgVelocity = velocities.isEmpty
-          ? 0.0
-          : velocities.reduce((a, b) => a + b) / velocities.length;
-      final minVelocity =
-          velocities.isEmpty ? 0.0 : velocities.reduce((a, b) => a < b ? a : b);
-      final maxVelocity =
-          velocities.isEmpty ? 0.0 : velocities.reduce((a, b) => a > b ? a : b);
-
-      final categoryMap = <String, int>{};
-      for (final ticket in duplicateTickets) {
-        final category = _extractDuplicateCategory(ticket.subject);
-        categoryMap[category] = (categoryMap[category] ?? 0) + 1;
-      }
-
-      final now = DateTime.now();
-      final volumeByWeek = <String, int>{
-        'Week -3': 0,
-        'Week -2': 0,
-        'Week -1': 0,
-        'Week -0': 0,
-      };
-      for (final ticket in duplicateTickets) {
-        final weekOffset = now.difference(ticket.createdAt).inDays ~/ 7;
-        if (weekOffset >= 0 && weekOffset < 4) {
-          final weekKey = 'Week -$weekOffset';
-          volumeByWeek[weekKey] = (volumeByWeek[weekKey] ?? 0) + 1;
-        }
-      }
-
-      final topIssues = duplicateClusters
-          .take(5)
-          .map((entry) => <String, dynamic>{
-                'subject': _formatDuplicateKeyForDisplay(entry.key),
-                'count': entry.value.length,
-              })
-          .toList(growable: false);
-
-      return <String, dynamic>{
-        'topIssues': topIssues,
-        'avgVelocityDays': avgVelocity,
-        'minVelocityDays': minVelocity,
-        'maxVelocityDays': maxVelocity,
-        'volumeByWeek': volumeByWeek,
-        'categoryBreakdown': categoryMap,
-        'totalDuplicateClusters': duplicateClusters.length,
-        'totalDuplicateReports': totalDuplicateReports,
-        'resolutionRate': resolutionRate,
-      };
-    } catch (error, stackTrace) {
-      developer.log(
-        'Duplicate analytics error',
-        name: 'FirestoreService',
-        error: error,
-        stackTrace: stackTrace,
-      );
-      return <String, dynamic>{};
-    }
+    return _parentRepository.getDuplicateAnalytics(parentId);
   }
 
   /// Exports top duplicate clusters as CSV text.
   Future<String> exportDuplicateClustersCSV(String parentId) async {
-    final analytics = await getDuplicateAnalytics(parentId);
-    final topIssues = (analytics['topIssues'] as List?) ?? const <dynamic>[];
-
-    final csv = StringBuffer();
-    csv.writeln('Subject,Report Count,Category');
-
-    for (final rawIssue in topIssues) {
-      if (rawIssue is! Map) {
-        continue;
-      }
-      final subject = (rawIssue['subject'] as String? ?? '').trim();
-      final count = rawIssue['count'];
-      final category = _extractDuplicateCategory(subject);
-      final escapedSubject = subject.replaceAll('"', '""');
-      csv.writeln('"$escapedSubject",$count,$category');
-    }
-
-    return csv.toString();
-  }
-
-  String _extractDuplicateCategory(String subject) {
-    final lower = subject.toLowerCase();
-    if (lower.contains('vpn')) {
-      return 'VPN';
-    }
-    if (lower.contains('notification')) {
-      return 'Notifications';
-    }
-    if (lower.contains('policy') || lower.contains('schedule')) {
-      return 'Policy';
-    }
-    if (lower.contains('crash') || lower.contains('bug')) {
-      return 'Crashes';
-    }
-    if (lower.contains('request')) {
-      return 'Requests';
-    }
-    if (lower.contains('dns')) {
-      return 'DNS';
-    }
-    return 'Other';
-  }
-
-  String _formatDuplicateKeyForDisplay(String key) {
-    if (key.trim().isEmpty) {
-      return 'Unknown issue';
-    }
-    return key
-        .split(' ')
-        .where((part) => part.trim().isNotEmpty)
-        .map((part) => '${part[0].toUpperCase()}${part.substring(1)}')
-        .join(' ');
+    return _parentRepository.exportDuplicateClustersCSV(parentId);
   }
 
   /// Returns unresolved duplicate count for a normalized duplicate key.
@@ -779,37 +571,10 @@ class FirestoreService {
     required String parentId,
     required String duplicateKey,
   }) async {
-    if (parentId.trim().isEmpty) {
-      throw ArgumentError.value(parentId, 'parentId', 'Parent ID is required.');
-    }
-
-    final normalizedKey = duplicateKey.trim().toLowerCase();
-    if (normalizedKey.isEmpty) {
-      throw ArgumentError.value(
-        duplicateKey,
-        'duplicateKey',
-        'Duplicate key is required.',
-      );
-    }
-
-    final snapshot = await _firestore
-        .collection('supportTickets')
-        .where('parentId', isEqualTo: parentId)
-        .limit(300)
-        .get();
-
-    var count = 0;
-    for (final doc in snapshot.docs) {
-      try {
-        final ticket = SupportTicket.fromFirestore(doc);
-        if (!ticket.isResolved && ticket.duplicateKey == normalizedKey) {
-          count += 1;
-        }
-      } catch (_) {
-        // Skip malformed tickets.
-      }
-    }
-    return count;
+    return _parentRepository.getDuplicateClusterSize(
+      parentId: parentId,
+      duplicateKey: duplicateKey,
+    );
   }
 
   /// Resolves all unresolved tickets in a duplicate cluster.
@@ -817,49 +582,10 @@ class FirestoreService {
     required String parentId,
     required String duplicateKey,
   }) async {
-    if (parentId.trim().isEmpty) {
-      throw ArgumentError.value(parentId, 'parentId', 'Parent ID is required.');
-    }
-
-    final normalizedKey = duplicateKey.trim().toLowerCase();
-    if (normalizedKey.isEmpty) {
-      throw ArgumentError.value(
-        duplicateKey,
-        'duplicateKey',
-        'Duplicate key is required.',
-      );
-    }
-
-    final snapshot = await _firestore
-        .collection('supportTickets')
-        .where('parentId', isEqualTo: parentId)
-        .limit(300)
-        .get();
-
-    final batch = _firestore.batch();
-    var updatedCount = 0;
-    for (final doc in snapshot.docs) {
-      try {
-        final ticket = SupportTicket.fromFirestore(doc);
-        if (ticket.isResolved || ticket.duplicateKey != normalizedKey) {
-          continue;
-        }
-
-        batch.update(doc.reference, {
-          'status': SupportTicketStatus.resolved.name,
-          'updatedAt': Timestamp.fromDate(DateTime.now()),
-        });
-        updatedCount += 1;
-      } catch (_) {
-        // Skip malformed tickets.
-      }
-    }
-
-    if (updatedCount > 0) {
-      await batch.commit();
-    }
-
-    return updatedCount;
+    return _parentRepository.bulkResolveDuplicates(
+      parentId: parentId,
+      duplicateKey: duplicateKey,
+    );
   }
 
   /// Reopens recently resolved tickets in a duplicate cluster.
@@ -868,60 +594,11 @@ class FirestoreService {
     required String duplicateKey,
     int limit = 50,
   }) async {
-    if (parentId.trim().isEmpty) {
-      throw ArgumentError.value(parentId, 'parentId', 'Parent ID is required.');
-    }
-
-    final normalizedKey = duplicateKey.trim().toLowerCase();
-    if (normalizedKey.isEmpty) {
-      throw ArgumentError.value(
-        duplicateKey,
-        'duplicateKey',
-        'Duplicate key is required.',
-      );
-    }
-    if (limit <= 0) {
-      throw ArgumentError.value(
-          limit, 'limit', 'Limit must be greater than 0.');
-    }
-
-    final snapshot = await _firestore
-        .collection('supportTickets')
-        .where('parentId', isEqualTo: parentId)
-        .limit(300)
-        .get();
-
-    final candidates =
-        <MapEntry<DocumentReference<Map<String, dynamic>>, SupportTicket>>[];
-    for (final doc in snapshot.docs) {
-      try {
-        final ticket = SupportTicket.fromFirestore(doc);
-        if (!ticket.isResolved || ticket.duplicateKey != normalizedKey) {
-          continue;
-        }
-        candidates.add(MapEntry(doc.reference, ticket));
-      } catch (_) {
-        // Skip malformed tickets.
-      }
-    }
-
-    candidates.sort((a, b) => b.value.updatedAt.compareTo(a.value.updatedAt));
-
-    final batch = _firestore.batch();
-    var reopenedCount = 0;
-    for (final entry in candidates.take(limit)) {
-      batch.update(entry.key, {
-        'status': SupportTicketStatus.open.name,
-        'updatedAt': Timestamp.fromDate(DateTime.now()),
-      });
-      reopenedCount += 1;
-    }
-
-    if (reopenedCount > 0) {
-      await batch.commit();
-    }
-
-    return reopenedCount;
+    return _parentRepository.bulkReopenDuplicates(
+      parentId: parentId,
+      duplicateKey: duplicateKey,
+      limit: limit,
+    );
   }
 
   Future<String> submitBetaFeedback({
@@ -932,90 +609,13 @@ class FirestoreService {
     required String details,
     String? childId,
   }) async {
-    const allowedCategories = <String>{
-      'Bug Report',
-      'Blocking Accuracy',
-      'Performance',
-      'UX / Design',
-      'Feature Request',
-      'Other',
-    };
-    const allowedSeverities = <String>{
-      'Low',
-      'Medium',
-      'High',
-      'Critical',
-    };
-
-    if (parentId.trim().isEmpty) {
-      throw ArgumentError.value(parentId, 'parentId', 'Parent ID is required.');
-    }
-
-    final normalizedCategory = category.trim();
-    if (!allowedCategories.contains(normalizedCategory)) {
-      throw ArgumentError.value(
-        category,
-        'category',
-        'Unsupported beta feedback category.',
-      );
-    }
-
-    final normalizedSeverity = severity.trim();
-    if (!allowedSeverities.contains(normalizedSeverity)) {
-      throw ArgumentError.value(
-        severity,
-        'severity',
-        'Unsupported beta feedback severity.',
-      );
-    }
-
-    final normalizedTitle = title.trim();
-    if (normalizedTitle.length < 4 || normalizedTitle.length > 80) {
-      throw ArgumentError.value(
-        title,
-        'title',
-        'Title must be between 4 and 80 characters.',
-      );
-    }
-
-    final normalizedDetails = details.trim();
-    if (normalizedDetails.length < 20 || normalizedDetails.length > 1500) {
-      throw ArgumentError.value(
-        details,
-        'details',
-        'Details must be between 20 and 1500 characters.',
-      );
-    }
-
-    final normalizedChildId = childId?.trim();
-
-    final rawSubject =
-        '[Beta][$normalizedSeverity] $normalizedCategory: $normalizedTitle';
-    final subject =
-        rawSubject.length > 120 ? rawSubject.substring(0, 120) : rawSubject;
-
-    final messageBuffer = StringBuffer()
-      ..writeln('Category: $normalizedCategory')
-      ..writeln('Severity: $normalizedSeverity');
-    if (normalizedChildId != null && normalizedChildId.isNotEmpty) {
-      messageBuffer.writeln('Child ID: $normalizedChildId');
-    }
-    messageBuffer
-      ..writeln()
-      ..write(normalizedDetails)
-      ..writeln()
-      ..writeln()
-      ..write('Submitted from Alpha feedback form.');
-
-    final message = messageBuffer.toString();
-
-    return createSupportTicket(
+    return _parentRepository.submitBetaFeedback(
       parentId: parentId,
-      subject: subject,
-      message: message.length > 2000 ? message.substring(0, 2000) : message,
-      childId: normalizedChildId == null || normalizedChildId.isEmpty
-          ? null
-          : normalizedChildId,
+      category: category,
+      severity: severity,
+      title: title,
+      details: details,
+      childId: childId,
     );
   }
 
@@ -1103,32 +703,11 @@ class FirestoreService {
     String? email,
     String? displayName,
   }) async {
-    if (parentId.trim().isEmpty) {
-      throw ArgumentError.value(parentId, 'parentId', 'Parent ID is required.');
-    }
-
-    final updates = <String, dynamic>{};
-    if (email != null) {
-      final normalized = email.trim();
-      if (normalized.isNotEmpty) {
-        updates['email'] = normalized;
-      }
-    }
-    if (displayName != null) {
-      final normalized = displayName.trim();
-      if (normalized.isNotEmpty) {
-        updates['displayName'] = normalized;
-      }
-    }
-    if (updates.isEmpty) {
-      return;
-    }
-
-    updates['updatedAt'] = FieldValue.serverTimestamp();
-    await _firestore.collection('parents').doc(parentId).set(
-          updates,
-          SetOptions(merge: true),
-        );
+    await _parentRepository.updateParentContactInfo(
+      parentId: parentId,
+      email: email,
+      displayName: displayName,
+    );
   }
 
   Future<List<ChildProfile>> getChildren(String parentId) async {
@@ -1269,7 +848,7 @@ class FirestoreService {
       throw ArgumentError.value(childId, 'childId', 'Child ID is required.');
     }
 
-    final childDoc = await _loadOwnedChildDoc(
+    final childDoc = await _childRepository.loadOwnedChildDoc(
       parentId: parentId,
       childId: childId,
     );
@@ -1277,10 +856,10 @@ class FirestoreService {
       return const <InstalledAppInfo>[];
     }
 
-    final inventoryDoc = await childDoc.reference
-        .collection('app_inventory')
-        .doc('current')
-        .get();
+    final inventoryDoc = await _childRepository.getChildInventoryDoc(
+      parentId: parentId,
+      childId: childId,
+    );
     return _installedAppsFromSnapshot(inventoryDoc.data());
   }
 
@@ -1295,18 +874,13 @@ class FirestoreService {
       throw ArgumentError.value(childId, 'childId', 'Child ID is required.');
     }
 
-    return _firestore
-        .collection('children')
-        .doc(childId.trim())
-        .collection('app_inventory')
-        .doc('current')
-        .snapshots()
+    return _childRepository
+        .watchChildInventoryDoc(childId.trim())
         .asyncMap((snapshot) async {
       if (!snapshot.exists) {
         return const <InstalledAppInfo>[];
       }
-      final childSnapshot =
-          await _firestore.collection('children').doc(childId.trim()).get();
+      final childSnapshot = await _childRepository.getChildDoc(childId.trim());
       final childData = childSnapshot.data() ?? const <String, dynamic>{};
       final ownerParentId = (childData['parentId'] as String?)?.trim();
       if (ownerParentId == null || ownerParentId != parentId.trim()) {
@@ -1327,7 +901,7 @@ class FirestoreService {
       throw ArgumentError.value(childId, 'childId', 'Child ID is required.');
     }
 
-    final childDoc = await _loadOwnedChildDoc(
+    final childDoc = await _childRepository.loadOwnedChildDoc(
       parentId: parentId,
       childId: childId,
     );
@@ -1335,10 +909,10 @@ class FirestoreService {
       return const <String, List<String>>{};
     }
 
-    final usageDoc = await childDoc.reference
-        .collection('app_domain_usage')
-        .doc('current')
-        .get();
+    final usageDoc = await _childRepository.getChildAppDomainUsageDoc(
+      parentId: parentId,
+      childId: childId,
+    );
     return _observedAppDomainsFromSnapshot(usageDoc.data());
   }
 
@@ -1754,30 +1328,11 @@ class FirestoreService {
     required String childId,
     required String profileId,
   }) async {
-    if (parentId.trim().isEmpty) {
-      throw ArgumentError.value(parentId, 'parentId', 'Parent ID is required.');
-    }
-    if (childId.trim().isEmpty) {
-      throw ArgumentError.value(childId, 'childId', 'Child ID is required.');
-    }
-    final normalizedProfileId = profileId.trim().toLowerCase();
-    if (normalizedProfileId.isEmpty) {
-      throw ArgumentError.value(
-        profileId,
-        'profileId',
-        'NextDNS profile ID is required.',
-      );
-    }
-
-    final childDoc = await _loadOwnedChildDoc(
+    await _childRepository.setChildNextDnsProfileId(
       parentId: parentId,
       childId: childId,
+      profileId: profileId,
     );
-
-    await childDoc.reference.update(<String, dynamic>{
-      'nextDnsProfileId': normalizedProfileId,
-      'updatedAt': Timestamp.fromDate(DateTime.now()),
-    });
   }
 
   Future<int> migrateChildrenWithoutNextDnsProfiles(String parentId) async {
@@ -1831,21 +1386,11 @@ class FirestoreService {
     required String childId,
     required Map<String, dynamic> controls,
   }) async {
-    if (parentId.trim().isEmpty) {
-      throw ArgumentError.value(parentId, 'parentId', 'Parent ID is required.');
-    }
-    if (childId.trim().isEmpty) {
-      throw ArgumentError.value(childId, 'childId', 'Child ID is required.');
-    }
-
-    final childDoc = await _loadOwnedChildDoc(
+    await _childRepository.saveChildNextDnsControls(
       parentId: parentId,
       childId: childId,
+      controls: controls,
     );
-    await childDoc.reference.update(<String, dynamic>{
-      'nextDnsControls': controls,
-      'updatedAt': Timestamp.fromDate(DateTime.now()),
-    });
   }
 
   Future<void> upsertChildDeviceMetadata({
@@ -1857,72 +1402,15 @@ class FirestoreService {
     String? manufacturer,
     String? linkedNextDnsProfileId,
   }) async {
-    if (parentId.trim().isEmpty) {
-      throw ArgumentError.value(parentId, 'parentId', 'Parent ID is required.');
-    }
-    if (childId.trim().isEmpty) {
-      throw ArgumentError.value(childId, 'childId', 'Child ID is required.');
-    }
-    final normalizedDeviceId = deviceId.trim();
-    if (normalizedDeviceId.isEmpty) {
-      throw ArgumentError.value(
-        deviceId,
-        'deviceId',
-        'Device ID cannot be empty.',
-      );
-    }
-    final normalizedAlias = alias.trim();
-    if (normalizedAlias.isEmpty) {
-      throw ArgumentError.value(alias, 'alias', 'Device alias is required.');
-    }
-
-    final childDoc = await _loadOwnedChildDoc(
+    await _childRepository.upsertChildDeviceMetadata(
       parentId: parentId,
       childId: childId,
+      deviceId: deviceId,
+      alias: alias,
+      model: model,
+      manufacturer: manufacturer,
+      linkedNextDnsProfileId: linkedNextDnsProfileId,
     );
-    final currentData = childDoc.data() ?? const <String, dynamic>{};
-    final rawMetadata = currentData['deviceMetadata'];
-    final metadataMap = rawMetadata is Map
-        ? rawMetadata.map(
-            (key, value) => MapEntry(key.toString(), value),
-          )
-        : <String, dynamic>{};
-
-    final existingDeviceRaw = metadataMap[normalizedDeviceId];
-    final existingDeviceMap = existingDeviceRaw is Map
-        ? existingDeviceRaw.map(
-            (key, value) => MapEntry(key.toString(), value),
-          )
-        : <String, dynamic>{};
-    final now = Timestamp.fromDate(DateTime.now());
-
-    metadataMap[normalizedDeviceId] = <String, dynamic>{
-      'alias': normalizedAlias,
-      'model': model?.trim().isEmpty == true ? null : model?.trim(),
-      'manufacturer':
-          manufacturer?.trim().isEmpty == true ? null : manufacturer?.trim(),
-      'linkedNextDnsProfileId': linkedNextDnsProfileId?.trim().isEmpty == true
-          ? null
-          : linkedNextDnsProfileId?.trim(),
-      'isVerified': existingDeviceMap['isVerified'] == true,
-      'createdAt': existingDeviceMap['createdAt'] ?? now,
-      'lastSeenAt': existingDeviceMap['lastSeenAt'],
-    };
-
-    final rawDeviceIds = currentData['deviceIds'];
-    final deviceIds = rawDeviceIds is List
-        ? rawDeviceIds
-            .map((item) => item.toString().trim())
-            .where((item) => item.isNotEmpty)
-            .toSet()
-        : <String>{};
-    deviceIds.add(normalizedDeviceId);
-
-    await childDoc.reference.update(<String, dynamic>{
-      'deviceIds': deviceIds.toList(growable: false),
-      'deviceMetadata': metadataMap,
-      'updatedAt': now,
-    });
   }
 
   Future<void> verifyChildDevice({
@@ -1930,51 +1418,11 @@ class FirestoreService {
     required String childId,
     required String deviceId,
   }) async {
-    if (parentId.trim().isEmpty) {
-      throw ArgumentError.value(parentId, 'parentId', 'Parent ID is required.');
-    }
-    if (childId.trim().isEmpty) {
-      throw ArgumentError.value(childId, 'childId', 'Child ID is required.');
-    }
-    final normalizedDeviceId = deviceId.trim();
-    if (normalizedDeviceId.isEmpty) {
-      throw ArgumentError.value(
-        deviceId,
-        'deviceId',
-        'Device ID cannot be empty.',
-      );
-    }
-
-    final childDoc = await _loadOwnedChildDoc(
+    await _childRepository.verifyChildDevice(
       parentId: parentId,
       childId: childId,
+      deviceId: deviceId,
     );
-    final currentData = childDoc.data() ?? const <String, dynamic>{};
-    final rawMetadata = currentData['deviceMetadata'];
-    final metadataMap = rawMetadata is Map
-        ? rawMetadata.map(
-            (key, value) => MapEntry(key.toString(), value),
-          )
-        : <String, dynamic>{};
-    final existingRaw = metadataMap[normalizedDeviceId];
-    if (existingRaw is! Map) {
-      throw StateError('Device metadata not found for $normalizedDeviceId');
-    }
-
-    final existingMap = existingRaw.map(
-      (key, value) => MapEntry(key.toString(), value),
-    );
-    final now = Timestamp.fromDate(DateTime.now());
-    metadataMap[normalizedDeviceId] = <String, dynamic>{
-      ...existingMap,
-      'isVerified': true,
-      'lastSeenAt': now,
-    };
-
-    await childDoc.reference.update(<String, dynamic>{
-      'deviceMetadata': metadataMap,
-      'updatedAt': now,
-    });
   }
 
   Future<void> removeChildDevice({
@@ -1982,47 +1430,11 @@ class FirestoreService {
     required String childId,
     required String deviceId,
   }) async {
-    if (parentId.trim().isEmpty) {
-      throw ArgumentError.value(parentId, 'parentId', 'Parent ID is required.');
-    }
-    if (childId.trim().isEmpty) {
-      throw ArgumentError.value(childId, 'childId', 'Child ID is required.');
-    }
-    final normalizedDeviceId = deviceId.trim();
-    if (normalizedDeviceId.isEmpty) {
-      throw ArgumentError.value(
-        deviceId,
-        'deviceId',
-        'Device ID cannot be empty.',
-      );
-    }
-
-    final childDoc = await _loadOwnedChildDoc(
+    await _childRepository.removeChildDevice(
       parentId: parentId,
       childId: childId,
+      deviceId: deviceId,
     );
-    final currentData = childDoc.data() ?? const <String, dynamic>{};
-    final rawMetadata = currentData['deviceMetadata'];
-    final metadataMap = rawMetadata is Map
-        ? rawMetadata.map(
-            (key, value) => MapEntry(key.toString(), value),
-          )
-        : <String, dynamic>{};
-    metadataMap.remove(normalizedDeviceId);
-
-    final rawDeviceIds = currentData['deviceIds'];
-    final deviceIds = rawDeviceIds is List
-        ? rawDeviceIds
-            .map((item) => item.toString().trim())
-            .where((item) => item.isNotEmpty && item != normalizedDeviceId)
-            .toList(growable: false)
-        : const <String>[];
-
-    await childDoc.reference.update(<String, dynamic>{
-      'deviceIds': deviceIds,
-      'deviceMetadata': metadataMap,
-      'updatedAt': Timestamp.fromDate(DateTime.now()),
-    });
   }
 
   Future<DocumentSnapshot<Map<String, dynamic>>> _loadOwnedChildDoc({

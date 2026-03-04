@@ -32,15 +32,11 @@ import androidx.core.app.NotificationCompat
 import com.navee.trustbridge.MainActivity
 import com.navee.trustbridge.R
 import com.google.firebase.FirebaseApp
-import com.google.firebase.auth.FirebaseAuth
-import com.google.firebase.firestore.FieldValue
 import com.google.firebase.Timestamp
 import com.google.firebase.firestore.FirebaseFirestore
 import com.google.firebase.firestore.FirebaseFirestoreException
 import com.google.firebase.firestore.FirebaseFirestoreSettings
 import com.google.firebase.firestore.ListenerRegistration
-import com.google.firebase.firestore.SetOptions
-import com.google.android.gms.tasks.Tasks
 import java.io.FileInputStream
 import java.io.FileOutputStream
 import java.io.File
@@ -50,8 +46,6 @@ import java.util.LinkedHashMap
 import java.util.concurrent.Executors
 import java.util.concurrent.TimeUnit
 import kotlin.concurrent.thread
-import org.json.JSONArray
-import org.json.JSONObject
 
 class DnsVpnService : VpnService() {
     companion object {
@@ -90,10 +84,6 @@ class DnsVpnService : VpnService() {
         private const val EFFECTIVE_POLICY_POLL_TIMEOUT_MS = 6_000L
         private const val INTERFACE_REFRESH_DELAY_MS = 200L
         private const val ENABLE_FORCE_SYSTEM_DNS_FLUSH = true
-        private const val WEB_DIAGNOSTICS_WRITE_MIN_INTERVAL_MS = 5_000L
-        private const val WEB_DIAGNOSTICS_RECENT_DNS_WINDOW_MS = 20_000L
-        private const val APP_DOMAIN_USAGE_WRITE_MIN_INTERVAL_MS = 5_000L
-        private const val APP_INVENTORY_WRITE_MIN_INTERVAL_MS = 2 * 60 * 1000L
         private const val APP_DOMAIN_USAGE_MAX_PACKAGES = 180
         private const val APP_DOMAIN_USAGE_MAX_DOMAINS_PER_PACKAGE = 120
         private const val PORT_UID_CACHE_TTL_MS = 15_000L
@@ -104,24 +94,6 @@ class DnsVpnService : VpnService() {
             "chat",
             "streaming",
             "games"
-        )
-        private val WEB_DIAGNOSTIC_BROWSER_PACKAGES = setOf(
-            "com.android.chrome",
-            "org.chromium.chrome",
-            "com.chrome.beta",
-            "com.chrome.dev",
-            "com.microsoft.emmx",
-            "org.mozilla.firefox",
-            "org.mozilla.firefox_beta",
-            "org.mozilla.fenix",
-            "com.opera.browser",
-            "com.opera.mini.native",
-            "com.brave.browser",
-            "com.sec.android.app.sbrowser",
-            "com.vivo.browser",
-            "com.heytap.browser",
-            "com.mi.globalbrowser",
-            "com.kiwibrowser.browser"
         )
         private val INFRASTRUCTURE_PACKAGES = setOf(
             "com.android.vending",
@@ -388,6 +360,8 @@ class DnsVpnService : VpnService() {
     private var lastBrowserDnsBypassSignalReasonCode: String = ""
     @Volatile
     private var lastBrowserDnsBypassSignalForegroundPackage: String? = null
+    private lateinit var telemetryManager: VpnTelemetryManager
+    private lateinit var policyApplyManager: PolicyApplyManager
     private lateinit var policySyncManager: PolicySyncManager
 
     private fun registerDnsFlushReceiver() {
@@ -455,6 +429,8 @@ class DnsVpnService : VpnService() {
             // Parent-only devices should never show child protection-off alerts.
             dismissProtectionAttentionNotification()
         }
+        telemetryManager = createTelemetryManager()
+        policyApplyManager = createPolicyApplyManager()
         policySyncManager = createPolicySyncManager()
         filterEngine = DnsFilterEngine(this)
         blockedCategoryCount = filterEngine.blockedCategoryCount()
@@ -1586,6 +1562,312 @@ class DnsVpnService : VpnService() {
         appGuardThread = null
     }
 
+    private fun recentQueryLogsSnapshot(limit: Int): List<Map<String, Any>> {
+        return DnsVpnService.Companion.getRecentQueryLogs(limit)
+    }
+
+    private fun telemetryPrivateDnsModeSnapshot(): String = privateDnsMode
+    private fun telemetryStartedAtEpochMsSnapshot(): Long? = startedAtEpochMs
+    private fun telemetryQueriesProcessedSnapshot(): Long = queriesProcessed
+    private fun telemetryQueriesBlockedSnapshot(): Long = queriesBlocked
+    private fun telemetryQueriesAllowedSnapshot(): Long = queriesAllowed
+    private fun telemetryUpstreamFailureCountSnapshot(): Long = upstreamFailureCount
+    private fun telemetryFallbackQueryCountSnapshot(): Long = fallbackQueryCount
+    private fun telemetryBlockedCategoryCountSnapshot(): Int = blockedCategoryCount
+    private fun telemetryBlockedDomainCountSnapshot(): Int = blockedDomainCount
+
+    private fun createTelemetryManager(): VpnTelemetryManager {
+        return VpnTelemetryManager(
+            object : VpnTelemetryManager.Host {
+                override val tag: String
+                    get() = TAG
+                override val serviceRunning: Boolean
+                    get() = this@DnsVpnService.serviceRunning
+                override val vpnPreferencesStore: VpnPreferencesStore
+                    get() = this@DnsVpnService.vpnPreferencesStore
+                override val webDiagnosticsExecutor = this@DnsVpnService.webDiagnosticsExecutor
+                override val appDomainUsageExecutor = this@DnsVpnService.appDomainUsageExecutor
+                override val packageManager: PackageManager
+                    get() = this@DnsVpnService.packageManager
+                override val appPackageName: String
+                    get() = this@DnsVpnService.packageName
+                override val privateDnsMode: String
+                    get() = this@DnsVpnService.telemetryPrivateDnsModeSnapshot()
+                override val privateDnsActive: Boolean
+                    get() = privateDnsMode == "opportunistic" || privateDnsMode == "hostname"
+                override val startedAtEpochMs: Long?
+                    get() = this@DnsVpnService.telemetryStartedAtEpochMsSnapshot()
+
+                override val queriesProcessed: Long
+                    get() = this@DnsVpnService.telemetryQueriesProcessedSnapshot()
+                override val queriesBlocked: Long
+                    get() = this@DnsVpnService.telemetryQueriesBlockedSnapshot()
+                override val queriesAllowed: Long
+                    get() = this@DnsVpnService.telemetryQueriesAllowedSnapshot()
+                override val upstreamFailureCount: Long
+                    get() = this@DnsVpnService.telemetryUpstreamFailureCountSnapshot()
+                override val fallbackQueryCount: Long
+                    get() = this@DnsVpnService.telemetryFallbackQueryCountSnapshot()
+                override val blockedCategoryCount: Int
+                    get() = this@DnsVpnService.telemetryBlockedCategoryCountSnapshot()
+                override val blockedDomainCount: Int
+                    get() = this@DnsVpnService.telemetryBlockedDomainCountSnapshot()
+                override val lastAppliedCategories: List<String>
+                    get() = this@DnsVpnService.lastAppliedCategories
+                override val lastAppliedDomains: List<String>
+                    get() = this@DnsVpnService.lastAppliedDomains
+                override val lastAppliedBlockedPackages: List<String>
+                    get() = this@DnsVpnService.lastAppliedBlockedPackages
+
+                override val lastPolicySnapshotSeenVersion: Long
+                    get() = this@DnsVpnService.lastPolicySnapshotSeenVersion
+                override val lastEffectivePolicyVersion: Long
+                    get() = this@DnsVpnService.lastEffectivePolicyVersion
+                override val lastPolicySnapshotSeenAtEpochMs: Long
+                    get() = this@DnsVpnService.lastPolicySnapshotSeenAtEpochMs
+                override val lastPolicyApplyAttemptAtEpochMs: Long
+                    get() = this@DnsVpnService.lastPolicyApplyAttemptAtEpochMs
+                override val lastPolicyApplySuccessAtEpochMs: Long
+                    get() = this@DnsVpnService.lastPolicyApplySuccessAtEpochMs
+                override val lastPolicyApplySource: String
+                    get() = this@DnsVpnService.lastPolicyApplySource
+                override val lastPolicySnapshotSource: String
+                    get() = this@DnsVpnService.lastPolicySnapshotSource
+                override val lastPolicyApplySkipReason: String
+                    get() = this@DnsVpnService.lastPolicyApplySkipReason
+                override val lastPolicyApplyErrorMessage: String
+                    get() = this@DnsVpnService.lastPolicyApplyErrorMessage
+                override val effectivePolicyListenerAttached: Boolean
+                    get() = this@DnsVpnService.effectivePolicyListener != null
+                override val effectivePolicyPollRunning: Boolean
+                    get() = this@DnsVpnService.effectivePolicyPollRunning
+                override val lastPolicyListenerEventAtEpochMs: Long
+                    get() = this@DnsVpnService.lastPolicyListenerEventAtEpochMs
+                override val lastPolicyPollSuccessAtEpochMs: Long
+                    get() = this@DnsVpnService.lastPolicyPollSuccessAtEpochMs
+
+                override var cachedPolicyAckDeviceId: String?
+                    get() = this@DnsVpnService.cachedPolicyAckDeviceId
+                    set(value) {
+                        this@DnsVpnService.cachedPolicyAckDeviceId = value
+                    }
+
+                override var lastWebDiagnosticsWriteEpochMs: Long
+                    get() = this@DnsVpnService.lastWebDiagnosticsWriteEpochMs
+                    set(value) {
+                        this@DnsVpnService.lastWebDiagnosticsWriteEpochMs = value
+                    }
+
+                override var webDiagnosticsWriteQueued: Boolean
+                    get() = this@DnsVpnService.webDiagnosticsWriteQueued
+                    set(value) {
+                        this@DnsVpnService.webDiagnosticsWriteQueued = value
+                    }
+
+                override var lastWebDiagnosticsSignature: String
+                    get() = this@DnsVpnService.lastWebDiagnosticsSignature
+                    set(value) {
+                        this@DnsVpnService.lastWebDiagnosticsSignature = value
+                    }
+
+                override var lastBrowserDnsBypassSignalEpochMs: Long
+                    get() = this@DnsVpnService.lastBrowserDnsBypassSignalEpochMs
+                    set(value) {
+                        this@DnsVpnService.lastBrowserDnsBypassSignalEpochMs = value
+                    }
+
+                override var lastBrowserDnsBypassSignalReasonCode: String
+                    get() = this@DnsVpnService.lastBrowserDnsBypassSignalReasonCode
+                    set(value) {
+                        this@DnsVpnService.lastBrowserDnsBypassSignalReasonCode = value
+                    }
+
+                override var lastBrowserDnsBypassSignalForegroundPackage: String?
+                    get() = this@DnsVpnService.lastBrowserDnsBypassSignalForegroundPackage
+                    set(value) {
+                        this@DnsVpnService.lastBrowserDnsBypassSignalForegroundPackage = value
+                    }
+
+                override var appDomainUsageWriteQueued: Boolean
+                    get() = this@DnsVpnService.appDomainUsageWriteQueued
+                    set(value) {
+                        this@DnsVpnService.appDomainUsageWriteQueued = value
+                    }
+
+                override var appDomainUsageDirty: Boolean
+                    get() = this@DnsVpnService.appDomainUsageDirty
+                    set(value) {
+                        this@DnsVpnService.appDomainUsageDirty = value
+                    }
+
+                override var lastAppDomainUsageWriteEpochMs: Long
+                    get() = this@DnsVpnService.lastAppDomainUsageWriteEpochMs
+                    set(value) {
+                        this@DnsVpnService.lastAppDomainUsageWriteEpochMs = value
+                    }
+
+                override var appInventoryWriteQueued: Boolean
+                    get() = this@DnsVpnService.appInventoryWriteQueued
+                    set(value) {
+                        this@DnsVpnService.appInventoryWriteQueued = value
+                    }
+
+                override var lastAppInventoryWriteEpochMs: Long
+                    get() = this@DnsVpnService.lastAppInventoryWriteEpochMs
+                    set(value) {
+                        this@DnsVpnService.lastAppInventoryWriteEpochMs = value
+                    }
+
+                override var lastAppInventoryHash: String
+                    get() = this@DnsVpnService.lastAppInventoryHash
+                    set(value) {
+                        this@DnsVpnService.lastAppInventoryHash = value
+                    }
+
+                override val appDomainUsageByPackage: MutableMap<String, LinkedHashMap<String, Long>>
+                    get() = this@DnsVpnService.appDomainUsageByPackage
+
+                override fun maybeBootstrapPolicySyncAuth(reason: String): Boolean {
+                    return this@DnsVpnService.maybeBootstrapPolicySyncAuth(reason)
+                }
+
+                override fun ensurePolicySyncDeviceRegistration() {
+                    this@DnsVpnService.ensurePolicySyncDeviceRegistration()
+                }
+
+                override fun hasUsageStatsPermissionForGuard(): Boolean {
+                    return this@DnsVpnService.hasUsageStatsPermissionForGuard()
+                }
+
+                override fun currentForegroundPackageFromUsageStats(): String? {
+                    return this@DnsVpnService.currentForegroundPackageFromUsageStats()
+                }
+
+                override fun getRecentQueryLogs(limit: Int): List<Map<String, Any>> {
+                    return this@DnsVpnService.recentQueryLogsSnapshot(limit)
+                }
+
+                override fun isParentControllablePackage(packageName: String): Boolean {
+                    return this@DnsVpnService.isParentControllablePackage(packageName)
+                }
+
+                override fun hasInternetPermission(packageName: String): Boolean {
+                    return this@DnsVpnService.hasInternetPermission(packageName)
+                }
+            }
+        )
+    }
+
+    private fun createPolicyApplyManager(): PolicyApplyManager {
+        return PolicyApplyManager(
+            object : PolicyApplyManager.Host {
+                override val tag: String
+                    get() = TAG
+                override val serviceRunning: Boolean
+                    get() = this@DnsVpnService.serviceRunning
+                override val policyApplyExecutor = this@DnsVpnService.policyApplyExecutor
+                override val blockAllCategoryToken: String
+                    get() = BLOCK_ALL_CATEGORY_TOKEN
+                override val distractingModeCategories: Set<String>
+                    get() = DISTRACTING_MODE_CATEGORIES
+
+                override var lastEffectivePolicyVersion: Long
+                    get() = this@DnsVpnService.lastEffectivePolicyVersion
+                    set(value) {
+                        this@DnsVpnService.lastEffectivePolicyVersion = value
+                    }
+                override var lastPolicySnapshotSeenVersion: Long
+                    get() = this@DnsVpnService.lastPolicySnapshotSeenVersion
+                    set(value) {
+                        this@DnsVpnService.lastPolicySnapshotSeenVersion = value
+                    }
+                override var lastPolicySnapshotSeenAtEpochMs: Long
+                    get() = this@DnsVpnService.lastPolicySnapshotSeenAtEpochMs
+                    set(value) {
+                        this@DnsVpnService.lastPolicySnapshotSeenAtEpochMs = value
+                    }
+                override var lastPolicySnapshotSource: String
+                    get() = this@DnsVpnService.lastPolicySnapshotSource
+                    set(value) {
+                        this@DnsVpnService.lastPolicySnapshotSource = value
+                    }
+                override var lastPolicyApplyAttemptAtEpochMs: Long
+                    get() = this@DnsVpnService.lastPolicyApplyAttemptAtEpochMs
+                    set(value) {
+                        this@DnsVpnService.lastPolicyApplyAttemptAtEpochMs = value
+                    }
+                override var lastPolicyApplySuccessAtEpochMs: Long
+                    get() = this@DnsVpnService.lastPolicyApplySuccessAtEpochMs
+                    set(value) {
+                        this@DnsVpnService.lastPolicyApplySuccessAtEpochMs = value
+                    }
+                override var lastPolicyApplySource: String
+                    get() = this@DnsVpnService.lastPolicyApplySource
+                    set(value) {
+                        this@DnsVpnService.lastPolicyApplySource = value
+                    }
+                override var lastPolicyApplySkipReason: String
+                    get() = this@DnsVpnService.lastPolicyApplySkipReason
+                    set(value) {
+                        this@DnsVpnService.lastPolicyApplySkipReason = value
+                    }
+                override var lastPolicyApplyErrorMessage: String
+                    get() = this@DnsVpnService.lastPolicyApplyErrorMessage
+                    set(value) {
+                        this@DnsVpnService.lastPolicyApplyErrorMessage = value
+                    }
+                override var cachedPolicyAckDeviceId: String?
+                    get() = this@DnsVpnService.cachedPolicyAckDeviceId
+                    set(value) {
+                        this@DnsVpnService.cachedPolicyAckDeviceId = value
+                    }
+
+                override val lastAppliedCategories: List<String>
+                    get() = this@DnsVpnService.lastAppliedCategories
+                override val lastAppliedDomains: List<String>
+                    get() = this@DnsVpnService.lastAppliedDomains
+                override val lastAppliedAllowedDomains: List<String>
+                    get() = this@DnsVpnService.lastAppliedAllowedDomains
+                override val lastAppliedBlockedPackages: List<String>
+                    get() = this@DnsVpnService.lastAppliedBlockedPackages
+                override val blockedCategoryCount: Int
+                    get() = this@DnsVpnService.telemetryBlockedCategoryCountSnapshot()
+                override val blockedDomainCount: Int
+                    get() = this@DnsVpnService.telemetryBlockedDomainCountSnapshot()
+
+                override fun normalizeCategoryToken(rawCategory: String): String {
+                    return this@DnsVpnService.normalizeCategoryToken(rawCategory)
+                }
+
+                override fun normalizeDomainToken(rawDomain: String): String {
+                    return this@DnsVpnService.normalizeDomainToken(rawDomain)
+                }
+
+                override fun applyFilterRules(
+                    categories: List<String>,
+                    domains: List<String>,
+                    temporaryAllowedDomains: List<String>,
+                    blockedPackages: List<String>
+                ) {
+                    this@DnsVpnService.applyFilterRules(
+                        categories = categories,
+                        domains = domains,
+                        temporaryAllowedDomains = temporaryAllowedDomains,
+                        blockedPackages = blockedPackages
+                    )
+                }
+
+                override fun forceSystemDnsFlush() {
+                    this@DnsVpnService.forceSystemDnsFlush()
+                }
+
+                override fun hasUsageStatsPermissionForGuard(): Boolean {
+                    return this@DnsVpnService.hasUsageStatsPermissionForGuard()
+                }
+            }
+        )
+    }
+
     private fun createPolicySyncManager(): PolicySyncManager {
         return PolicySyncManager(
             object : PolicySyncManager.Host {
@@ -1809,73 +2091,19 @@ class DnsVpnService : VpnService() {
     }
 
     private fun parsePolicyStringList(raw: Any?): List<String> {
-        if (raw !is List<*>) {
-            return emptyList()
-        }
-        return raw.mapNotNull { item ->
-            (item as? String)?.trim()?.lowercase()?.takeIf { it.isNotEmpty() }
-        }
+        return policyApplyManager.parsePolicyStringList(raw)
     }
 
     private fun parsePolicyVersion(raw: Any?): Long? {
-        return when (raw) {
-            is Long -> raw
-            is Int -> raw.toLong()
-            is Double -> raw.toLong()
-            is String -> raw.toLongOrNull()
-            else -> null
-        }
+        return policyApplyManager.parsePolicyVersion(raw)
     }
 
     private fun parsePolicyJson(raw: String): HashMap<String, Any>? {
-        return try {
-            val jsonObject = JSONObject(raw)
-            jsonToMap(jsonObject)
-        } catch (_: Exception) {
-            null
-        }
-    }
-
-    private fun jsonToMap(jsonObject: JSONObject): HashMap<String, Any> {
-        val output = hashMapOf<String, Any>()
-        val keys = jsonObject.keys()
-        while (keys.hasNext()) {
-            val key = keys.next()
-            val value = jsonObject.opt(key) ?: continue
-            when (value) {
-                JSONObject.NULL -> Unit
-                is JSONObject -> output[key] = jsonToMap(value)
-                is JSONArray -> output[key] = jsonToList(value)
-                else -> output[key] = value
-            }
-        }
-        return output
-    }
-
-    private fun jsonToList(jsonArray: JSONArray): List<Any> {
-        val output = arrayListOf<Any>()
-        for (index in 0 until jsonArray.length()) {
-            val value = jsonArray.opt(index) ?: continue
-            when (value) {
-                JSONObject.NULL -> Unit
-                is JSONObject -> output.add(jsonToMap(value))
-                is JSONArray -> output.add(jsonToList(value))
-                else -> output.add(value)
-            }
-        }
-        return output
+        return policyApplyManager.parsePolicyJson(raw)
     }
 
     private fun parseEpochMillis(raw: Any?): Long? {
-        return when (raw) {
-            is Timestamp -> raw.toDate().time
-            is java.util.Date -> raw.time
-            is Long -> raw
-            is Int -> raw.toLong()
-            is Double -> raw.toLong()
-            is String -> raw.toLongOrNull()
-            else -> null
-        }
+        return policyApplyManager.parseEpochMillis(raw)
     }
 
     private fun applyPolicySnapshotFromRuleInputs(
@@ -1888,125 +2116,28 @@ class DnsVpnService : VpnService() {
         source: String,
         incomingVersion: Long?
     ) {
-        if (!serviceRunning) {
-            return
-        }
-        if (childId.trim().isEmpty()) {
-            return
-        }
-
-        val snapshotData = hashMapOf<String, Any>(
-            "childId" to childId.trim(),
-            "blockedCategories" to categories,
-            "blockedServices" to emptyList<String>(),
-            "blockedDomainsResolved" to domains,
-            "blockedDomains" to domains,
-            "blockedPackagesResolved" to blockedPackages,
-            "blockedPackages" to blockedPackages,
-            "temporaryAllowedDomainsResolved" to temporaryAllowedDomains,
-            "modeBlockedDomainsResolved" to emptyList<String>(),
-            "modeAllowedDomainsResolved" to emptyList<String>(),
-            "modeBlockedPackagesResolved" to emptyList<String>(),
-            "modeAllowedPackagesResolved" to emptyList<String>(),
-            "version" to (incomingVersion ?: System.currentTimeMillis())
+        policyApplyManager.applyPolicySnapshotFromRuleInputs(
+            parentId = parentId,
+            childId = childId,
+            categories = categories,
+            domains = domains,
+            temporaryAllowedDomains = temporaryAllowedDomains,
+            blockedPackages = blockedPackages,
+            source = source,
+            incomingVersion = incomingVersion
         )
-        if (parentId.trim().isNotEmpty()) {
-            snapshotData["parentId"] = parentId.trim()
-        }
-
-        policyApplyExecutor.execute {
-            try {
-                applyEffectivePolicySnapshot(
-                    childId = childId.trim(),
-                    snapshotData = snapshotData,
-                    incomingVersion = parsePolicyVersion(snapshotData["version"]),
-                    source = source
-                )
-            } catch (error: Exception) {
-                Log.w(TAG, "Failed applying policy snapshot from $source", error)
-            }
-        }
     }
 
     private fun recordPolicySnapshotSeen(source: String, version: Long?) {
-        val now = System.currentTimeMillis()
-        lastPolicySnapshotSeenAtEpochMs = now
-        lastPolicySnapshotSource = source
-        if (version != null && version > 0L) {
-            lastPolicySnapshotSeenVersion = version
-        }
+        policyApplyManager.recordPolicySnapshotSeen(source, version)
     }
 
     private fun recordPolicyApplySkip(source: String, version: Long?, reason: String) {
-        lastPolicyApplyAttemptAtEpochMs = System.currentTimeMillis()
-        lastPolicyApplySource = source
-        lastPolicyApplySkipReason = reason
-        lastPolicyApplyErrorMessage = ""
-        if (version != null && version > 0L) {
-            lastPolicySnapshotSeenVersion = version
-        }
+        policyApplyManager.recordPolicyApplySkip(source, version, reason)
     }
 
     private fun recordPolicyApplyError(source: String, version: Long?, errorMessage: String?) {
-        lastPolicyApplyAttemptAtEpochMs = System.currentTimeMillis()
-        lastPolicyApplySource = source
-        lastPolicyApplySkipReason = ""
-        lastPolicyApplyErrorMessage = errorMessage?.trim().orEmpty()
-        if (version != null && version > 0L) {
-            lastPolicySnapshotSeenVersion = version
-        }
-    }
-
-    private fun recordPolicyApplySuccess(source: String, version: Long?) {
-        val now = System.currentTimeMillis()
-        lastPolicyApplyAttemptAtEpochMs = now
-        lastPolicyApplySuccessAtEpochMs = now
-        lastPolicyApplySource = source
-        lastPolicyApplySkipReason = ""
-        lastPolicyApplyErrorMessage = ""
-        if (version != null && version > 0L) {
-            lastPolicySnapshotSeenVersion = version
-        }
-    }
-
-    private fun parseActiveManualMode(raw: Any?, nowEpochMs: Long): String? {
-        if (raw !is Map<*, *>) {
-            return null
-        }
-        val mode = (raw["mode"] as? String)?.trim()?.lowercase().orEmpty()
-        if (mode.isEmpty()) {
-            return null
-        }
-        val expiresAtEpochMs = parseEpochMillis(raw["expiresAt"])
-        if (expiresAtEpochMs != null && expiresAtEpochMs <= nowEpochMs) {
-            return null
-        }
-        return mode
-    }
-
-    private fun buildEffectiveListenerCategories(
-        baseCategories: List<String>,
-        activeManualMode: String?,
-        pauseActive: Boolean
-    ): List<String> {
-        val effective = linkedSetOf<String>()
-        effective.addAll(
-            baseCategories
-                .map(::normalizeCategoryToken)
-                .filter { it.isNotEmpty() }
-        )
-        if (pauseActive) {
-            effective.add(BLOCK_ALL_CATEGORY_TOKEN)
-        } else {
-            when (activeManualMode) {
-                "bedtime" -> effective.add(BLOCK_ALL_CATEGORY_TOKEN)
-                "homework" -> effective.addAll(DISTRACTING_MODE_CATEGORIES)
-                "free" -> {
-                    // Explicit free mode only keeps baseline policy categories.
-                }
-            }
-        }
-        return effective.toList().sorted()
+        policyApplyManager.recordPolicyApplyError(source, version, errorMessage)
     }
 
     private fun applyEffectivePolicySnapshot(
@@ -2015,201 +2146,11 @@ class DnsVpnService : VpnService() {
         incomingVersion: Long?,
         source: String
     ) {
-        if (!serviceRunning) {
-            recordPolicyApplySkip(source, incomingVersion, "service_not_running")
-            return
-        }
-        lastPolicyApplyAttemptAtEpochMs = System.currentTimeMillis()
-        lastPolicyApplySource = source
-        lastPolicyApplyErrorMessage = ""
-
-        val baseCategories = parsePolicyStringList(snapshotData["blockedCategories"])
-        val blockedServices = parsePolicyStringList(snapshotData["blockedServices"])
-        val resolvedDomains = parsePolicyStringList(snapshotData["blockedDomainsResolved"])
-        val fallbackDomains = parsePolicyStringList(snapshotData["blockedDomains"])
-        val resolvedPackages = parsePolicyStringList(snapshotData["blockedPackagesResolved"])
-        val fallbackPackages = parsePolicyStringList(snapshotData["blockedPackages"])
-        val resolvedAllowedDomains =
-            parsePolicyStringList(snapshotData["temporaryAllowedDomainsResolved"])
-        val modeBlockedDomains = parsePolicyStringList(snapshotData["modeBlockedDomainsResolved"])
-        val modeAllowedDomains = parsePolicyStringList(snapshotData["modeAllowedDomainsResolved"])
-        val modeBlockedPackages =
-            parsePolicyStringList(snapshotData["modeBlockedPackagesResolved"])
-        val modeAllowedPackages =
-            parsePolicyStringList(snapshotData["modeAllowedPackagesResolved"])
-        val snapshotParentId = (snapshotData["parentId"] as? String)?.trim().orEmpty()
-        val activeModeKey = (snapshotData["activeModeKey"] as? String)
-            ?.trim()
-            ?.lowercase()
-            .orEmpty()
-        val nowEpochMs = System.currentTimeMillis()
-        val pausedUntilEpochMs = parseEpochMillis(snapshotData["pausedUntil"])
-        val pauseActive = pausedUntilEpochMs != null && pausedUntilEpochMs > nowEpochMs
-        val activeManualMode = parseActiveManualMode(snapshotData["manualMode"], nowEpochMs)
-        val suppressModeForceBlocks = activeModeKey == "free" || activeManualMode == "free"
-
-        val categories = buildEffectiveListenerCategories(
-            baseCategories = baseCategories,
-            activeManualMode = activeManualMode,
-            pauseActive = pauseActive
-        )
-        val domainSet = linkedSetOf<String>()
-        domainSet.addAll(
-            (if (resolvedDomains.isNotEmpty()) {
-                resolvedDomains
-            } else {
-                fallbackDomains
-            }).map(::normalizeDomainToken)
-                .filter { it.isNotEmpty() }
-        )
-        if (suppressModeForceBlocks) {
-            domainSet.removeAll(
-                modeBlockedDomains
-                    .map(::normalizeDomainToken)
-                    .filter { it.isNotEmpty() }
-                    .toSet()
-            )
-        }
-        if (!suppressModeForceBlocks) {
-            domainSet.addAll(
-                modeBlockedDomains
-                    .map(::normalizeDomainToken)
-                    .filter { it.isNotEmpty() }
-            )
-        }
-        domainSet.removeAll(
-            modeAllowedDomains
-                .map(::normalizeDomainToken)
-                .filter { it.isNotEmpty() }
-                .toSet()
-        )
-        val domains = domainSet.toList().sorted()
-
-        val blockedPackageSet = linkedSetOf<String>()
-        blockedPackageSet.addAll(
-            (if (resolvedPackages.isNotEmpty()) {
-                resolvedPackages
-            } else {
-                fallbackPackages
-            }).map { it.trim().lowercase() }
-                .filter { it.isNotEmpty() }
-        )
-        if (suppressModeForceBlocks) {
-            blockedPackageSet.removeAll(
-                modeBlockedPackages
-                    .map { it.trim().lowercase() }
-                    .filter { it.isNotEmpty() }
-                    .toSet()
-            )
-        }
-        if (!suppressModeForceBlocks) {
-            blockedPackageSet.addAll(
-                modeBlockedPackages
-                    .map { it.trim().lowercase() }
-                    .filter { it.isNotEmpty() }
-            )
-        }
-        blockedPackageSet.removeAll(
-            modeAllowedPackages
-                .map { it.trim().lowercase() }
-                .filter { it.isNotEmpty() }
-                .toSet()
-        )
-        val blockedPackages = blockedPackageSet.toList().sorted()
-
-        val allowedDomainSet = linkedSetOf<String>()
-        val hasPolicyAllowedDomainFields =
-            snapshotData.containsKey("temporaryAllowedDomainsResolved") ||
-                snapshotData.containsKey("modeAllowedDomainsResolved")
-        if (!hasPolicyAllowedDomainFields) {
-            allowedDomainSet.addAll(
-                lastAppliedAllowedDomains
-                    .map(::normalizeDomainToken)
-                    .filter { it.isNotEmpty() }
-            )
-        }
-        allowedDomainSet.addAll(
-            resolvedAllowedDomains
-                .map(::normalizeDomainToken)
-                .filter { it.isNotEmpty() }
-        )
-        allowedDomainSet.addAll(
-            modeAllowedDomains
-                .map(::normalizeDomainToken)
-                .filter { it.isNotEmpty() }
-        )
-        val allowedDomains = allowedDomainSet.toList().sorted()
-
-        val stateUnchanged =
-            categories == lastAppliedCategories &&
-                domains == lastAppliedDomains &&
-                blockedPackages == lastAppliedBlockedPackages &&
-                allowedDomains == lastAppliedAllowedDomains
-
-        val hasIncomingVersion = incomingVersion != null && incomingVersion > 0L
-        val versionRegressedOrDuplicate =
-            hasIncomingVersion && incomingVersion!! <= lastEffectivePolicyVersion
-        if (versionRegressedOrDuplicate && stateUnchanged) {
-            recordPolicyApplySkip(
-                source = source,
-                version = incomingVersion,
-                reason = "version_not_new_and_state_unchanged"
-            )
-            return
-        }
-        if (versionRegressedOrDuplicate && !stateUnchanged) {
-            Log.w(
-                TAG,
-                "Applying effective_policy with non-increasing version because state changed " +
-                    "version=${incomingVersion ?: 0L} last=$lastEffectivePolicyVersion source=$source"
-            )
-        }
-
-        if (stateUnchanged) {
-            if (incomingVersion != null && incomingVersion > lastEffectivePolicyVersion) {
-                lastEffectivePolicyVersion = incomingVersion
-            }
-            recordPolicyApplySuccess(source, incomingVersion)
-            writePolicyApplyAck(
-                childId = childId,
-                parentId = snapshotParentId,
-                appliedVersion = incomingVersion,
-                applyStatus = "applied",
-                errorMessage = null,
-                applyLatencyMs = 0,
-                servicesExpectedCount = blockedServices.size
-            )
-            return
-        }
-
-        val applyStartedAt = System.currentTimeMillis()
-        Log.i(
-            TAG,
-            "Applying effective_policy from $source " +
-                "childId=$childId version=${incomingVersion ?: 0L} " +
-                "manualMode=${activeManualMode ?: "none"} pauseActive=$pauseActive " +
-                "cats=${categories.size} domains=${domains.size} packages=${blockedPackages.size} " +
-                "allowed=${allowedDomains.size}"
-        )
-        applyFilterRules(
-            categories = categories,
-            domains = domains,
-            temporaryAllowedDomains = allowedDomains,
-            blockedPackages = blockedPackages
-        )
-        forceSystemDnsFlush()
-        if (incomingVersion != null && incomingVersion > lastEffectivePolicyVersion) {
-            lastEffectivePolicyVersion = incomingVersion
-        }
-        recordPolicyApplySuccess(source, incomingVersion)
-        writePolicyApplyAck(
+        policyApplyManager.applyEffectivePolicySnapshot(
             childId = childId,
-            parentId = snapshotParentId,
-            appliedVersion = incomingVersion,
-            applyStatus = "applied",
-            errorMessage = null,
-            applyLatencyMs = (System.currentTimeMillis() - applyStartedAt).toInt(),
-            servicesExpectedCount = blockedServices.size
+            snapshotData = snapshotData,
+            incomingVersion = incomingVersion,
+            source = source
         )
     }
 
@@ -2222,417 +2163,19 @@ class DnsVpnService : VpnService() {
         applyLatencyMs: Int?,
         servicesExpectedCount: Int
     ) {
-        if (!serviceRunning) {
-            return
-        }
-        val version = appliedVersion ?: return
-        if (version <= 0L) {
-            return
-        }
-        val normalizedChildId = childId.trim()
-        val normalizedParentId = parentId.trim()
-        if (normalizedChildId.isEmpty() || normalizedParentId.isEmpty()) {
-            return
-        }
-        val cachedDeviceId = cachedPolicyAckDeviceId?.trim().orEmpty()
-        if (cachedDeviceId.isNotEmpty()) {
-            writePolicyApplyAckToDocument(
-                childId = normalizedChildId,
-                parentId = normalizedParentId,
-                deviceId = cachedDeviceId,
-                appliedVersion = version,
-                applyStatus = applyStatus,
-                errorMessage = errorMessage,
-                applyLatencyMs = applyLatencyMs,
-                servicesExpectedCount = servicesExpectedCount
-            )
-            return
-        }
-
-        FirebaseFirestore.getInstance()
-            .collection("children")
-            .document(normalizedChildId)
-            .collection("devices")
-            .limit(1)
-            .get()
-            .addOnSuccessListener { snapshot ->
-                val resolvedDeviceId = snapshot.documents
-                    .firstOrNull()
-                    ?.id
-                    ?.trim()
-                    .orEmpty()
-                if (resolvedDeviceId.isEmpty()) {
-                    Log.w(TAG, "Skipping policy_apply_acks write: no registered child device doc")
-                    return@addOnSuccessListener
-                }
-                cachedPolicyAckDeviceId = resolvedDeviceId
-                writePolicyApplyAckToDocument(
-                    childId = normalizedChildId,
-                    parentId = normalizedParentId,
-                    deviceId = resolvedDeviceId,
-                    appliedVersion = version,
-                    applyStatus = applyStatus,
-                    errorMessage = errorMessage,
-                    applyLatencyMs = applyLatencyMs,
-                    servicesExpectedCount = servicesExpectedCount
-                )
-            }
-            .addOnFailureListener { error ->
-                Log.w(TAG, "Failed resolving child device ID for policy_apply_acks", error)
-            }
-    }
-
-    private fun writePolicyApplyAckToDocument(
-        childId: String,
-        parentId: String,
-        deviceId: String,
-        appliedVersion: Long,
-        applyStatus: String,
-        errorMessage: String?,
-        applyLatencyMs: Int?,
-        servicesExpectedCount: Int
-    ) {
-        val payload = hashMapOf<String, Any?>(
-            "parentId" to parentId,
-            "childId" to childId,
-            "deviceId" to deviceId,
-            "appliedVersion" to appliedVersion,
-            "appliedAt" to Timestamp.now(),
-            "vpnRunning" to serviceRunning,
-            "appliedBlockedDomainsCount" to lastAppliedDomains.size,
-            "appliedBlockedPackagesCount" to lastAppliedBlockedPackages.size,
-            "applyLatencyMs" to applyLatencyMs,
-            "usageAccessGranted" to hasUsageStatsPermissionForGuard(),
-            "ruleCounts" to hashMapOf<String, Any>(
-                "categoriesExpected" to lastAppliedCategories.size,
-                "domainsExpected" to lastAppliedDomains.size,
-                "servicesExpected" to servicesExpectedCount,
-                "packagesExpected" to lastAppliedBlockedPackages.size,
-                "categoriesCached" to blockedCategoryCount,
-                "domainsCached" to blockedDomainCount
-            ),
-            "applyStatus" to applyStatus,
-            "error" to errorMessage,
-            "updatedAt" to Timestamp.now()
+        policyApplyManager.writePolicyApplyAck(
+            childId = childId,
+            parentId = parentId,
+            appliedVersion = appliedVersion,
+            applyStatus = applyStatus,
+            errorMessage = errorMessage,
+            applyLatencyMs = applyLatencyMs,
+            servicesExpectedCount = servicesExpectedCount
         )
-
-        FirebaseFirestore.getInstance()
-            .collection("children")
-            .document(childId)
-            .collection("policy_apply_acks")
-            .document(deviceId)
-            .set(payload)
-            .addOnFailureListener { error ->
-                Log.w(TAG, "policy_apply_acks write failed", error)
-            }
     }
 
     private fun maybeWriteWebDiagnosticsTelemetry(force: Boolean = false) {
-        val now = System.currentTimeMillis()
-        if (!force) {
-            if (!serviceRunning) {
-                return
-            }
-            if (now - lastWebDiagnosticsWriteEpochMs < WEB_DIAGNOSTICS_WRITE_MIN_INTERVAL_MS) {
-                return
-            }
-            if (webDiagnosticsWriteQueued) {
-                return
-            }
-        }
-
-        webDiagnosticsWriteQueued = true
-        webDiagnosticsExecutor.execute {
-            try {
-                writeWebDiagnosticsTelemetry(force = force)
-            } catch (error: Exception) {
-                Log.w(TAG, "vpn_diagnostics telemetry write failed", error)
-            } finally {
-                webDiagnosticsWriteQueued = false
-            }
-        }
-    }
-
-    private fun writeWebDiagnosticsTelemetry(force: Boolean) {
-        val config = try {
-            vpnPreferencesStore.loadConfig()
-        } catch (_: Exception) {
-            return
-        }
-        val childId = config.childId?.trim().orEmpty()
-        val parentId = config.parentId?.trim().orEmpty()
-        if (childId.isEmpty() || parentId.isEmpty()) {
-            return
-        }
-        if (!maybeBootstrapPolicySyncAuth("web_diagnostics_write")) {
-            return
-        }
-        ensurePolicySyncDeviceRegistration()
-
-        val now = System.currentTimeMillis()
-        val usageAccessGranted = hasUsageStatsPermissionForGuard()
-        val foregroundPackage = if (usageAccessGranted) {
-            currentForegroundPackageFromUsageStats()?.trim()?.lowercase()?.takeIf { it.isNotEmpty() }
-        } else {
-            null
-        }
-        val browserForeground = isLikelyBrowserPackage(foregroundPackage)
-        val privateDnsActive = isPrivateDnsActive()
-        val protectionActive = (
-            lastAppliedCategories.isNotEmpty() ||
-                lastAppliedDomains.isNotEmpty() ||
-                blockedCategoryCount > 0 ||
-                blockedDomainCount > 0
-            )
-
-        val recentLogs = getRecentQueryLogs(limit = 60)
-        val recentQueriesForLog = getRecentQueryLogs(limit = 100)
-            .mapNotNull { queryLogMapForDiagnostics(it) }
-        val recentCutoff = now - WEB_DIAGNOSTICS_RECENT_DNS_WINDOW_MS
-        var recentVpnDnsQueriesInWindow = 0
-        for (entry in recentLogs) {
-            val timestamp = (entry["timestampEpochMs"] as? Number)?.toLong() ?: continue
-            if (timestamp >= recentCutoff) {
-                recentVpnDnsQueriesInWindow += 1
-            }
-        }
-
-        val vpnWarmupActive = startedAtEpochMs?.let { now - it < 8_000L } == true
-        val bypassReasonCode = when {
-            !serviceRunning -> "vpn_not_running"
-            privateDnsActive -> "private_dns_active"
-            !protectionActive -> "protection_rules_inactive"
-            !usageAccessGranted -> "usage_access_unavailable"
-            !browserForeground -> "browser_not_foreground"
-            vpnWarmupActive -> "vpn_warmup"
-            recentVpnDnsQueriesInWindow > 0 -> "ok"
-            else -> "no_recent_vpn_dns_while_browser_foreground"
-        }
-        val likelyDnsBypass = bypassReasonCode == "no_recent_vpn_dns_while_browser_foreground"
-        if (likelyDnsBypass) {
-            lastBrowserDnsBypassSignalEpochMs = now
-            lastBrowserDnsBypassSignalReasonCode = bypassReasonCode
-            lastBrowserDnsBypassSignalForegroundPackage = foregroundPackage
-        }
-
-        val lastDnsQuery = recentLogs.firstOrNull()
-        val lastBlockedDnsQuery = recentLogs.firstOrNull { it["blocked"] == true }
-        val signature = buildString {
-            append(serviceRunning)
-            append('|')
-            append(privateDnsMode)
-            append('|')
-            append(privateDnsActive)
-            append('|')
-            append(protectionActive)
-            append('|')
-            append(usageAccessGranted)
-            append('|')
-            append(foregroundPackage ?: "")
-            append('|')
-            append(recentVpnDnsQueriesInWindow)
-            append('|')
-            append((lastDnsQuery?.get("timestampEpochMs") as? Number)?.toLong() ?: 0L)
-            append('|')
-            append((lastDnsQuery?.get("reasonCode") as? String) ?: "")
-            append('|')
-            append((lastBlockedDnsQuery?.get("timestampEpochMs") as? Number)?.toLong() ?: 0L)
-            append('|')
-            append((lastBlockedDnsQuery?.get("reasonCode") as? String) ?: "")
-            append('|')
-            append(bypassReasonCode)
-            append('|')
-            append(likelyDnsBypass)
-        }
-        if (!force && signature == lastWebDiagnosticsSignature) {
-            return
-        }
-
-        val payload = hashMapOf<String, Any?>(
-            "parentId" to parentId,
-            "childId" to childId,
-            "deviceId" to cachedPolicyAckDeviceId,
-            "vpnRunning" to serviceRunning,
-            "privateDnsMode" to privateDnsMode?.takeIf { it.isNotBlank() },
-            "privateDnsActive" to privateDnsActive,
-            "protectionActive" to protectionActive,
-            "usageAccessGranted" to usageAccessGranted,
-            "foregroundPackage" to foregroundPackage?.takeIf { it.isNotBlank() },
-            "browserForeground" to browserForeground,
-            "recentVpnDnsQueriesInWindow" to recentVpnDnsQueriesInWindow,
-            "likelyDnsBypass" to likelyDnsBypass,
-            "bypassReasonCode" to bypassReasonCode,
-            "lastBypassSignalAtEpochMs" to (
-                if (lastBrowserDnsBypassSignalEpochMs > 0L) {
-                    lastBrowserDnsBypassSignalEpochMs
-                } else {
-                    null
-                }
-                ),
-            "lastBypassSignalReasonCode" to (
-                lastBrowserDnsBypassSignalReasonCode.takeIf { it.isNotBlank() }
-                ),
-            "lastBypassSignalForegroundPackage" to (
-                lastBrowserDnsBypassSignalForegroundPackage?.takeIf { it.isNotBlank() }
-                ),
-            "packetCounters" to hashMapOf<String, Any>(
-                "queriesProcessed" to queriesProcessed.toInt().coerceAtLeast(0),
-                "queriesBlocked" to queriesBlocked.toInt().coerceAtLeast(0),
-                "queriesAllowed" to queriesAllowed.toInt().coerceAtLeast(0),
-                "upstreamFailureCount" to upstreamFailureCount.toInt().coerceAtLeast(0),
-                "fallbackQueryCount" to fallbackQueryCount.toInt().coerceAtLeast(0)
-            ),
-            "lastDnsQuery" to queryLogMapForDiagnostics(lastDnsQuery),
-            "lastBlockedDnsQuery" to queryLogMapForDiagnostics(lastBlockedDnsQuery),
-            "recentQueries" to recentQueriesForLog,
-            "policySync" to hashMapOf<String, Any?>(
-                "lastSeenVersion" to (if (lastPolicySnapshotSeenVersion > 0L) lastPolicySnapshotSeenVersion else null),
-                "lastAppliedVersion" to (if (lastEffectivePolicyVersion > 0L) lastEffectivePolicyVersion else null),
-                "lastSnapshotSeenAtEpochMs" to (
-                    if (lastPolicySnapshotSeenAtEpochMs > 0L) lastPolicySnapshotSeenAtEpochMs else null
-                    ),
-                "lastApplyAttemptAtEpochMs" to (
-                    if (lastPolicyApplyAttemptAtEpochMs > 0L) lastPolicyApplyAttemptAtEpochMs else null
-                    ),
-                "lastApplySuccessAtEpochMs" to (
-                    if (lastPolicyApplySuccessAtEpochMs > 0L) lastPolicyApplySuccessAtEpochMs else null
-                    ),
-                "lastSource" to lastPolicyApplySource.takeIf { it.isNotBlank() },
-                "lastSnapshotSource" to lastPolicySnapshotSource.takeIf { it.isNotBlank() },
-                "lastSkipReason" to lastPolicyApplySkipReason.takeIf { it.isNotBlank() },
-                "lastError" to lastPolicyApplyErrorMessage.takeIf { it.isNotBlank() },
-                "listenerAttached" to (effectivePolicyListener != null),
-                "pollingActive" to effectivePolicyPollRunning,
-                "lastListenerEventAtEpochMs" to (
-                    if (lastPolicyListenerEventAtEpochMs > 0L) lastPolicyListenerEventAtEpochMs else null
-                    ),
-                "lastPollSuccessAtEpochMs" to (
-                    if (lastPolicyPollSuccessAtEpochMs > 0L) lastPolicyPollSuccessAtEpochMs else null
-                    )
-            ),
-            "updatedAt" to Timestamp.now()
-        )
-
-        FirebaseFirestore.getInstance()
-            .collection("children")
-            .document(childId)
-            .collection("vpn_diagnostics")
-            .document("current")
-            .set(payload)
-            .addOnFailureListener { error ->
-                Log.w(TAG, "vpn_diagnostics/current write failed", error)
-            }
-
-        writeProtectionStatusSnapshot(
-            parentId = parentId,
-            childId = childId,
-            nowEpochMs = now
-        )
-
-        lastWebDiagnosticsWriteEpochMs = now
-        lastWebDiagnosticsSignature = signature
-        Log.d(
-            TAG,
-            "[web-diag] childId=$childId bypass=$likelyDnsBypass reason=$bypassReasonCode " +
-                "fg=${foregroundPackage ?: "unknown"} recentDns=$recentVpnDnsQueriesInWindow " +
-                "lastDns=${lastDnsQuery?.get("domain") ?: "-"} " +
-                "lastDnsReason=${lastDnsQuery?.get("reasonCode") ?: "-"}"
-        )
-    }
-
-    private fun writeProtectionStatusSnapshot(
-        parentId: String,
-        childId: String,
-        nowEpochMs: Long
-    ) {
-        val deviceId = resolvePolicySyncDeviceId()
-        if (deviceId.isEmpty()) {
-            return
-        }
-
-        val payload = hashMapOf<String, Any?>(
-            "deviceId" to deviceId,
-            "parentId" to parentId,
-            "childId" to childId,
-            "lastSeen" to Timestamp.now(),
-            "lastSeenEpochMs" to nowEpochMs,
-            "vpnActive" to serviceRunning,
-            "queriesProcessed" to queriesProcessed.toInt().coerceAtLeast(0),
-            "queriesBlocked" to queriesBlocked.toInt().coerceAtLeast(0),
-            "queriesAllowed" to queriesAllowed.toInt().coerceAtLeast(0),
-            "upstreamFailureCount" to upstreamFailureCount.toInt().coerceAtLeast(0),
-            "fallbackQueryCount" to fallbackQueryCount.toInt().coerceAtLeast(0),
-            "blockedCategoryCount" to blockedCategoryCount,
-            "blockedDomainCount" to blockedDomainCount,
-            "vpnStatusUpdatedAt" to Timestamp.now(),
-            "updatedAt" to Timestamp.now()
-        )
-
-        val firestore = FirebaseFirestore.getInstance()
-        firestore.collection("devices")
-            .document(deviceId)
-            .set(payload, SetOptions.merge())
-            .addOnFailureListener { error ->
-                Log.w(TAG, "devices/$deviceId status write failed", error)
-            }
-
-        firestore.collection("children")
-            .document(childId)
-            .collection("devices")
-            .document(deviceId)
-            .set(payload, SetOptions.merge())
-            .addOnFailureListener { error ->
-                Log.w(TAG, "children/$childId/devices/$deviceId status write failed", error)
-            }
-    }
-
-    private fun resolvePolicySyncDeviceId(): String {
-        val cached = cachedPolicyAckDeviceId?.trim().orEmpty()
-        if (cached.isNotEmpty()) {
-            return cached
-        }
-        val authUid = try {
-            FirebaseAuth.getInstance().currentUser?.uid?.trim().orEmpty()
-        } catch (_: Exception) {
-            ""
-        }
-        if (authUid.isNotEmpty()) {
-            cachedPolicyAckDeviceId = authUid
-        }
-        return authUid
-    }
-
-    private fun queryLogMapForDiagnostics(entry: Map<String, Any>?): Map<String, Any>? {
-        entry ?: return null
-        val domain = (entry["domain"] as? String)?.trim().orEmpty()
-        if (domain.isEmpty()) {
-            return null
-        }
-        val output = hashMapOf<String, Any>(
-            "domain" to domain,
-            "blocked" to (entry["blocked"] == true),
-            "timestampEpochMs" to ((entry["timestampEpochMs"] as? Number)?.toLong() ?: 0L),
-            "reasonCode" to ((entry["reasonCode"] as? String)?.trim().takeUnless { it.isNullOrEmpty() }
-                ?: if (entry["blocked"] == true) "blocked_unknown" else "allow_unknown")
-        )
-        val matchedRule = (entry["matchedRule"] as? String)?.trim().orEmpty()
-        if (matchedRule.isNotEmpty()) {
-            output["matchedRule"] = matchedRule
-        }
-        return output
-    }
-
-    private fun isLikelyBrowserPackage(packageName: String?): Boolean {
-        val normalized = packageName?.trim()?.lowercase().orEmpty()
-        if (normalized.isEmpty()) {
-            return false
-        }
-        if (WEB_DIAGNOSTIC_BROWSER_PACKAGES.contains(normalized)) {
-            return true
-        }
-        return normalized.contains("browser") ||
-            normalized.contains("chrome") ||
-            normalized.contains("firefox")
+        telemetryManager.maybeWriteWebDiagnosticsTelemetry(force = force)
     }
 
     private fun enforceBlockedForegroundAppIfNeeded() {
@@ -3910,263 +3453,11 @@ class DnsVpnService : VpnService() {
     }
 
     private fun scheduleObservedAppDomainWrite(force: Boolean = false) {
-        if (!serviceRunning && !force) {
-            return
-        }
-        val now = System.currentTimeMillis()
-        if (!force &&
-            (appDomainUsageWriteQueued ||
-                !appDomainUsageDirty ||
-                now - lastAppDomainUsageWriteEpochMs < APP_DOMAIN_USAGE_WRITE_MIN_INTERVAL_MS)
-        ) {
-            return
-        }
-        appDomainUsageWriteQueued = true
-        appDomainUsageExecutor.execute {
-            try {
-                writeObservedAppDomainUsage(force = force)
-            } catch (error: Exception) {
-                Log.w(TAG, "app_domain_usage write failed", error)
-            } finally {
-                appDomainUsageWriteQueued = false
-            }
-        }
+        telemetryManager.scheduleObservedAppDomainWrite(force = force)
     }
 
     private fun scheduleInstalledAppInventoryWrite(force: Boolean = false) {
-        if (!serviceRunning && !force) {
-            return
-        }
-        val now = System.currentTimeMillis()
-        if (!force &&
-            (appInventoryWriteQueued ||
-                now - lastAppInventoryWriteEpochMs < APP_INVENTORY_WRITE_MIN_INTERVAL_MS)
-        ) {
-            return
-        }
-        appInventoryWriteQueued = true
-        appDomainUsageExecutor.execute {
-            try {
-                writeInstalledAppInventory(force = force)
-            } catch (error: Exception) {
-                Log.w(TAG, "app_inventory write failed", error)
-            } finally {
-                appInventoryWriteQueued = false
-            }
-        }
-    }
-
-    private fun writeObservedAppDomainUsage(force: Boolean) {
-        if (!force && !serviceRunning) {
-            return
-        }
-        if (!force && !appDomainUsageDirty) {
-            return
-        }
-        val config = try {
-            vpnPreferencesStore.loadConfig()
-        } catch (_: Exception) {
-            return
-        }
-        val childId = config.childId?.trim().orEmpty()
-        val parentId = config.parentId?.trim().orEmpty()
-        if (childId.isEmpty() || parentId.isEmpty()) {
-            Log.d(TAG, "app_domain_usage write skipped: missing parent/child ids")
-            return
-        }
-        if (!maybeBootstrapPolicySyncAuth("app_domain_usage_write")) {
-            Log.d(TAG, "app_domain_usage write skipped: auth bootstrap unavailable")
-            return
-        }
-        ensurePolicySyncDeviceRegistration()
-
-        val snapshot = synchronized(appDomainUsageByPackage) {
-            appDomainUsageByPackage.mapValues { entry ->
-                entry.value.toMap()
-            }
-        }
-        if (snapshot.isEmpty()) {
-            Log.d(TAG, "app_domain_usage write skipped: snapshot empty")
-            return
-        }
-
-        val packageEntries = snapshot.entries
-            .map { (packageName, domains) ->
-                val sortedDomains = domains.entries
-                    .sortedByDescending { it.value }
-                    .map { it.key }
-                hashMapOf<String, Any>(
-                    "packageName" to packageName,
-                    "domains" to sortedDomains,
-                    "domainCount" to sortedDomains.size,
-                    "lastSeenAtEpochMs" to (domains.values.maxOrNull() ?: System.currentTimeMillis())
-                )
-            }
-            .sortedBy { (it["packageName"] as? String).orEmpty() }
-
-        val packageDomainMap = hashMapOf<String, Any>()
-        for ((packageName, domains) in snapshot) {
-            val sortedDomains = domains.entries
-                .sortedByDescending { it.value }
-                .map { it.key }
-            packageDomainMap[packageName] = sortedDomains
-        }
-
-        val payload = hashMapOf<String, Any?>(
-            "parentId" to parentId,
-            "childId" to childId,
-            "deviceId" to cachedPolicyAckDeviceId,
-            "packages" to packageEntries,
-            "packageDomains" to packageDomainMap,
-            "updatedAt" to Timestamp.now()
-        )
-
-        FirebaseFirestore.getInstance()
-            .collection("children")
-            .document(childId)
-            .collection("app_domain_usage")
-            .document("current")
-            .set(payload)
-            .addOnSuccessListener {
-                appDomainUsageDirty = false
-                lastAppDomainUsageWriteEpochMs = System.currentTimeMillis()
-                Log.d(
-                    TAG,
-                    "app_domain_usage/current write ok childId=$childId packages=${snapshot.size}"
-                )
-            }
-            .addOnFailureListener { error ->
-                Log.w(TAG, "app_domain_usage/current write failed", error)
-            }
-    }
-
-    private fun writeInstalledAppInventory(force: Boolean) {
-        if (!force && !serviceRunning) {
-            return
-        }
-        val config = try {
-            vpnPreferencesStore.loadConfig()
-        } catch (_: Exception) {
-            return
-        }
-        val childId = config.childId?.trim().orEmpty()
-        val parentId = config.parentId?.trim().orEmpty()
-        if (childId.isEmpty() || parentId.isEmpty()) {
-            return
-        }
-        if (!maybeBootstrapPolicySyncAuth("app_inventory_write")) {
-            return
-        }
-        ensurePolicySyncDeviceRegistration()
-
-        val nowEpochMs = System.currentTimeMillis()
-        val appEntries = collectParentControllableInstalledApps(nowEpochMs)
-        val inventoryHash = appEntries.joinToString(separator = "\n") { entry ->
-            val pkg = (entry["packageName"] as? String).orEmpty()
-            val name = (entry["appName"] as? String).orEmpty().lowercase()
-            val launchable = if (entry["isLaunchable"] == true) "1" else "0"
-            "$pkg|$name|$launchable"
-        }
-        if (!force &&
-            inventoryHash == lastAppInventoryHash &&
-            nowEpochMs - lastAppInventoryWriteEpochMs < APP_INVENTORY_WRITE_MIN_INTERVAL_MS
-        ) {
-            return
-        }
-
-        val deviceId = cachedPolicyAckDeviceId?.trim().orEmpty().ifEmpty {
-            try {
-                FirebaseAuth.getInstance().currentUser?.uid?.trim().orEmpty()
-            } catch (_: Exception) {
-                ""
-            }
-        }
-
-        val payload = hashMapOf<String, Any>(
-            "version" to nowEpochMs,
-            "hash" to inventoryHash,
-            "capturedAt" to FieldValue.serverTimestamp(),
-            "apps" to appEntries,
-            "inventoryStatus" to hashMapOf<String, Any>(
-                "source" to "vpn_service",
-                "appCount" to appEntries.size,
-                "updatedAtEpochMs" to nowEpochMs
-            )
-        )
-        if (deviceId.isNotEmpty()) {
-            payload["deviceId"] = deviceId
-        }
-
-        // Mark this snapshot before dispatching the write so watchdog/start bursts
-        // do not enqueue duplicate uploads for the same inventory.
-        lastAppInventoryWriteEpochMs = nowEpochMs
-        lastAppInventoryHash = inventoryHash
-
-        FirebaseFirestore.getInstance()
-            .collection("children")
-            .document(childId)
-            .collection("app_inventory")
-            .document("current")
-            .set(payload, SetOptions.merge())
-            .addOnSuccessListener {
-                Log.d(TAG, "app_inventory/current write ok childId=$childId apps=${appEntries.size}")
-            }
-            .addOnFailureListener { error ->
-                lastAppInventoryWriteEpochMs = 0L
-                lastAppInventoryHash = ""
-                Log.w(TAG, "app_inventory/current write failed childId=$childId", error)
-            }
-    }
-
-    private fun collectParentControllableInstalledApps(nowEpochMs: Long): List<HashMap<String, Any>> {
-        val results = mutableListOf<HashMap<String, Any>>()
-        val seen = linkedSetOf<String>()
-        val installedApps = try {
-            packageManager.getInstalledApplications(PackageManager.GET_META_DATA)
-        } catch (_: Exception) {
-            emptyList<ApplicationInfo>()
-        }
-        for (appInfo in installedApps) {
-            val packageName = appInfo.packageName?.trim()?.lowercase().orEmpty()
-            if (packageName.isEmpty() || packageName == this.packageName) {
-                continue
-            }
-            if (!seen.add(packageName)) {
-                continue
-            }
-            if (!isParentControllablePackage(packageName)) {
-                continue
-            }
-            if (!hasInternetPermission(packageName)) {
-                continue
-            }
-            val appName = try {
-                packageManager.getApplicationLabel(appInfo)?.toString()?.trim().orEmpty()
-            } catch (_: Exception) {
-                ""
-            }.ifEmpty { packageName }
-            val launchIntent = try {
-                packageManager.getLaunchIntentForPackage(packageName)
-            } catch (_: Exception) {
-                null
-            }
-            val packageInfo = try {
-                packageManager.getPackageInfo(packageName, 0)
-            } catch (_: Exception) {
-                null
-            }
-            results.add(
-                hashMapOf<String, Any>(
-                    "packageName" to packageName,
-                    "appName" to appName,
-                    "isSystemApp" to false,
-                    "isLaunchable" to (launchIntent != null),
-                    "firstSeenAtEpochMs" to (packageInfo?.firstInstallTime ?: nowEpochMs),
-                    "lastSeenAtEpochMs" to (packageInfo?.lastUpdateTime ?: nowEpochMs)
-                )
-            )
-        }
-        return results.sortedBy { (it["appName"] as? String)?.lowercase().orEmpty() }
+        telemetryManager.scheduleInstalledAppInventoryWrite(force = force)
     }
 
     private fun scheduleUnexpectedStopRecovery(reason: String) {

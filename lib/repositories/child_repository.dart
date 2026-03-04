@@ -68,6 +68,40 @@ class ChildRepository {
     return childrenByParentQuery(parentId).snapshots();
   }
 
+  Future<DocumentSnapshot<Map<String, dynamic>>> getChildInventoryDoc({
+    required String parentId,
+    required String childId,
+  }) async {
+    final childDoc = await loadOwnedChildDoc(
+      parentId: parentId,
+      childId: childId,
+    );
+    if (!childDoc.exists) {
+      return childDoc.reference.collection('app_inventory').doc('current').get();
+    }
+    return childDoc.reference.collection('app_inventory').doc('current').get();
+  }
+
+  Stream<DocumentSnapshot<Map<String, dynamic>>> watchChildInventoryDoc(
+    String childId,
+  ) {
+    return childRef(childId).collection('app_inventory').doc('current').snapshots();
+  }
+
+  Future<DocumentSnapshot<Map<String, dynamic>>> getChildAppDomainUsageDoc({
+    required String parentId,
+    required String childId,
+  }) async {
+    final childDoc = await loadOwnedChildDoc(
+      parentId: parentId,
+      childId: childId,
+    );
+    if (!childDoc.exists) {
+      return childDoc.reference.collection('app_domain_usage').doc('current').get();
+    }
+    return childDoc.reference.collection('app_domain_usage').doc('current').get();
+  }
+
   Future<DocumentSnapshot<Map<String, dynamic>>> loadOwnedChildDoc({
     required String parentId,
     required String childId,
@@ -205,5 +239,204 @@ class ChildRepository {
 
     await childDocumentRef.delete();
     return true;
+  }
+
+  Future<void> setChildNextDnsProfileId({
+    required String parentId,
+    required String childId,
+    required String profileId,
+  }) async {
+    final normalizedProfileId = profileId.trim().toLowerCase();
+    if (normalizedProfileId.isEmpty) {
+      throw ArgumentError.value(
+        profileId,
+        'profileId',
+        'NextDNS profile ID is required.',
+      );
+    }
+
+    final childDoc = await loadOwnedChildDoc(
+      parentId: parentId,
+      childId: childId,
+    );
+
+    await childDoc.reference.update(<String, dynamic>{
+      'nextDnsProfileId': normalizedProfileId,
+      'updatedAt': Timestamp.fromDate(DateTime.now()),
+    });
+  }
+
+  Future<void> saveChildNextDnsControls({
+    required String parentId,
+    required String childId,
+    required Map<String, dynamic> controls,
+  }) async {
+    final childDoc = await loadOwnedChildDoc(
+      parentId: parentId,
+      childId: childId,
+    );
+    await childDoc.reference.update(<String, dynamic>{
+      'nextDnsControls': controls,
+      'updatedAt': Timestamp.fromDate(DateTime.now()),
+    });
+  }
+
+  Future<void> upsertChildDeviceMetadata({
+    required String parentId,
+    required String childId,
+    required String deviceId,
+    required String alias,
+    String? model,
+    String? manufacturer,
+    String? linkedNextDnsProfileId,
+  }) async {
+    final normalizedDeviceId = deviceId.trim();
+    if (normalizedDeviceId.isEmpty) {
+      throw ArgumentError.value(
+        deviceId,
+        'deviceId',
+        'Device ID cannot be empty.',
+      );
+    }
+    final normalizedAlias = alias.trim();
+    if (normalizedAlias.isEmpty) {
+      throw ArgumentError.value(alias, 'alias', 'Device alias is required.');
+    }
+
+    final childDoc = await loadOwnedChildDoc(
+      parentId: parentId,
+      childId: childId,
+    );
+    final currentData = childDoc.data() ?? const <String, dynamic>{};
+    final rawMetadata = currentData['deviceMetadata'];
+    final metadataMap = rawMetadata is Map
+        ? rawMetadata.map(
+            (key, value) => MapEntry(key.toString(), value),
+          )
+        : <String, dynamic>{};
+
+    final existingDeviceRaw = metadataMap[normalizedDeviceId];
+    final existingDeviceMap = existingDeviceRaw is Map
+        ? existingDeviceRaw.map(
+            (key, value) => MapEntry(key.toString(), value),
+          )
+        : <String, dynamic>{};
+    final now = Timestamp.fromDate(DateTime.now());
+
+    metadataMap[normalizedDeviceId] = <String, dynamic>{
+      'alias': normalizedAlias,
+      'model': model?.trim().isEmpty == true ? null : model?.trim(),
+      'manufacturer':
+          manufacturer?.trim().isEmpty == true ? null : manufacturer?.trim(),
+      'linkedNextDnsProfileId': linkedNextDnsProfileId?.trim().isEmpty == true
+          ? null
+          : linkedNextDnsProfileId?.trim(),
+      'isVerified': existingDeviceMap['isVerified'] == true,
+      'createdAt': existingDeviceMap['createdAt'] ?? now,
+      'lastSeenAt': existingDeviceMap['lastSeenAt'],
+    };
+
+    final rawDeviceIds = currentData['deviceIds'];
+    final deviceIds = rawDeviceIds is List
+        ? rawDeviceIds
+            .map((item) => item.toString().trim())
+            .where((item) => item.isNotEmpty)
+            .toSet()
+        : <String>{};
+    deviceIds.add(normalizedDeviceId);
+
+    await childDoc.reference.update(<String, dynamic>{
+      'deviceIds': deviceIds.toList(growable: false),
+      'deviceMetadata': metadataMap,
+      'updatedAt': now,
+    });
+  }
+
+  Future<void> verifyChildDevice({
+    required String parentId,
+    required String childId,
+    required String deviceId,
+  }) async {
+    final normalizedDeviceId = deviceId.trim();
+    if (normalizedDeviceId.isEmpty) {
+      throw ArgumentError.value(
+        deviceId,
+        'deviceId',
+        'Device ID cannot be empty.',
+      );
+    }
+
+    final childDoc = await loadOwnedChildDoc(
+      parentId: parentId,
+      childId: childId,
+    );
+    final currentData = childDoc.data() ?? const <String, dynamic>{};
+    final rawMetadata = currentData['deviceMetadata'];
+    final metadataMap = rawMetadata is Map
+        ? rawMetadata.map(
+            (key, value) => MapEntry(key.toString(), value),
+          )
+        : <String, dynamic>{};
+    final existingRaw = metadataMap[normalizedDeviceId];
+    if (existingRaw is! Map) {
+      throw StateError('Device metadata not found for $normalizedDeviceId');
+    }
+
+    final existingMap = existingRaw.map(
+      (key, value) => MapEntry(key.toString(), value),
+    );
+    final now = Timestamp.fromDate(DateTime.now());
+    metadataMap[normalizedDeviceId] = <String, dynamic>{
+      ...existingMap,
+      'isVerified': true,
+      'lastSeenAt': now,
+    };
+
+    await childDoc.reference.update(<String, dynamic>{
+      'deviceMetadata': metadataMap,
+      'updatedAt': now,
+    });
+  }
+
+  Future<void> removeChildDevice({
+    required String parentId,
+    required String childId,
+    required String deviceId,
+  }) async {
+    final normalizedDeviceId = deviceId.trim();
+    if (normalizedDeviceId.isEmpty) {
+      throw ArgumentError.value(
+        deviceId,
+        'deviceId',
+        'Device ID cannot be empty.',
+      );
+    }
+
+    final childDoc = await loadOwnedChildDoc(
+      parentId: parentId,
+      childId: childId,
+    );
+    final currentData = childDoc.data() ?? const <String, dynamic>{};
+    final rawMetadata = currentData['deviceMetadata'];
+    final metadataMap = rawMetadata is Map
+        ? rawMetadata.map(
+            (key, value) => MapEntry(key.toString(), value),
+          )
+        : <String, dynamic>{};
+    metadataMap.remove(normalizedDeviceId);
+
+    final rawDeviceIds = currentData['deviceIds'];
+    final deviceIds = rawDeviceIds is List
+        ? rawDeviceIds
+            .map((item) => item.toString().trim())
+            .where((item) => item.isNotEmpty && item != normalizedDeviceId)
+            .toList(growable: false)
+        : const <String>[];
+
+    await childDoc.reference.update(<String, dynamic>{
+      'deviceIds': deviceIds,
+      'deviceMetadata': metadataMap,
+      'updatedAt': Timestamp.fromDate(DateTime.now()),
+    });
   }
 }
