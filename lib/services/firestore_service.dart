@@ -10,6 +10,11 @@ import 'package:trustbridge_app/models/dashboard_state.dart';
 import 'package:trustbridge_app/models/installed_app_info.dart';
 import 'package:trustbridge_app/models/policy.dart';
 import 'package:trustbridge_app/models/support_ticket.dart';
+import 'package:trustbridge_app/repositories/alert_repository.dart';
+import 'package:trustbridge_app/repositories/auth_repository.dart';
+import 'package:trustbridge_app/repositories/child_repository.dart';
+import 'package:trustbridge_app/repositories/parent_repository.dart';
+import 'package:trustbridge_app/repositories/request_repository.dart';
 import 'package:trustbridge_app/services/crashlytics_service.dart';
 import 'package:trustbridge_app/services/nextdns_api_service.dart';
 import 'package:trustbridge_app/services/performance_service.dart';
@@ -110,6 +115,22 @@ class FirestoreService {
   FirebaseFirestore get firestore => _firestore;
   final CrashlyticsService _crashlyticsService = CrashlyticsService();
   final PerformanceService _performanceService = PerformanceService();
+  late final AuthRepository _authRepository = AuthRepository(
+    firestore: _firestore,
+    crashlyticsService: _crashlyticsService,
+  );
+  late final ParentRepository _parentRepository =
+      ParentRepository(firestore: _firestore);
+  late final AlertRepository _alertRepository =
+      AlertRepository(firestore: _firestore);
+  late final ChildRepository _childRepository =
+      ChildRepository(firestore: _firestore);
+  late final RequestRepository _requestRepository = RequestRepository(
+    firestore: _firestore,
+    crashlyticsService: _crashlyticsService,
+    nextDnsApiService: _nextDnsApiService,
+    parentRepository: _parentRepository,
+  );
 
   String _scopedChildCacheKey({
     required String parentId,
@@ -329,156 +350,52 @@ class FirestoreService {
     required String parentId,
     required String? phoneNumber,
   }) async {
-    try {
-      final parentRef = _firestore.collection('parents').doc(parentId);
-      await parentRef.set(
-        {
-          'parentId': parentId,
-          'phone': phoneNumber,
-          'createdAt': FieldValue.serverTimestamp(),
-          'subscription': {
-            'tier': 'free',
-            'validUntil': null,
-            'autoRenew': false,
-          },
-          'preferences': {
-            'language': 'en',
-            'timezone': 'Asia/Kolkata',
-            'pushNotificationsEnabled': true,
-            'weeklySummaryEnabled': true,
-            'securityAlertsEnabled': true,
-            'activityHistoryEnabled': true,
-            'crashReportsEnabled': true,
-            'personalizedTipsEnabled': true,
-            'biometricLoginEnabled': false,
-            'incognitoModeEnabled': false,
-            'vpnProtectionEnabled': false,
-            'nextDnsEnabled': false,
-            'nextDnsProfileId': null,
-            'nextDnsApiConnected': false,
-            'nextDnsConnectedAt': null,
-          },
-          'onboardingComplete': false,
-          'fcmToken': null,
-        },
-        SetOptions(merge: true),
-      );
-    } catch (error, stackTrace) {
-      await _crashlyticsService.logError(
-        error,
-        stackTrace,
-        reason: 'Failed to ensure parent profile',
-      );
-      rethrow;
-    }
+    return _authRepository.ensureParentProfile(
+      parentId: parentId,
+      phoneNumber: phoneNumber,
+    );
   }
 
   Future<Map<String, dynamic>?> getParentProfile(String parentId) async {
-    final snapshot = await _firestore.collection('parents').doc(parentId).get();
-    return snapshot.data();
+    return _authRepository.getParentProfile(parentId);
   }
 
   /// One-shot fetch of parent preferences plus onboarding status fields.
   Future<Map<String, dynamic>?> getParentPreferences(String parentId) async {
-    if (parentId.trim().isEmpty) {
-      throw ArgumentError.value(parentId, 'parentId', 'Parent ID is required.');
-    }
-
-    final snapshot = await _firestore.collection('parents').doc(parentId).get();
-    if (!snapshot.exists) {
-      return null;
-    }
-
-    final data = snapshot.data();
-    final mergedPreferences = <String, dynamic>{};
-
-    final rawPreferences = data?['preferences'];
-    if (rawPreferences is Map<String, dynamic>) {
-      mergedPreferences.addAll(rawPreferences);
-    }
-    if (rawPreferences is Map) {
-      mergedPreferences.addAll(
-        rawPreferences.map(
-          (key, value) => MapEntry(key.toString(), value),
-        ),
-      );
-    }
-    if (data != null) {
-      mergedPreferences['onboardingComplete'] =
-          data['onboardingComplete'] == true;
-      if (data.containsKey('onboardingCompletedAt')) {
-        mergedPreferences['onboardingCompletedAt'] =
-            data['onboardingCompletedAt'];
-      }
-    }
-    return mergedPreferences.isEmpty ? null : mergedPreferences;
+    return _authRepository.getParentPreferences(parentId);
   }
 
   /// Mark onboarding as complete for a parent.
   Future<void> completeOnboarding(String parentId) async {
-    if (parentId.trim().isEmpty) {
-      throw ArgumentError.value(parentId, 'parentId', 'Parent ID is required.');
-    }
-    await _firestore.collection('parents').doc(parentId).set(
-      {
-        'onboardingComplete': true,
-        'onboardingCompletedAt': FieldValue.serverTimestamp(),
-      },
-      SetOptions(merge: true),
-    );
+    return _authRepository.completeOnboarding(parentId);
   }
 
   /// Stores DPDPA guardian consent acknowledgement metadata.
   Future<void> recordGuardianConsent(String parentId) async {
-    if (parentId.trim().isEmpty) {
-      throw ArgumentError.value(parentId, 'parentId', 'Parent ID is required.');
-    }
-    await _firestore.collection('parents').doc(parentId).set(
-      <String, dynamic>{
-        'consentGiven': true,
-        'consentTimestamp': FieldValue.serverTimestamp(),
-      },
-      SetOptions(merge: true),
-    );
+    return _authRepository.recordGuardianConsent(parentId);
   }
 
   /// Check if onboarding is complete for a parent.
   Future<bool> isOnboardingComplete(String parentId) async {
-    if (parentId.trim().isEmpty) {
-      throw ArgumentError.value(parentId, 'parentId', 'Parent ID is required.');
-    }
-    final preferences = await getParentPreferences(parentId);
-    return (preferences?['onboardingComplete'] as bool?) == true;
+    return _authRepository.isOnboardingComplete(parentId);
   }
 
   /// Save parent's FCM token for push notifications.
   Future<void> saveFcmToken(String parentId, String token) async {
-    if (parentId.trim().isEmpty) {
-      throw ArgumentError.value(parentId, 'parentId', 'Parent ID is required.');
-    }
-    if (token.trim().isEmpty) {
-      throw ArgumentError.value(token, 'token', 'FCM token is required.');
-    }
-
-    await _firestore.collection('parents').doc(parentId).set(
-      {
-        'fcmToken': token.trim(),
-        'fcmTokenUpdatedAt': FieldValue.serverTimestamp(),
-      },
-      SetOptions(merge: true),
-    );
+    return _authRepository.saveFcmToken(parentId, token);
   }
 
   /// Remove parent's FCM token on logout or account switch.
   Future<void> removeFcmToken(String parentId) async {
-    if (parentId.trim().isEmpty) {
-      throw ArgumentError.value(parentId, 'parentId', 'Parent ID is required.');
-    }
+    return _authRepository.removeFcmToken(parentId);
+  }
 
-    await _firestore.collection('parents').doc(parentId).set(
-      <String, dynamic>{'fcmToken': FieldValue.delete()},
-      SetOptions(merge: true),
-    );
+  /// Marks all linked child sessions as revoked for the signing-out parent.
+  ///
+  /// Child devices listen to their profile and will self-unpair when this
+  /// marker is updated.
+  Future<int> revokeChildSessionsForParent(String parentId) async {
+    return _authRepository.revokeChildSessionsForParent(parentId);
   }
 
   /// Queue a parent push notification payload for backend processing.
@@ -488,27 +405,12 @@ class FirestoreService {
     required String body,
     required String route,
   }) async {
-    if (parentId.trim().isEmpty) {
-      throw ArgumentError.value(parentId, 'parentId', 'Parent ID is required.');
-    }
-    if (title.trim().isEmpty) {
-      throw ArgumentError.value(title, 'title', 'Title is required.');
-    }
-    if (body.trim().isEmpty) {
-      throw ArgumentError.value(body, 'body', 'Body is required.');
-    }
-    if (route.trim().isEmpty) {
-      throw ArgumentError.value(route, 'route', 'Route is required.');
-    }
-
-    await _firestore.collection('notification_queue').add({
-      'parentId': parentId.trim(),
-      'title': title.trim(),
-      'body': _truncateNotificationBody(body),
-      'route': route.trim(),
-      'sentAt': FieldValue.serverTimestamp(),
-      'processed': false,
-    });
+    return _parentRepository.queueParentNotification(
+      parentId: parentId,
+      title: title,
+      body: body,
+      route: route,
+    );
   }
 
   /// Queue a child push notification payload for backend processing.
@@ -520,71 +422,22 @@ class FirestoreService {
     String route = '/child/status',
     String eventType = 'access_request_response',
   }) async {
-    if (parentId.trim().isEmpty) {
-      throw ArgumentError.value(parentId, 'parentId', 'Parent ID is required.');
-    }
-    if (childId.trim().isEmpty) {
-      throw ArgumentError.value(childId, 'childId', 'Child ID is required.');
-    }
-    if (title.trim().isEmpty) {
-      throw ArgumentError.value(title, 'title', 'Title is required.');
-    }
-    if (body.trim().isEmpty) {
-      throw ArgumentError.value(body, 'body', 'Body is required.');
-    }
-    if (route.trim().isEmpty) {
-      throw ArgumentError.value(route, 'route', 'Route is required.');
-    }
-    if (eventType.trim().isEmpty) {
-      throw ArgumentError.value(
-        eventType,
-        'eventType',
-        'Event type is required.',
-      );
-    }
-
-    await _firestore.collection('notification_queue').add({
-      'parentId': parentId.trim(),
-      'childId': childId.trim(),
-      'title': title.trim(),
-      'body': _truncateNotificationBody(body),
-      'route': route.trim(),
-      'eventType': eventType.trim(),
-      'sentAt': FieldValue.serverTimestamp(),
-      'processed': false,
-    });
+    return _parentRepository.queueChildNotification(
+      parentId: parentId,
+      childId: childId,
+      title: title,
+      body: body,
+      route: route,
+      eventType: eventType,
+    );
   }
 
   Stream<Map<String, dynamic>?> watchParentProfile(String parentId) {
-    return _firestore
-        .collection('parents')
-        .doc(parentId)
-        .snapshots()
-        .map((snapshot) => snapshot.data());
+    return _parentRepository.watchParentProfile(parentId);
   }
 
   Stream<DashboardStateSnapshot?> watchDashboardState(String parentId) {
-    final normalizedParentId = parentId.trim();
-    if (normalizedParentId.isEmpty) {
-      return Stream<DashboardStateSnapshot?>.value(null);
-    }
-
-    return _firestore
-        .collection('parents')
-        .doc(normalizedParentId)
-        .collection('dashboard_state')
-        .doc('current')
-        .snapshots()
-        .map((snapshot) {
-      if (!snapshot.exists) {
-        return null;
-      }
-      final data = snapshot.data();
-      if (data == null || data.isEmpty) {
-        return null;
-      }
-      return DashboardStateSnapshot.fromMap(data);
-    });
+    return _parentRepository.watchDashboardState(parentId);
   }
 
   Future<void> updateParentSecurityMetadata({
@@ -593,29 +446,11 @@ class FirestoreService {
     int? activeSessions,
     bool? twoFactorEnabled,
   }) async {
-    if (parentId.trim().isEmpty) {
-      throw ArgumentError.value(parentId, 'parentId', 'Parent ID is required.');
-    }
-
-    final updates = <String, dynamic>{};
-    if (appPinChangedAt != null) {
-      updates['appPinChangedAt'] = Timestamp.fromDate(appPinChangedAt);
-    }
-    if (activeSessions != null) {
-      updates['activeSessions'] = activeSessions;
-    }
-    if (twoFactorEnabled != null) {
-      updates['twoFactorEnabled'] = twoFactorEnabled;
-    }
-    if (updates.isEmpty) {
-      return;
-    }
-
-    await _firestore.collection('parents').doc(parentId).set(
-      <String, dynamic>{
-        'security': updates,
-      },
-      SetOptions(merge: true),
+    return _parentRepository.updateParentSecurityMetadata(
+      parentId: parentId,
+      appPinChangedAt: appPinChangedAt,
+      activeSessions: activeSessions,
+      twoFactorEnabled: twoFactorEnabled,
     );
   }
 
@@ -637,69 +472,23 @@ class FirestoreService {
     bool? nextDnsApiConnected,
     DateTime? nextDnsConnectedAt,
   }) async {
-    if (parentId.trim().isEmpty) {
-      throw ArgumentError.value(parentId, 'parentId', 'Parent ID is required.');
-    }
-
-    final preferenceUpdates = <String, dynamic>{};
-    if (language != null) {
-      preferenceUpdates['language'] = language;
-    }
-    if (timezone != null) {
-      preferenceUpdates['timezone'] = timezone;
-    }
-    if (pushNotificationsEnabled != null) {
-      preferenceUpdates['pushNotificationsEnabled'] = pushNotificationsEnabled;
-    }
-    if (weeklySummaryEnabled != null) {
-      preferenceUpdates['weeklySummaryEnabled'] = weeklySummaryEnabled;
-    }
-    if (securityAlertsEnabled != null) {
-      preferenceUpdates['securityAlertsEnabled'] = securityAlertsEnabled;
-    }
-    if (activityHistoryEnabled != null) {
-      preferenceUpdates['activityHistoryEnabled'] = activityHistoryEnabled;
-    }
-    if (crashReportsEnabled != null) {
-      preferenceUpdates['crashReportsEnabled'] = crashReportsEnabled;
-    }
-    if (personalizedTipsEnabled != null) {
-      preferenceUpdates['personalizedTipsEnabled'] = personalizedTipsEnabled;
-    }
-    if (biometricLoginEnabled != null) {
-      preferenceUpdates['biometricLoginEnabled'] = biometricLoginEnabled;
-    }
-    if (incognitoModeEnabled != null) {
-      preferenceUpdates['incognitoModeEnabled'] = incognitoModeEnabled;
-    }
-    if (vpnProtectionEnabled != null) {
-      preferenceUpdates['vpnProtectionEnabled'] = vpnProtectionEnabled;
-    }
-    if (nextDnsEnabled != null) {
-      preferenceUpdates['nextDnsEnabled'] = nextDnsEnabled;
-    }
-    if (nextDnsProfileId != null) {
-      final trimmed = nextDnsProfileId.trim();
-      preferenceUpdates['nextDnsProfileId'] = trimmed.isEmpty ? null : trimmed;
-    }
-    if (nextDnsApiConnected != null) {
-      preferenceUpdates['nextDnsApiConnected'] = nextDnsApiConnected;
-    }
-    if (nextDnsConnectedAt != null) {
-      preferenceUpdates['nextDnsConnectedAt'] =
-          Timestamp.fromDate(nextDnsConnectedAt);
-    }
-
-    if (preferenceUpdates.isEmpty) {
-      return;
-    }
-
-    await _firestore.collection('parents').doc(parentId).set(
-      {
-        'preferences': preferenceUpdates,
-        'updatedAt': FieldValue.serverTimestamp(),
-      },
-      SetOptions(merge: true),
+    return _parentRepository.updateParentPreferences(
+      parentId: parentId,
+      language: language,
+      timezone: timezone,
+      pushNotificationsEnabled: pushNotificationsEnabled,
+      weeklySummaryEnabled: weeklySummaryEnabled,
+      securityAlertsEnabled: securityAlertsEnabled,
+      activityHistoryEnabled: activityHistoryEnabled,
+      crashReportsEnabled: crashReportsEnabled,
+      personalizedTipsEnabled: personalizedTipsEnabled,
+      biometricLoginEnabled: biometricLoginEnabled,
+      incognitoModeEnabled: incognitoModeEnabled,
+      vpnProtectionEnabled: vpnProtectionEnabled,
+      nextDnsEnabled: nextDnsEnabled,
+      nextDnsProfileId: nextDnsProfileId,
+      nextDnsApiConnected: nextDnsApiConnected,
+      nextDnsConnectedAt: nextDnsConnectedAt,
     );
   }
 
@@ -713,61 +502,20 @@ class FirestoreService {
     bool? deviceOffline24h,
     bool? emailSeriousAlerts,
   }) async {
-    if (parentId.trim().isEmpty) {
-      throw ArgumentError.value(parentId, 'parentId', 'Parent ID is required.');
-    }
-
-    final updates = <String, dynamic>{};
-    if (vpnDisabled != null) {
-      updates['vpnDisabled'] = vpnDisabled;
-    }
-    if (uninstallAttempt != null) {
-      updates['uninstallAttempt'] = uninstallAttempt;
-    }
-    if (privateDnsChanged != null) {
-      updates['privateDnsChanged'] = privateDnsChanged;
-    }
-    if (deviceOffline30m != null) {
-      updates['deviceOffline30m'] = deviceOffline30m;
-    }
-    if (deviceOffline24h != null) {
-      updates['deviceOffline24h'] = deviceOffline24h;
-    }
-    if (emailSeriousAlerts != null) {
-      updates['emailSeriousAlerts'] = emailSeriousAlerts;
-    }
-
-    if (updates.isEmpty) {
-      return;
-    }
-
-    await _firestore.collection('parents').doc(parentId).set(
-      <String, dynamic>{
-        'alertPreferences': updates,
-        'updatedAt': FieldValue.serverTimestamp(),
-      },
-      SetOptions(merge: true),
+    return _parentRepository.updateAlertPreferences(
+      parentId: parentId,
+      vpnDisabled: vpnDisabled,
+      uninstallAttempt: uninstallAttempt,
+      privateDnsChanged: privateDnsChanged,
+      deviceOffline30m: deviceOffline30m,
+      deviceOffline24h: deviceOffline24h,
+      emailSeriousAlerts: emailSeriousAlerts,
     );
   }
 
   /// Returns alert preferences map for the parent account.
   Future<Map<String, dynamic>> getAlertPreferences(String parentId) async {
-    if (parentId.trim().isEmpty) {
-      throw ArgumentError.value(parentId, 'parentId', 'Parent ID is required.');
-    }
-
-    final snapshot = await _firestore.collection('parents').doc(parentId).get();
-    final data = snapshot.data();
-    final raw = data?['alertPreferences'];
-    if (raw is Map<String, dynamic>) {
-      return raw;
-    }
-    if (raw is Map) {
-      return raw.map(
-        (key, value) => MapEntry(key.toString(), value),
-      );
-    }
-    return <String, dynamic>{};
+    return _parentRepository.getAlertPreferences(parentId);
   }
 
   /// Logs a 24h offline bypass event for a child device and queues parent alert.
@@ -779,53 +527,11 @@ class FirestoreService {
     required String childNickname,
     required String deviceId,
   }) async {
-    final normalizedParentId = parentId.trim();
-    final normalizedChildId = childId.trim();
-    final normalizedDeviceId = deviceId.trim();
-    if (normalizedParentId.isEmpty ||
-        normalizedChildId.isEmpty ||
-        normalizedDeviceId.isEmpty) {
-      return;
-    }
-
-    final cutoff = DateTime.now()
-        .subtract(const Duration(hours: 24))
-        .millisecondsSinceEpoch;
-
-    final recentEvent = await _firestore
-        .collection('bypass_events')
-        .doc(normalizedDeviceId)
-        .collection('events')
-        .where('type', isEqualTo: 'device_offline_24h')
-        .where('timestampEpochMs', isGreaterThanOrEqualTo: cutoff)
-        .limit(1)
-        .get();
-    if (recentEvent.docs.isNotEmpty) {
-      return;
-    }
-
-    await _firestore
-        .collection('bypass_events')
-        .doc(normalizedDeviceId)
-        .collection('events')
-        .add(<String, dynamic>{
-      'type': 'device_offline_24h',
-      'timestamp': FieldValue.serverTimestamp(),
-      'timestampEpochMs': DateTime.now().millisecondsSinceEpoch,
-      'deviceId': normalizedDeviceId,
-      'childId': normalizedChildId,
-      'childNickname':
-          childNickname.trim().isEmpty ? 'Child' : childNickname.trim(),
-      'parentId': normalizedParentId,
-      'read': false,
-    });
-
-    await queueParentNotification(
-      parentId: normalizedParentId,
-      title: 'Device offline for 24+ hours',
-      body:
-          '${childNickname.trim().isEmpty ? 'Your child' : childNickname.trim()} has not checked in for 24+ hours.',
-      route: '/parent/bypass-alerts',
+    return _parentRepository.logDeviceOffline24hAlert(
+      parentId: parentId,
+      childId: childId,
+      childNickname: childNickname,
+      deviceId: deviceId,
     );
   }
 
@@ -1337,10 +1043,10 @@ class FirestoreService {
     );
 
     try {
-      await _firestore.collection('children').doc(child.id).set({
-        ...child.toFirestore(includePolicy: false),
-        'parentId': parentId,
-      });
+      await _childRepository.createChildProfile(
+        parentId: parentId,
+        child: child,
+      );
       await _recordPolicyEventSnapshot(
         parentId: parentId,
         childId: child.id,
@@ -1382,10 +1088,8 @@ class FirestoreService {
       throw ArgumentError.value(parentId, 'parentId', 'Parent ID is required.');
     }
     return _childrenStreamByParentId.putIfAbsent(normalizedParentId, () {
-      return _firestore
-          .collection('children')
-          .where('parentId', isEqualTo: normalizedParentId)
-          .snapshots(includeMetadataChanges: true)
+      return _childRepository
+          .watchChildrenByParent(normalizedParentId)
           .asyncMap((snapshot) async {
         final children = await _childrenFromSnapshot(snapshot);
         _upsertChildrenCache(normalizedParentId, children);
@@ -1433,10 +1137,9 @@ class FirestoreService {
       throw ArgumentError.value(parentId, 'parentId', 'Parent ID is required.');
     }
 
-    final snapshot = await _firestore
-        .collection('children')
-        .where('parentId', isEqualTo: normalizedParentId)
-        .get();
+    final snapshot = await _childRepository.getChildrenDocsByParent(
+      normalizedParentId,
+    );
     final children = await _childrenFromSnapshot(snapshot);
     _upsertChildrenCache(normalizedParentId, children);
     return children;
@@ -1454,11 +1157,10 @@ class FirestoreService {
       return true;
     }
 
-    final snapshot = await _firestore
-        .collection('children')
-        .where('parentId', isEqualTo: normalizedParentId)
-        .limit(1)
-        .get();
+    final snapshot = await _childRepository.getChildrenDocsByParent(
+      normalizedParentId,
+      limit: 1,
+    );
     return snapshot.docs.isNotEmpty;
   }
 
@@ -1498,7 +1200,7 @@ class FirestoreService {
       throw ArgumentError.value(childId, 'childId', 'Child ID is required.');
     }
 
-    final snapshot = await _firestore.collection('children').doc(childId).get();
+    final snapshot = await _childRepository.getChildDoc(childId);
     if (!snapshot.exists) {
       return null;
     }
@@ -1532,10 +1234,11 @@ class FirestoreService {
       childId: normalizedChildId,
     );
     return _childStreamByScopedId.putIfAbsent(key, () {
-      return _firestore
-          .collection('children')
-          .doc(normalizedChildId)
-          .snapshots(includeMetadataChanges: true)
+      return _childRepository
+          .watchChildDoc(
+            normalizedChildId,
+            includeMetadataChanges: true,
+          )
           .asyncMap((snapshot) async {
         if (!snapshot.exists) {
           _childCacheByScopedId.remove(key);
@@ -2326,15 +2029,10 @@ class FirestoreService {
     required String parentId,
     required String childId,
   }) async {
-    final childDoc = await _firestore.collection('children').doc(childId).get();
-    if (!childDoc.exists) {
-      throw StateError('Child profile not found.');
-    }
-    final data = childDoc.data();
-    if (data == null || data['parentId'] != parentId) {
-      throw StateError('You do not have access to this child profile.');
-    }
-    return childDoc;
+    return _childRepository.loadOwnedChildDoc(
+      parentId: parentId,
+      childId: childId,
+    );
   }
 
   Future<void> updateChild({
@@ -2476,107 +2174,23 @@ class FirestoreService {
     required String parentId,
     required String childId,
   }) async {
-    final normalizedParentId = parentId.trim();
-    final normalizedChildId = childId.trim();
-    if (normalizedParentId.isEmpty || normalizedChildId.isEmpty) {
-      return null;
-    }
-
-    await _loadOwnedChildDoc(
-      parentId: normalizedParentId,
-      childId: normalizedChildId,
+    return _childRepository.getEffectivePolicyCurrentVersion(
+      parentId: parentId,
+      childId: childId,
     );
-    final doc = await _firestore
-        .collection('children')
-        .doc(normalizedChildId)
-        .collection('effective_policy')
-        .doc('current')
-        .get();
-    if (!doc.exists) {
-      return null;
-    }
-    final data = doc.data();
-    if (data == null) {
-      return null;
-    }
-    return _dynamicInt(data['version']);
   }
 
   Future<void> deleteChild({
     required String parentId,
     required String childId,
   }) async {
-    if (parentId.trim().isEmpty) {
-      throw ArgumentError.value(parentId, 'parentId', 'Parent ID is required.');
-    }
-    if (childId.trim().isEmpty) {
-      throw ArgumentError.value(childId, 'childId', 'Child ID is required.');
-    }
-
-    final childRef = _firestore.collection('children').doc(childId);
-
-    final childSnapshot = await childRef.get();
-    if (!childSnapshot.exists) {
-      return;
-    }
-
-    final childData = childSnapshot.data() ?? const <String, dynamic>{};
-    final ownerId = (childData['parentId'] as String?)?.trim();
-    if (ownerId != null && ownerId.isNotEmpty && ownerId != parentId.trim()) {
-      throw StateError('Child profile does not belong to the provided parent.');
-    }
-
-    final deviceIds = <String>{};
-    final rawDeviceIds = childData['deviceIds'];
-    if (rawDeviceIds is List) {
-      for (final raw in rawDeviceIds) {
-        final deviceId = raw?.toString().trim() ?? '';
-        if (deviceId.isNotEmpty) {
-          deviceIds.add(deviceId);
-        }
-      }
-    }
-
-    try {
-      final childDevices = await childRef.collection('devices').get();
-      for (final doc in childDevices.docs) {
-        final deviceId = doc.id.trim();
-        if (deviceId.isNotEmpty) {
-          deviceIds.add(deviceId);
-        }
-      }
-    } catch (_) {
-      // Best-effort discovery. Device IDs from child document may still exist.
-    }
-
-    if (deviceIds.isNotEmpty) {
-      final batch = _firestore.batch();
-      final now = FieldValue.serverTimestamp();
-      for (final deviceId in deviceIds) {
-        final commandRef = _firestore
-            .collection('devices')
-            .doc(deviceId)
-            .collection('pendingCommands')
-            .doc();
-        batch.set(commandRef, <String, dynamic>{
-          'commandId': commandRef.id,
-          'parentId': parentId.trim(),
-          'command': 'clearPairingAndStopProtection',
-          'childId': childId.trim(),
-          'reason': 'childProfileDeleted',
-          'status': 'pending',
-          'attempts': 0,
-          'sentAt': now,
-        });
-      }
-      batch.delete(childRef);
-      await batch.commit();
+    final deleted = await _childRepository.deleteChildAndQueueUnpairCommands(
+      parentId: parentId,
+      childId: childId,
+    );
+    if (deleted) {
       _evictChildCache(parentId: parentId, childId: childId);
-      return;
     }
-
-    await childRef.delete();
-    _evictChildCache(parentId: parentId, childId: childId);
   }
 
   Future<Map<String, dynamic>> _loadPolicySnapshotForChild({
@@ -2773,23 +2387,32 @@ class FirestoreService {
           pausedUntil == null ? null : Timestamp.fromDate(pausedUntil),
       'updatedAt': Timestamp.fromDate(updatedAt),
     });
-    await _recordPolicyEventSnapshot(
-      parentId: parentId,
-      childId: childId,
-      blockedCategories: blockedCategories,
-      blockedServices: blockedServices,
-      blockedDomains: blockedDomains,
-      blockedPackages: blockedPackages,
-      modeOverrides: modeOverrides,
-      manualMode: manualMode.isEmpty ? null : manualMode,
-      pausedUntil: pausedUntil,
-      protectionEnabled: protectionEnabled,
-      sourceUpdatedAt: updatedAt,
-      policySchemaVersion: policySchemaVersion,
-      schedules: _dynamicListOfMaps(policy['schedules']),
-      safeSearchEnabled:
-          _dynamicBool(policy['safeSearchEnabled'], fallback: true),
-    );
+    try {
+      await _recordPolicyEventSnapshot(
+        parentId: parentId,
+        childId: childId,
+        blockedCategories: blockedCategories,
+        blockedServices: blockedServices,
+        blockedDomains: blockedDomains,
+        blockedPackages: blockedPackages,
+        modeOverrides: modeOverrides,
+        manualMode: manualMode.isEmpty ? null : manualMode,
+        pausedUntil: pausedUntil,
+        protectionEnabled: protectionEnabled,
+        sourceUpdatedAt: updatedAt,
+        policySchemaVersion: policySchemaVersion,
+        schedules: _dynamicListOfMaps(policy['schedules']),
+        safeSearchEnabled:
+            _dynamicBool(policy['safeSearchEnabled'], fallback: true),
+      );
+    } catch (error, stackTrace) {
+      developer.log(
+        'Policy event logging failed while setting child pause; continuing with core update.',
+        name: 'FirestoreService',
+        error: error,
+        stackTrace: stackTrace,
+      );
+    }
   }
 
   Future<void> setChildProtectionEnabled({
@@ -2888,23 +2511,32 @@ class FirestoreService {
         'manualMode': null,
         'updatedAt': Timestamp.fromDate(updatedAt),
       });
-      await _recordPolicyEventSnapshot(
-        parentId: parentId,
-        childId: childId,
-        blockedCategories: blockedCategories,
-        blockedServices: blockedServices,
-        blockedDomains: blockedDomains,
-        blockedPackages: blockedPackages,
-        modeOverrides: modeOverrides,
-        manualMode: null,
-        pausedUntil: pausedUntil,
-        protectionEnabled: protectionEnabled,
-        sourceUpdatedAt: updatedAt,
-        policySchemaVersion: policySchemaVersion,
-        schedules: _dynamicListOfMaps(policy['schedules']),
-        safeSearchEnabled:
-            _dynamicBool(policy['safeSearchEnabled'], fallback: true),
-      );
+      try {
+        await _recordPolicyEventSnapshot(
+          parentId: parentId,
+          childId: childId,
+          blockedCategories: blockedCategories,
+          blockedServices: blockedServices,
+          blockedDomains: blockedDomains,
+          blockedPackages: blockedPackages,
+          modeOverrides: modeOverrides,
+          manualMode: null,
+          pausedUntil: pausedUntil,
+          protectionEnabled: protectionEnabled,
+          sourceUpdatedAt: updatedAt,
+          policySchemaVersion: policySchemaVersion,
+          schedules: _dynamicListOfMaps(policy['schedules']),
+          safeSearchEnabled:
+              _dynamicBool(policy['safeSearchEnabled'], fallback: true),
+        );
+      } catch (error, stackTrace) {
+        developer.log(
+          'Policy event logging failed while clearing child manual mode; continuing with core update.',
+          name: 'FirestoreService',
+          error: error,
+          stackTrace: stackTrace,
+        );
+      }
       return;
     }
 
@@ -2917,149 +2549,47 @@ class FirestoreService {
       'manualMode': manualModePayload,
       'updatedAt': Timestamp.fromDate(updatedAt),
     });
-    await _recordPolicyEventSnapshot(
-      parentId: parentId,
-      childId: childId,
-      blockedCategories: blockedCategories,
-      blockedServices: blockedServices,
-      blockedDomains: blockedDomains,
-      blockedPackages: blockedPackages,
-      modeOverrides: modeOverrides,
-      manualMode: manualModePayload,
-      pausedUntil: pausedUntil,
-      protectionEnabled: protectionEnabled,
-      sourceUpdatedAt: updatedAt,
-      policySchemaVersion: policySchemaVersion,
-      schedules: _dynamicListOfMaps(policy['schedules']),
-      safeSearchEnabled:
-          _dynamicBool(policy['safeSearchEnabled'], fallback: true),
-    );
+    try {
+      await _recordPolicyEventSnapshot(
+        parentId: parentId,
+        childId: childId,
+        blockedCategories: blockedCategories,
+        blockedServices: blockedServices,
+        blockedDomains: blockedDomains,
+        blockedPackages: blockedPackages,
+        modeOverrides: modeOverrides,
+        manualMode: manualModePayload,
+        pausedUntil: pausedUntil,
+        protectionEnabled: protectionEnabled,
+        sourceUpdatedAt: updatedAt,
+        policySchemaVersion: policySchemaVersion,
+        schedules: _dynamicListOfMaps(policy['schedules']),
+        safeSearchEnabled:
+            _dynamicBool(policy['safeSearchEnabled'], fallback: true),
+      );
+    } catch (error, stackTrace) {
+      developer.log(
+        'Policy event logging failed while setting child manual mode; continuing with core update.',
+        name: 'FirestoreService',
+        error: error,
+        stackTrace: stackTrace,
+      );
+    }
   }
 
   /// Submit a new access request from child profile.
   Future<String> submitAccessRequest(AccessRequest request) async {
-    if (request.parentId.trim().isEmpty) {
-      throw ArgumentError.value(
-        request.parentId,
-        'request.parentId',
-        'Parent ID is required.',
-      );
-    }
-    if (request.childId.trim().isEmpty) {
-      throw ArgumentError.value(
-        request.childId,
-        'request.childId',
-        'Child ID is required.',
-      );
-    }
-    if (request.appOrSite.trim().isEmpty) {
-      throw ArgumentError.value(
-        request.appOrSite,
-        'request.appOrSite',
-        'App/site is required.',
-      );
-    }
-
-    try {
-      final docRef = await _firestore
-          .collection('parents')
-          .doc(request.parentId)
-          .collection('access_requests')
-          .add(request.toFirestore());
-      await _crashlyticsService.setCustomKeys({
-        'last_request_parent_id': request.parentId,
-        'last_request_child_id': request.childId,
-        'last_request_status': request.status.name,
-      });
-      return docRef.id;
-    } catch (error, stackTrace) {
-      await _crashlyticsService.logError(
-        error,
-        stackTrace,
-        reason: 'Failed to submit access request',
-      );
-      rethrow;
-    }
+    return _requestRepository.submitAccessRequest(request);
   }
 
   /// Stream pending access requests for parent dashboard actions.
   Stream<List<AccessRequest>> getPendingRequestsStream(String parentId) {
-    if (parentId.trim().isEmpty) {
-      throw ArgumentError.value(parentId, 'parentId', 'Parent ID is required.');
-    }
-
-    return _firestore
-        .collection('parents')
-        .doc(parentId)
-        .collection('access_requests')
-        .where('status', isEqualTo: RequestStatus.pending.name)
-        .orderBy('requestedAt', descending: true)
-        .snapshots()
-        .map(
-          (snapshot) => snapshot.docs
-              .map((doc) => AccessRequest.fromFirestore(doc))
-              .toList(),
-        );
+    return _requestRepository.getPendingRequestsStream(parentId);
   }
 
   /// Stream unread bypass alert count for a parent.
   Stream<int> getUnreadBypassAlertCountStream(String parentId) {
-    if (parentId.trim().isEmpty) {
-      throw ArgumentError.value(parentId, 'parentId', 'Parent ID is required.');
-    }
-
-    final normalizedParentId = parentId.trim();
-    return _firestore
-        .collection('children')
-        .where('parentId', isEqualTo: normalizedParentId)
-        .snapshots()
-        .asyncMap((snapshot) async {
-      try {
-        final deviceIds = <String>{};
-        for (final childDoc in snapshot.docs) {
-          final data = childDoc.data();
-          final rawDeviceIds = data['deviceIds'];
-          if (rawDeviceIds is List) {
-            for (final rawDeviceId in rawDeviceIds) {
-              final deviceId = rawDeviceId?.toString().trim() ?? '';
-              if (deviceId.isNotEmpty) {
-                deviceIds.add(deviceId);
-              }
-            }
-          }
-
-          final rawDeviceMetadata = data['deviceMetadata'];
-          if (rawDeviceMetadata is Map) {
-            for (final entry in rawDeviceMetadata.entries) {
-              final deviceId = entry.key.toString().trim();
-              if (deviceId.isNotEmpty) {
-                deviceIds.add(deviceId);
-              }
-            }
-          }
-        }
-
-        if (deviceIds.isEmpty) {
-          return 0;
-        }
-
-        var unreadCount = 0;
-        for (final deviceId in deviceIds) {
-          final unreadSnapshot = await _firestore
-              .collection('bypass_events')
-              .doc(deviceId)
-              .collection('events')
-              .where('parentId', isEqualTo: normalizedParentId)
-              .where('read', isEqualTo: false)
-              .limit(120)
-              .get();
-          unreadCount += unreadSnapshot.docs.length;
-        }
-        return unreadCount;
-      } catch (_) {
-        return 0;
-      }
-    });
+    return _alertRepository.getUnreadBypassAlertCountStream(parentId);
   }
 
   /// Stream recent access requests for a specific child profile.
@@ -3067,26 +2597,10 @@ class FirestoreService {
     required String parentId,
     required String childId,
   }) {
-    if (parentId.trim().isEmpty) {
-      throw ArgumentError.value(parentId, 'parentId', 'Parent ID is required.');
-    }
-    if (childId.trim().isEmpty) {
-      throw ArgumentError.value(childId, 'childId', 'Child ID is required.');
-    }
-
-    return _firestore
-        .collection('parents')
-        .doc(parentId)
-        .collection('access_requests')
-        .where('childId', isEqualTo: childId)
-        .orderBy('requestedAt', descending: true)
-        .limit(20)
-        .snapshots()
-        .map(
-          (snapshot) => snapshot.docs
-              .map((doc) => AccessRequest.fromFirestore(doc))
-              .toList(),
-        );
+    return _requestRepository.getChildRequestsStream(
+      parentId: parentId,
+      childId: childId,
+    );
   }
 
   /// Parent responds to an access request (approved or denied).
@@ -3097,115 +2611,13 @@ class FirestoreService {
     String? reply,
     RequestDuration? approvedDurationOverride,
   }) async {
-    if (parentId.trim().isEmpty) {
-      throw ArgumentError.value(parentId, 'parentId', 'Parent ID is required.');
-    }
-    if (requestId.trim().isEmpty) {
-      throw ArgumentError.value(
-        requestId,
-        'requestId',
-        'Request ID is required.',
-      );
-    }
-    if (status != RequestStatus.approved && status != RequestStatus.denied) {
-      throw ArgumentError.value(
-        status,
-        'status',
-        'Status must be approved or denied.',
-      );
-    }
-    if (status != RequestStatus.approved && approvedDurationOverride != null) {
-      throw ArgumentError.value(
-        approvedDurationOverride,
-        'approvedDurationOverride',
-        'Duration override is only allowed for approved requests.',
-      );
-    }
-
-    try {
-      final requestRef = _firestore
-          .collection('parents')
-          .doc(parentId)
-          .collection('access_requests')
-          .doc(requestId);
-
-      final requestSnapshot = await requestRef.get();
-      if (!requestSnapshot.exists) {
-        throw StateError('Access request not found.');
-      }
-      final requestData = requestSnapshot.data();
-      final existingRequest = AccessRequest.fromFirestore(requestSnapshot);
-      final rawChildId = requestData == null
-          ? ''
-          : (requestData['childId']?.toString().trim() ?? '');
-      final childNotificationTargetId =
-          existingRequest.childId.trim().isNotEmpty
-              ? existingRequest.childId.trim()
-              : rawChildId;
-
-      DateTime? expiresAt;
-      if (status == RequestStatus.approved) {
-        int? minutes = approvedDurationOverride?.minutes;
-        if (approvedDurationOverride == null) {
-          final data = requestSnapshot.data();
-          final minutesValue = data?['durationMinutes'];
-          if (minutesValue is int) {
-            minutes = minutesValue;
-          } else if (minutesValue is num) {
-            minutes = minutesValue.toInt();
-          }
-        }
-
-        if (minutes != null && minutes > 0) {
-          expiresAt = DateTime.now().add(Duration(minutes: minutes));
-        }
-      }
-
-      final trimmedReply = reply?.trim();
-      await requestRef.update({
-        'status': status.name,
-        'parentReply': (trimmedReply == null || trimmedReply.isEmpty)
-            ? null
-            : trimmedReply,
-        'respondedAt': Timestamp.fromDate(DateTime.now()),
-        if (expiresAt != null) 'expiresAt': Timestamp.fromDate(expiresAt),
-      });
-
-      if (childNotificationTargetId.isNotEmpty) {
-        final childNotificationBody = _buildChildResponseNotificationBody(
-          request: existingRequest,
-          status: status,
-          parentReply: trimmedReply,
-          expiresAt: expiresAt,
-        );
-        await queueChildNotification(
-          parentId: parentId,
-          childId: childNotificationTargetId,
-          title: status == RequestStatus.approved
-              ? 'Request approved'
-              : 'Request denied',
-          body: childNotificationBody,
-          route: '/child/status',
-        );
-      }
-
-      await _syncNextDnsAccessLifecycle(
-        parentId: parentId,
-        request: existingRequest,
-        status: status,
-      );
-      await _crashlyticsService.setCustomKeys({
-        'last_request_id': requestId,
-        'last_request_status': status.name,
-      });
-    } catch (error, stackTrace) {
-      await _crashlyticsService.logError(
-        error,
-        stackTrace,
-        reason: 'Failed to respond to access request',
-      );
-      rethrow;
-    }
+    return _requestRepository.respondToAccessRequest(
+      parentId: parentId,
+      requestId: requestId,
+      status: status,
+      reply: reply,
+      approvedDurationOverride: approvedDurationOverride,
+    );
   }
 
   /// Parent ends an active approved request immediately.
@@ -3216,113 +2628,15 @@ class FirestoreService {
     required String parentId,
     required String requestId,
   }) async {
-    if (parentId.trim().isEmpty) {
-      throw ArgumentError.value(parentId, 'parentId', 'Parent ID is required.');
-    }
-    if (requestId.trim().isEmpty) {
-      throw ArgumentError.value(
-        requestId,
-        'requestId',
-        'Request ID is required.',
-      );
-    }
-
-    try {
-      final requestRef = _firestore
-          .collection('parents')
-          .doc(parentId)
-          .collection('access_requests')
-          .doc(requestId);
-
-      final requestSnapshot = await requestRef.get();
-      if (!requestSnapshot.exists) {
-        throw StateError('Access request not found.');
-      }
-
-      final request = AccessRequest.fromFirestore(requestSnapshot);
-      if (request.status != RequestStatus.approved) {
-        throw StateError('Only approved requests can be ended early.');
-      }
-
-      final now = Timestamp.fromDate(DateTime.now());
-      await requestRef.update({
-        'status': RequestStatus.expired.name,
-        'expiresAt': now,
-        'expiredAt': now,
-        'updatedAt': now,
-      });
-      await _syncNextDnsAccessLifecycle(
-        parentId: parentId,
-        request: request,
-        status: RequestStatus.expired,
-      );
-      await _crashlyticsService.setCustomKeys({
-        'last_request_id': requestId,
-        'last_request_status': RequestStatus.expired.name,
-      });
-    } catch (error, stackTrace) {
-      await _crashlyticsService.logError(
-        error,
-        stackTrace,
-        reason: 'Failed to end approved access request early',
-      );
-      rethrow;
-    }
-  }
-
-  String _buildChildResponseNotificationBody({
-    required AccessRequest request,
-    required RequestStatus status,
-    String? parentReply,
-    DateTime? expiresAt,
-  }) {
-    final appOrSite = request.appOrSite.trim();
-    final target = appOrSite.isEmpty ? 'your request' : appOrSite;
-    final reply = parentReply?.trim();
-
-    if (status == RequestStatus.approved) {
-      final base = expiresAt == null
-          ? '$target was approved.'
-          : '$target was approved for ${request.duration.label}.';
-      if (reply == null || reply.isEmpty) {
-        return _truncateNotificationBody(base);
-      }
-      return _truncateNotificationBody('$base Parent message: $reply');
-    }
-
-    final base = '$target was not approved.';
-    if (reply == null || reply.isEmpty) {
-      return _truncateNotificationBody(base);
-    }
-    return _truncateNotificationBody('$base Parent message: $reply');
-  }
-
-  String _truncateNotificationBody(String body) {
-    final trimmed = body.trim();
-    if (trimmed.length <= 280) {
-      return trimmed;
-    }
-    return '${trimmed.substring(0, 277)}...';
+    return _requestRepository.expireApprovedAccessRequestNow(
+      parentId: parentId,
+      requestId: requestId,
+    );
   }
 
   /// Stream all requests (pending + history) for parent.
   Stream<List<AccessRequest>> getAllRequestsStream(String parentId) {
-    if (parentId.trim().isEmpty) {
-      throw ArgumentError.value(parentId, 'parentId', 'Parent ID is required.');
-    }
-
-    return _firestore
-        .collection('parents')
-        .doc(parentId)
-        .collection('access_requests')
-        .orderBy('requestedAt', descending: true)
-        .limit(50)
-        .snapshots()
-        .map(
-          (snapshot) => snapshot.docs
-              .map((doc) => AccessRequest.fromFirestore(doc))
-              .toList(),
-        );
+    return _requestRepository.getAllRequestsStream(parentId);
   }
 
   /// Returns active approved request domains that should be temporarily allowed.
@@ -3336,29 +2650,11 @@ class FirestoreService {
     String? childId,
     int limit = 200,
   }) async {
-    final requests = await _getApprovedRequestsForExceptionEvaluation(
+    return _requestRepository.getActiveApprovedExceptionDomains(
       parentId: parentId,
       childId: childId,
       limit: limit,
     );
-
-    final now = DateTime.now();
-    final exceptionDomains = <String>{};
-
-    for (final request in requests) {
-      final expiresAt = request.expiresAt;
-      if (expiresAt != null && !expiresAt.isAfter(now)) {
-        continue;
-      }
-
-      final domain = _normalizeExceptionDomain(request.appOrSite);
-      if (domain != null) {
-        exceptionDomains.add(domain);
-      }
-    }
-
-    final ordered = exceptionDomains.toList()..sort();
-    return ordered;
   }
 
   /// Returns the nearest future expiry timestamp among approved requests.
@@ -3370,123 +2666,11 @@ class FirestoreService {
     String? childId,
     int limit = 200,
   }) async {
-    final requests = await _getApprovedRequestsForExceptionEvaluation(
+    return _requestRepository.getNextApprovedExceptionExpiry(
       parentId: parentId,
       childId: childId,
       limit: limit,
     );
-
-    final now = DateTime.now();
-    DateTime? nearest;
-    for (final request in requests) {
-      final expiresAt = request.expiresAt;
-      if (expiresAt == null || !expiresAt.isAfter(now)) {
-        continue;
-      }
-      if (nearest == null || expiresAt.isBefore(nearest)) {
-        nearest = expiresAt;
-      }
-    }
-    return nearest;
-  }
-
-  Future<List<AccessRequest>> _getApprovedRequestsForExceptionEvaluation({
-    required String parentId,
-    String? childId,
-    required int limit,
-  }) async {
-    if (parentId.trim().isEmpty) {
-      throw ArgumentError.value(parentId, 'parentId', 'Parent ID is required.');
-    }
-    if (limit <= 0) {
-      throw ArgumentError.value(
-        limit,
-        'limit',
-        'Limit must be greater than 0.',
-      );
-    }
-
-    final snapshot = await _firestore
-        .collection('parents')
-        .doc(parentId)
-        .collection('access_requests')
-        .where('status', isEqualTo: RequestStatus.approved.name)
-        .orderBy('requestedAt', descending: true)
-        .limit(limit)
-        .get();
-
-    final normalizedChildId = childId?.trim();
-    final requests = <AccessRequest>[];
-
-    for (final doc in snapshot.docs) {
-      AccessRequest request;
-      try {
-        request = AccessRequest.fromFirestore(doc);
-      } catch (_) {
-        continue;
-      }
-
-      if (normalizedChildId != null &&
-          normalizedChildId.isNotEmpty &&
-          request.childId != normalizedChildId) {
-        continue;
-      }
-      requests.add(request);
-    }
-
-    return requests;
-  }
-
-  Future<void> _syncNextDnsAccessLifecycle({
-    required String parentId,
-    required AccessRequest request,
-    required RequestStatus status,
-  }) async {
-    final domain = _normalizeExceptionDomain(request.appOrSite);
-    if (domain == null) {
-      return;
-    }
-
-    final profileId = await _getChildNextDnsProfileId(
-      parentId: parentId,
-      childId: request.childId,
-    );
-    if (profileId == null || profileId.isEmpty) {
-      return;
-    }
-
-    try {
-      if (status == RequestStatus.approved) {
-        await _nextDnsApiService.addToAllowlist(
-          profileId: profileId,
-          domain: domain,
-        );
-      } else if (status == RequestStatus.denied ||
-          status == RequestStatus.expired) {
-        await _nextDnsApiService.removeFromAllowlist(
-          profileId: profileId,
-          domain: domain,
-        );
-      }
-    } catch (error, stackTrace) {
-      await _crashlyticsService.logError(
-        error,
-        stackTrace,
-        reason: 'Failed syncing NextDNS access pass lifecycle',
-      );
-    }
-  }
-
-  Future<String?> _getChildNextDnsProfileId({
-    required String parentId,
-    required String childId,
-  }) async {
-    final child = await getChild(parentId: parentId, childId: childId);
-    final profileId = child?.nextDnsProfileId?.trim();
-    if (profileId == null || profileId.isEmpty) {
-      return null;
-    }
-    return profileId;
   }
 
   Future<void> _recordPolicyEventSnapshot({
@@ -4158,45 +3342,4 @@ class FirestoreService {
     return null;
   }
 
-  String? _normalizeExceptionDomain(String raw) {
-    var value = raw.trim().toLowerCase();
-    if (value.isEmpty || value.contains(' ')) {
-      return null;
-    }
-
-    if (value.startsWith('http://')) {
-      value = value.substring('http://'.length);
-    } else if (value.startsWith('https://')) {
-      value = value.substring('https://'.length);
-    }
-
-    final slashIndex = value.indexOf('/');
-    if (slashIndex >= 0) {
-      value = value.substring(0, slashIndex);
-    }
-
-    final queryIndex = value.indexOf('?');
-    if (queryIndex >= 0) {
-      value = value.substring(0, queryIndex);
-    }
-
-    final hashIndex = value.indexOf('#');
-    if (hashIndex >= 0) {
-      value = value.substring(0, hashIndex);
-    }
-
-    if (value.startsWith('www.')) {
-      value = value.substring(4);
-    }
-    while (value.endsWith('.')) {
-      value = value.substring(0, value.length - 1);
-    }
-
-    final domainPattern = RegExp(r'^[a-z0-9.-]+\.[a-z]{2,}$');
-    if (!domainPattern.hasMatch(value)) {
-      return null;
-    }
-
-    return value;
-  }
 }
