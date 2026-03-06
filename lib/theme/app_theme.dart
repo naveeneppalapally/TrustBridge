@@ -14,10 +14,18 @@ class AppColors {
   static const Color error = Color(0xFFF41F5C);
   static const Color cardLight = Colors.white;
   static const Color cardDark = Color(0xFF161B22);
+  static const Color surface = cardLight;
+  static const Color surfaceRaised = cardLight;
+  static const Color surfaceBorder = Color(0xFFD0D7DE);
   static const Color navUnselected = Color(0xFF8B95A3);
+  static const Color textMuted = navUnselected;
+  static const Color textSecondary = Color(0xFF57606A);
   static const Color darkDivider = Color(0xFF30363D);
   static const Color darkTextPrimary = Color(0xFFF0F6FC);
   static const Color darkTextSecondary = Color(0xFF8B949E);
+  static const Color primaryDim = Color(0xFFE8F1FE);
+  static const Color danger = error;
+  static const Color dangerDim = Color(0xFFFFE5EC);
 }
 
 class AppTheme {
@@ -25,14 +33,14 @@ class AppTheme {
 
   static const PageTransitionsTheme _pageTransitionsTheme =
       PageTransitionsTheme(
-        builders: <TargetPlatform, PageTransitionsBuilder>{
-          TargetPlatform.android: _FadeSlidePageTransitionsBuilder(),
-          TargetPlatform.iOS: _FadeSlidePageTransitionsBuilder(),
-          TargetPlatform.macOS: _FadeSlidePageTransitionsBuilder(),
-          TargetPlatform.windows: _FadeSlidePageTransitionsBuilder(),
-          TargetPlatform.linux: _FadeSlidePageTransitionsBuilder(),
-        },
-      );
+    builders: <TargetPlatform, PageTransitionsBuilder>{
+      TargetPlatform.android: _FadeSlidePageTransitionsBuilder(),
+      TargetPlatform.iOS: _FadeSlidePageTransitionsBuilder(),
+      TargetPlatform.macOS: _FadeSlidePageTransitionsBuilder(),
+      TargetPlatform.windows: _FadeSlidePageTransitionsBuilder(),
+      TargetPlatform.linux: _FadeSlidePageTransitionsBuilder(),
+    },
+  );
 
   static ThemeData light() {
     final scheme = ColorScheme.fromSeed(

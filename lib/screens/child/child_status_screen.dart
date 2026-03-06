@@ -1476,6 +1476,7 @@ class _ChildStatusScreenState extends State<ChildStatusScreen>
     );
   }
 
+  // ignore: unused_element
   bool _isEffectiveSnapshotStale({
     required ChildProfile child,
     required _ManualModeOverride? manualMode,
@@ -1614,6 +1615,7 @@ class _ChildStatusScreenState extends State<ChildStatusScreen>
         sameList(left.forceAllowDomains, right.forceAllowDomains);
   }
 
+  // ignore: unused_element
   void _enqueueProtectionApply(_QueuedProtectionApply next) {
     final nextVersion = next.policyVersion;
     if (nextVersion != null) {
