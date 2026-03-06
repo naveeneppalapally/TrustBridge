@@ -74,7 +74,6 @@ android/app/trustbridge-release.jks
 /.cleanup_*
 /.tmp_*
 /.tracked_*
-/AGENTS.md
 
 # Root runtime/debug artifacts
 /*.png

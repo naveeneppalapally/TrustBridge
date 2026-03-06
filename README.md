@@ -1,6 +1,6 @@
 # TrustBridge App
 
-Privacy-first TrustBridge app for Android that keeps families safe while respecting everyone's dignity.
+Privacy-first parental controls for Android, built with Flutter, Firebase, and a native Android VPN layer.
 
 ## What It Does
 
@@ -12,20 +12,11 @@ Privacy-first TrustBridge app for Android that keeps families safe while respect
 
 ## Project Status
 
-Current Phase: Week 1 - Foundation
-Started: February 15, 2026
-Target Launch: May 10, 2026 (+12 weeks)
+This repository is an active working app, not a starter template.
 
-### Completed
-- [x] Flutter project setup
-- [x] Git repository initialized
-- [ ] GitHub remote connected
-
-### Next Steps
-- [ ] Add dependencies (Day 2)
-- [ ] Firebase setup (Day 3)
-- [ ] Authentication service (Day 4)
-- [ ] Login screen (Day 5)
+- Parent app and child app flows already exist.
+- Firebase Auth, Firestore, FCM, App Check, and Android VPN code are already integrated.
+- Ongoing work should preserve existing UX and architecture unless a task explicitly calls for deeper refactoring.
 
 ## Tech Stack
 
@@ -57,15 +48,21 @@ Target Launch: May 10, 2026 (+12 weeks)
 - [Quick Start Checklist](docs/QUICK_START_CHECKLIST.md)
 - [Architecture Overview](docs/TRUSTBRIDGE_ARCHITECTURE.md)
 
+## Working Rules
+
+- Repository root is `parental_controls_app/`.
+- If a sibling `../app_design/` folder exists, use it as the UI source of truth before changing screens.
+- If no matching design exists, preserve the current UI instead of redesigning it.
+- Do not commit screenshots, device logs, XML dumps, temp databases, or scratch files.
+- Run `flutter analyze` before pushing. Run `flutter test` for non-trivial changes.
+
 ## UI Design Source of Truth
 
-- For any UI screen/task, check this folder first:
-  - `C:\Users\navee\Documents\TrustBridge\app_design`
-- Use both assets from the selected design folder:
-  - `screen.png` for visual target
-  - `code.html` for layout/token reference
-- If a matching design exists, implementation must map to that folder name.
-- If no matching design exists, add a `No matching design found` note in the commit and in `docs/PROGRESS_JOURNAL.md`.
+- For UI tasks, check `../app_design/` first if that folder exists in your local workspace.
+- Use both assets from the selected design folder when available:
+  - `screen.png` for the visual target
+  - `code.html` for layout and token reference
+- If no matching design exists, keep the existing UI stable and avoid introducing a new visual direction without an explicit request.
 
 ## Privacy Promise
 
