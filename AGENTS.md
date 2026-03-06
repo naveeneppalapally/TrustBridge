@@ -2,6 +2,15 @@
 
 These instructions are for any coding agent working inside this repository.
 
+## Non-Negotiable Rules
+
+- Never modify button handlers, `onTap`, `onPressed`, or any gesture callbacks.
+- Never modify VPN start/stop logic or app blocking/policy enforcement.
+- Never mass-move or rename existing screen files or routes.
+- Never auto-resolve git conflicts; always stop and report them.
+- Before any task, state exactly which files will be touched and wait for confirmation if unsure.
+- After every task, run `flutter analyze` and `flutter test` and report results before considering the task done.
+
 ## Scope
 
 - The git repository root is `parental_controls_app/`. Work from here, not from the parent `TrustBridge/` folder.
