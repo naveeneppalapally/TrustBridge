@@ -198,6 +198,19 @@ class _DashboardScreenState extends State<DashboardScreen>
   }
 
   Future<void> _handleSignOut() async {
+    final parentId = _parentId?.trim();
+    if (parentId != null && parentId.isNotEmpty) {
+      try {
+        await _resolvedFirestoreService.revokeChildSessionsForParent(parentId);
+      } catch (_) {
+        // Best effort: continue sign-out even if network is unavailable.
+      }
+      try {
+        await _resolvedFirestoreService.removeFcmToken(parentId);
+      } catch (_) {
+        // Non-blocking cleanup.
+      }
+    }
     await _resolvedAuthService.signOut();
     await AppModeService().clearMode();
     if (!mounted) {
@@ -406,7 +419,8 @@ class _DashboardScreenState extends State<DashboardScreen>
   void _openLocateStub(ChildProfile child) {
     ScaffoldMessenger.of(context).showSnackBar(
       SnackBar(
-        content: Text('Live location for ${child.nickname} is unavailable right now.'),
+        content: Text(
+            'Live location for ${child.nickname} is unavailable right now.'),
       ),
     );
   }
@@ -847,7 +861,8 @@ class _DashboardScreenState extends State<DashboardScreen>
     }
   }
 
-  _ChildDeviceHealth _protectionHealthForOnlineChild(String childId, DateTime now) {
+  _ChildDeviceHealth _protectionHealthForOnlineChild(
+      String childId, DateTime now) {
     final ack = _latestPolicyAckByChildId[childId];
     if (ack == null) {
       return const _ChildDeviceHealth.atRiskNoAck();
@@ -921,10 +936,10 @@ class _DashboardScreenState extends State<DashboardScreen>
 
     _deviceHeartbeatSubscription = _resolvedFirestoreService
         .watchDeviceStatuses(
-          allDeviceIds,
-          parentId: parentId,
-          childIdByDeviceId: childIdByDeviceId,
-        )
+      allDeviceIds,
+      parentId: parentId,
+      childIdByDeviceId: childIdByDeviceId,
+    )
         .listen((statusMap) {
       _latestDeviceStatusByDeviceId = statusMap;
       unawaited(
@@ -1576,7 +1591,8 @@ class _TrustSummaryCard extends StatelessWidget {
               Expanded(
                 child: _TrustMetricTile(
                   label: 'TOTAL SCREEN TIME',
-                  valueKey: const Key('dashboard_metric_total_screen_time_value'),
+                  valueKey:
+                      const Key('dashboard_metric_total_screen_time_value'),
                   value: totalScreenTime,
                   trailingLabel: 'Today',
                   valueColor: Theme.of(context).textTheme.titleLarge?.color ??
@@ -1593,7 +1609,8 @@ class _TrustSummaryCard extends StatelessWidget {
               Expanded(
                 child: _TrustMetricTile(
                   label: 'BLOCKED ATTEMPTS',
-                  valueKey: const Key('dashboard_metric_blocked_attempts_value'),
+                  valueKey:
+                      const Key('dashboard_metric_blocked_attempts_value'),
                   value: blockedAttempts,
                   trailingLabel: 'From child VPN telemetry',
                   valueColor: blockedAttempts == '0'

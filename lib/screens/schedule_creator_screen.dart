@@ -1,10 +1,13 @@
 import 'package:flutter/material.dart';
 import 'package:trustbridge_app/config/rollout_flags.dart';
+import 'package:trustbridge_app/core/utils/responsive.dart';
 import 'package:trustbridge_app/models/child_profile.dart';
 import 'package:trustbridge_app/models/schedule.dart';
 import 'package:trustbridge_app/services/auth_service.dart';
 import 'package:trustbridge_app/services/firestore_service.dart';
 import 'package:trustbridge_app/services/remote_command_service.dart';
+import 'package:trustbridge_app/theme/app_text_styles.dart';
+import 'package:trustbridge_app/theme/app_theme.dart';
 import 'package:uuid/uuid.dart';
 
 class ScheduleCreatorScreen extends StatefulWidget {
@@ -72,107 +75,165 @@ class _ScheduleCreatorScreenState extends State<ScheduleCreatorScreen> {
 
   @override
   Widget build(BuildContext context) {
-    final textTheme = Theme.of(context).textTheme;
+    R.init(context);
     return Scaffold(
-      appBar: AppBar(
-        title: const Text('Edit Schedule'),
-      ),
-      body: ListView(
-        padding: const EdgeInsets.fromLTRB(16, 16, 16, 24),
-        children: [
-          Text(
-            'Set when this rule should run. You can change this anytime.',
-            style: textTheme.bodyMedium,
-          ),
-          const SizedBox(height: 14),
-          Text(
-            '1. Schedule type',
-            style: textTheme.titleSmall?.copyWith(
-              fontWeight: FontWeight.w800,
-            ),
-          ),
-          const SizedBox(height: 10),
-          _buildRoutineTypeRow(),
-          const SizedBox(height: 10),
-          _buildRoutineDescriptionCard(),
-          const SizedBox(height: 18),
-          Text(
-            '2. Time window',
-            style: textTheme.titleSmall?.copyWith(
-              fontWeight: FontWeight.w800,
-            ),
-          ),
-          const SizedBox(height: 10),
-          _buildTimeCard(),
-          const SizedBox(height: 18),
-          Text(
-            '3. Repeat on',
-            style: textTheme.titleSmall?.copyWith(
-              fontWeight: FontWeight.w800,
-            ),
-          ),
-          const SizedBox(height: 10),
-          _buildDaySelector(),
-          const SizedBox(height: 18),
-          Text(
-            '4. During this time',
-            style: textTheme.titleSmall?.copyWith(
-              fontWeight: FontWeight.w800,
-            ),
-          ),
-          const SizedBox(height: 10),
-          _buildRestrictionCard(
-            key: const Key('schedule_block_distractions_card'),
-            title: 'Homework Focus',
-            subtitle:
-                'Blocks social media, games, and streaming.\nCalls and communication stay available.',
-            action: ScheduleAction.blockDistracting,
-          ),
-          const SizedBox(height: 10),
-          _buildRestrictionCard(
-            key: const Key('schedule_block_all_card'),
-            title: 'Sleep Lock',
-            subtitle:
-                'Blocks internet and app access during this window.\nBest for bedtime.',
-            action: ScheduleAction.blockAll,
-          ),
-          const SizedBox(height: 10),
-          _buildRestrictionCard(
-            key: const Key('schedule_allow_all_card'),
-            title: 'Reminder Only',
-            subtitle: 'No blocks. Keeps this as a reminder schedule only.',
-            action: ScheduleAction.allowAll,
-          ),
-          const SizedBox(height: 14),
-          SwitchListTile(
-            key: const Key('schedule_remind_toggle'),
-            contentPadding: EdgeInsets.zero,
-            title: const Text('Send a reminder 5 minutes before start'),
-            value: _remindBefore,
-            onChanged: (value) => setState(() => _remindBefore = value),
-          ),
-          const SizedBox(height: 10),
-          _buildSummaryCard(context),
-          const SizedBox(height: 16),
-          SizedBox(
-            width: double.infinity,
-            height: 52,
-            child: ElevatedButton(
-              key: const Key('schedule_save_button'),
-              onPressed: _isLoading ? null : _saveChanges,
-              child: _isLoading
-                  ? const SizedBox(
-                      width: 18,
-                      height: 18,
-                      child: CircularProgressIndicator(strokeWidth: 2),
-                    )
-                  : const Text(
-                      'Save Schedule',
-                      style: TextStyle(fontWeight: FontWeight.bold),
+      body: SafeArea(
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Padding(
+              padding: EdgeInsets.fromLTRB(R.sp(8), R.sp(8), R.sp(8), 0),
+              child: Row(
+                children: [
+                  IconButton(
+                    icon: const Icon(
+                      Icons.arrow_back_rounded,
+                      color: AppColors.textSecondary,
                     ),
+                    onPressed: () => Navigator.of(context).pop(),
+                  ),
+                ],
+              ),
             ),
-          ),
-        ],
+            Padding(
+              padding: EdgeInsets.fromLTRB(R.sp(20), R.sp(4), R.sp(20), 0),
+              child: Text(
+                'Edit Schedule',
+                style: AppTextStyles.displayMedium(),
+              ),
+            ),
+            const SizedBox(height: 12),
+            Expanded(
+              child: ListView(
+                padding: EdgeInsets.fromLTRB(
+                  R.sp(20), 0, R.sp(20), R.sp(24),
+                ),
+                children: [
+                  Text(
+                    'Set when this rule should run. You can change this anytime.',
+                    style: AppTextStyles.bodySmall(
+                      color: AppColors.textSecondary,
+                    ),
+                  ),
+                  const SizedBox(height: 18),
+                  Text(
+                    'SCHEDULE TYPE',
+                    style: AppTextStyles.labelCaps(
+                      color: AppColors.textMuted,
+                    ),
+                  ),
+                  const SizedBox(height: 10),
+                  _buildRoutineTypeRow(),
+                  const SizedBox(height: 10),
+                  _buildRoutineDescriptionCard(),
+                  const SizedBox(height: 18),
+                  Text(
+                    'TIME WINDOW',
+                    style: AppTextStyles.labelCaps(
+                      color: AppColors.textMuted,
+                    ),
+                  ),
+                  const SizedBox(height: 10),
+                  _buildTimeCard(),
+                  const SizedBox(height: 18),
+                  Text(
+                    'REPEAT ON',
+                    style: AppTextStyles.labelCaps(
+                      color: AppColors.textMuted,
+                    ),
+                  ),
+                  const SizedBox(height: 10),
+                  _buildDaySelector(),
+                  const SizedBox(height: 18),
+                  Text(
+                    'DURING THIS TIME',
+                    style: AppTextStyles.labelCaps(
+                      color: AppColors.textMuted,
+                    ),
+                  ),
+                  const SizedBox(height: 10),
+                  _buildRestrictionCard(
+                    key: const Key('schedule_block_distractions_card'),
+                    title: 'Homework Focus',
+                    subtitle:
+                        'Blocks social media, games, and streaming.\nCalls and communication stay available.',
+                    action: ScheduleAction.blockDistracting,
+                  ),
+                  const SizedBox(height: 10),
+                  _buildRestrictionCard(
+                    key: const Key('schedule_block_all_card'),
+                    title: 'Sleep Lock',
+                    subtitle:
+                        'Blocks internet and app access during this window.\nBest for bedtime.',
+                    action: ScheduleAction.blockAll,
+                  ),
+                  const SizedBox(height: 10),
+                  _buildRestrictionCard(
+                    key: const Key('schedule_allow_all_card'),
+                    title: 'Reminder Only',
+                    subtitle:
+                        'No blocks. Keeps this as a reminder schedule only.',
+                    action: ScheduleAction.allowAll,
+                  ),
+                  const SizedBox(height: 14),
+                  Padding(
+                    key: const Key('schedule_remind_toggle'),
+                    padding: const EdgeInsets.only(bottom: 6),
+                    child: Row(
+                      children: [
+                        Expanded(
+                          child: Text(
+                            'Remind 5 minutes before start',
+                            style: AppTextStyles.body(),
+                          ),
+                        ),
+                        Switch.adaptive(
+                          value: _remindBefore,
+                          onChanged: (value) =>
+                              setState(() => _remindBefore = value),
+                        ),
+                      ],
+                    ),
+                  ),
+                  const SizedBox(height: 10),
+                  _buildSummaryCard(context),
+                  const SizedBox(height: 16),
+                  GestureDetector(
+                    key: const Key('schedule_save_button'),
+                    onTap: _isLoading ? null : _saveChanges,
+                    child: Container(
+                      width: double.infinity,
+                      height: 52,
+                      decoration: BoxDecoration(
+                        color: _isLoading
+                            ? AppColors.primary.withValues(alpha: 0.4)
+                            : AppColors.primary,
+                        borderRadius: BorderRadius.circular(14),
+                      ),
+                      child: Center(
+                        child: _isLoading
+                            ? const SizedBox(
+                                width: 18,
+                                height: 18,
+                                child: CircularProgressIndicator(
+                                  strokeWidth: 2,
+                                  color: AppColors.bg,
+                                ),
+                              )
+                            : Text(
+                                'Save Schedule',
+                                style: AppTextStyles.headingMedium(
+                                  color: AppColors.bg,
+                                ),
+                              ),
+                      ),
+                    ),
+                  ),
+                ],
+              ),
+            ),
+          ],
+        ),
       ),
     );
   }
@@ -200,22 +261,20 @@ class _ScheduleCreatorScreenState extends State<ScheduleCreatorScreen> {
   }
 
   Widget _buildRoutineDescriptionCard() {
-    final colorScheme = Theme.of(context).colorScheme;
     return Container(
       key: const Key('schedule_routine_description_card'),
       padding: const EdgeInsets.all(12),
       decoration: BoxDecoration(
-        color: colorScheme.primary.withValues(alpha: 0.10),
+        color: AppColors.primaryDim,
         borderRadius: BorderRadius.circular(12),
-        border: Border.all(color: colorScheme.primary.withValues(alpha: 0.20)),
+        border: Border.all(
+          color: AppColors.primary.withValues(alpha: 0.25),
+        ),
       ),
       child: Text(
         _typeDescription(_type),
         key: const Key('schedule_routine_description_text'),
-        style: TextStyle(
-          color: colorScheme.onSurface,
-          height: 1.3,
-        ),
+        style: AppTextStyles.bodySmall(color: AppColors.textSecondary),
       ),
     );
   }
@@ -258,48 +317,47 @@ class _ScheduleCreatorScreenState extends State<ScheduleCreatorScreen> {
   }
 
   Widget _buildTimeCard() {
-    return Card(
-      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
-      child: Padding(
-        padding: const EdgeInsets.all(16),
-        child: Column(
-          children: [
-            Row(
-              children: [
-                Expanded(
-                  child: _timeSlot(
-                    label: 'STARTS',
-                    value: _formatTime(_startTime),
-                    onTap: () => _pickTime(isStart: true),
-                  ),
-                ),
-                Container(
-                  width: 1,
-                  height: 56,
-                  color: Colors.grey.withValues(alpha: 0.30),
-                ),
-                Expanded(
-                  child: _timeSlot(
-                    label: 'ENDS',
-                    value: _formatTime(_endTime),
-                    onTap: () => _pickTime(isStart: false),
-                  ),
-                ),
-              ],
-            ),
-            const SizedBox(height: 10),
-            Align(
-              alignment: Alignment.centerRight,
-              child: Text(
-                '${_durationBetween(_startTime, _endTime)} total',
-                style: TextStyle(
-                  color: Colors.grey[600],
-                  fontWeight: FontWeight.w600,
+    return Container(
+      padding: const EdgeInsets.all(16),
+      decoration: BoxDecoration(
+        color: AppColors.surfaceRaised,
+        borderRadius: BorderRadius.circular(14),
+        border: Border.all(color: AppColors.surfaceBorder, width: 0.5),
+      ),
+      child: Column(
+        children: [
+          Row(
+            children: [
+              Expanded(
+                child: _timeSlot(
+                  label: 'STARTS',
+                  value: _formatTime(_startTime),
+                  onTap: () => _pickTime(isStart: true),
                 ),
               ),
+              Container(
+                width: 1,
+                height: 56,
+                color: AppColors.surfaceBorder,
+              ),
+              Expanded(
+                child: _timeSlot(
+                  label: 'ENDS',
+                  value: _formatTime(_endTime),
+                  onTap: () => _pickTime(isStart: false),
+                ),
+              ),
+            ],
+          ),
+          const SizedBox(height: 10),
+          Align(
+            alignment: Alignment.centerRight,
+            child: Text(
+              '${_durationBetween(_startTime, _endTime)} total',
+              style: AppTextStyles.label(color: AppColors.textMuted),
             ),
-          ],
-        ),
+          ),
+        ],
       ),
     );
   }
@@ -309,25 +367,18 @@ class _ScheduleCreatorScreenState extends State<ScheduleCreatorScreen> {
     required String value,
     required VoidCallback onTap,
   }) {
-    return InkWell(
+    return GestureDetector(
       onTap: onTap,
       child: Column(
         children: [
           Text(
             label,
-            style: TextStyle(
-              color: Colors.grey[600],
-              fontWeight: FontWeight.w700,
-              letterSpacing: 0.5,
-            ),
+            style: AppTextStyles.labelCaps(color: AppColors.textMuted),
           ),
           const SizedBox(height: 4),
           Text(
             value,
-            style: const TextStyle(
-              fontWeight: FontWeight.w800,
-              fontSize: 22,
-            ),
+            style: AppTextStyles.heroNumber(color: AppColors.textPrimary),
           ),
         ],
       ),
@@ -335,7 +386,6 @@ class _ScheduleCreatorScreenState extends State<ScheduleCreatorScreen> {
   }
 
   Widget _buildDaySelector() {
-    final colorScheme = Theme.of(context).colorScheme;
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
@@ -346,13 +396,9 @@ class _ScheduleCreatorScreenState extends State<ScheduleCreatorScreen> {
           runSpacing: 8,
           children: Day.values.map((day) {
             final selected = _days.contains(day);
-            return FilterChip(
+            return GestureDetector(
               key: Key('schedule_day_${day.name}'),
-              selected: selected,
-              label: Text(_dayLabel(day)),
-              selectedColor: colorScheme.primary.withValues(alpha: 0.20),
-              checkmarkColor: colorScheme.primary,
-              onSelected: (_) {
+              onTap: () {
                 setState(() {
                   if (selected) {
                     _days.remove(day);
@@ -361,6 +407,31 @@ class _ScheduleCreatorScreenState extends State<ScheduleCreatorScreen> {
                   }
                 });
               },
+              child: Container(
+                padding: const EdgeInsets.symmetric(
+                  horizontal: 14,
+                  vertical: 8,
+                ),
+                decoration: BoxDecoration(
+                  color: selected
+                      ? AppColors.primaryDim
+                      : AppColors.surfaceRaised,
+                  borderRadius: BorderRadius.circular(10),
+                  border: Border.all(
+                    color: selected
+                        ? AppColors.primary
+                        : AppColors.surfaceBorder,
+                  ),
+                ),
+                child: Text(
+                  _dayLabel(day),
+                  style: AppTextStyles.label(
+                    color: selected
+                        ? AppColors.primary
+                        : AppColors.textSecondary,
+                  ),
+                ),
+              ),
             );
           }).toList(growable: false),
         ),
@@ -374,25 +445,21 @@ class _ScheduleCreatorScreenState extends State<ScheduleCreatorScreen> {
     required String subtitle,
     required ScheduleAction action,
   }) {
-    final colorScheme = Theme.of(context).colorScheme;
     final selected = _action == action;
-    return InkWell(
+    return GestureDetector(
       key: key,
       onTap: () => setState(() => _action = action),
-      borderRadius: BorderRadius.circular(14),
       child: Container(
         padding: const EdgeInsets.all(14),
         decoration: BoxDecoration(
           borderRadius: BorderRadius.circular(14),
           border: Border.all(
             color: selected
-                ? colorScheme.primary
-                : colorScheme.outline.withValues(alpha: 0.45),
+                ? AppColors.primary
+                : AppColors.surfaceBorder,
             width: selected ? 2 : 1,
           ),
-          color: selected
-              ? colorScheme.primary.withValues(alpha: 0.10)
-              : Colors.transparent,
+          color: selected ? AppColors.primaryDim : Colors.transparent,
         ),
         child: Row(
           crossAxisAlignment: CrossAxisAlignment.start,
@@ -403,7 +470,7 @@ class _ScheduleCreatorScreenState extends State<ScheduleCreatorScreen> {
                   : action == ScheduleAction.allowAll
                       ? Icons.notifications_active_outlined
                       : Icons.shield_outlined,
-              color: selected ? colorScheme.primary : colorScheme.onSurface,
+              color: selected ? AppColors.primary : AppColors.textSecondary,
             ),
             const SizedBox(width: 12),
             Expanded(
@@ -412,22 +479,24 @@ class _ScheduleCreatorScreenState extends State<ScheduleCreatorScreen> {
                 children: [
                   Text(
                     title,
-                    style: const TextStyle(
-                      fontWeight: FontWeight.w700,
+                    style: AppTextStyles.headingMedium(
+                      color: selected
+                          ? AppColors.primary
+                          : AppColors.textPrimary,
                     ),
                   ),
                   const SizedBox(height: 4),
                   Text(
                     subtitle,
-                    style: TextStyle(
-                      color: colorScheme.onSurfaceVariant,
-                      height: 1.3,
+                    style: AppTextStyles.bodySmall(
+                      color: AppColors.textSecondary,
                     ),
                   ),
                 ],
               ),
             ),
-            if (selected) Icon(Icons.check_circle, color: colorScheme.primary),
+            if (selected)
+              const Icon(Icons.check_circle, color: AppColors.primary),
           ],
         ),
       ),
@@ -436,40 +505,28 @@ class _ScheduleCreatorScreenState extends State<ScheduleCreatorScreen> {
 
   Widget _buildSummaryCard(BuildContext context) {
     final dayText = _formatSelectedDays(_days);
-    final colorScheme = Theme.of(context).colorScheme;
     return Container(
       padding: const EdgeInsets.all(14),
       decoration: BoxDecoration(
-        color: colorScheme.surfaceContainerHighest.withValues(alpha: 0.75),
+        color: AppColors.surfaceRaised,
         borderRadius: BorderRadius.circular(14),
       ),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
           Text(
-            'Summary',
-            style: TextStyle(
-              color: colorScheme.onSurface,
-              fontWeight: FontWeight.w700,
-            ),
+            'SUMMARY',
+            style: AppTextStyles.labelCaps(color: AppColors.textMuted),
           ),
           const SizedBox(height: 6),
           Text(
-            '$dayText • ${_formatTime(_startTime)} to ${_formatTime(_endTime)}',
-            style: TextStyle(
-              color: colorScheme.onSurfaceVariant,
-              fontWeight: FontWeight.w600,
-              fontSize: 12,
-            ),
+            '$dayText \u2022 ${_formatTime(_startTime)} to ${_formatTime(_endTime)}',
+            style: AppTextStyles.body(),
           ),
           const SizedBox(height: 4),
           Text(
             'Rule: ${_actionLabel(_action)}',
-            style: TextStyle(
-              color: colorScheme.onSurfaceVariant,
-              fontSize: 10,
-              fontWeight: FontWeight.w700,
-            ),
+            style: AppTextStyles.label(color: AppColors.textMuted),
           ),
         ],
       ),

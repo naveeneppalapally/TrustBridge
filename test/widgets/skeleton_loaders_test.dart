@@ -1,6 +1,5 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
-import 'package:shimmer/shimmer.dart';
 import 'package:trustbridge_app/widgets/skeleton_loaders.dart';
 
 void main() {
@@ -17,7 +16,7 @@ void main() {
       await tester.pump();
     }
 
-    testWidgets('SkeletonCard renders shimmer surface', (tester) async {
+    testWidgets('SkeletonCard renders static placeholder surface', (tester) async {
       await pumpWidgetUnderTest(
         tester,
         const SkeletonCard(
@@ -27,7 +26,7 @@ void main() {
       );
 
       expect(find.byKey(const Key('skeleton_card')), findsOneWidget);
-      expect(find.byType(Shimmer), findsOneWidget);
+      expect(find.byType(DecoratedBox), findsWidgets);
     });
 
     testWidgets('SkeletonChildCard renders card scaffold', (tester) async {
@@ -37,7 +36,7 @@ void main() {
       );
 
       expect(find.byKey(const Key('skeleton_child')), findsOneWidget);
-      expect(find.byType(Shimmer), findsOneWidget);
+      expect(find.byType(DecoratedBox), findsWidgets);
     });
 
     testWidgets('SkeletonListTile renders optional trailing area',
@@ -51,10 +50,10 @@ void main() {
       );
 
       expect(find.byKey(const Key('skeleton_tile')), findsOneWidget);
-      expect(find.byType(Shimmer), findsOneWidget);
+      expect(find.byType(DecoratedBox), findsWidgets);
     });
 
-    testWidgets('SkeletonChart renders shimmer chart bars', (tester) async {
+    testWidgets('SkeletonChart renders placeholder chart bars', (tester) async {
       await pumpWidgetUnderTest(
         tester,
         const SkeletonChart(
@@ -64,7 +63,7 @@ void main() {
       );
 
       expect(find.byKey(const Key('skeleton_chart')), findsOneWidget);
-      expect(find.byType(Shimmer), findsOneWidget);
+      expect(find.byType(DecoratedBox), findsWidgets);
     });
   });
 }

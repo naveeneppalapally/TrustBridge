@@ -46,7 +46,6 @@ void main() {
       );
       await tester.pumpAndSettle();
 
-      expect(find.text('Settings'), findsOneWidget);
       expect(find.byKey(const Key('settings_profile_card')), findsOneWidget);
       expect(find.text('ACCOUNT'), findsOneWidget);
       expect(find.text('SUBSCRIPTION'), findsOneWidget);
@@ -77,8 +76,10 @@ void main() {
       );
       await tester.pumpAndSettle();
 
-      await tester
-          .tap(find.byKey(const Key('settings_biometric_login_switch')));
+      await tester.tap(find.descendant(
+        of: find.byKey(const Key('settings_biometric_login_switch')),
+        matching: find.byType(Switch),
+      ));
       await tester.pumpAndSettle();
 
       final snapshot =
@@ -112,7 +113,7 @@ void main() {
       await tester.tap(find.byKey(const Key('settings_privacy_center_tile')));
       await tester.pumpAndSettle();
 
-      expect(find.text('Control Data Usage'), findsOneWidget);
+      expect(find.textContaining('Control what data'), findsOneWidget);
     });
 
     testWidgets('navigates to help support from about section', (tester) async {

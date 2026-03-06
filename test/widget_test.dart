@@ -12,7 +12,7 @@ import 'package:trustbridge_app/main.dart';
 
 void main() {
   test('MyApp widget is constructible', () {
-    final app = MyApp(startupFuture: Future<void>.value());
+    const app = MyApp();
     expect(app, isA<Widget>());
   });
 }

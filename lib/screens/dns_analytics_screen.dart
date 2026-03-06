@@ -1,10 +1,13 @@
 import 'package:flutter/material.dart';
 import 'package:url_launcher/url_launcher.dart';
 
+import 'package:trustbridge_app/core/utils/responsive.dart';
 import 'package:trustbridge_app/models/child_profile.dart';
 import 'package:trustbridge_app/services/auth_service.dart';
 import 'package:trustbridge_app/services/firestore_service.dart';
 import 'package:trustbridge_app/services/vpn_service.dart';
+import 'package:trustbridge_app/theme/app_text_styles.dart';
+import 'package:trustbridge_app/theme/app_theme.dart';
 
 class DnsAnalyticsScreen extends StatefulWidget {
   const DnsAnalyticsScreen({
@@ -234,23 +237,53 @@ class _DnsAnalyticsScreenState extends State<DnsAnalyticsScreen> {
 
   @override
   Widget build(BuildContext context) {
+    R.init(context);
     return Scaffold(
-      appBar: AppBar(
-        title: const Text('Protection Analytics'),
-        centerTitle: true,
-        actions: [
-          IconButton(
-            icon: const Icon(Icons.refresh),
-            onPressed: _loadAll,
-            tooltip: 'Refresh',
-          ),
-        ],
+      body: SafeArea(
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Padding(
+              padding: EdgeInsets.fromLTRB(R.sp(8), R.sp(8), R.sp(8), 0),
+              child: Row(
+                children: [
+                  IconButton(
+                    icon: const Icon(
+                      Icons.arrow_back_rounded,
+                      color: AppColors.textSecondary,
+                    ),
+                    onPressed: () => Navigator.of(context).pop(),
+                  ),
+                  const Spacer(),
+                  IconButton(
+                    icon: const Icon(
+                      Icons.refresh_rounded,
+                      color: AppColors.textSecondary,
+                    ),
+                    onPressed: _loadAll,
+                    tooltip: 'Refresh',
+                  ),
+                ],
+              ),
+            ),
+            Padding(
+              padding: EdgeInsets.fromLTRB(R.sp(20), R.sp(4), R.sp(20), 0),
+              child: Text(
+                'Protection Analytics',
+                style: AppTextStyles.displayMedium(),
+              ),
+            ),
+            const SizedBox(height: 12),
+            Expanded(
+              child: _loading
+                  ? const Center(child: CircularProgressIndicator())
+                  : _error != null
+                      ? _buildErrorState()
+                      : _buildContent(),
+            ),
+          ],
+        ),
       ),
-      body: _loading
-          ? const Center(child: CircularProgressIndicator())
-          : _error != null
-              ? _buildErrorState()
-              : _buildContent(),
     );
   }
 
@@ -262,17 +295,32 @@ class _DnsAnalyticsScreenState extends State<DnsAnalyticsScreen> {
           mainAxisAlignment: MainAxisAlignment.center,
           children: [
             const Icon(Icons.warning_amber_rounded,
-                color: Colors.orange, size: 44),
+                color: AppColors.warning, size: 44),
             const SizedBox(height: 10),
             Text(
               _error ?? 'Analytics unavailable right now.',
               textAlign: TextAlign.center,
-              style: Theme.of(context).textTheme.bodyMedium,
+              style: AppTextStyles.body(color: AppColors.textSecondary),
             ),
             const SizedBox(height: 16),
-            FilledButton(
-              onPressed: _loadAll,
-              child: const Text('Try Again'),
+            GestureDetector(
+              onTap: _loadAll,
+              child: Container(
+                padding: const EdgeInsets.symmetric(
+                  horizontal: 24,
+                  vertical: 10,
+                ),
+                decoration: BoxDecoration(
+                  color: AppColors.primaryDim,
+                  borderRadius: BorderRadius.circular(12),
+                ),
+                child: Text(
+                  'Try Again',
+                  style: AppTextStyles.headingMedium(
+                    color: AppColors.primary,
+                  ),
+                ),
+              ),
             ),
           ],
         ),
@@ -282,7 +330,7 @@ class _DnsAnalyticsScreenState extends State<DnsAnalyticsScreen> {
 
   Widget _buildContent() {
     return ListView(
-      padding: const EdgeInsets.all(16),
+      padding: EdgeInsets.fromLTRB(R.sp(20), 0, R.sp(20), R.sp(28)),
       children: [
         _buildHeroCard(_telemetry),
         const SizedBox(height: 16),
@@ -322,32 +370,27 @@ class _DnsAnalyticsScreenState extends State<DnsAnalyticsScreen> {
     return Container(
       padding: const EdgeInsets.all(22),
       decoration: BoxDecoration(
-        color: Theme.of(context).colorScheme.primary.withValues(alpha: 0.08),
-        borderRadius: BorderRadius.circular(20),
+        color: AppColors.primaryDim,
+        borderRadius: BorderRadius.circular(16),
         border: Border.all(
-          color: Theme.of(context).colorScheme.primary.withValues(alpha: 0.2),
+          color: AppColors.primary.withValues(alpha: 0.25),
         ),
       ),
       child: Column(
         children: [
-          Icon(
+          const Icon(
             Icons.shield_outlined,
             size: 42,
-            color: Theme.of(context).colorScheme.primary,
+            color: AppColors.primary,
           ),
           const SizedBox(height: 8),
           Text(
             '${telemetry.queriesBlocked}',
-            style: Theme.of(context).textTheme.displaySmall?.copyWith(
-                  fontWeight: FontWeight.bold,
-                  color: Theme.of(context).colorScheme.primary,
-                ),
+            style: AppTextStyles.heroNumber(color: AppColors.primary),
           ),
           Text(
             'queries blocked',
-            style: Theme.of(context).textTheme.bodyMedium?.copyWith(
-                  color: Colors.grey.shade600,
-                ),
+            style: AppTextStyles.bodySmall(color: AppColors.textSecondary),
           ),
           const SizedBox(height: 16),
           Row(
@@ -356,17 +399,17 @@ class _DnsAnalyticsScreenState extends State<DnsAnalyticsScreen> {
               _buildStatPill(
                 label: 'Intercepted',
                 value: '${telemetry.queriesIntercepted}',
-                color: Colors.blue,
+                color: AppColors.primary,
               ),
               _buildStatPill(
                 label: 'Allowed',
                 value: '${telemetry.queriesAllowed}',
-                color: Colors.green,
+                color: AppColors.success,
               ),
               _buildStatPill(
                 label: 'Block rate',
                 value: '$blockRateLabel%',
-                color: Colors.orange,
+                color: AppColors.warning,
               ),
             ],
           ),
@@ -391,18 +434,13 @@ class _DnsAnalyticsScreenState extends State<DnsAnalyticsScreen> {
             ),
             child: Text(
               value,
-              style: TextStyle(
-                color: color,
-                fontWeight: FontWeight.bold,
-              ),
+              style: AppTextStyles.headingMedium(color: color),
             ),
           ),
           const SizedBox(height: 4),
           Text(
             label,
-            style: Theme.of(context).textTheme.bodySmall?.copyWith(
-                  color: Colors.grey.shade600,
-                ),
+            style: AppTextStyles.bodySmall(color: AppColors.textMuted),
             textAlign: TextAlign.center,
           ),
         ],
@@ -414,20 +452,18 @@ class _DnsAnalyticsScreenState extends State<DnsAnalyticsScreen> {
     return Container(
       padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 12),
       decoration: BoxDecoration(
-        color: Colors.orange.withValues(alpha: 0.1),
+        color: AppColors.warningDim,
         borderRadius: BorderRadius.circular(12),
-        border: Border.all(color: Colors.orange.withValues(alpha: 0.24)),
+        border: Border.all(color: AppColors.warning.withValues(alpha: 0.3)),
       ),
       child: Row(
         children: [
-          Icon(Icons.info_outline, color: Colors.orange.shade800),
+          const Icon(Icons.info_outline, color: AppColors.warning),
           const SizedBox(width: 10),
           Expanded(
             child: Text(
               'No active protection signal from child devices right now.',
-              style: Theme.of(context).textTheme.bodySmall?.copyWith(
-                    color: Colors.orange.shade900,
-                  ),
+              style: AppTextStyles.bodySmall(color: AppColors.warning),
             ),
           ),
         ],
@@ -441,58 +477,58 @@ class _DnsAnalyticsScreenState extends State<DnsAnalyticsScreen> {
     final blockedFlex = blockedPercent == 0 ? 1 : blockedPercent;
     final allowedFlex = allowedPercent == 0 ? 1 : allowedPercent;
 
-    return Card(
-      elevation: 0,
-      child: Padding(
-        padding: const EdgeInsets.all(18),
-        child: Column(
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            Text(
-              'Traffic Breakdown',
-              style: Theme.of(context).textTheme.titleMedium?.copyWith(
-                    fontWeight: FontWeight.bold,
-                  ),
-            ),
-            const SizedBox(height: 12),
-            ClipRRect(
-              borderRadius: BorderRadius.circular(6),
-              child: Row(
-                children: [
-                  Expanded(
-                    flex: blockedFlex,
-                    child: Container(
-                      height: 12,
-                      color: Colors.red.withValues(alpha: 0.76),
-                    ),
-                  ),
-                  Expanded(
-                    flex: allowedFlex,
-                    child: Container(
-                      height: 12,
-                      color: Colors.green.withValues(alpha: 0.58),
-                    ),
-                  ),
-                ],
-              ),
-            ),
-            const SizedBox(height: 10),
-            Wrap(
-              spacing: 14,
-              runSpacing: 8,
+    return Container(
+      padding: const EdgeInsets.all(18),
+      decoration: BoxDecoration(
+        color: AppColors.surfaceRaised,
+        borderRadius: BorderRadius.circular(14),
+        border: Border.all(color: AppColors.surfaceBorder, width: 0.5),
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Text(
+            'TRAFFIC BREAKDOWN',
+            style: AppTextStyles.labelCaps(color: AppColors.textMuted),
+          ),
+          const SizedBox(height: 12),
+          ClipRRect(
+            borderRadius: BorderRadius.circular(6),
+            child: Row(
               children: [
-                _legendItem(
-                  color: Colors.red.withValues(alpha: 0.76),
-                  label: 'Blocked ($blockedPercent%)',
+                Expanded(
+                  flex: blockedFlex,
+                  child: Container(
+                    height: 12,
+                    color: AppColors.danger.withValues(alpha: 0.76),
+                  ),
                 ),
-                _legendItem(
-                  color: Colors.green.withValues(alpha: 0.58),
-                  label: 'Allowed ($allowedPercent%)',
+                Expanded(
+                  flex: allowedFlex,
+                  child: Container(
+                    height: 12,
+                    color: AppColors.success.withValues(alpha: 0.58),
+                  ),
                 ),
               ],
             ),
-          ],
-        ),
+          ),
+          const SizedBox(height: 10),
+          Wrap(
+            spacing: 14,
+            runSpacing: 8,
+            children: [
+              _legendItem(
+                color: AppColors.danger.withValues(alpha: 0.76),
+                label: 'Blocked ($blockedPercent%)',
+              ),
+              _legendItem(
+                color: AppColors.success.withValues(alpha: 0.58),
+                label: 'Allowed ($allowedPercent%)',
+              ),
+            ],
+          ),
+        ],
       ),
     );
   }
@@ -507,77 +543,68 @@ class _DnsAnalyticsScreenState extends State<DnsAnalyticsScreen> {
           decoration: BoxDecoration(color: color, shape: BoxShape.circle),
         ),
         const SizedBox(width: 6),
-        Text(label, style: Theme.of(context).textTheme.bodySmall),
+        Text(label, style: AppTextStyles.bodySmall()),
       ],
     );
   }
 
   Widget _buildTopBlockedDomainsCard() {
-    return Card(
-      elevation: 0,
-      child: Padding(
-        padding: const EdgeInsets.all(18),
-        child: Column(
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
+    return Container(
+      padding: const EdgeInsets.all(18),
+      decoration: BoxDecoration(
+        color: AppColors.surfaceRaised,
+        borderRadius: BorderRadius.circular(14),
+        border: Border.all(color: AppColors.surfaceBorder, width: 0.5),
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Text(
+            'TOP BLOCKED DOMAINS',
+            style: AppTextStyles.labelCaps(color: AppColors.textMuted),
+          ),
+          const SizedBox(height: 4),
+          Text(
+            'From on-device DNS query logs',
+            style: AppTextStyles.bodySmall(color: AppColors.textMuted),
+          ),
+          const SizedBox(height: 12),
+          if (_topBlockedDomains.isEmpty)
             Text(
-              'Top Blocked Domains',
-              style: Theme.of(context).textTheme.titleMedium?.copyWith(
-                    fontWeight: FontWeight.bold,
-                  ),
-            ),
-            const SizedBox(height: 4),
-            Text(
-              'From on-device DNS query logs',
-              style: Theme.of(context).textTheme.bodySmall?.copyWith(
-                    color: Colors.grey.shade600,
-                  ),
-            ),
-            const SizedBox(height: 12),
-            if (_topBlockedDomains.isEmpty)
-              Text(
-                'No blocked domain data yet. Once filtering runs, top domains will appear here.',
-                style: Theme.of(context).textTheme.bodySmall?.copyWith(
-                      color: Colors.grey.shade600,
+              'No blocked domain data yet. Once filtering runs, top domains will appear here.',
+              style: AppTextStyles.bodySmall(color: AppColors.textMuted),
+            )
+          else
+            ..._topBlockedDomains.entries.map(
+              (entry) => Padding(
+                padding: const EdgeInsets.only(bottom: 8),
+                child: Row(
+                  children: [
+                    Expanded(
+                      child: Text(
+                        entry.key,
+                        style: AppTextStyles.body(),
+                      ),
                     ),
-              )
-            else
-              ..._topBlockedDomains.entries.map(
-                (entry) => Padding(
-                  padding: const EdgeInsets.only(bottom: 8),
-                  child: Row(
-                    children: [
-                      Expanded(
-                        child: Text(
-                          entry.key,
-                          style:
-                              Theme.of(context).textTheme.bodyMedium?.copyWith(
-                                    fontWeight: FontWeight.w600,
-                                  ),
+                    Container(
+                      padding: const EdgeInsets.symmetric(
+                          horizontal: 8, vertical: 3),
+                      decoration: BoxDecoration(
+                        color: AppColors.dangerDim,
+                        borderRadius: BorderRadius.circular(8),
+                      ),
+                      child: Text(
+                        '${entry.value}',
+                        style: AppTextStyles.label(
+                          color: AppColors.danger,
                         ),
                       ),
-                      Container(
-                        padding: const EdgeInsets.symmetric(
-                            horizontal: 8, vertical: 3),
-                        decoration: BoxDecoration(
-                          color: Colors.red.withValues(alpha: 0.1),
-                          borderRadius: BorderRadius.circular(8),
-                        ),
-                        child: Text(
-                          '${entry.value}',
-                          style:
-                              Theme.of(context).textTheme.bodySmall?.copyWith(
-                                    color: Colors.red.shade700,
-                                    fontWeight: FontWeight.bold,
-                                  ),
-                        ),
-                      ),
-                    ],
-                  ),
+                    ),
+                  ],
                 ),
               ),
-          ],
-        ),
+            ),
+        ],
       ),
     );
   }
@@ -712,15 +739,12 @@ class _DnsAnalyticsScreenState extends State<DnsAnalyticsScreen> {
     return Container(
       padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
       decoration: BoxDecoration(
-        color: Colors.blue.withValues(alpha: 0.08),
+        color: AppColors.primaryDim,
         borderRadius: BorderRadius.circular(8),
       ),
       child: Text(
         label,
-        style: Theme.of(context).textTheme.bodySmall?.copyWith(
-              color: Colors.blue.shade700,
-              fontWeight: FontWeight.w600,
-            ),
+        style: AppTextStyles.label(color: AppColors.primary),
       ),
     );
   }
@@ -857,23 +881,21 @@ class _DnsAnalyticsScreenState extends State<DnsAnalyticsScreen> {
     return Container(
       padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 12),
       decoration: BoxDecoration(
-        color: Colors.grey.withValues(alpha: 0.1),
+        color: AppColors.surfaceRaised,
         borderRadius: BorderRadius.circular(12),
       ),
       child: Row(
         children: [
-          Icon(
+          const Icon(
             Icons.lock_outline,
             size: 18,
-            color: Theme.of(context).colorScheme.onSurfaceVariant,
+            color: AppColors.textMuted,
           ),
           const SizedBox(width: 10),
           Expanded(
             child: Text(
               'We track counts, not content. TrustBridge does not collect browsing history.',
-              style: Theme.of(context).textTheme.bodySmall?.copyWith(
-                    color: Colors.grey.shade700,
-                  ),
+              style: AppTextStyles.bodySmall(color: AppColors.textMuted),
             ),
           ),
         ],

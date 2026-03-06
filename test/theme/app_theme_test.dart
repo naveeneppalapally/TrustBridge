@@ -9,12 +9,13 @@ void main() {
 
   group('AppTheme', () {
     test('color tokens match design specification', () {
-      expect(AppColors.primary, const Color(0xFF207CF8));
+      // Calm Guardian redesign: sage green primary, warm dark backgrounds
+      expect(AppColors.primary, const Color(0xFF7CB987));
       expect(AppColors.bgLight, const Color(0xFFF0F4F8));
-      expect(AppColors.bgDark, const Color(0xFF0D1117));
-      expect(AppColors.success, const Color(0xFF68B901));
-      expect(AppColors.error, const Color(0xFFF41F5C));
-      expect(AppColors.cardDark, const Color(0xFF161B22));
+      expect(AppColors.bg, const Color(0xFF0F0F0F));
+      expect(AppColors.success, const Color(0xFF7CB987));
+      expect(AppColors.danger, const Color(0xFFE07070));
+      expect(AppColors.surface, const Color(0xFF1A1A1A));
     });
 
     test('light theme uses tokenized background and card radius', () {
@@ -23,7 +24,7 @@ void main() {
       expect(theme.scaffoldBackgroundColor, AppColors.bgLight);
       expect(theme.colorScheme.primary, AppColors.primary);
       expect(theme.colorScheme.tertiary, AppColors.success);
-      expect(theme.colorScheme.error, AppColors.error);
+      expect(theme.colorScheme.error, AppColors.danger);
 
       final shape = theme.cardTheme.shape as RoundedRectangleBorder;
       final radius = shape.borderRadius as BorderRadius;
@@ -34,8 +35,8 @@ void main() {
     test('dark theme uses dark tokenized surfaces', () {
       final theme = AppTheme.dark();
 
-      expect(theme.scaffoldBackgroundColor, AppColors.bgDark);
-      expect(theme.cardColor, AppColors.cardDark);
+      expect(theme.scaffoldBackgroundColor, AppColors.bg);
+      expect(theme.cardColor, AppColors.surface);
       expect(theme.colorScheme.primary, AppColors.primary);
       expect(
           theme.bottomNavigationBarTheme.selectedItemColor, AppColors.primary);

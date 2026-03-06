@@ -1,5 +1,4 @@
 import 'package:flutter/material.dart';
-import 'package:shimmer/shimmer.dart';
 
 class SkeletonCard extends StatelessWidget {
   const SkeletonCard({
@@ -189,16 +188,18 @@ class _SkeletonContainer extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    return Shimmer.fromColors(
-      baseColor: Colors.grey.shade300,
-      highlightColor: Colors.grey.shade100,
-      child: DecoratedBox(
-        decoration: BoxDecoration(
-          color: Colors.white,
-          borderRadius: borderRadius,
-        ),
-        child: child,
+    final theme = Theme.of(context);
+    final colorScheme = theme.colorScheme;
+    final baseColor = theme.brightness == Brightness.dark
+        ? colorScheme.surfaceContainerHighest.withValues(alpha: 0.45)
+        : colorScheme.surfaceContainerHighest.withValues(alpha: 0.70);
+
+    return DecoratedBox(
+      decoration: BoxDecoration(
+        color: baseColor,
+        borderRadius: borderRadius,
       ),
+      child: child,
     );
   }
 }
@@ -216,9 +217,15 @@ class _SkeletonBlock extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    final theme = Theme.of(context);
+    final colorScheme = theme.colorScheme;
+    final blockColor = theme.brightness == Brightness.dark
+        ? colorScheme.surfaceContainerHighest.withValues(alpha: 0.60)
+        : Colors.white;
+
     return DecoratedBox(
       decoration: BoxDecoration(
-        color: Colors.white,
+        color: blockColor,
         borderRadius: borderRadius,
       ),
       child: SizedBox(width: width, height: height),

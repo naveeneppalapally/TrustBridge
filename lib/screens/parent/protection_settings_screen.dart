@@ -2,11 +2,14 @@ import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:flutter/material.dart';
 import 'package:share_plus/share_plus.dart';
 
+import '../../core/utils/responsive.dart';
 import '../../models/child_profile.dart';
 import '../../services/auth_service.dart';
 import '../../services/firestore_service.dart';
 import '../../services/heartbeat_service.dart';
 import '../../services/vpn_service.dart';
+import '../../theme/app_text_styles.dart';
+import '../../theme/app_theme.dart';
 
 /// Parent-focused protection settings with a simple overview and gated advanced tools.
 class ProtectionSettingsScreen extends StatefulWidget {
@@ -108,104 +111,149 @@ class _ProtectionSettingsScreenState extends State<ProtectionSettingsScreen> {
 
   @override
   Widget build(BuildContext context) {
+    R.init(context);
     final parentId = _parentId;
     if (parentId == null || parentId.isEmpty) {
       return Scaffold(
-        appBar: AppBar(title: const Text('Protection Settings')),
-        body: const Center(child: Text('Please sign in first.')),
+        body: Center(
+          child: Text(
+            'Please sign in first.',
+            style: AppTextStyles.body(color: AppColors.textSecondary),
+          ),
+        ),
       );
     }
 
     return Scaffold(
-      appBar: AppBar(
-        title: const Text('Protection Settings'),
-      ),
-      body: _loadingStatus
-          ? const Center(child: CircularProgressIndicator())
-          : StreamBuilder<List<ChildProfile>>(
-              stream: _resolvedFirestoreService.getChildrenStream(parentId),
-              builder: (context, snapshot) {
-                final children = snapshot.data ?? const <ChildProfile>[];
-                return ListView(
-                  padding: const EdgeInsets.fromLTRB(16, 12, 16, 24),
-                  children: [
-                    _buildStatusCard(children),
-                    const SizedBox(height: 16),
-                    _buildDiagnosticsCard(parentId, children),
-                    const SizedBox(height: 16),
-                    _buildDecisionLogCard(children),
-                    const SizedBox(height: 16),
-                    _buildAlertTogglesCard(parentId),
-                    const SizedBox(height: 16),
-                    _buildAdvancedCard(parentId),
-                  ],
-                );
-              },
+      body: SafeArea(
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Padding(
+              padding: EdgeInsets.fromLTRB(R.sp(8), R.sp(8), R.sp(8), 0),
+              child: Row(
+                children: [
+                  IconButton(
+                    icon: const Icon(
+                      Icons.arrow_back_rounded,
+                      color: AppColors.textSecondary,
+                    ),
+                    onPressed: () => Navigator.of(context).pop(),
+                  ),
+                ],
+              ),
             ),
+            Padding(
+              padding: EdgeInsets.fromLTRB(R.sp(20), R.sp(4), R.sp(20), 0),
+              child: Text(
+                'Protection Settings',
+                style: AppTextStyles.displayMedium(),
+              ),
+            ),
+            const SizedBox(height: 12),
+            Expanded(
+              child: _loadingStatus
+                  ? const Center(child: CircularProgressIndicator())
+                  : StreamBuilder<List<ChildProfile>>(
+                      stream: _resolvedFirestoreService
+                          .getChildrenStream(parentId),
+                      builder: (context, snapshot) {
+                        final children =
+                            snapshot.data ?? const <ChildProfile>[];
+                        return ListView(
+                          padding: EdgeInsets.fromLTRB(
+                            R.sp(20), 0, R.sp(20), R.sp(24),
+                          ),
+                          children: [
+                            _buildStatusCard(children),
+                            const SizedBox(height: 16),
+                            _buildDiagnosticsCard(parentId, children),
+                            const SizedBox(height: 16),
+                            _buildDecisionLogCard(children),
+                            const SizedBox(height: 16),
+                            _buildAlertTogglesCard(parentId),
+                            const SizedBox(height: 16),
+                            _buildAdvancedCard(parentId),
+                          ],
+                        );
+                      },
+                    ),
+            ),
+          ],
+        ),
+      ),
     );
   }
 
   Widget _buildStatusCard(List<ChildProfile> children) {
     final lastSync = _vpnStatus.lastRuleUpdateAt;
 
-    return Card(
-      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
-      child: Padding(
-        padding: const EdgeInsets.all(16),
-        child: Column(
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
+    return Container(
+      padding: const EdgeInsets.all(16),
+      decoration: BoxDecoration(
+        color: AppColors.surfaceRaised,
+        borderRadius: BorderRadius.circular(14),
+        border: Border.all(color: AppColors.surfaceBorder, width: 0.5),
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Text(
+            'PROTECTION STATUS',
+            style: AppTextStyles.labelCaps(color: AppColors.textMuted),
+          ),
+          const SizedBox(height: 12),
+          if (children.isEmpty)
             Text(
-              'Protection Status',
-              style: Theme.of(context).textTheme.titleMedium?.copyWith(
-                    fontWeight: FontWeight.w800,
-                  ),
-            ),
-            const SizedBox(height: 12),
-            if (children.isEmpty)
-              const Text('No child devices connected yet.')
-            else
-              ...children.map((child) {
-                return FutureBuilder<_ChildRuntimeStatus>(
-                  future: _runtimeStatusFutureFor(child),
-                  builder: (context, snapshot) {
-                    final runtimeStatus =
-                        snapshot.data ?? const _ChildRuntimeStatus.unknown();
-                    return Padding(
-                      padding: const EdgeInsets.only(bottom: 8),
-                      child: Row(
-                        children: [
-                          Expanded(
-                            child: Text(
-                              '${child.nickname}\'s Phone',
-                              style:
-                                  const TextStyle(fontWeight: FontWeight.w600),
-                            ),
+              'No child devices connected yet.',
+              style: AppTextStyles.body(color: AppColors.textSecondary),
+            )
+          else
+            ...children.map((child) {
+              return FutureBuilder<_ChildRuntimeStatus>(
+                future: _runtimeStatusFutureFor(child),
+                builder: (context, snapshot) {
+                  final runtimeStatus =
+                      snapshot.data ?? const _ChildRuntimeStatus.unknown();
+                  return Padding(
+                    padding: const EdgeInsets.only(bottom: 8),
+                    child: Row(
+                      children: [
+                        Container(
+                          width: 8,
+                          height: 8,
+                          margin: const EdgeInsets.only(right: 10),
+                          decoration: BoxDecoration(
+                            color: runtimeStatus.color,
+                            shape: BoxShape.circle,
                           ),
-                          Text(
-                            runtimeStatus.label,
-                            style: TextStyle(
-                              color: runtimeStatus.color,
-                              fontWeight: FontWeight.w700,
-                            ),
+                        ),
+                        Expanded(
+                          child: Text(
+                            '${child.nickname}\'s Phone',
+                            style: AppTextStyles.body(),
                           ),
-                        ],
-                      ),
-                    );
-                  },
-                );
-              }),
-            if (lastSync != null) ...[
-              const SizedBox(height: 8),
-              Text(
-                'Last local update: ${_timeAgo(lastSync)}',
-                style: Theme.of(context).textTheme.bodySmall?.copyWith(
-                      color: Theme.of(context).colorScheme.onSurfaceVariant,
+                        ),
+                        Text(
+                          runtimeStatus.label,
+                          style: AppTextStyles.label(
+                            color: runtimeStatus.color,
+                          ),
+                        ),
+                      ],
                     ),
-              ),
-            ],
+                  );
+                },
+              );
+            }),
+          if (lastSync != null) ...[
+            const SizedBox(height: 8),
+            Text(
+              'Last local update: ${_timeAgo(lastSync)}',
+              style: AppTextStyles.bodySmall(color: AppColors.textMuted),
+            ),
           ],
-        ),
+        ],
       ),
     );
   }
@@ -284,39 +332,63 @@ class _ProtectionSettingsScreenState extends State<ProtectionSettingsScreen> {
   }
 
   Widget _buildAlertTogglesCard(String parentId) {
-    return Card(
-      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
-      child: Padding(
-        padding: const EdgeInsets.all(16),
-        child: Column(
-          children: [
-            SwitchListTile(
-              contentPadding: EdgeInsets.zero,
-              value: _alertVpnDisabled,
-              title: const Text('Alert me if protection is disabled'),
-              onChanged: _updating
-                  ? null
-                  : (value) => _saveAlertToggle(
-                        parentId: parentId,
-                        vpnDisabled: value,
-                        bypassAttempts: null,
-                      ),
-            ),
-            const Divider(height: 1),
-            SwitchListTile(
-              contentPadding: EdgeInsets.zero,
-              value: _alertBypassAttempts,
-              title: const Text('Alert me on bypass attempts'),
-              onChanged: _updating
-                  ? null
-                  : (value) => _saveAlertToggle(
-                        parentId: parentId,
-                        vpnDisabled: null,
-                        bypassAttempts: value,
-                      ),
-            ),
-          ],
-        ),
+    return Container(
+      padding: const EdgeInsets.all(16),
+      decoration: BoxDecoration(
+        color: AppColors.surfaceRaised,
+        borderRadius: BorderRadius.circular(14),
+        border: Border.all(color: AppColors.surfaceBorder, width: 0.5),
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Text(
+            'ALERT SETTINGS',
+            style: AppTextStyles.labelCaps(color: AppColors.textMuted),
+          ),
+          const SizedBox(height: 12),
+          Row(
+            children: [
+              Expanded(
+                child: Text(
+                  'Alert me if protection is disabled',
+                  style: AppTextStyles.body(),
+                ),
+              ),
+              Switch.adaptive(
+                value: _alertVpnDisabled,
+                onChanged: _updating
+                    ? null
+                    : (value) => _saveAlertToggle(
+                          parentId: parentId,
+                          vpnDisabled: value,
+                          bypassAttempts: null,
+                        ),
+              ),
+            ],
+          ),
+          const SizedBox(height: 4),
+          Row(
+            children: [
+              Expanded(
+                child: Text(
+                  'Alert me on bypass attempts',
+                  style: AppTextStyles.body(),
+                ),
+              ),
+              Switch.adaptive(
+                value: _alertBypassAttempts,
+                onChanged: _updating
+                    ? null
+                    : (value) => _saveAlertToggle(
+                          parentId: parentId,
+                          vpnDisabled: null,
+                          bypassAttempts: value,
+                        ),
+              ),
+            ],
+          ),
+        ],
       ),
     );
   }
@@ -382,7 +454,7 @@ class _ProtectionSettingsScreenState extends State<ProtectionSettingsScreen> {
   }
 
   Widget _buildDiagnosticRow(_DiagnosticResult result) {
-    final color = result.passed ? Colors.green : Colors.red;
+    final color = result.passed ? AppColors.success : AppColors.danger;
     final icon = result.passed ? Icons.check_circle : Icons.error_outline;
     return Padding(
       padding: const EdgeInsets.only(bottom: 8),
@@ -397,14 +469,14 @@ class _ProtectionSettingsScreenState extends State<ProtectionSettingsScreen> {
               children: [
                 Text(
                   result.title,
-                  style: const TextStyle(fontWeight: FontWeight.w700),
+                  style: AppTextStyles.headingMedium(),
                 ),
                 const SizedBox(height: 2),
                 Text(
                   result.message,
-                  style: Theme.of(context).textTheme.bodySmall?.copyWith(
-                        color: Theme.of(context).colorScheme.onSurfaceVariant,
-                      ),
+                  style: AppTextStyles.bodySmall(
+                    color: AppColors.textSecondary,
+                  ),
                 ),
               ],
             ),

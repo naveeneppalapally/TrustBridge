@@ -42,7 +42,7 @@ void main() {
       await tester.pumpAndSettle();
 
       expect(find.text('Privacy Center'), findsOneWidget);
-      expect(find.text('Control Data Usage'), findsOneWidget);
+      expect(find.textContaining('Control what data'), findsOneWidget);
       expect(find.byKey(const Key('privacy_activity_history_switch')),
           findsOneWidget);
       expect(find.byKey(const Key('privacy_crash_reports_switch')),
@@ -68,11 +68,14 @@ void main() {
       );
       await tester.pumpAndSettle();
 
-      await tester.tap(find.byKey(const Key('privacy_crash_reports_switch')));
+      await tester.tap(find.descendant(
+        of: find.byKey(const Key('privacy_crash_reports_switch')),
+        matching: find.byType(Switch),
+      ));
       await tester.pumpAndSettle();
 
       expect(find.text('SAVE'), findsOneWidget);
-      await tester.tap(find.widgetWithText(TextButton, 'SAVE'));
+      await tester.tap(find.text('SAVE'));
       await tester.pumpAndSettle();
 
       final snapshot =

@@ -15,6 +15,7 @@ import '../screens/child_tutorial_screen.dart';
 import '../services/auth_service.dart';
 import '../services/firestore_service.dart';
 import '../services/vpn_service.dart';
+import '../theme/app_text_styles.dart';
 import '../theme/app_theme.dart';
 
 class ChildShell extends StatefulWidget {
@@ -170,36 +171,59 @@ class _ChildShellState extends State<ChildShell> {
         index: _currentIndex,
         children: pages,
       ),
-      bottomNavigationBar: BottomNavigationBar(
+      bottomNavigationBar: Container(
         key: const Key('child_shell_bottom_nav'),
-        currentIndex: _currentIndex,
-        type: BottomNavigationBarType.fixed,
-        selectedItemColor: AppColors.primary,
-        unselectedItemColor: AppColors.navUnselected,
-        backgroundColor:
-            Theme.of(context).bottomNavigationBarTheme.backgroundColor,
-        onTap: (index) {
-          if (index == _currentIndex) {
-            return;
-          }
-          setState(() {
-            _currentIndex = index;
-          });
-        },
-        items: const <BottomNavigationBarItem>[
-          BottomNavigationBarItem(
-            icon: Icon(Icons.home_rounded),
-            label: 'Home',
+        height: 64,
+        decoration: const BoxDecoration(
+          color: AppColors.surface,
+          border: Border(
+            top: BorderSide(color: AppColors.surfaceBorder, width: 0.5),
           ),
-          BottomNavigationBarItem(
-            icon: Icon(Icons.history_rounded),
-            label: 'Activity',
-          ),
-          BottomNavigationBarItem(
-            icon: Icon(Icons.help_outline_rounded),
-            label: 'Help',
-          ),
-        ],
+        ),
+        child: Row(
+          mainAxisAlignment: MainAxisAlignment.spaceAround,
+          children: List.generate(3, (index) {
+            final selected = _currentIndex == index;
+            const icons = [
+              Icons.home_rounded,
+              Icons.history_rounded,
+              Icons.help_outline_rounded,
+            ];
+            return GestureDetector(
+              behavior: HitTestBehavior.opaque,
+              onTap: () {
+                if (index != _currentIndex) {
+                  setState(() => _currentIndex = index);
+                }
+              },
+              child: SizedBox(
+                width: 56,
+                child: Column(
+                  mainAxisAlignment: MainAxisAlignment.center,
+                  children: [
+                    Icon(
+                      icons[index],
+                      size: 22,
+                      color: selected
+                          ? AppColors.primary
+                          : AppColors.textMuted,
+                    ),
+                    const SizedBox(height: 4),
+                    AnimatedContainer(
+                      duration: const Duration(milliseconds: 200),
+                      width: selected ? 16 : 0,
+                      height: selected ? 3 : 0,
+                      decoration: BoxDecoration(
+                        color: AppColors.primary,
+                        borderRadius: BorderRadius.circular(2),
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+            );
+          }),
+        ),
       ),
     );
   }
@@ -238,13 +262,23 @@ class _ChildHelpScreen extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     return Scaffold(
-      appBar: AppBar(title: const Text('Help')),
-      body: const Center(
+      body: SafeArea(
         child: Padding(
-          padding: EdgeInsets.all(24),
-          child: Text(
-            'Need help?\n\nOpen Request Access to ask your parent for temporary allowance.',
-            textAlign: TextAlign.center,
+          padding: const EdgeInsets.all(24),
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              const SizedBox(height: 12),
+              Text(
+                'Help',
+                style: AppTextStyles.displayMedium(),
+              ),
+              const SizedBox(height: 24),
+              Text(
+                'Need help?\n\nOpen Request Access to ask your parent for temporary allowance.',
+                style: AppTextStyles.body(color: AppColors.textSecondary),
+              ),
+            ],
           ),
         ),
       ),
@@ -259,17 +293,28 @@ class ChildModeShell extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     return Scaffold(
-      appBar: AppBar(
-        title: const Text('TrustBridge'),
-        automaticallyImplyLeading: false,
-        actions: const <Widget>[
-          Padding(
-            padding: EdgeInsets.only(right: 12),
-            child: _VpnStatusIndicator(),
-          ),
-        ],
+      body: SafeArea(
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Padding(
+              padding: const EdgeInsets.fromLTRB(20, 16, 20, 0),
+              child: Row(
+                children: [
+                  Text(
+                    'TrustBridge',
+                    style: AppTextStyles.displayMedium(),
+                  ),
+                  const Spacer(),
+                  const _VpnStatusIndicator(),
+                ],
+              ),
+            ),
+            const SizedBox(height: 8),
+            const Expanded(child: child_mode.ChildStatusScreen()),
+          ],
+        ),
       ),
-      body: const child_mode.ChildStatusScreen(),
     );
   }
 }
@@ -333,7 +378,7 @@ class _VpnStatusIndicatorState extends State<_VpnStatusIndicator>
       child: Icon(
         Icons.circle,
         size: 12,
-        color: running ? Colors.green : Colors.red,
+        color: running ? AppColors.success : AppColors.danger,
       ),
     );
   }

@@ -381,6 +381,7 @@ class PairingService {
           <String, dynamic>{
             'parentId': parentId,
             'deviceIds': FieldValue.arrayUnion(<String>[normalizedDeviceId]),
+            'parentSessionRevokedAt': null,
             'updatedAt': updatedAt,
           },
           SetOptions(merge: true),

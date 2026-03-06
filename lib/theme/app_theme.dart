@@ -1,46 +1,91 @@
 import 'package:flutter/material.dart';
 
-import 'app_spacing.dart';
-import 'app_text_styles.dart';
+// ─────────────────────────────────────────────────────────────────────────────
+// Calm Guardian Design System — Color Tokens
+// ─────────────────────────────────────────────────────────────────────────────
 
 class AppColors {
   AppColors._();
 
-  static const Color primary = Color(0xFF207CF8);
+  // Backgrounds — warm dark, not cold black
+  static const Color bg = Color(0xFF0F0F0F);
+  static const Color surface = Color(0xFF1A1A1A);
+  static const Color surfaceRaised = Color(0xFF222222);
+  static const Color surfaceBorder = Color(0xFF2E2E2E);
+
+  // Primary — sage green, calm and trustworthy
+  static const Color primary = Color(0xFF7CB987);
+  static const Color primaryDim = Color(0x207CB987); // 12%
+  static const Color primaryGlow = Color(0x407CB987); // 25%
+
+  // Semantic
+  static const Color success = Color(0xFF7CB987);
+  static const Color danger = Color(0xFFE07070);
+  static const Color warning = Color(0xFFD4A853);
+  static const Color successDim = Color(0x207CB987);
+  static const Color dangerDim = Color(0x15E07070);
+  static const Color warningDim = Color(0x20D4A853);
+
+  // Text
+  static const Color textPrimary = Color(0xFFF5F0EB);
+  static const Color textSecondary = Color(0xFF8A8580);
+  static const Color textMuted = Color(0xFF4A4845);
+
+  // Special
+  static const Color gold = Color(0xFFD4A853);
+
+  // ── Legacy aliases used by existing code (map to new tokens) ──
   static const Color bgLight = Color(0xFFF0F4F8);
-  static const Color bgDark = Color(0xFF0D1117);
-  static const Color surfaceDark = Color(0xFF21262D);
-  static const Color success = Color(0xFF68B901);
-  static const Color error = Color(0xFFF41F5C);
+  static const Color bgDark = bg;
+  static const Color surfaceDark = surfaceRaised;
+  static const Color error = danger;
   static const Color cardLight = Colors.white;
-  static const Color cardDark = Color(0xFF161B22);
-  static const Color surface = cardLight;
-  static const Color surfaceRaised = cardLight;
-  static const Color surfaceBorder = Color(0xFFD0D7DE);
-  static const Color navUnselected = Color(0xFF8B95A3);
-  static const Color textMuted = navUnselected;
-  static const Color textSecondary = Color(0xFF57606A);
-  static const Color darkDivider = Color(0xFF30363D);
-  static const Color darkTextPrimary = Color(0xFFF0F6FC);
-  static const Color darkTextSecondary = Color(0xFF8B949E);
-  static const Color primaryDim = Color(0xFFE8F1FE);
-  static const Color danger = error;
-  static const Color dangerDim = Color(0xFFFFE5EC);
+  static const Color cardDark = surface;
+  static const Color navUnselected = textMuted;
+  static const Color darkDivider = surfaceBorder;
+  static const Color darkTextPrimary = textPrimary;
+  static const Color darkTextSecondary = textSecondary;
 }
+
+// ─────────────────────────────────────────────────────────────────────────────
+// Spacing & Radius
+// ─────────────────────────────────────────────────────────────────────────────
+
+class AppSpacing {
+  AppSpacing._();
+  static const double xxs = 4;
+  static const double xs = 8;
+  static const double sm = 12;
+  static const double md = 16;
+  static const double lg = 24;
+  static const double xl = 32;
+}
+
+class AppRadius {
+  AppRadius._();
+  static const double sm = 8;
+  static const double md = 16;
+  static const double lg = 24;
+  static const double xl = 32;
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// Theme
+// ─────────────────────────────────────────────────────────────────────────────
 
 class AppTheme {
   AppTheme._();
 
   static const PageTransitionsTheme _pageTransitionsTheme =
       PageTransitionsTheme(
-    builders: <TargetPlatform, PageTransitionsBuilder>{
-      TargetPlatform.android: _FadeSlidePageTransitionsBuilder(),
-      TargetPlatform.iOS: _FadeSlidePageTransitionsBuilder(),
-      TargetPlatform.macOS: _FadeSlidePageTransitionsBuilder(),
-      TargetPlatform.windows: _FadeSlidePageTransitionsBuilder(),
-      TargetPlatform.linux: _FadeSlidePageTransitionsBuilder(),
-    },
-  );
+        builders: <TargetPlatform, PageTransitionsBuilder>{
+          TargetPlatform.android: _CalmSlidePageTransitionsBuilder(),
+          TargetPlatform.iOS: _CalmSlidePageTransitionsBuilder(),
+          TargetPlatform.macOS: _CalmSlidePageTransitionsBuilder(),
+          TargetPlatform.windows: _CalmSlidePageTransitionsBuilder(),
+          TargetPlatform.linux: _CalmSlidePageTransitionsBuilder(),
+        },
+      );
 
   static ThemeData light() {
     final scheme = ColorScheme.fromSeed(
@@ -50,11 +95,9 @@ class AppTheme {
       primary: AppColors.primary,
       secondary: AppColors.primary,
       tertiary: AppColors.success,
-      error: AppColors.error,
+      error: AppColors.danger,
       surface: AppColors.cardLight,
     );
-
-    final textTheme = AppTextStyles.textTheme(Brightness.light);
 
     return ThemeData(
       useMaterial3: true,
@@ -62,7 +105,6 @@ class AppTheme {
       scaffoldBackgroundColor: AppColors.bgLight,
       cardColor: AppColors.cardLight,
       dividerColor: const Color(0xFFD0D7DE),
-      textTheme: textTheme,
       appBarTheme: const AppBarTheme(
         centerTitle: false,
         surfaceTintColor: Colors.transparent,
@@ -70,6 +112,7 @@ class AppTheme {
       dividerTheme: const DividerThemeData(
         color: Color(0xFFD0D7DE),
         space: 1,
+        thickness: 0.5,
       ),
       cardTheme: CardThemeData(
         color: AppColors.cardLight,
@@ -90,10 +133,24 @@ class AppTheme {
         selectedItemColor: AppColors.primary,
         unselectedItemColor: AppColors.navUnselected,
         backgroundColor: AppColors.cardLight,
-        elevation: 8,
+        elevation: 0,
       ),
       snackBarTheme: const SnackBarThemeData(
         behavior: SnackBarBehavior.floating,
+      ),
+      switchTheme: SwitchThemeData(
+        thumbColor: WidgetStateProperty.resolveWith((states) {
+          if (states.contains(WidgetState.selected)) {
+            return AppColors.primary;
+          }
+          return AppColors.textSecondary;
+        }),
+        trackColor: WidgetStateProperty.resolveWith((states) {
+          if (states.contains(WidgetState.selected)) {
+            return AppColors.primaryDim;
+          }
+          return AppColors.surfaceBorder;
+        }),
       ),
       pageTransitionsTheme: _pageTransitionsTheme,
       visualDensity: VisualDensity.adaptivePlatformDensity,
@@ -108,66 +165,89 @@ class AppTheme {
       primary: AppColors.primary,
       secondary: AppColors.primary,
       tertiary: AppColors.success,
-      error: AppColors.error,
-      surface: AppColors.cardDark,
-      onSurface: AppColors.darkTextPrimary,
-      onSurfaceVariant: AppColors.darkTextSecondary,
-      outline: AppColors.darkDivider,
-    );
-
-    final textTheme = AppTextStyles.textTheme(Brightness.dark).apply(
-      bodyColor: AppColors.darkTextPrimary,
-      displayColor: AppColors.darkTextPrimary,
+      error: AppColors.danger,
+      surface: AppColors.surface,
+      onSurface: AppColors.textPrimary,
+      onSurfaceVariant: AppColors.textSecondary,
+      outline: AppColors.surfaceBorder,
     );
 
     return ThemeData(
       useMaterial3: true,
       colorScheme: scheme,
-      scaffoldBackgroundColor: AppColors.bgDark,
-      cardColor: AppColors.cardDark,
-      dividerColor: AppColors.darkDivider,
-      textTheme: textTheme,
+      scaffoldBackgroundColor: AppColors.bg,
+      cardColor: AppColors.surface,
+      dividerColor: AppColors.surfaceBorder,
       appBarTheme: const AppBarTheme(
         centerTitle: false,
         surfaceTintColor: Colors.transparent,
-        backgroundColor: AppColors.bgDark,
-        foregroundColor: AppColors.darkTextPrimary,
+        backgroundColor: Colors.transparent,
+        foregroundColor: AppColors.textPrimary,
+        elevation: 0,
       ),
       dividerTheme: const DividerThemeData(
-        color: AppColors.darkDivider,
+        color: AppColors.surfaceBorder,
         space: 1,
+        thickness: 0.5,
       ),
       cardTheme: CardThemeData(
-        color: AppColors.cardDark,
+        color: AppColors.surface,
         elevation: 0,
         shape: RoundedRectangleBorder(
           borderRadius: BorderRadius.circular(AppRadius.md),
         ),
       ),
       inputDecorationTheme: InputDecorationTheme(
-        filled: true,
-        fillColor: AppColors.surfaceDark,
-        border: OutlineInputBorder(
-          borderRadius: BorderRadius.circular(AppRadius.md),
+        filled: false,
+        border: UnderlineInputBorder(
+          borderSide: const BorderSide(color: AppColors.surfaceBorder),
+          borderRadius: BorderRadius.circular(0),
         ),
-        enabledBorder: OutlineInputBorder(
-          borderRadius: BorderRadius.circular(AppRadius.md),
-          borderSide: const BorderSide(color: AppColors.darkDivider),
+        enabledBorder: const UnderlineInputBorder(
+          borderSide: BorderSide(color: AppColors.surfaceBorder),
         ),
-        focusedBorder: OutlineInputBorder(
-          borderRadius: BorderRadius.circular(AppRadius.md),
-          borderSide: const BorderSide(color: AppColors.primary),
+        focusedBorder: const UnderlineInputBorder(
+          borderSide: BorderSide(color: AppColors.primary),
         ),
       ),
       bottomNavigationBarTheme: const BottomNavigationBarThemeData(
         type: BottomNavigationBarType.fixed,
         selectedItemColor: AppColors.primary,
-        unselectedItemColor: AppColors.darkTextSecondary,
-        backgroundColor: AppColors.cardDark,
-        elevation: 8,
+        unselectedItemColor: AppColors.textMuted,
+        backgroundColor: AppColors.surface,
+        elevation: 0,
+        showSelectedLabels: false,
+        showUnselectedLabels: false,
       ),
       snackBarTheme: const SnackBarThemeData(
         behavior: SnackBarBehavior.floating,
+      ),
+      switchTheme: SwitchThemeData(
+        thumbColor: WidgetStateProperty.resolveWith((states) {
+          if (states.contains(WidgetState.selected)) {
+            return AppColors.primary;
+          }
+          return AppColors.textSecondary;
+        }),
+        trackColor: WidgetStateProperty.resolveWith((states) {
+          if (states.contains(WidgetState.selected)) {
+            return AppColors.primaryGlow;
+          }
+          return AppColors.surfaceBorder;
+        }),
+        trackOutlineColor: WidgetStateProperty.all(Colors.transparent),
+      ),
+      dialogTheme: DialogThemeData(
+        backgroundColor: AppColors.surfaceRaised,
+        shape: RoundedRectangleBorder(
+          borderRadius: BorderRadius.circular(AppRadius.md),
+        ),
+      ),
+      bottomSheetTheme: const BottomSheetThemeData(
+        backgroundColor: AppColors.surfaceRaised,
+        shape: RoundedRectangleBorder(
+          borderRadius: BorderRadius.vertical(top: Radius.circular(20)),
+        ),
       ),
       pageTransitionsTheme: _pageTransitionsTheme,
       visualDensity: VisualDensity.adaptivePlatformDensity,
@@ -175,8 +255,12 @@ class AppTheme {
   }
 }
 
-class _FadeSlidePageTransitionsBuilder extends PageTransitionsBuilder {
-  const _FadeSlidePageTransitionsBuilder();
+// ─────────────────────────────────────────────────────────────────────────────
+// Page Transition — vertical slide from bottom 30px + fade, 280ms ease-out
+// ─────────────────────────────────────────────────────────────────────────────
+
+class _CalmSlidePageTransitionsBuilder extends PageTransitionsBuilder {
+  const _CalmSlidePageTransitionsBuilder();
 
   @override
   Widget buildTransitions<T>(
@@ -195,7 +279,7 @@ class _FadeSlidePageTransitionsBuilder extends PageTransitionsBuilder {
       opacity: curved,
       child: SlideTransition(
         position: Tween<Offset>(
-          begin: const Offset(0.0, 0.03),
+          begin: const Offset(0.0, 0.05), // ~30px on standard screen
           end: Offset.zero,
         ).animate(curved),
         child: child,
@@ -204,8 +288,8 @@ class _FadeSlidePageTransitionsBuilder extends PageTransitionsBuilder {
   }
 
   @override
-  Duration get transitionDuration => const Duration(milliseconds: 200);
+  Duration get transitionDuration => const Duration(milliseconds: 280);
 
   @override
-  Duration get reverseTransitionDuration => const Duration(milliseconds: 200);
+  Duration get reverseTransitionDuration => const Duration(milliseconds: 280);
 }

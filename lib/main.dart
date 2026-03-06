@@ -8,7 +8,6 @@ import 'package:firebase_crashlytics/firebase_crashlytics.dart';
 import 'package:firebase_performance/firebase_performance.dart';
 import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
-import 'package:flutter/services.dart';
 import 'package:trustbridge_app/l10n/app_localizations.dart';
 import 'package:flutter_localizations/flutter_localizations.dart';
 import 'package:provider/provider.dart';
@@ -44,7 +43,6 @@ import 'package:trustbridge_app/services/notification_service.dart';
 import 'package:trustbridge_app/services/blocklist_workmanager_service.dart';
 import 'package:trustbridge_app/services/launch_route_service.dart';
 import 'package:trustbridge_app/services/pairing_service.dart';
-import 'package:trustbridge_app/services/child_effective_policy_sync_service.dart';
 import 'package:trustbridge_app/services/policy_vpn_sync_service.dart';
 import 'package:trustbridge_app/theme/app_theme.dart';
 import 'package:trustbridge_app/widgets/child_shell.dart';
@@ -53,17 +51,10 @@ import 'package:trustbridge_app/widgets/skeleton_loaders.dart';
 
 Future<void> main() async {
   WidgetsFlutterBinding.ensureInitialized();
-  await SystemChrome.setPreferredOrientations(
-    const <DeviceOrientation>[
-      DeviceOrientation.portraitUp,
-    ],
-  );
   NotificationService.navigatorKey = GlobalKey<NavigatorState>();
-  final startupFuture = _bootstrapStartupServices();
-  runApp(MyApp(startupFuture: startupFuture));
+  runApp(const MyApp());
+  unawaited(_bootstrapStartupServices());
   WidgetsBinding.instance.addPostFrameCallback((_) {
-    unawaited(NotificationService().initialize());
-    unawaited(ChildEffectivePolicySyncService.instance.start());
     // Defer background scheduler registration until after first frame to
     // minimize startup jank and reduce ANR risk on lower-memory devices.
     unawaited(_initBlocklistWorkmanager());
@@ -193,12 +184,7 @@ Future<void> _initPerformance() async {
 }
 
 class MyApp extends StatefulWidget {
-  const MyApp({
-    super.key,
-    required this.startupFuture,
-  });
-
-  final Future<void> startupFuture;
+  const MyApp({super.key});
 
   static Future<void> setLocale(
     BuildContext context,
@@ -300,11 +286,11 @@ class _MyAppState extends State<MyApp> {
               data: media.copyWith(
                 textScaler: TextScaler.linear(clampedScale),
               ),
-              child: child ?? const SizedBox.shrink(),
+              child: child ?? const _BootstrapFallbackView(),
             ),
           );
         },
-        home: _ModeRootScreen(startupFuture: widget.startupFuture),
+        home: const _ModeRootScreen(),
         onGenerateRoute: _onGenerateRoute,
       ),
     );
@@ -408,11 +394,7 @@ class _MyAppState extends State<MyApp> {
 }
 
 class _ModeRootScreen extends StatefulWidget {
-  const _ModeRootScreen({
-    required this.startupFuture,
-  });
-
-  final Future<void> startupFuture;
+  const _ModeRootScreen();
 
   @override
   State<_ModeRootScreen> createState() => _ModeRootScreenState();
@@ -427,10 +409,10 @@ class _ModeRootScreenState extends State<_ModeRootScreen>
   void initState() {
     super.initState();
     WidgetsBinding.instance.addObserver(this);
-    _bootstrapFuture = Future.wait<void>([
-      widget.startupFuture,
-      _appModeService.primeCache(),
-    ], eagerError: false);
+    _bootstrapFuture = _appModeService.primeCache().timeout(
+      const Duration(seconds: 3),
+      onTimeout: () {},
+    );
   }
 
   @override
@@ -475,23 +457,65 @@ class _StartupSkeletonScreen extends StatelessWidget {
   Widget build(BuildContext context) {
     return Scaffold(
       body: SafeArea(
-        child: Padding(
-          padding: const EdgeInsets.fromLTRB(16, 20, 16, 16),
-          child: ListView(
-            physics: const NeverScrollableScrollPhysics(),
-            children: const <Widget>[
-              SkeletonCard(height: 54),
-              SizedBox(height: 14),
-              SkeletonChildCard(),
-              SizedBox(height: 14),
-              SkeletonCard(height: 96),
-              SizedBox(height: 12),
-              SkeletonCard(height: 96),
-              SizedBox(height: 12),
-              SkeletonCard(height: 96),
-            ],
+        child: Center(
+          child: ConstrainedBox(
+            constraints: const BoxConstraints(maxWidth: 420),
+            child: const Padding(
+              padding: EdgeInsets.symmetric(horizontal: 24, vertical: 20),
+              child: Column(
+                mainAxisAlignment: MainAxisAlignment.center,
+                children: <Widget>[
+                  Icon(Icons.shield_moon_rounded, size: 52),
+                  SizedBox(height: 14),
+                  Text(
+                    'TrustBridge',
+                    style: TextStyle(
+                      fontSize: 24,
+                      fontWeight: FontWeight.w700,
+                    ),
+                  ),
+                  SizedBox(height: 10),
+                  Text(
+                    'Loading your protection profile...',
+                    textAlign: TextAlign.center,
+                  ),
+                  SizedBox(height: 24),
+                  CircularProgressIndicator(strokeWidth: 3),
+                  SizedBox(height: 28),
+                  SkeletonCard(height: 12),
+                  SizedBox(height: 10),
+                  SkeletonCard(height: 12),
+                ],
+              ),
+            ),
           ),
         ),
+      ),
+    );
+  }
+}
+
+class _BootstrapFallbackView extends StatelessWidget {
+  const _BootstrapFallbackView();
+
+  @override
+  Widget build(BuildContext context) {
+    return const ColoredBox(
+      color: Color(0xFFF0F4F8),
+      child: Column(
+        mainAxisAlignment: MainAxisAlignment.center,
+        children: <Widget>[
+          CircularProgressIndicator(strokeWidth: 3),
+          SizedBox(height: 14),
+          Text(
+            'Loading TrustBridge...',
+            style: TextStyle(
+              color: Colors.black87,
+              fontSize: 16,
+              fontWeight: FontWeight.w600,
+            ),
+          ),
+        ],
       ),
     );
   }
@@ -612,6 +636,16 @@ class _AuthWrapperState extends State<AuthWrapper> {
       if (nextUserId == null) {
         return;
       }
+
+      // Delay heavy messaging setup until the authenticated UI is visible to
+      // avoid first-launch black-frame/jank on lower-end and OEM-skinned
+      // devices.
+      await Future<void>.delayed(const Duration(milliseconds: 700));
+      if (!mounted || _lastNotificationUserId != nextUserId) {
+        return;
+      }
+
+      await _notificationService.initialize();
 
       await _notificationService.requestPermission();
 

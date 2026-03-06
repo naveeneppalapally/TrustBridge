@@ -1,12 +1,16 @@
 import 'dart:async';
 
 import 'package:flutter/material.dart';
+import 'package:cloud_firestore/cloud_firestore.dart';
 
 import '../config/category_ids.dart';
+import '../core/utils/responsive.dart';
 import '../models/child_profile.dart';
 import '../models/schedule.dart';
 import '../services/auth_service.dart';
 import '../services/firestore_service.dart';
+import '../theme/app_text_styles.dart';
+import '../theme/app_theme.dart';
 import '../widgets/skeleton_loaders.dart';
 import 'block_categories_screen.dart';
 import 'schedule_creator_screen.dart';
@@ -66,116 +70,160 @@ class _ChildControlScreenState extends State<ChildControlScreen> {
 
   @override
   Widget build(BuildContext context) {
+    R.init(context);
     final parentId = _parentId;
     if (parentId == null || parentId.isEmpty) {
       return Scaffold(
-        appBar: AppBar(title: const Text('Child Controls')),
-        body: const Center(child: Text('Please sign in first.')),
+        body: Center(
+          child: Text(
+            'Please sign in first.',
+            style: AppTextStyles.body(color: AppColors.textSecondary),
+          ),
+        ),
       );
     }
 
     return Scaffold(
-      appBar: AppBar(
-        title: const Text('Child Controls'),
-        actions: [
-          PopupMenuButton<_ChildControlMenuAction>(
-            onSelected: (action) => _handleMenuAction(
-              action: action,
-              parentId: parentId,
-            ),
-            itemBuilder: (context) => const [
-              PopupMenuItem<_ChildControlMenuAction>(
-                value: _ChildControlMenuAction.deleteProfile,
-                child: Text('Delete child profile'),
-              ),
-            ],
-          ),
-        ],
-      ),
-      body: StreamBuilder<ChildProfile?>(
-        stream: _resolvedFirestoreService.getChildStream(
-          parentId: parentId,
-          childId: widget.childId,
-        ),
-        initialData: widget.initialChild ??
-            _resolvedFirestoreService.getCachedChild(
-              parentId: parentId,
-              childId: widget.childId,
-            ),
-        builder: (context, snapshot) {
-          if (snapshot.hasError) {
-            return const Center(
-              child: Padding(
-                padding: EdgeInsets.all(24),
-                child: Text(
-                  'Child controls are unavailable right now. Please try again.',
-                  textAlign: TextAlign.center,
-                ),
-              ),
-            );
-          }
-          final child = snapshot.data;
-          if (child == null &&
-              snapshot.connectionState == ConnectionState.waiting) {
-            return ListView(
-              padding: const EdgeInsets.fromLTRB(16, 12, 16, 24),
-              children: const [
-                SkeletonCard(height: 220),
-                SizedBox(height: 14),
-                SkeletonCard(height: 280),
-                SizedBox(height: 14),
-                SkeletonCard(height: 180),
-              ],
-            );
-          }
-          if (child == null) {
-            return const Center(
-              child: Padding(
-                padding: EdgeInsets.all(24),
-                child: Text(
-                  'This child profile is no longer available.',
-                  textAlign: TextAlign.center,
-                ),
-              ),
-            );
-          }
-          _latestChildForActions = child;
-          final now = DateTime.now();
-          final activeMode = _activeMode(child, now);
-          final modeSummary = _modeSummary(activeMode);
-          final conflictWarning = _modeConflictWarning(child, activeMode);
-
-          return ListView(
-            padding: const EdgeInsets.fromLTRB(16, 12, 16, 24),
-            children: [
-              Text(
-                child.nickname,
-                style: Theme.of(context).textTheme.headlineSmall?.copyWith(
-                      fontWeight: FontWeight.w800,
+      body: SafeArea(
+        child: Column(
+          children: [
+            // Custom back button + title row
+            Padding(
+              padding: EdgeInsets.fromLTRB(R.sp(8), R.sp(8), R.sp(8), 0),
+              child: Row(
+                children: [
+                  IconButton(
+                    icon: const Icon(
+                      Icons.arrow_back_rounded,
+                      color: AppColors.textSecondary,
                     ),
+                    onPressed: () => Navigator.of(context).pop(),
+                  ),
+                  const Spacer(),
+                  PopupMenuButton<_ChildControlMenuAction>(
+                    icon: const Icon(
+                      Icons.more_vert,
+                      color: AppColors.textSecondary,
+                    ),
+                    onSelected: (action) => _handleMenuAction(
+                      action: action,
+                      parentId: parentId,
+                    ),
+                    itemBuilder: (context) => const [
+                      PopupMenuItem<_ChildControlMenuAction>(
+                        value: _ChildControlMenuAction.deleteProfile,
+                        child: Text('Delete child profile'),
+                      ),
+                    ],
+                  ),
+                ],
               ),
-              const SizedBox(height: 14),
-              _buildProtectionSection(
-                child: child,
-                activeMode: activeMode,
-                modeSummary: modeSummary,
-                conflictWarning: conflictWarning,
-                parentId: parentId,
+            ),
+            // Content
+            Expanded(
+              child: StreamBuilder<ChildProfile?>(
+                stream: _resolvedFirestoreService.getChildStream(
+                  parentId: parentId,
+                  childId: widget.childId,
+                ),
+                initialData: widget.initialChild ??
+                    _resolvedFirestoreService.getCachedChild(
+                      parentId: parentId,
+                      childId: widget.childId,
+                    ),
+                builder: (context, snapshot) {
+                  if (snapshot.hasError) {
+                    return Center(
+                      child: Padding(
+                        padding: const EdgeInsets.all(24),
+                        child: Text(
+                          'Child controls are unavailable right now.',
+                          textAlign: TextAlign.center,
+                          style: AppTextStyles.body(
+                            color: AppColors.textSecondary,
+                          ),
+                        ),
+                      ),
+                    );
+                  }
+                  final child = snapshot.data;
+                  if (child == null &&
+                      snapshot.connectionState == ConnectionState.waiting) {
+                    return ListView(
+                      padding: EdgeInsets.fromLTRB(
+                        R.sp(20),
+                        R.sp(8),
+                        R.sp(20),
+                        R.sp(24),
+                      ),
+                      children: const [
+                        SkeletonCard(height: 220),
+                        SizedBox(height: 14),
+                        SkeletonCard(height: 280),
+                        SizedBox(height: 14),
+                        SkeletonCard(height: 180),
+                      ],
+                    );
+                  }
+                  if (child == null) {
+                    return Center(
+                      child: Padding(
+                        padding: const EdgeInsets.all(24),
+                        child: Text(
+                          'This child profile is no longer available.',
+                          textAlign: TextAlign.center,
+                          style: AppTextStyles.body(
+                            color: AppColors.textSecondary,
+                          ),
+                        ),
+                      ),
+                    );
+                  }
+                  _latestChildForActions = child;
+                  final now = DateTime.now();
+                  final activeMode = _activeMode(child, now);
+                  final modeSummary = _modeSummary(activeMode);
+                  final conflictWarning =
+                      _modeConflictWarning(child, activeMode);
+
+                  return ListView(
+                    padding: EdgeInsets.fromLTRB(
+                      R.sp(20),
+                      R.sp(4),
+                      R.sp(20),
+                      R.sp(24),
+                    ),
+                    children: [
+                      Text(
+                        child.nickname,
+                        style: AppTextStyles.displayMedium(),
+                      ),
+                      const SizedBox(height: 16),
+                      _buildProtectionSection(
+                        child: child,
+                        activeMode: activeMode,
+                        modeSummary: modeSummary,
+                        conflictWarning: conflictWarning,
+                        parentId: parentId,
+                      ),
+                      const SizedBox(height: 16),
+                      _buildBlockedSection(
+                        child: child,
+                        parentId: parentId,
+                        activeMode: activeMode,
+                      ),
+                      const SizedBox(height: 16),
+                      _buildScheduleSection(
+                        child: child,
+                        parentId: parentId,
+                      ),
+                    ],
+                  );
+                },
               ),
-              const SizedBox(height: 14),
-              _buildBlockedSection(
-                child: child,
-                parentId: parentId,
-                activeMode: activeMode,
-              ),
-              const SizedBox(height: 14),
-              _buildScheduleSection(
-                child: child,
-                parentId: parentId,
-              ),
-            ],
-          );
-        },
+            ),
+          ],
+        ),
       ),
     );
   }
@@ -187,111 +235,149 @@ class _ChildControlScreenState extends State<ChildControlScreen> {
     required String? conflictWarning,
     required String parentId,
   }) {
-    final protectionColor =
-        child.protectionEnabled ? Colors.green.shade700 : Colors.red.shade700;
-
-    return Card(
-      child: Padding(
-        padding: const EdgeInsets.all(14),
-        child: Column(
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            Text(
-              'Protection On/Off',
-              style: Theme.of(context).textTheme.titleMedium?.copyWith(
-                    fontWeight: FontWeight.w800,
-                  ),
-            ),
-            const SizedBox(height: 8),
-            Container(
-              padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
-              decoration: BoxDecoration(
-                color: protectionColor.withValues(alpha: 0.12),
-                borderRadius: BorderRadius.circular(12),
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        // Minimal protection toggle row
+        Container(
+          padding: EdgeInsets.symmetric(
+            horizontal: R.sp(16),
+            vertical: R.sp(12),
+          ),
+          decoration: BoxDecoration(
+            color: AppColors.surfaceRaised,
+            borderRadius: BorderRadius.circular(14),
+            border: Border.all(color: AppColors.surfaceBorder, width: 0.5),
+          ),
+          child: Row(
+            children: [
+              Container(
+                width: 8,
+                height: 8,
+                decoration: BoxDecoration(
+                  color: child.protectionEnabled
+                      ? AppColors.success
+                      : AppColors.danger,
+                  shape: BoxShape.circle,
+                ),
               ),
-              child: Row(
-                children: [
-                  Expanded(
-                    child: Text(
-                      child.protectionEnabled
-                          ? 'Protection is ON'
-                          : 'Protection is OFF',
-                      style: TextStyle(
-                        color: protectionColor,
-                        fontWeight: FontWeight.w800,
-                      ),
-                    ),
+              const SizedBox(width: 12),
+              Expanded(
+                child: Text(
+                  child.protectionEnabled
+                      ? 'Protection is ON'
+                      : 'Protection is OFF',
+                  style: AppTextStyles.headingMedium(
+                    color: child.protectionEnabled
+                        ? AppColors.success
+                        : AppColors.danger,
                   ),
-                  Switch.adaptive(
-                    value: child.protectionEnabled,
-                    onChanged: _saving
-                        ? null
-                        : (value) => _setProtectionEnabled(
-                              parentId: parentId,
-                              child: child,
-                              enabled: value,
-                            ),
-                  ),
-                ],
+                ),
               ),
-            ),
-            const SizedBox(height: 12),
-            Text(
-              'Modes',
-              style: Theme.of(context).textTheme.titleSmall?.copyWith(
-                    fontWeight: FontWeight.w800,
-                  ),
-            ),
-            const SizedBox(height: 8),
-            Wrap(
-              spacing: 8,
-              runSpacing: 8,
-              children: _ModeType.values.map((mode) {
-                final selected = mode == activeMode;
-                return ChoiceChip(
-                  label: Text(_modeLabel(mode)),
-                  selected: selected,
-                  onSelected: _saving
+              Switch.adaptive(
+                value: child.protectionEnabled,
+                onChanged: _saving
+                    ? null
+                    : (value) => _setProtectionEnabled(
+                          parentId: parentId,
+                          child: child,
+                          enabled: value,
+                        ),
+              ),
+            ],
+          ),
+        ),
+        const SizedBox(height: 16),
+        // Mode selector — horizontal chips
+        Text(
+          'MODES',
+          style: AppTextStyles.labelCaps(color: AppColors.textMuted),
+        ),
+        const SizedBox(height: 8),
+        SingleChildScrollView(
+          scrollDirection: Axis.horizontal,
+          child: Row(
+            children: _ModeType.values.map((mode) {
+              final selected = mode == activeMode;
+              return Padding(
+                padding: const EdgeInsets.only(right: 8),
+                child: GestureDetector(
+                  onTap: _saving
                       ? null
-                      : (_) => _setMode(
+                      : () => _setMode(
                             parentId: parentId,
                             child: child,
                             mode: mode,
                           ),
-                );
-              }).toList(growable: false),
-            ),
-            const SizedBox(height: 10),
-            Text(modeSummary),
-            const SizedBox(height: 8),
-            Text(
-              'If settings conflict, your manual app/category change wins.',
-              style: Theme.of(context).textTheme.bodySmall?.copyWith(
-                    color: Theme.of(context).colorScheme.onSurfaceVariant,
+                  child: AnimatedContainer(
+                    duration: const Duration(milliseconds: 200),
+                    padding: const EdgeInsets.symmetric(
+                      horizontal: 16,
+                      vertical: 10,
+                    ),
+                    decoration: BoxDecoration(
+                      color:
+                          selected ? AppColors.primaryDim : AppColors.surface,
+                      borderRadius: BorderRadius.circular(12),
+                      border: Border.all(
+                        color: selected
+                            ? AppColors.primary
+                            : AppColors.surfaceBorder,
+                        width: selected ? 1 : 0.5,
+                      ),
+                    ),
+                    child: Row(
+                      mainAxisSize: MainAxisSize.min,
+                      children: [
+                        if (selected)
+                          Container(
+                            width: 6,
+                            height: 6,
+                            margin: const EdgeInsets.only(right: 8),
+                            decoration: const BoxDecoration(
+                              color: AppColors.primary,
+                              shape: BoxShape.circle,
+                            ),
+                          ),
+                        Text(
+                          _modeLabel(mode),
+                          style: AppTextStyles.label(
+                            color: selected
+                                ? AppColors.primary
+                                : AppColors.textSecondary,
+                          ),
+                        ),
+                      ],
+                    ),
                   ),
-            ),
-            if (conflictWarning != null) ...[
-              const SizedBox(height: 10),
-              Container(
-                padding: const EdgeInsets.all(10),
-                decoration: BoxDecoration(
-                  color: Colors.orange.withValues(alpha: 0.12),
-                  borderRadius: BorderRadius.circular(10),
-                  border:
-                      Border.all(color: Colors.orange.withValues(alpha: 0.4)),
                 ),
-                child: Text(
-                  conflictWarning,
-                  style: TextStyle(
-                    color: Colors.orange.shade900,
-                    fontWeight: FontWeight.w600,
-                  ),
-                ),
-              ),
-            ],
-          ],
+              );
+            }).toList(growable: false),
+          ),
         ),
-      ),
+        const SizedBox(height: 10),
+        Text(
+          modeSummary,
+          style: AppTextStyles.bodySmall(color: AppColors.textSecondary),
+        ),
+        if (conflictWarning != null) ...[
+          const SizedBox(height: 10),
+          Container(
+            padding: const EdgeInsets.all(10),
+            decoration: BoxDecoration(
+              color: AppColors.warningDim,
+              borderRadius: BorderRadius.circular(10),
+              border: Border.all(
+                color: AppColors.warning.withValues(alpha: 0.4),
+              ),
+            ),
+            child: Text(
+              conflictWarning,
+              style: AppTextStyles.bodySmall(color: AppColors.warning),
+            ),
+          ),
+        ],
+      ],
     );
   }
 
@@ -305,86 +391,107 @@ class _ChildControlScreenState extends State<ChildControlScreen> {
     final modeForcedCategories = _modeForcedCategories(activeMode);
     final protectionEnabled = child.protectionEnabled;
 
-    return Card(
-      child: Padding(
-        padding: const EdgeInsets.all(14),
-        child: Column(
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            Text(
-              "What's Blocked",
-              style: Theme.of(context).textTheme.titleMedium?.copyWith(
-                    fontWeight: FontWeight.w800,
-                  ),
-            ),
-            const SizedBox(height: 8),
-            if (!protectionEnabled)
-              Padding(
-                padding: const EdgeInsets.only(bottom: 8),
-                child: Text(
-                  'Protection is off. No categories are enforced right now.',
-                  style: Theme.of(context).textTheme.bodySmall?.copyWith(
-                        color: Theme.of(context).colorScheme.onSurfaceVariant,
-                      ),
-                ),
-              )
-            else if (modeForcedCategories.isNotEmpty)
-              Padding(
-                padding: const EdgeInsets.only(bottom: 8),
-                child: Text(
-                  'Some categories are locked by ${_modeLabel(activeMode)} mode.',
-                  style: Theme.of(context).textTheme.bodySmall?.copyWith(
-                        color: Theme.of(context).colorScheme.onSurfaceVariant,
-                      ),
-                ),
-              ),
-            ..._simpleToggles.map((toggle) {
-              final blockedByToggle = blockedCategories.contains(toggle.id);
-              final blockedByMode = modeForcedCategories.contains(toggle.id);
-              final enabled =
-                  protectionEnabled && (blockedByToggle || blockedByMode);
-              final subtitle = blockedByMode
-                  ? 'Blocked by ${_modeLabel(activeMode)} mode'
-                  : null;
-              return SwitchListTile(
-                dense: true,
-                contentPadding: EdgeInsets.zero,
-                title: Text(toggle.label),
-                subtitle: subtitle == null ? null : Text(subtitle),
-                value: enabled,
-                onChanged: _saving || !protectionEnabled || blockedByMode
-                    ? null
-                    : (value) => _setSimpleCategory(
-                          parentId: parentId,
-                          child: child,
-                          categoryId: toggle.id,
-                          enabled: value,
-                        ),
-              );
-            }),
-            const SizedBox(height: 4),
-            Align(
-              alignment: Alignment.centerLeft,
-              child: OutlinedButton.icon(
-                onPressed: () async {
-                  await Navigator.of(context).push(
-                    MaterialPageRoute<void>(
-                      builder: (_) => BlockCategoriesScreen(
-                        child: child,
-                        authService: widget.authService,
-                        firestoreService: widget.firestoreService,
-                        parentIdOverride: widget.parentIdOverride,
-                      ),
-                    ),
-                  );
-                },
-                icon: const Icon(Icons.apps_rounded),
-                label: const Text('Advanced App Blocking'),
-              ),
-            ),
-          ],
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        Text(
+          "WHAT'S BLOCKED",
+          style: AppTextStyles.labelCaps(color: AppColors.textMuted),
         ),
-      ),
+        const SizedBox(height: 10),
+        if (!protectionEnabled)
+          Padding(
+            padding: const EdgeInsets.only(bottom: 8),
+            child: Text(
+              'Protection is off. No categories are enforced right now.',
+              style: AppTextStyles.bodySmall(color: AppColors.textSecondary),
+            ),
+          )
+        else if (modeForcedCategories.isNotEmpty)
+          Padding(
+            padding: const EdgeInsets.only(bottom: 8),
+            child: Text(
+              'Some categories are locked by ${_modeLabel(activeMode)} mode.',
+              style: AppTextStyles.bodySmall(color: AppColors.textSecondary),
+            ),
+          ),
+        ..._simpleToggles.map((toggle) {
+          final blockedByToggle = blockedCategories.contains(toggle.id);
+          final blockedByMode = modeForcedCategories.contains(toggle.id);
+          final enabled =
+              protectionEnabled && (blockedByToggle || blockedByMode);
+          final subtitle = blockedByMode
+              ? 'Blocked by ${_modeLabel(activeMode)} mode'
+              : null;
+          return Container(
+            margin: const EdgeInsets.only(bottom: 2),
+            padding: EdgeInsets.symmetric(
+              horizontal: R.sp(14),
+              vertical: R.sp(10),
+            ),
+            decoration: BoxDecoration(
+              color: AppColors.surfaceRaised,
+              borderRadius: BorderRadius.circular(12),
+              border: Border.all(
+                color: AppColors.surfaceBorder,
+                width: 0.5,
+              ),
+            ),
+            child: Row(
+              children: [
+                Expanded(
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Text(
+                        toggle.label,
+                        style: AppTextStyles.body(),
+                      ),
+                      if (subtitle != null)
+                        Text(
+                          subtitle,
+                          style: AppTextStyles.bodySmall(
+                            color: AppColors.textMuted,
+                          ),
+                        ),
+                    ],
+                  ),
+                ),
+                Switch.adaptive(
+                  value: enabled,
+                  onChanged: _saving || !protectionEnabled || blockedByMode
+                      ? null
+                      : (value) => _setSimpleCategory(
+                            parentId: parentId,
+                            child: child,
+                            categoryId: toggle.id,
+                            enabled: value,
+                          ),
+                ),
+              ],
+            ),
+          );
+        }),
+        const SizedBox(height: 8),
+        GestureDetector(
+          onTap: () async {
+            await Navigator.of(context).push(
+              MaterialPageRoute<void>(
+                builder: (_) => BlockCategoriesScreen(
+                  child: child,
+                  authService: widget.authService,
+                  firestoreService: widget.firestoreService,
+                  parentIdOverride: widget.parentIdOverride,
+                ),
+              ),
+            );
+          },
+          child: Text(
+            'Advanced App Blocking →',
+            style: AppTextStyles.label(color: AppColors.primary),
+          ),
+        ),
+      ],
     );
   }
 
@@ -398,115 +505,123 @@ class _ChildControlScreenState extends State<ChildControlScreen> {
         .toList(growable: false)
       ..sort((a, b) => a.startTime.compareTo(b.startTime));
 
-    return Card(
-      child: Padding(
-        padding: const EdgeInsets.all(14),
-        child: Column(
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            Text(
-              'Schedule',
-              style: Theme.of(context).textTheme.titleMedium?.copyWith(
-                    fontWeight: FontWeight.w800,
-                  ),
-            ),
-            const SizedBox(height: 8),
-            if (todaysSchedules.isEmpty)
-              const Text(
-                'No schedule for today. Use a quick preset below to get started.',
-              )
-            else
-              ...todaysSchedules.map(
-                (schedule) => ListTile(
-                  contentPadding: EdgeInsets.zero,
-                  leading: const Icon(Icons.timeline_rounded),
-                  title: Text(schedule.name),
-                  subtitle: Text(
-                    '${_formatTime(schedule.startTime)} - ${_formatTime(schedule.endTime)}',
-                  ),
-                  trailing: Text(_scheduleActionLabel(schedule.action)),
-                ),
-              ),
-            const SizedBox(height: 6),
-            Container(
-              padding: const EdgeInsets.all(12),
-              decoration: BoxDecoration(
-                color: Theme.of(context).colorScheme.primary.withValues(alpha: 0.08),
-                borderRadius: BorderRadius.circular(12),
-              ),
-              child: const Text(
-                'Quick setup: choose one routine and you are done. You can fine-tune later.',
-              ),
-            ),
-            const SizedBox(height: 10),
-            Wrap(
-              spacing: 8,
-              runSpacing: 8,
-              children: [
-                OutlinedButton.icon(
-                  onPressed: _saving
-                      ? null
-                      : () => _applySchedulePreset(
-                            parentId: parentId,
-                            child: child,
-                            preset: Schedule.bedtime(
-                              startTime: '21:30',
-                              endTime: '07:00',
-                            ),
-                          ),
-                  icon: const Icon(Icons.bedtime_rounded),
-                  label: const Text('Bedtime preset'),
-                ),
-                OutlinedButton.icon(
-                  onPressed: _saving
-                      ? null
-                      : () => _applySchedulePreset(
-                            parentId: parentId,
-                            child: child,
-                            preset: Schedule(
-                              id: '',
-                              name: 'Homework',
-                              type: ScheduleType.homework,
-                              days: const [
-                                Day.monday,
-                                Day.tuesday,
-                                Day.wednesday,
-                                Day.thursday,
-                                Day.friday,
-                              ],
-                              startTime: '16:00',
-                              endTime: '18:00',
-                              action: ScheduleAction.blockDistracting,
-                            ),
-                          ),
-                  icon: const Icon(Icons.menu_book_rounded),
-                  label: const Text('Homework preset'),
-                ),
-              ],
-            ),
-            const SizedBox(height: 8),
-            SizedBox(
-              width: double.infinity,
-              child: FilledButton.icon(
-                onPressed: () async {
-                  await Navigator.of(context).push(
-                    MaterialPageRoute<void>(
-                      builder: (_) => ScheduleCreatorScreen(
-                        child: child,
-                        authService: widget.authService,
-                        firestoreService: widget.firestoreService,
-                        parentIdOverride: widget.parentIdOverride,
-                      ),
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        Text(
+          'SCHEDULE',
+          style: AppTextStyles.labelCaps(color: AppColors.textMuted),
+        ),
+        const SizedBox(height: 10),
+        if (todaysSchedules.isEmpty)
+          Text(
+            'No schedule for today. Use a quick preset below to get started.',
+            style: AppTextStyles.bodySmall(color: AppColors.textSecondary),
+          )
+        else
+          ...todaysSchedules.map(
+            (schedule) => Container(
+              margin: const EdgeInsets.only(bottom: 6),
+              child: Row(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  // Vertical accent line
+                  Container(
+                    width: 3,
+                    height: 40,
+                    margin: const EdgeInsets.only(right: 12),
+                    decoration: BoxDecoration(
+                      color: AppColors.primary,
+                      borderRadius: BorderRadius.circular(2),
                     ),
-                  );
-                },
-                icon: const Icon(Icons.edit_calendar_rounded),
-                label: const Text('Edit Detailed Schedule'),
+                  ),
+                  Expanded(
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        Text(
+                          schedule.name,
+                          style: AppTextStyles.body(),
+                        ),
+                        Text(
+                          '${_formatTime(schedule.startTime)} – ${_formatTime(schedule.endTime)} · ${_scheduleActionLabel(schedule.action)}',
+                          style: AppTextStyles.bodySmall(
+                            color: AppColors.textSecondary,
+                          ),
+                        ),
+                      ],
+                    ),
+                  ),
+                ],
               ),
+            ),
+          ),
+        const SizedBox(height: 10),
+        Wrap(
+          spacing: 8,
+          runSpacing: 8,
+          children: [
+            _SchedulePresetChip(
+              icon: Icons.bedtime_rounded,
+              label: 'Bedtime',
+              onTap: _saving
+                  ? null
+                  : () => _applySchedulePreset(
+                        parentId: parentId,
+                        child: child,
+                        preset: Schedule.bedtime(
+                          startTime: '21:30',
+                          endTime: '07:00',
+                        ),
+                      ),
+            ),
+            _SchedulePresetChip(
+              icon: Icons.menu_book_rounded,
+              label: 'Homework',
+              onTap: _saving
+                  ? null
+                  : () => _applySchedulePreset(
+                        parentId: parentId,
+                        child: child,
+                        preset: Schedule(
+                          id: '',
+                          name: 'Homework',
+                          type: ScheduleType.homework,
+                          days: const [
+                            Day.monday,
+                            Day.tuesday,
+                            Day.wednesday,
+                            Day.thursday,
+                            Day.friday,
+                          ],
+                          startTime: '16:00',
+                          endTime: '18:00',
+                          action: ScheduleAction.blockDistracting,
+                        ),
+                      ),
             ),
           ],
         ),
-      ),
+        const SizedBox(height: 12),
+        GestureDetector(
+          onTap: () async {
+            await Navigator.of(context).push(
+              MaterialPageRoute<void>(
+                builder: (_) => ScheduleCreatorScreen(
+                  child: child,
+                  authService: widget.authService,
+                  firestoreService: widget.firestoreService,
+                  parentIdOverride: widget.parentIdOverride,
+                ),
+              ),
+            );
+          },
+          child: Text(
+            'Edit Schedule →',
+            style: AppTextStyles.label(color: AppColors.primary),
+          ),
+        ),
+      ],
     );
   }
 
@@ -781,62 +896,70 @@ class _ChildControlScreenState extends State<ChildControlScreen> {
       _saving = true;
     });
     try {
+      final ownedChild = await _resolvedFirestoreService.getChild(
+        parentId: parentId,
+        childId: child.id,
+      );
+      if (ownedChild == null) {
+        throw StateError('child_access_revoked');
+      }
+
       switch (mode) {
         case _ModeType.freePlay:
           await _resolvedFirestoreService.setChildPause(
             parentId: parentId,
-            childId: child.id,
+            childId: ownedChild.id,
             pausedUntil: null,
           );
           await _resolvedFirestoreService.setChildManualMode(
             parentId: parentId,
-            childId: child.id,
+            childId: ownedChild.id,
             mode: 'free',
           );
           break;
         case _ModeType.homework:
           await _resolvedFirestoreService.setChildPause(
             parentId: parentId,
-            childId: child.id,
+            childId: ownedChild.id,
             pausedUntil: null,
           );
           await _resolvedFirestoreService.setChildManualMode(
             parentId: parentId,
-            childId: child.id,
+            childId: ownedChild.id,
             mode: 'homework',
           );
           break;
         case _ModeType.bedtime:
           await _resolvedFirestoreService.setChildPause(
             parentId: parentId,
-            childId: child.id,
+            childId: ownedChild.id,
             pausedUntil: null,
           );
           await _resolvedFirestoreService.setChildManualMode(
             parentId: parentId,
-            childId: child.id,
+            childId: ownedChild.id,
             mode: 'bedtime',
           );
           break;
         case _ModeType.lockdown:
           await _resolvedFirestoreService.setChildManualMode(
             parentId: parentId,
-            childId: child.id,
+            childId: ownedChild.id,
             mode: null,
           );
           await _resolvedFirestoreService.setChildPause(
             parentId: parentId,
-            childId: child.id,
+            childId: ownedChild.id,
             pausedUntil: DateTime.now().add(const Duration(hours: 8)),
           );
           break;
       }
-    } catch (_) {
+    } catch (error) {
       if (!mounted) {
         return;
       }
       ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text('Could not switch mode right now.')),
+        SnackBar(content: Text(_modeFailureMessage(error))),
       );
     } finally {
       if (mounted) {
@@ -845,6 +968,28 @@ class _ChildControlScreenState extends State<ChildControlScreen> {
         });
       }
     }
+  }
+
+  String _modeFailureMessage(Object error) {
+    if (error is StateError &&
+        error.message.toString().contains('child_access_revoked')) {
+      return 'This child profile is no longer linked. Refresh children or pair again.';
+    }
+    if (error is FirebaseException) {
+      final code = error.code.trim().toLowerCase();
+      if (code == 'permission-denied' || code == 'permission_denied') {
+        return 'Permission denied. Refresh children or pair again.';
+      }
+      if (code == 'unauthenticated') {
+        return 'Session expired. Please sign in again.';
+      }
+    }
+    final text = error.toString().toLowerCase();
+    if (text.contains('permission_denied') ||
+        text.contains('permission-denied')) {
+      return 'Permission denied. Refresh children or pair again.';
+    }
+    return 'Could not switch mode right now.';
   }
 
   _ModeType _activeMode(ChildProfile child, DateTime now) {
@@ -1081,4 +1226,42 @@ class _SimpleCategoryToggle {
 
 enum _ChildControlMenuAction {
   deleteProfile,
+}
+
+class _SchedulePresetChip extends StatelessWidget {
+  const _SchedulePresetChip({
+    required this.icon,
+    required this.label,
+    required this.onTap,
+  });
+
+  final IconData icon;
+  final String label;
+  final VoidCallback? onTap;
+
+  @override
+  Widget build(BuildContext context) {
+    return GestureDetector(
+      onTap: onTap,
+      child: Container(
+        padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 8),
+        decoration: BoxDecoration(
+          color: AppColors.surface,
+          borderRadius: BorderRadius.circular(10),
+          border: Border.all(color: AppColors.surfaceBorder, width: 0.5),
+        ),
+        child: Row(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            Icon(icon, size: 16, color: AppColors.textSecondary),
+            const SizedBox(width: 6),
+            Text(
+              label,
+              style: AppTextStyles.label(color: AppColors.textSecondary),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
 }

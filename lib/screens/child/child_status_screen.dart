@@ -22,13 +22,13 @@ import '../../services/app_usage_service.dart';
 import '../../services/blocklist_sync_service.dart';
 import '../../services/browser_dns_bypass_heuristic.dart';
 import '../../services/child_app_inventory_sync_service.dart';
-import '../../services/child_effective_policy_sync_service.dart';
 import '../../services/child_usage_upload_service.dart';
 import '../../services/device_admin_service.dart';
 import '../../services/firestore_service.dart';
 import '../../services/heartbeat_service.dart';
 import '../../services/notification_service.dart';
 import '../../services/pairing_service.dart';
+import '../../services/child_effective_policy_sync_service.dart';
 import '../../services/remote_command_service.dart';
 import '../../services/vpn_service.dart';
 import 'blocked_overlay_screen.dart';
@@ -156,6 +156,7 @@ class _ChildStatusScreenState extends State<ChildStatusScreen>
   bool _redirectingToSetup = false;
   bool _recoveringPairing = false;
   bool _handledMissingChildProfile = false;
+  bool _handlingParentSessionRevocation = false;
   Timer? _heartbeatTimer;
   Timer? _remoteCommandTimer;
   Timer? _protectionRetryTimer;
@@ -259,6 +260,7 @@ class _ChildStatusScreenState extends State<ChildStatusScreen>
         parentId: _parentId,
         childId: _childId,
       );
+      unawaited(ChildEffectivePolicySyncService.instance.start());
       if (mounted) {
         setState(() {
           _loadingContext = false;
@@ -297,6 +299,7 @@ class _ChildStatusScreenState extends State<ChildStatusScreen>
       parentId: resolvedParentId,
       childId: resolvedChildId,
     );
+    unawaited(ChildEffectivePolicySyncService.instance.start());
     if (!mounted) {
       return;
     }
@@ -1006,7 +1009,10 @@ class _ChildStatusScreenState extends State<ChildStatusScreen>
       _lastKnownChild = child;
       final effectiveSnapshot = _lastEffectivePolicySnapshot;
       if (effectiveSnapshot != null) {
-        unawaited(_applyEffectivePolicySnapshot(child, effectiveSnapshot));
+        // effective_policy/current is the single enforcement source.
+        // Child profile writes can arrive before effective policy catches up.
+        // Avoid re-applying stale rules from profile-only updates.
+        return;
       } else {
         unawaited(_drainPendingPolicyEvents());
         unawaited(
@@ -1141,6 +1147,9 @@ class _ChildStatusScreenState extends State<ChildStatusScreen>
       if (!doc.exists) {
         final hadSnapshot = _lastEffectivePolicySnapshot != null;
         _lastEffectivePolicySnapshot = null;
+        if (hadSnapshot && mounted) {
+          setState(() {});
+        }
         if (hadSnapshot) {
           final baseChild = _lastKnownChild;
           if (baseChild != null) {
@@ -1159,6 +1168,9 @@ class _ChildStatusScreenState extends State<ChildStatusScreen>
       if (snapshot == null) {
         final hadSnapshot = _lastEffectivePolicySnapshot != null;
         _lastEffectivePolicySnapshot = null;
+        if (hadSnapshot && mounted) {
+          setState(() {});
+        }
         if (hadSnapshot) {
           final baseChild = _lastKnownChild;
           if (baseChild != null) {
@@ -1178,6 +1190,9 @@ class _ChildStatusScreenState extends State<ChildStatusScreen>
         return;
       }
       _lastEffectivePolicySnapshot = snapshot;
+      if (mounted) {
+        setState(() {});
+      }
       final baseChild = _lastKnownChild;
       if (baseChild == null) {
         return;
@@ -1293,73 +1308,26 @@ class _ChildStatusScreenState extends State<ChildStatusScreen>
     ChildProfile baseChild,
     _PolicyEventSnapshot event,
   ) async {
-    final effectiveSnapshot = _lastEffectivePolicySnapshot;
-    if (effectiveSnapshot != null &&
-        event.eventEpochMs <= effectiveSnapshot.version) {
-      return;
-    }
     AppLogger.debug(
-      '[ChildStatus] _applyPolicyEvent '
-      'cats=${event.blockedCategories.length} domains=${event.blockedDomains.length}',
+      '[ChildStatus] policy_event ignored for enforcement '
+      'epochMs=${event.eventEpochMs} '
+      'cats=${event.blockedCategories.length} '
+      'domains=${event.blockedDomains.length}',
     );
-    final nextChild = baseChild.copyWith(
-      policy: baseChild.policy.copyWith(
-        blockedCategories: event.blockedCategories,
-        blockedServices: event.blockedServices,
-        blockedDomains: event.blockedDomains,
-        blockedPackages: event.blockedPackages,
-        modeOverrides: event.modeOverrides,
-        policySchemaVersion: event.policySchemaVersion,
-      ),
-      pausedUntil: event.pausedUntil,
-    );
-    _lastKnownChild = nextChild;
-    _lastManualModeOverride = event.manualMode;
-    await _ensureProtectionApplied(
-      nextChild,
-      manualMode: event.manualMode,
-      policyVersion: event.eventEpochMs,
-      forceRecheck: true,
-    );
+    // Enforcement is driven by effective_policy/current only.
+    // Keep policy_events as audit telemetry and ignore for apply.
+    return;
   }
 
   Future<void> _drainPendingPolicyEvents() async {
-    final baseChild = _lastKnownChild;
-    if (baseChild == null || _pendingPolicyEvents.isEmpty) {
+    if (_pendingPolicyEvents.isEmpty) {
       return;
     }
     AppLogger.debug(
-      '[ChildStatus] draining queued policy events count=${_pendingPolicyEvents.length}',
+      '[ChildStatus] dropping queued policy events count=${_pendingPolicyEvents.length} '
+      '(audit-only source)',
     );
-    var current = baseChild;
-    while (_pendingPolicyEvents.isNotEmpty) {
-      final event = _pendingPolicyEvents.removeFirst();
-      final effectiveSnapshot = _lastEffectivePolicySnapshot;
-      if (effectiveSnapshot != null &&
-          event.eventEpochMs <= effectiveSnapshot.version) {
-        continue;
-      }
-      final nextChild = current.copyWith(
-        policy: current.policy.copyWith(
-          blockedCategories: event.blockedCategories,
-          blockedServices: event.blockedServices,
-          blockedDomains: event.blockedDomains,
-          blockedPackages: event.blockedPackages,
-          modeOverrides: event.modeOverrides,
-          policySchemaVersion: event.policySchemaVersion,
-        ),
-        pausedUntil: event.pausedUntil,
-      );
-      _lastKnownChild = nextChild;
-      _lastManualModeOverride = event.manualMode;
-      await _ensureProtectionApplied(
-        nextChild,
-        manualMode: event.manualMode,
-        policyVersion: event.eventEpochMs,
-        forceRecheck: true,
-      );
-      current = nextChild;
-    }
+    _pendingPolicyEvents.clear();
   }
 
   List<String> _readStringList(Object? rawValue) {
@@ -1454,193 +1422,22 @@ class _ChildStatusScreenState extends State<ChildStatusScreen>
         .map((value) => value.trim().toLowerCase())
         .where((value) => value.isNotEmpty)
         .toSet();
-
-    final payload = <String, dynamic>{
-      'childId': child.id,
-      if (_parentId != null && _parentId!.trim().isNotEmpty)
-        'parentId': _parentId!.trim(),
-      if (policyVersion != null && policyVersion > 0) 'version': policyVersion,
-      if (manualMode != null)
-        'manualMode': <String, dynamic>{
-          'mode': manualMode.mode,
-          if (manualMode.setAt != null)
-            'setAt': manualMode.setAt!.millisecondsSinceEpoch,
-          if (manualMode.expiresAt != null)
-            'expiresAt': manualMode.expiresAt!.millisecondsSinceEpoch,
-        },
-    };
-
-    await ChildEffectivePolicySyncService.instance.handlePolicyUpdatePush(
-      payload: payload,
-      source: forceRecheck ? 'child_status_recheck' : 'child_status',
+    await _persistNativePolicyContext(
+      parentId: _parentId,
+      childId: child.id,
     );
-  }
-
-  // ignore: unused_element
-  bool _isEffectiveSnapshotStale({
-    required ChildProfile child,
-    required _ManualModeOverride? manualMode,
-    required _EffectivePolicySnapshot snapshot,
-  }) {
-    final childCategories = normalizeCategoryIds(
-      child.policy.blockedCategories,
-    ).toSet();
-    final snapshotCategories = normalizeCategoryIds(
-      snapshot.blockedCategories,
-    ).toSet();
-
-    final childServices = child.policy.blockedServices
-        .map((value) => value.trim().toLowerCase())
-        .where((value) => value.isNotEmpty)
-        .toSet();
-    final snapshotServices = snapshot.blockedServices
-        .map((value) => value.trim().toLowerCase())
-        .where((value) => value.isNotEmpty)
-        .toSet();
-
-    final childDomains = child.policy.blockedDomains
-        .map((value) => value.trim().toLowerCase())
-        .where((value) => value.isNotEmpty)
-        .toSet();
-    final snapshotDomains = snapshot.blockedDomains
-        .map((value) => value.trim().toLowerCase())
-        .where((value) => value.isNotEmpty)
-        .toSet();
-    final childPackages = child.policy.blockedPackages
-        .map((value) => value.trim().toLowerCase())
-        .where((value) => value.isNotEmpty)
-        .toSet();
-    final snapshotPackages = snapshot.blockedPackages
-        .map((value) => value.trim().toLowerCase())
-        .where((value) => value.isNotEmpty)
-        .toSet();
-
-    final hasPolicyMismatch =
-        !_sameStringSet(childCategories, snapshotCategories) ||
-            !_sameStringSet(childServices, snapshotServices) ||
-            !_sameStringSet(childDomains, snapshotDomains) ||
-            !_sameStringSet(childPackages, snapshotPackages);
-    final hasPauseMismatch = !_sameNullableDateTime(
-      child.pausedUntil,
-      snapshot.pausedUntil,
-    );
-    final hasManualModeMismatch = !_sameManualMode(
-      manualMode,
-      snapshot.manualMode,
-    );
-    final hasModeOverridesMismatch = !_sameModeOverrides(
-      child.policy.modeOverrides,
-      snapshot.modeOverridesResolved,
-    );
-
-    if (!hasPolicyMismatch &&
-        !hasPauseMismatch &&
-        !hasManualModeMismatch &&
-        !hasModeOverridesMismatch) {
-      return false;
-    }
-
-    // Effective policy is the canonical source of truth. The top-level child
-    // document `updatedAt` is also touched by heartbeats/device metadata writes,
-    // so it cannot be used to invalidate a newer effective snapshot.
-    //
-    // If fields differ, prefer the effective snapshot until a newer effective
-    // policy version arrives.
-    return false;
-  }
-
-  bool _sameStringSet(Set<String> left, Set<String> right) {
-    if (identical(left, right)) {
-      return true;
-    }
-    if (left.length != right.length) {
-      return false;
-    }
-    return left.containsAll(right);
-  }
-
-  bool _sameNullableDateTime(DateTime? left, DateTime? right) {
-    if (left == null || right == null) {
-      return left == right;
-    }
-    return left.isAtSameMomentAs(right);
-  }
-
-  bool _sameManualMode(_ManualModeOverride? left, _ManualModeOverride? right) {
-    if (left == null || right == null) {
-      return left == right;
-    }
-    return left.mode == right.mode &&
-        _sameNullableDateTime(left.setAt, right.setAt) &&
-        _sameNullableDateTime(left.expiresAt, right.expiresAt);
-  }
-
-  bool _sameModeOverrides(
-    Map<String, ModeOverrideSet> left,
-    Map<String, ModeOverrideSet> right,
-  ) {
-    if (left.length != right.length) {
-      return false;
-    }
-    for (final entry in left.entries) {
-      final rightValue = right[entry.key];
-      if (rightValue == null) {
-        return false;
-      }
-      if (!_sameModeOverrideSet(entry.value, rightValue)) {
-        return false;
+    if (policyVersion != null && policyVersion > 0) {
+      final currentVersion = _lastAppliedPolicyVersion ?? 0;
+      if (policyVersion > currentVersion) {
+        _lastAppliedPolicyVersion = policyVersion;
       }
     }
-    return true;
-  }
-
-  bool _sameModeOverrideSet(ModeOverrideSet left, ModeOverrideSet right) {
-    bool sameList(List<String> first, List<String> second) {
-      final firstSet = first
-          .map((value) => value.trim().toLowerCase())
-          .where((value) => value.isNotEmpty)
-          .toSet();
-      final secondSet = second
-          .map((value) => value.trim().toLowerCase())
-          .where((value) => value.isNotEmpty)
-          .toSet();
-      return _sameStringSet(firstSet, secondSet);
+    // ChildEffectivePolicySyncService is the only Flutter path allowed to
+    // forward effective_policy snapshots to native. Child status UI observers
+    // must not trigger direct policy application to avoid apply/sync races.
+    if (manualMode != null || forceRecheck) {
+      // Intentionally no-op; keep arguments referenced for traceability.
     }
-
-    return sameList(left.forceBlockServices, right.forceBlockServices) &&
-        sameList(left.forceAllowServices, right.forceAllowServices) &&
-        sameList(left.forceBlockPackages, right.forceBlockPackages) &&
-        sameList(left.forceAllowPackages, right.forceAllowPackages) &&
-        sameList(left.forceBlockDomains, right.forceBlockDomains) &&
-        sameList(left.forceAllowDomains, right.forceAllowDomains);
-  }
-
-  // ignore: unused_element
-  void _enqueueProtectionApply(_QueuedProtectionApply next) {
-    final nextVersion = next.policyVersion;
-    if (nextVersion != null) {
-      final hasNewerQueuedVersion = _pendingProtectionApplies.any((queued) {
-        final queuedVersion = queued.policyVersion;
-        return queuedVersion != null && queuedVersion > nextVersion;
-      });
-      if (hasNewerQueuedVersion) {
-        return;
-      }
-      _pendingProtectionApplies.removeWhere((queued) {
-        final queuedVersion = queued.policyVersion;
-        return queuedVersion == null || queuedVersion <= nextVersion;
-      });
-    }
-
-    final duplicateQueued = _pendingProtectionApplies.any((queued) {
-      return queued.policySignature == next.policySignature &&
-          queued.policyVersion == next.policyVersion &&
-          queued.forceRecheck == next.forceRecheck;
-    });
-    if (duplicateQueued) {
-      return;
-    }
-    _pendingProtectionApplies.addLast(next);
   }
 
   Future<void> _drainProtectionApplyQueue() async {
@@ -1842,13 +1639,7 @@ class _ChildStatusScreenState extends State<ChildStatusScreen>
     String? parentId,
     String? childId,
   }) async {
-    return _vpnService.applyPolicy(
-      policyJson: <String, dynamic>{
-        'blockedCategories': blockedCategories,
-        'blockedDomainsResolved': blockedDomains,
-        'blockedDomains': blockedDomains,
-        'temporaryAllowedDomainsResolved': temporaryAllowedDomains,
-      },
+    return _vpnService.syncEffectivePolicyNow(
       parentId: parentId,
       childId: childId,
     );
@@ -2561,6 +2352,7 @@ class _ChildStatusScreenState extends State<ChildStatusScreen>
     _ensureAccessRequestSubscription();
     _ensureChildProfileSubscription();
     _ensurePolicyEventSubscription();
+    _ensureEffectivePolicySubscription();
 
     return StreamBuilder<DocumentSnapshot<Map<String, dynamic>>>(
       stream: _firestore.collection('children').doc(childId).snapshots(),
@@ -2600,6 +2392,16 @@ class _ChildStatusScreenState extends State<ChildStatusScreen>
           );
         }
         final rawData = doc.data() ?? const <String, dynamic>{};
+        final parentSessionRevokedAt =
+            _parseNullableDateTime(rawData['parentSessionRevokedAt']);
+        if (parentSessionRevokedAt != null) {
+          unawaited(_handleParentSessionRevoked());
+          return _buildMissingState(
+            context,
+            message:
+                'Parent session ended. Ask your parent to pair this phone again.',
+          );
+        }
         _handledMissingChildProfile = false;
         final manualMode = _manualModeFromRaw(rawData['manualMode']);
         _lastManualModeOverride = manualMode;
@@ -2617,20 +2419,44 @@ class _ChildStatusScreenState extends State<ChildStatusScreen>
           });
         }
         final child = ChildProfile.fromFirestore(doc);
-        _lastKnownChild = child;
+        final effectiveSnapshot = _lastEffectivePolicySnapshot;
+        final displayChild = effectiveSnapshot == null
+            ? child
+            : _mergeChildWithEffectivePolicy(child, effectiveSnapshot);
+        final displayManualMode =
+            effectiveSnapshot?.manualMode ?? manualMode;
+        _lastKnownChild = displayChild;
         unawaited(_drainPendingPolicyEvents());
         unawaited(
           _ensureProtectionApplied(
-            child,
-            manualMode: manualMode,
+            displayChild,
+            manualMode: displayManualMode,
+            policyVersion: effectiveSnapshot?.version,
           ),
         );
         return _buildContent(
           context,
-          child,
-          manualMode: manualMode,
+          displayChild,
+          manualMode: displayManualMode,
         );
       },
+    );
+  }
+
+  ChildProfile _mergeChildWithEffectivePolicy(
+    ChildProfile child,
+    _EffectivePolicySnapshot snapshot,
+  ) {
+    return child.copyWith(
+      policy: child.policy.copyWith(
+        blockedCategories: snapshot.blockedCategories,
+        blockedServices: snapshot.blockedServices,
+        blockedDomains: snapshot.blockedDomains,
+        blockedPackages: snapshot.blockedPackages,
+        modeOverrides: snapshot.modeOverridesResolved,
+        policySchemaVersion: snapshot.policySchemaVersion,
+      ),
+      pausedUntil: snapshot.pausedUntil,
     );
   }
 
@@ -2648,6 +2474,7 @@ class _ChildStatusScreenState extends State<ChildStatusScreen>
         _parentId = recovered.parentId;
         _childId = recovered.childId;
       });
+      unawaited(ChildEffectivePolicySyncService.instance.start());
     } finally {
       _recoveringPairing = false;
     }
@@ -2679,18 +2506,6 @@ class _ChildStatusScreenState extends State<ChildStatusScreen>
     _nextApprovedExceptionExpiry = null;
 
     try {
-      await _vpnService.applyPolicy(
-        policyJson: const <String, dynamic>{
-          'blockedCategories': <String>[],
-          'blockedDomainsResolved': <String>[],
-          'temporaryAllowedDomainsResolved': <String>[],
-        },
-      );
-    } catch (_) {
-      // Best-effort cleanup.
-    }
-
-    try {
       await _vpnService.stopVpn();
     } catch (_) {
       // Best-effort cleanup.
@@ -2711,6 +2526,31 @@ class _ChildStatusScreenState extends State<ChildStatusScreen>
       );
     } catch (_) {
       // Best-effort user visibility.
+    }
+  }
+
+  Future<void> _handleParentSessionRevoked() async {
+    if (_handlingParentSessionRevocation) {
+      return;
+    }
+    _handlingParentSessionRevocation = true;
+    try {
+      await _handleMissingChildProfile();
+      try {
+        await FirebaseAuth.instance.signOut();
+      } catch (_) {
+        // Best-effort auth reset for child bootstrap.
+      }
+      if (!mounted) {
+        return;
+      }
+      setState(() {
+        _parentId = null;
+        _childId = null;
+      });
+      _scheduleSetupRedirect();
+    } finally {
+      _handlingParentSessionRevocation = false;
     }
   }
 

@@ -1,6 +1,7 @@
 import 'dart:async';
 
 import 'package:flutter/material.dart';
+import 'package:trustbridge_app/core/utils/responsive.dart';
 import 'package:trustbridge_app/l10n/app_localizations.dart';
 import 'package:trustbridge_app/l10n/app_localizations_en.dart';
 import 'package:trustbridge_app/models/child_profile.dart';
@@ -20,6 +21,8 @@ import 'package:trustbridge_app/screens/usage_reports_screen.dart';
 import 'package:trustbridge_app/services/auth_service.dart';
 import 'package:trustbridge_app/services/app_mode_service.dart';
 import 'package:trustbridge_app/services/firestore_service.dart';
+import 'package:trustbridge_app/theme/app_text_styles.dart';
+import 'package:trustbridge_app/theme/app_theme.dart';
 import 'package:url_launcher/url_launcher.dart';
 
 class ParentSettingsScreen extends StatefulWidget {
@@ -62,109 +65,138 @@ class _ParentSettingsScreenState extends State<ParentSettingsScreen> {
 
   @override
   Widget build(BuildContext context) {
+    R.init(context);
     final l10n = _l10n(context);
     final parentId = _parentId;
     if (parentId == null || parentId.trim().isEmpty) {
       return Scaffold(
-        appBar: AppBar(title: Text(l10n.settingsTitle)),
-        body: Center(child: Text(l10n.notLoggedInMessage)),
+        body: Center(
+          child: Text(
+            l10n.notLoggedInMessage,
+            style: AppTextStyles.body(color: AppColors.textSecondary),
+          ),
+        ),
       );
     }
 
     return Scaffold(
-      appBar: AppBar(
-        title: Text(l10n.settingsTitle),
-      ),
-      body: StreamBuilder<Map<String, dynamic>?>(
-        stream: _resolvedFirestoreService.watchParentProfile(parentId),
-        builder: (
-          BuildContext context,
-          AsyncSnapshot<Map<String, dynamic>?> snapshot,
-        ) {
-          if (snapshot.connectionState == ConnectionState.waiting &&
-              !snapshot.hasData) {
-            return const Center(child: CircularProgressIndicator());
-          }
+      body: SafeArea(
+        child: StreamBuilder<Map<String, dynamic>?>(
+          stream: _resolvedFirestoreService.watchParentProfile(parentId),
+          builder: (
+            BuildContext context,
+            AsyncSnapshot<Map<String, dynamic>?> snapshot,
+          ) {
+            if (snapshot.connectionState == ConnectionState.waiting &&
+                !snapshot.hasData) {
+              return const Center(child: CircularProgressIndicator());
+            }
 
-          if (snapshot.hasError) {
-            return Center(
-              child: Padding(
-                padding: const EdgeInsets.symmetric(horizontal: 24),
-                child: Column(
-                  mainAxisAlignment: MainAxisAlignment.center,
-                  children: [
-                    const Icon(Icons.error_outline,
-                        size: 48, color: Colors.red),
-                    const SizedBox(height: 12),
-                    const Text(
-                      'Failed to load settings',
-                      style:
-                          TextStyle(fontSize: 18, fontWeight: FontWeight.w700),
-                    ),
-                    const SizedBox(height: 8),
-                    Text('${snapshot.error}', textAlign: TextAlign.center),
-                    const SizedBox(height: 16),
-                    FilledButton(
-                      onPressed: () => setState(() {}),
-                      child: const Text('Retry'),
-                    ),
-                  ],
+            if (snapshot.hasError) {
+              return Center(
+                child: Padding(
+                  padding: const EdgeInsets.symmetric(horizontal: 24),
+                  child: Column(
+                    mainAxisAlignment: MainAxisAlignment.center,
+                    children: [
+                      const Icon(Icons.error_outline,
+                          size: 48, color: AppColors.danger),
+                      const SizedBox(height: 12),
+                      Text(
+                        'Failed to load settings',
+                        style: AppTextStyles.headingLarge(),
+                      ),
+                      const SizedBox(height: 8),
+                      Text(
+                        '${snapshot.error}',
+                        textAlign: TextAlign.center,
+                        style: AppTextStyles.bodySmall(
+                          color: AppColors.textSecondary,
+                        ),
+                      ),
+                      const SizedBox(height: 16),
+                      GestureDetector(
+                        onTap: () => setState(() {}),
+                        child: Container(
+                          padding: const EdgeInsets.symmetric(
+                            horizontal: 24,
+                            vertical: 10,
+                          ),
+                          decoration: BoxDecoration(
+                            color: AppColors.primaryDim,
+                            borderRadius: BorderRadius.circular(12),
+                          ),
+                          child: Text(
+                            'Retry',
+                            style: AppTextStyles.label(
+                              color: AppColors.primary,
+                            ),
+                          ),
+                        ),
+                      ),
+                    ],
+                  ),
                 ),
+              );
+            }
+
+            final profile = snapshot.data;
+            _hydrateFromProfile(profile);
+
+            final accountEmail = _extractString(profile, 'email') ??
+                (widget.parentIdOverride == null
+                    ? _resolvedAuthService.currentUser?.email
+                    : null) ??
+                'No email linked';
+            final accountPhone = _extractString(profile, 'phone') ??
+                (widget.parentIdOverride == null
+                    ? _resolvedAuthService.currentUser?.phoneNumber
+                    : null) ??
+                'No phone linked';
+            final displayName = _extractString(profile, 'displayName') ??
+                _displayNameFromEmail(accountEmail);
+            final subscriptionTier = _extractSubscriptionTier(profile);
+            final isPremium = subscriptionTier == 'premium';
+
+            return SingleChildScrollView(
+              padding: EdgeInsets.fromLTRB(
+                R.sp(20),
+                R.sp(20),
+                R.sp(20),
+                R.sp(28),
+              ),
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.stretch,
+                children: [
+                  _buildProfileCard(
+                    context,
+                    displayName: displayName,
+                    email: accountEmail,
+                  ),
+                  const SizedBox(height: 24),
+                  _buildSectionHeader('Account'),
+                  _buildAccountCard(
+                    context,
+                    email: accountEmail,
+                    phone: accountPhone,
+                  ),
+                  const SizedBox(height: 24),
+                  _buildSectionHeader('Subscription'),
+                  _buildSubscriptionCard(
+                    context,
+                    isPremium: isPremium,
+                  ),
+                  const SizedBox(height: 24),
+                  _buildSectionHeader('Security & Privacy'),
+                  _buildSecurityPrivacyCard(context),
+                  const SizedBox(height: 24),
+                  _buildSectionHeader('About'),
+                  _buildAboutCard(context),
+                ],
               ),
             );
-          }
-
-          final profile = snapshot.data;
-          _hydrateFromProfile(profile);
-
-          final accountEmail = _extractString(profile, 'email') ??
-              (widget.parentIdOverride == null
-                  ? _resolvedAuthService.currentUser?.email
-                  : null) ??
-              'No email linked';
-          final accountPhone = _extractString(profile, 'phone') ??
-              (widget.parentIdOverride == null
-                  ? _resolvedAuthService.currentUser?.phoneNumber
-                  : null) ??
-              'No phone linked';
-          final displayName = _extractString(profile, 'displayName') ??
-              _displayNameFromEmail(accountEmail);
-          final subscriptionTier = _extractSubscriptionTier(profile);
-          final isPremium = subscriptionTier == 'premium';
-
-          return SingleChildScrollView(
-            padding: const EdgeInsets.fromLTRB(16, 12, 16, 28),
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.stretch,
-              children: [
-                _buildProfileCard(
-                  context,
-                  displayName: displayName,
-                  email: accountEmail,
-                ),
-                const SizedBox(height: 18),
-                _buildSectionHeader('Account'),
-                _buildAccountCard(
-                  context,
-                  email: accountEmail,
-                  phone: accountPhone,
-                ),
-                const SizedBox(height: 18),
-                _buildSectionHeader('Subscription'),
-                _buildSubscriptionCard(
-                  context,
-                  isPremium: isPremium,
-                ),
-                const SizedBox(height: 18),
-                _buildSectionHeader('Security & Privacy'),
-                _buildSecurityPrivacyCard(context),
-                const SizedBox(height: 18),
-                _buildSectionHeader('About'),
-                _buildAboutCard(context),
-              ],
-            ),
-          );
-        },
+          },
+        ),
       ),
     );
   }
@@ -174,49 +206,50 @@ class _ParentSettingsScreenState extends State<ParentSettingsScreen> {
     required String displayName,
     required String email,
   }) {
-    return Card(
-      elevation: 0,
-      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(20)),
-      child: Padding(
-        key: const Key('settings_profile_card'),
-        padding: const EdgeInsets.all(18),
-        child: Row(
-          children: [
-            CircleAvatar(
-              radius: 28,
-              backgroundColor:
-                  Theme.of(context).colorScheme.primary.withValues(alpha: 0.16),
-              foregroundColor: Theme.of(context).colorScheme.primary,
+    final initial = displayName.isNotEmpty ? displayName[0].toUpperCase() : 'P';
+    return Padding(
+      key: const Key('settings_profile_card'),
+      padding: const EdgeInsets.only(bottom: 4),
+      child: Row(
+        children: [
+          Container(
+            width: 56,
+            height: 56,
+            decoration: BoxDecoration(
+              color: AppColors.primaryDim,
+              borderRadius: BorderRadius.circular(18),
+            ),
+            child: Center(
               child: Text(
-                displayName.isNotEmpty ? displayName[0].toUpperCase() : 'P',
-                style:
-                    const TextStyle(fontWeight: FontWeight.w800, fontSize: 22),
+                initial,
+                style: AppTextStyles.displayMedium(color: AppColors.primary),
               ),
             ),
-            const SizedBox(width: 14),
-            Expanded(
-              child: Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  Text(
-                    displayName,
-                    style: Theme.of(context).textTheme.titleMedium?.copyWith(
-                          fontWeight: FontWeight.w800,
-                          fontSize: 18,
-                        ),
+          ),
+          const SizedBox(width: 16),
+          Expanded(
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Text(
+                  displayName,
+                  maxLines: 1,
+                  overflow: TextOverflow.ellipsis,
+                  style: AppTextStyles.headingLarge(),
+                ),
+                const SizedBox(height: 2),
+                Text(
+                  email,
+                  maxLines: 1,
+                  overflow: TextOverflow.ellipsis,
+                  style: AppTextStyles.bodySmall(
+                    color: AppColors.textSecondary,
                   ),
-                  const SizedBox(height: 4),
-                  Text(
-                    email,
-                    style: Theme.of(context).textTheme.bodySmall?.copyWith(
-                          color: Theme.of(context).colorScheme.onSurfaceVariant,
-                        ),
-                  ),
-                ],
-              ),
+                ),
+              ],
             ),
-          ],
-        ),
+          ),
+        ],
       ),
     );
   }
@@ -226,41 +259,31 @@ class _ParentSettingsScreenState extends State<ParentSettingsScreen> {
     required String email,
     required String phone,
   }) {
-    return Card(
-      elevation: 0,
-      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
-      child: Column(
-        children: [
-          ListTile(
-            key: const Key('settings_change_password_tile'),
-            leading: const Icon(Icons.lock_outline),
-            title: const Text('Change Password'),
-            trailing: const Icon(Icons.chevron_right),
-            onTap: () => _openChangePassword(context, email),
+    return Column(
+      children: [
+        _SettingsRow(
+          key: const Key('settings_change_password_tile'),
+          icon: Icons.lock_outline,
+          label: 'Change Password',
+          onTap: () => _openChangePassword(context, email),
+        ),
+        _SettingsRow(
+          key: const Key('settings_phone_tile'),
+          icon: Icons.phone_outlined,
+          label: 'Phone',
+          subtitle: phone,
+          onTap: () => ScaffoldMessenger.of(context).showSnackBar(
+            const SnackBar(
+                content: Text('Phone linking is unavailable right now.')),
           ),
-          const Divider(height: 1),
-          ListTile(
-            key: const Key('settings_phone_tile'),
-            leading: const Icon(Icons.phone_outlined),
-            title: const Text('Phone'),
-            subtitle: Text(phone),
-            trailing: const Icon(Icons.chevron_right),
-            onTap: () => ScaffoldMessenger.of(context).showSnackBar(
-              const SnackBar(
-                  content: Text('Phone linking is unavailable right now.')),
-            ),
-          ),
-          const Divider(height: 1),
-          ListTile(
-            key: const Key('settings_family_management_tile'),
-            leading: const Icon(Icons.family_restroom),
-            title: const Text('Family Management'),
-            subtitle: const Text('Manage parents and child seats'),
-            trailing: const Icon(Icons.chevron_right),
-            onTap: () => _openFamilyManagement(context),
-          ),
-        ],
-      ),
+        ),
+        _SettingsRow(
+          key: const Key('settings_family_management_tile'),
+          icon: Icons.family_restroom,
+          label: 'Family Management',
+          onTap: () => _openFamilyManagement(context),
+        ),
+      ],
     );
   }
 
@@ -268,61 +291,42 @@ class _ParentSettingsScreenState extends State<ParentSettingsScreen> {
     BuildContext context, {
     required bool isPremium,
   }) {
-    return Card(
-      elevation: 0,
-      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
-      child: ListTile(
-        key: const Key('settings_subscription_tile'),
-        leading: const Icon(Icons.workspace_premium_outlined),
-        title: const Text('Family Subscription'),
-        subtitle: const Text('Manage your TrustBridge plan'),
-        trailing: Row(
-          mainAxisSize: MainAxisSize.min,
-          children: [
-            Container(
-              padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
-              decoration: BoxDecoration(
-                color: isPremium
-                    ? Colors.amber.withValues(alpha: 0.2)
-                    : Colors.blueGrey.withValues(alpha: 0.16),
-                borderRadius: BorderRadius.circular(999),
-              ),
-              child: Text(
-                isPremium ? 'PREMIUM' : 'FREE',
-                style: TextStyle(
-                  color: isPremium ? Colors.amber.shade800 : Colors.blueGrey,
-                  fontSize: 11,
-                  fontWeight: FontWeight.w700,
-                ),
-              ),
-            ),
-            const SizedBox(width: 6),
-            const Icon(Icons.chevron_right),
-          ],
+    return _SettingsRow(
+      key: const Key('settings_subscription_tile'),
+      icon: Icons.workspace_premium_outlined,
+      label: 'Family Subscription',
+      trailing: Container(
+        padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
+        decoration: BoxDecoration(
+          color: isPremium ? AppColors.warningDim : AppColors.surfaceBorder,
+          borderRadius: BorderRadius.circular(999),
         ),
-        onTap: () {
-          Navigator.of(context).push(
-            MaterialPageRoute(
-              builder: (_) => const PremiumScreen(),
-            ),
-          );
-        },
+        child: Text(
+          isPremium ? 'PREMIUM' : 'FREE',
+          style: AppTextStyles.labelCaps(
+            color: isPremium ? AppColors.gold : AppColors.textMuted,
+          ),
+        ),
       ),
+      onTap: () {
+        Navigator.of(context).push(
+          MaterialPageRoute(
+            builder: (_) => const PremiumScreen(),
+          ),
+        );
+      },
     );
   }
 
   Widget _buildSecurityPrivacyCard(BuildContext context) {
-    return Card(
-      elevation: 0,
-      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
-      child: Column(
-        children: [
-          SwitchListTile(
-            key: const Key('settings_biometric_login_switch'),
+    return Column(
+      children: [
+        _SettingsRow(
+          key: const Key('settings_biometric_login_switch'),
+          icon: Icons.fingerprint,
+          label: 'Biometric Login',
+          trailing: Switch.adaptive(
             value: _biometricLoginEnabled,
-            title: const Text('Biometric Login'),
-            subtitle:
-                const Text('Use fingerprint/face unlock for parent controls'),
             onChanged: _isSaving
                 ? null
                 : (bool value) {
@@ -330,27 +334,23 @@ class _ParentSettingsScreenState extends State<ParentSettingsScreen> {
                       _biometricLoginEnabled = value;
                     });
                     unawaited(
-                      _saveSettings(
-                        biometricLoginEnabled: value,
-                      ),
+                      _saveSettings(biometricLoginEnabled: value),
                     );
                   },
           ),
-          const Divider(height: 1),
-          ListTile(
-            key: const Key('settings_privacy_center_tile'),
-            leading: const Icon(Icons.privacy_tip_outlined),
-            title: const Text('Privacy Center'),
-            subtitle: const Text('Control data and visibility settings'),
-            trailing: const Icon(Icons.chevron_right),
-            onTap: () => _openPrivacyCenter(context),
-          ),
-          const Divider(height: 1),
-          SwitchListTile(
-            key: const Key('settings_incognito_mode_switch'),
+        ),
+        _SettingsRow(
+          key: const Key('settings_privacy_center_tile'),
+          icon: Icons.privacy_tip_outlined,
+          label: 'Privacy Center',
+          onTap: () => _openPrivacyCenter(context),
+        ),
+        _SettingsRow(
+          key: const Key('settings_incognito_mode_switch'),
+          icon: Icons.visibility_off_outlined,
+          label: 'Incognito Mode',
+          trailing: Switch.adaptive(
             value: _incognitoModeEnabled,
-            title: const Text('Incognito Mode'),
-            subtitle: const Text('Hide sensitive activity details'),
             onChanged: _isSaving
                 ? null
                 : (bool value) {
@@ -358,189 +358,148 @@ class _ParentSettingsScreenState extends State<ParentSettingsScreen> {
                       _incognitoModeEnabled = value;
                     });
                     unawaited(
-                      _saveSettings(
-                        incognitoModeEnabled: value,
-                      ),
+                      _saveSettings(incognitoModeEnabled: value),
                     );
                   },
           ),
-          const Divider(height: 1),
-          ListTile(
-            key: const Key('settings_protection_settings_tile'),
-            leading: const Icon(Icons.shield_moon_outlined),
-            title: const Text('Protection Settings'),
-            subtitle:
-                const Text('Status, alerts, and advanced troubleshooting'),
-            trailing: const Icon(Icons.chevron_right),
-            onTap: () => _openProtectionSettings(context),
-          ),
-          const Divider(height: 1),
-          ListTile(
-            key: const Key('settings_open_source_blocklists_tile'),
-            leading: const Icon(Icons.cloud_sync_outlined),
-            title: const Text('Open-Source Blocklists'),
-            subtitle: const Text('Automatic daily updates and source status'),
-            trailing: const Icon(Icons.chevron_right),
-            onTap: () => _openBlocklistManagement(context),
-          ),
-          const Divider(height: 1),
-          ListTile(
-            key: const Key('settings_modes_tile'),
-            leading: const Icon(Icons.tune_rounded),
-            title: const Text('Modes'),
-            subtitle: const Text('Free Play, Homework, Bedtime, Lockdown'),
-            trailing: const Icon(Icons.chevron_right),
-            onTap: () => _openModes(context),
-          ),
-          const Divider(height: 1),
-          ListTile(
-            key: const Key('settings_mode_overrides_tile'),
-            leading: const Icon(Icons.rule_folder_outlined),
-            title: const Text('Easy Mode Setup'),
-            subtitle: const Text(
-                'Pick what to block in each mode with simple toggles'),
-            trailing: const Icon(Icons.chevron_right),
-            onTap: () => _openModeOverridesPicker(context),
-          ),
-          const Divider(height: 1),
-          ListTile(
-            key: const Key('settings_alert_preferences_tile'),
-            leading: const Icon(Icons.tune_outlined),
-            title: const Text('Alert Preferences'),
-            subtitle: const Text('Choose which protection alerts you receive'),
-            trailing: const Icon(Icons.chevron_right),
-            onTap: () => _openAlertPreferences(context),
-          ),
-          Padding(
-            padding: const EdgeInsets.fromLTRB(16, 0, 16, 14),
-            child: Text(
-              'TrustBridge never sells your family\'s data.',
-              style: Theme.of(context).textTheme.bodySmall?.copyWith(
-                    color: Theme.of(context).colorScheme.onSurfaceVariant,
-                    fontStyle: FontStyle.italic,
-                  ),
+        ),
+        _SettingsRow(
+          key: const Key('settings_protection_settings_tile'),
+          icon: Icons.shield_moon_outlined,
+          label: 'Protection Settings',
+          onTap: () => _openProtectionSettings(context),
+        ),
+        _SettingsRow(
+          key: const Key('settings_open_source_blocklists_tile'),
+          icon: Icons.cloud_sync_outlined,
+          label: 'Open-Source Blocklists',
+          onTap: () => _openBlocklistManagement(context),
+        ),
+        _SettingsRow(
+          key: const Key('settings_modes_tile'),
+          icon: Icons.tune_rounded,
+          label: 'Modes',
+          onTap: () => _openModes(context),
+        ),
+        _SettingsRow(
+          key: const Key('settings_mode_overrides_tile'),
+          icon: Icons.rule_folder_outlined,
+          label: 'Easy Mode Setup',
+          onTap: () => _openModeOverridesPicker(context),
+        ),
+        _SettingsRow(
+          key: const Key('settings_alert_preferences_tile'),
+          icon: Icons.tune_outlined,
+          label: 'Alert Preferences',
+          onTap: () => _openAlertPreferences(context),
+        ),
+        Padding(
+          padding: const EdgeInsets.fromLTRB(48, 4, 16, 8),
+          child: Text(
+            'TrustBridge never sells your family\'s data.',
+            style: AppTextStyles.bodySmall(
+              color: AppColors.textMuted,
             ),
           ),
-        ],
-      ),
+        ),
+      ],
     );
   }
 
   Widget _buildAboutCard(BuildContext context) {
-    return Card(
-      elevation: 0,
-      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
-      child: Column(
-        children: [
-          ListTile(
-            key: const Key('settings_terms_tile'),
-            leading: const Icon(Icons.description_outlined),
-            title: const Text('Terms of Service'),
-            trailing: const Icon(Icons.chevron_right),
-            onTap: () => _openExternalUrl('https://trustbridge.app/terms'),
-          ),
-          const Divider(height: 1),
-          ListTile(
-            key: const Key('settings_privacy_policy_tile'),
-            leading: const Icon(Icons.policy_outlined),
-            title: const Text('Privacy Policy'),
-            trailing: const Icon(Icons.chevron_right),
-            onTap: () => _openExternalUrl('https://trustbridge.app/privacy'),
-          ),
-          const Divider(height: 1),
-          ListTile(
-            key: const Key('settings_open_source_licenses_tile'),
-            leading: const Icon(Icons.gavel_outlined),
-            title: const Text('Open Source Licenses'),
-            trailing: const Icon(Icons.chevron_right),
-            onTap: () => _openOpenSourceLicenses(context),
-          ),
-          const Divider(height: 1),
-          ListTile(
-            key: const Key('settings_analytics_tile'),
-            leading: const Icon(Icons.bar_chart_outlined),
-            title: const Text('Protection Analytics'),
-            trailing: const Icon(Icons.chevron_right),
-            onTap: () => Navigator.of(context).pushNamed('/dns-analytics'),
-          ),
-          const Divider(height: 1),
-          ListTile(
-            key: const Key('settings_usage_reports_tile'),
-            leading: const Icon(Icons.insights_outlined),
-            title: const Text('Usage Reports'),
-            subtitle: const Text('Screen time and app usage by child'),
-            trailing: const Icon(Icons.chevron_right),
-            onTap: () => _openUsageReports(context),
-          ),
-          const Divider(height: 1),
-          ListTile(
-            key: const Key('settings_bypass_alerts_tile'),
-            leading: const Icon(Icons.notification_important_outlined),
-            title: const Text('Protection Alerts'),
-            subtitle: const Text('Bypass attempts and safety events'),
-            trailing: const Icon(Icons.chevron_right),
-            onTap: () => _openBypassAlerts(context),
-          ),
-          const Divider(height: 1),
-          ListTile(
-            key: const Key('settings_help_support_tile'),
-            leading: const Icon(Icons.support_agent),
-            title: const Text('Help & Support'),
-            trailing: const Icon(Icons.chevron_right),
-            onTap: () => _openHelpSupport(context),
-          ),
-          const Divider(height: 1),
-          ListTile(
-            key: const Key('settings_beta_feedback_tile'),
-            leading: const Icon(Icons.science_outlined),
-            title: const Text('Beta Feedback'),
-            trailing: const Icon(Icons.chevron_right),
-            onTap: () => _openBetaFeedback(context),
-          ),
-          const Divider(height: 1),
-          ListTile(
-            key: const Key('settings_feedback_history_tile'),
-            leading: const Icon(Icons.history),
-            title: const Text('Feedback History'),
-            trailing: const Icon(Icons.chevron_right),
-            onTap: () => _openBetaFeedbackHistory(context),
-          ),
-          const Divider(height: 1),
-          const ListTile(
-            key: Key('settings_version_tile'),
-            leading: Icon(Icons.info_outline),
-            title: Text('Version'),
-            subtitle: Text(
+    return Column(
+      children: [
+        _SettingsRow(
+          key: const Key('settings_terms_tile'),
+          icon: Icons.description_outlined,
+          label: 'Terms of Service',
+          onTap: () => _openExternalUrl('https://trustbridge.app/terms'),
+        ),
+        _SettingsRow(
+          key: const Key('settings_privacy_policy_tile'),
+          icon: Icons.policy_outlined,
+          label: 'Privacy Policy',
+          onTap: () => _openExternalUrl('https://trustbridge.app/privacy'),
+        ),
+        _SettingsRow(
+          key: const Key('settings_open_source_licenses_tile'),
+          icon: Icons.gavel_outlined,
+          label: 'Open Source Licenses',
+          onTap: () => _openOpenSourceLicenses(context),
+        ),
+        _SettingsRow(
+          key: const Key('settings_analytics_tile'),
+          icon: Icons.bar_chart_outlined,
+          label: 'Protection Analytics',
+          onTap: () => Navigator.of(context).pushNamed('/dns-analytics'),
+        ),
+        _SettingsRow(
+          key: const Key('settings_usage_reports_tile'),
+          icon: Icons.insights_outlined,
+          label: 'Usage Reports',
+          onTap: () => _openUsageReports(context),
+        ),
+        _SettingsRow(
+          key: const Key('settings_bypass_alerts_tile'),
+          icon: Icons.notification_important_outlined,
+          label: 'Protection Alerts',
+          onTap: () => _openBypassAlerts(context),
+        ),
+        _SettingsRow(
+          key: const Key('settings_help_support_tile'),
+          icon: Icons.support_agent,
+          label: 'Help & Support',
+          onTap: () => _openHelpSupport(context),
+        ),
+        _SettingsRow(
+          key: const Key('settings_beta_feedback_tile'),
+          icon: Icons.science_outlined,
+          label: 'Beta Feedback',
+          onTap: () => _openBetaFeedback(context),
+        ),
+        _SettingsRow(
+          key: const Key('settings_feedback_history_tile'),
+          icon: Icons.history,
+          label: 'Feedback History',
+          onTap: () => _openBetaFeedbackHistory(context),
+        ),
+        const _SettingsRow(
+          key: Key('settings_version_tile'),
+          icon: Icons.info_outline,
+          label: 'Version',
+          subtitle:
               '${String.fromEnvironment('FLUTTER_BUILD_NAME', defaultValue: '1.0.0-beta.1')} '
               '(Build ${String.fromEnvironment('FLUTTER_BUILD_NUMBER', defaultValue: '114')})',
+        ),
+        const SizedBox(height: 8),
+        GestureDetector(
+          key: const Key('settings_sign_out_tile'),
+          onTap: _signOut,
+          child: Container(
+            width: double.infinity,
+            padding: const EdgeInsets.symmetric(vertical: 14),
+            decoration: BoxDecoration(
+              color: AppColors.dangerDim,
+              borderRadius: BorderRadius.circular(12),
+            ),
+            child: Center(
+              child: Text(
+                'Sign Out',
+                style: AppTextStyles.headingMedium(color: AppColors.danger),
+              ),
             ),
           ),
-          const Divider(height: 1),
-          ListTile(
-            key: const Key('settings_sign_out_tile'),
-            leading: const Icon(Icons.logout, color: Colors.red),
-            title: const Text(
-              'Sign Out',
-              style: TextStyle(color: Colors.red),
-            ),
-            onTap: _signOut,
-          ),
-        ],
-      ),
+        ),
+      ],
     );
   }
 
   Widget _buildSectionHeader(String title) {
     return Padding(
-      padding: const EdgeInsets.only(left: 4, bottom: 6),
+      padding: const EdgeInsets.only(left: 4, bottom: 10),
       child: Text(
         title.toUpperCase(),
-        style: TextStyle(
-          fontSize: 12,
-          fontWeight: FontWeight.w700,
-          letterSpacing: 0.7,
-          color: Theme.of(context).colorScheme.onSurfaceVariant,
-        ),
+        style: AppTextStyles.labelCaps(color: AppColors.textMuted),
       ),
     );
   }
@@ -588,6 +547,19 @@ class _ParentSettingsScreenState extends State<ParentSettingsScreen> {
   }
 
   Future<void> _signOut() async {
+    final parentId = _parentId?.trim();
+    if (parentId != null && parentId.isNotEmpty) {
+      try {
+        await _resolvedFirestoreService.revokeChildSessionsForParent(parentId);
+      } catch (_) {
+        // Best effort: continue sign-out even if network is unavailable.
+      }
+      try {
+        await _resolvedFirestoreService.removeFcmToken(parentId);
+      } catch (_) {
+        // Non-blocking cleanup.
+      }
+    }
     await _resolvedAuthService.signOut();
     await AppModeService().clearMode();
     if (!mounted) {
@@ -869,4 +841,85 @@ class _ParentSettingsScreenState extends State<ParentSettingsScreen> {
 
 AppLocalizations _l10n(BuildContext context) {
   return AppLocalizations.of(context) ?? AppLocalizationsEn();
+}
+
+/// Clean settings row: 32×32 icon square + label + optional trailing.
+class _SettingsRow extends StatelessWidget {
+  const _SettingsRow({
+    super.key,
+    required this.icon,
+    required this.label,
+    this.subtitle,
+    this.trailing,
+    this.onTap,
+  });
+
+  final IconData icon;
+  final String label;
+  final String? subtitle;
+  final Widget? trailing;
+  final VoidCallback? onTap;
+
+  @override
+  Widget build(BuildContext context) {
+    return GestureDetector(
+      onTap: onTap,
+      behavior: HitTestBehavior.opaque,
+      child: Padding(
+        padding: const EdgeInsets.symmetric(vertical: 8),
+        child: Row(
+          children: [
+            // Icon square
+            Container(
+              width: 32,
+              height: 32,
+              decoration: BoxDecoration(
+                color: AppColors.surfaceRaised,
+                borderRadius: BorderRadius.circular(8),
+              ),
+              child: Icon(
+                icon,
+                size: 16,
+                color: AppColors.textSecondary,
+              ),
+            ),
+            const SizedBox(width: 12),
+            // Label
+            Expanded(
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Text(
+                    label,
+                    maxLines: 1,
+                    overflow: TextOverflow.ellipsis,
+                    style: AppTextStyles.body(),
+                  ),
+                  if (subtitle != null)
+                    Text(
+                      subtitle!,
+                      maxLines: 1,
+                      overflow: TextOverflow.ellipsis,
+                      style: AppTextStyles.bodySmall(
+                        color: AppColors.textMuted,
+                      ),
+                    ),
+                ],
+              ),
+            ),
+            const SizedBox(width: 8),
+            // Trailing
+            trailing ??
+                (onTap != null
+                    ? const Icon(
+                        Icons.chevron_right,
+                        size: 18,
+                        color: AppColors.textMuted,
+                      )
+                    : const SizedBox.shrink()),
+          ],
+        ),
+      ),
+    );
+  }
 }

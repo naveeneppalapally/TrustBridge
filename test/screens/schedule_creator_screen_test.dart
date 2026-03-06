@@ -30,8 +30,14 @@ void main() {
       await tester.pump();
 
       expect(find.text('Edit Schedule'), findsOneWidget);
-      expect(find.text('1. Schedule type'), findsOneWidget);
-      expect(find.text('4. During this time'), findsOneWidget);
+      expect(find.text('SCHEDULE TYPE'), findsOneWidget);
+      await tester.dragUntilVisible(
+        find.text('DURING THIS TIME'),
+        find.byType(ListView),
+        const Offset(0, -220),
+      );
+      await tester.pumpAndSettle();
+      expect(find.text('DURING THIS TIME'), findsOneWidget);
       await tester.dragUntilVisible(
         find.byKey(const Key('schedule_save_button')),
         find.byType(ListView),

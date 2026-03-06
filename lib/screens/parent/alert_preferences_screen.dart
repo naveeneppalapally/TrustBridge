@@ -1,7 +1,10 @@
 import 'package:flutter/material.dart';
 
+import '../../core/utils/responsive.dart';
 import '../../services/auth_service.dart';
 import '../../services/firestore_service.dart';
+import '../../theme/app_text_styles.dart';
+import '../../theme/app_theme.dart';
 
 /// Parent alert preference configuration screen.
 class AlertPreferencesScreen extends StatefulWidget {
@@ -87,100 +90,156 @@ class _AlertPreferencesScreenState extends State<AlertPreferencesScreen> {
 
   @override
   Widget build(BuildContext context) {
+    R.init(context);
     final parentId = _parentId;
     if (parentId == null || parentId.isEmpty) {
       return Scaffold(
-        appBar: AppBar(title: const Text('Alert Preferences')),
-        body: const Center(child: Text('Please sign in first.')),
+        body: Center(
+          child: Text(
+            'Please sign in first.',
+            style: AppTextStyles.body(color: AppColors.textSecondary),
+          ),
+        ),
       );
     }
 
     return Scaffold(
-      appBar: AppBar(title: const Text('Alert Preferences')),
-      body: _loading
-          ? const Center(child: CircularProgressIndicator())
-          : ListView(
-              padding: const EdgeInsets.fromLTRB(16, 12, 16, 24),
-              children: [
-                const Text(
-                  'Notify me when:',
-                  style: TextStyle(fontWeight: FontWeight.w700),
-                ),
-                const SizedBox(height: 12),
-                _buildToggle(
-                  title: 'Protection turned off',
-                  value: _vpnDisabled,
-                  alwaysOn: true,
-                  onChanged: (value) => _update(parentId, vpnDisabled: value),
-                ),
-                _buildToggle(
-                  title: 'Uninstall attempt',
-                  value: _uninstallAttempt,
-                  alwaysOn: true,
-                  onChanged: (value) =>
-                      _update(parentId, uninstallAttempt: value),
-                ),
-                _buildToggle(
-                  title: 'Network settings changed',
-                  value: _privateDnsChanged,
-                  alwaysOn: false,
-                  onChanged: (value) =>
-                      _update(parentId, privateDnsChanged: value),
-                ),
-                _buildToggle(
-                  title: 'Device offline (30 min)',
-                  value: _deviceOffline30m,
-                  alwaysOn: false,
-                  onChanged: (value) =>
-                      _update(parentId, deviceOffline30m: value),
-                ),
-                _buildToggle(
-                  title: 'Device offline (24 hours)',
-                  value: _deviceOffline24h,
-                  alwaysOn: false,
-                  premiumLocked: !_isPremium,
-                  onChanged: (value) =>
-                      _update(parentId, deviceOffline24h: value),
-                ),
-                if (!_isPremium) ...[
-                  const SizedBox(height: 8),
-                  Container(
-                    padding: const EdgeInsets.all(10),
-                    decoration: BoxDecoration(
-                      color: Colors.blue.withValues(alpha: 0.08),
-                      borderRadius: BorderRadius.circular(10),
-                      border: Border.all(
-                          color: Colors.blue.withValues(alpha: 0.25)),
+      body: SafeArea(
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Padding(
+              padding: EdgeInsets.fromLTRB(R.sp(8), R.sp(8), R.sp(8), 0),
+              child: Row(
+                children: [
+                  IconButton(
+                    icon: const Icon(
+                      Icons.arrow_back_rounded,
+                      color: AppColors.textSecondary,
                     ),
-                    child: const Text(
-                      '24-hour offline and email alerts are available on Premium.',
-                    ),
+                    onPressed: () => Navigator.of(context).pop(),
                   ),
                 ],
-                const Divider(height: 32),
-                CheckboxListTile(
-                  contentPadding: EdgeInsets.zero,
-                  value: _emailSerious,
-                  title: const Text('Also send email for serious alerts'),
-                  subtitle: Text(
-                    _isPremium ? '(requires email on file)' : 'Premium feature',
-                  ),
-                  onChanged: _saving || !_isPremium
-                      ? null
-                      : (value) => _update(
-                            parentId,
-                            emailSeriousAlerts: value ?? false,
-                          ),
-                ),
-                const SizedBox(height: 8),
-                Text(
-                  'Safety alerts stay on by default to protect your child.',
-                  style: Theme.of(context).textTheme.bodySmall?.copyWith(
-                        color: Theme.of(context).colorScheme.onSurfaceVariant,
-                      ),
-                ),
-              ],
+              ),
             ),
+            Padding(
+              padding: EdgeInsets.fromLTRB(R.sp(20), R.sp(4), R.sp(20), 0),
+              child: Text(
+                'Alert Preferences',
+                style: AppTextStyles.displayMedium(),
+              ),
+            ),
+            const SizedBox(height: 12),
+            Expanded(
+              child: _loading
+                  ? const Center(child: CircularProgressIndicator())
+                  : ListView(
+                      padding: EdgeInsets.fromLTRB(
+                        R.sp(20), 0, R.sp(20), R.sp(24),
+                      ),
+                      children: [
+                        Text(
+                          'SAFETY ALERTS',
+                          style: AppTextStyles.labelCaps(
+                            color: AppColors.textMuted,
+                          ),
+                        ),
+                        const SizedBox(height: 12),
+                        _buildToggle(
+                          title: 'Protection turned off',
+                          value: _vpnDisabled,
+                          alwaysOn: true,
+                          onChanged: (value) =>
+                              _update(parentId, vpnDisabled: value),
+                        ),
+                        _buildToggle(
+                          title: 'Uninstall attempt',
+                          value: _uninstallAttempt,
+                          alwaysOn: true,
+                          onChanged: (value) =>
+                              _update(parentId, uninstallAttempt: value),
+                        ),
+                        const SizedBox(height: 16),
+                        Text(
+                          'CONFIGURABLE',
+                          style: AppTextStyles.labelCaps(
+                            color: AppColors.textMuted,
+                          ),
+                        ),
+                        const SizedBox(height: 12),
+                        _buildToggle(
+                          title: 'Network settings changed',
+                          value: _privateDnsChanged,
+                          alwaysOn: false,
+                          onChanged: (value) =>
+                              _update(parentId, privateDnsChanged: value),
+                        ),
+                        _buildToggle(
+                          title: 'Device offline (30 min)',
+                          value: _deviceOffline30m,
+                          alwaysOn: false,
+                          onChanged: (value) =>
+                              _update(parentId, deviceOffline30m: value),
+                        ),
+                        _buildToggle(
+                          title: 'Device offline (24 hours)',
+                          value: _deviceOffline24h,
+                          alwaysOn: false,
+                          premiumLocked: !_isPremium,
+                          onChanged: (value) =>
+                              _update(parentId, deviceOffline24h: value),
+                        ),
+                        if (!_isPremium) ...[
+                          const SizedBox(height: 8),
+                          Container(
+                            padding: const EdgeInsets.all(12),
+                            decoration: BoxDecoration(
+                              color: AppColors.primaryDim,
+                              borderRadius: BorderRadius.circular(10),
+                              border: Border.all(
+                                color: AppColors.primary
+                                    .withValues(alpha: 0.25),
+                              ),
+                            ),
+                            child: Text(
+                              '24-hour offline and email alerts are available on Premium.',
+                              style: AppTextStyles.bodySmall(
+                                color: AppColors.primary,
+                              ),
+                            ),
+                          ),
+                        ],
+                        const SizedBox(height: 16),
+                        Text(
+                          'EMAIL',
+                          style: AppTextStyles.labelCaps(
+                            color: AppColors.textMuted,
+                          ),
+                        ),
+                        const SizedBox(height: 12),
+                        _buildToggle(
+                          title: 'Email for serious alerts',
+                          value: _emailSerious,
+                          alwaysOn: false,
+                          premiumLocked: !_isPremium,
+                          onChanged: (value) => _update(
+                            parentId,
+                            emailSeriousAlerts: value,
+                          ),
+                        ),
+                        const SizedBox(height: 12),
+                        Text(
+                          'Safety alerts stay on by default to protect your child.',
+                          style: AppTextStyles.bodySmall(
+                            color: AppColors.textMuted,
+                          ),
+                        ),
+                      ],
+                    ),
+            ),
+          ],
+        ),
+      ),
     );
   }
 
@@ -191,25 +250,57 @@ class _AlertPreferencesScreenState extends State<AlertPreferencesScreen> {
     bool premiumLocked = false,
     required ValueChanged<bool> onChanged,
   }) {
-    return SwitchListTile(
-      contentPadding: EdgeInsets.zero,
-      value: value,
-      title: Row(
+    return Padding(
+      padding: const EdgeInsets.only(bottom: 6),
+      child: Row(
         children: [
-          Expanded(child: Text(title)),
           if (alwaysOn)
-            const Tooltip(
-              message: 'Always on for safety.',
-              child: Icon(Icons.verified_user_outlined, size: 18),
+            Container(
+              width: 28,
+              height: 28,
+              margin: const EdgeInsets.only(right: 10),
+              decoration: BoxDecoration(
+                color: AppColors.primaryDim,
+                borderRadius: BorderRadius.circular(8),
+              ),
+              child: const Icon(
+                Icons.verified_user_outlined,
+                size: 14,
+                color: AppColors.primary,
+              ),
+            )
+          else if (premiumLocked)
+            Container(
+              width: 28,
+              height: 28,
+              margin: const EdgeInsets.only(right: 10),
+              decoration: BoxDecoration(
+                color: AppColors.warningDim,
+                borderRadius: BorderRadius.circular(8),
+              ),
+              child: const Icon(
+                Icons.lock_outline,
+                size: 14,
+                color: AppColors.gold,
+              ),
             ),
-          if (premiumLocked)
-            const Tooltip(
-              message: 'Premium feature',
-              child: Icon(Icons.lock_outline, size: 18),
+          Expanded(
+            child: Text(
+              title,
+              style: AppTextStyles.body(
+                color: alwaysOn || premiumLocked
+                    ? AppColors.textSecondary
+                    : AppColors.textPrimary,
+              ),
             ),
+          ),
+          Switch.adaptive(
+            value: value,
+            onChanged:
+                alwaysOn || premiumLocked || _saving ? null : onChanged,
+          ),
         ],
       ),
-      onChanged: alwaysOn || premiumLocked || _saving ? null : onChanged,
     );
   }
 

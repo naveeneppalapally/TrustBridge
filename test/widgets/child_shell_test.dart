@@ -30,16 +30,16 @@ void main() {
       await tester.pump();
 
       expect(find.byKey(const Key('child_shell_bottom_nav')), findsOneWidget);
-      expect(find.text('Home'), findsOneWidget);
-      expect(find.text('Activity'), findsOneWidget);
-      expect(find.text('Help'), findsOneWidget);
+      expect(find.byIcon(Icons.home_rounded), findsOneWidget);
+      expect(find.byIcon(Icons.history_rounded), findsOneWidget);
+      expect(find.byIcon(Icons.help_outline_rounded), findsOneWidget);
     });
 
     testWidgets('switches to activity tab', (tester) async {
       await tester.pumpWidget(buildShell());
       await tester.pump();
 
-      await tester.tap(find.text('Activity'));
+      await tester.tap(find.byIcon(Icons.history_rounded));
       await tester.pump(const Duration(milliseconds: 300));
 
       expect(find.text('Request Updates'), findsOneWidget);
@@ -49,7 +49,7 @@ void main() {
       await tester.pumpWidget(buildShell());
       await tester.pump();
 
-      await tester.tap(find.text('Help'));
+      await tester.tap(find.byIcon(Icons.help_outline_rounded));
       await tester.pump(const Duration(milliseconds: 300));
 
       expect(

@@ -68,7 +68,7 @@ void main() {
       );
       await tester.pump();
 
-      expect(find.byIcon(Icons.refresh), findsOneWidget);
+      expect(find.byIcon(Icons.refresh_rounded), findsOneWidget);
     });
   });
 }

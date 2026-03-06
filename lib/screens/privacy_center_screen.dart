@@ -1,6 +1,9 @@
 import 'package:flutter/material.dart';
+import 'package:trustbridge_app/core/utils/responsive.dart';
 import 'package:trustbridge_app/services/auth_service.dart';
 import 'package:trustbridge_app/services/firestore_service.dart';
+import 'package:trustbridge_app/theme/app_text_styles.dart';
+import 'package:trustbridge_app/theme/app_theme.dart';
 
 class PrivacyCenterScreen extends StatefulWidget {
   const PrivacyCenterScreen({
@@ -45,178 +48,270 @@ class _PrivacyCenterScreenState extends State<PrivacyCenterScreen> {
 
   @override
   Widget build(BuildContext context) {
+    R.init(context);
     final parentId = _parentId;
     if (parentId == null) {
       return Scaffold(
-        appBar: AppBar(title: const Text('Privacy Center')),
-        body: const Center(child: Text('Not logged in')),
+        body: Center(
+          child: Text(
+            'Not logged in',
+            style: AppTextStyles.body(color: AppColors.textSecondary),
+          ),
+        ),
       );
     }
 
     return Scaffold(
-      appBar: AppBar(
-        title: const Text('Privacy Center'),
-        actions: [
-          if (_hasChanges)
-            TextButton(
-              onPressed: _isSaving ? null : _saveChanges,
-              child: _isSaving
-                  ? const SizedBox(
-                      width: 20,
-                      height: 20,
-                      child: CircularProgressIndicator(strokeWidth: 2),
-                    )
-                  : const Text(
-                      'SAVE',
-                      style: TextStyle(fontWeight: FontWeight.w700),
+      body: SafeArea(
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Padding(
+              padding: EdgeInsets.fromLTRB(R.sp(8), R.sp(8), R.sp(8), 0),
+              child: Row(
+                children: [
+                  IconButton(
+                    icon: const Icon(
+                      Icons.arrow_back_rounded,
+                      color: AppColors.textSecondary,
                     ),
+                    onPressed: () => Navigator.of(context).pop(),
+                  ),
+                  const Spacer(),
+                  if (_hasChanges)
+                    GestureDetector(
+                      onTap: _isSaving ? null : _saveChanges,
+                      child: Container(
+                        padding: const EdgeInsets.symmetric(
+                          horizontal: 16,
+                          vertical: 8,
+                        ),
+                        decoration: BoxDecoration(
+                          color: AppColors.primaryDim,
+                          borderRadius: BorderRadius.circular(10),
+                        ),
+                        child: _isSaving
+                            ? const SizedBox(
+                                width: 16,
+                                height: 16,
+                                child: CircularProgressIndicator(
+                                  strokeWidth: 2,
+                                  color: AppColors.primary,
+                                ),
+                              )
+                            : Text(
+                                'SAVE',
+                                style: AppTextStyles.label(
+                                  color: AppColors.primary,
+                                ),
+                              ),
+                      ),
+                    ),
+                ],
+              ),
             ),
-        ],
-      ),
-      body: StreamBuilder<Map<String, dynamic>?>(
-        stream: _resolvedFirestoreService.watchParentProfile(parentId),
-        builder: (context, snapshot) {
-          if (snapshot.connectionState == ConnectionState.waiting &&
-              !snapshot.hasData) {
-            return const Center(child: CircularProgressIndicator());
-          }
+            Padding(
+              padding: EdgeInsets.fromLTRB(R.sp(20), R.sp(4), R.sp(20), 0),
+              child: Text(
+                'Privacy Center',
+                style: AppTextStyles.displayMedium(),
+              ),
+            ),
+            const SizedBox(height: 6),
+            Padding(
+              padding: EdgeInsets.symmetric(horizontal: R.sp(20)),
+              child: Text(
+                'Control what data is stored and used.',
+                style: AppTextStyles.bodySmall(
+                  color: AppColors.textSecondary,
+                ),
+              ),
+            ),
+            const SizedBox(height: 16),
+            Expanded(
+              child: StreamBuilder<Map<String, dynamic>?>(
+                stream:
+                    _resolvedFirestoreService.watchParentProfile(parentId),
+                builder: (context, snapshot) {
+                  if (snapshot.connectionState == ConnectionState.waiting &&
+                      !snapshot.hasData) {
+                    return const Center(
+                      child: CircularProgressIndicator(),
+                    );
+                  }
 
-          if (snapshot.hasError) {
-            return Center(
-              child: Padding(
-                padding: const EdgeInsets.symmetric(horizontal: 24),
-                child: Column(
-                  mainAxisAlignment: MainAxisAlignment.center,
-                  children: [
-                    const Icon(Icons.error_outline,
-                        size: 48, color: Colors.redAccent),
-                    const SizedBox(height: 12),
-                    const Text(
-                      'Unable to load privacy settings',
-                      style:
-                          TextStyle(fontSize: 18, fontWeight: FontWeight.w700),
-                    ),
-                    const SizedBox(height: 8),
-                    Text('${snapshot.error}', textAlign: TextAlign.center),
-                    const SizedBox(height: 14),
-                    FilledButton(
-                      onPressed: () => setState(() {}),
-                      child: const Text('Retry'),
-                    ),
-                  ],
-                ),
-              ),
-            );
-          }
-
-          final profile = snapshot.data;
-          _hydrateFromProfile(profile);
-
-          return ListView(
-            padding: const EdgeInsets.fromLTRB(16, 8, 16, 28),
-            children: [
-              Text(
-                'Control Data Usage',
-                style: Theme.of(context).textTheme.headlineSmall?.copyWith(
-                      fontWeight: FontWeight.w700,
-                    ),
-              ),
-              const SizedBox(height: 8),
-              Text(
-                'Choose what account data is stored and used to personalize your experience.',
-                style: Theme.of(context).textTheme.bodyMedium?.copyWith(
-                      color: Colors.grey.shade600,
-                    ),
-              ),
-              const SizedBox(height: 16),
-              Card(
-                elevation: 0,
-                shape: RoundedRectangleBorder(
-                  borderRadius: BorderRadius.circular(16),
-                ),
-                child: Column(
-                  children: [
-                    SwitchListTile(
-                      key: const Key('privacy_activity_history_switch'),
-                      value: _activityHistoryEnabled,
-                      title: const Text('Activity History'),
-                      subtitle: const Text(
-                        'Store dashboard activity history for reports',
-                      ),
-                      onChanged: _isSaving
-                          ? null
-                          : (value) {
-                              setState(() {
-                                _activityHistoryEnabled = value;
-                                _hasChanges = true;
-                              });
-                            },
-                    ),
-                    const Divider(height: 1),
-                    SwitchListTile(
-                      key: const Key('privacy_crash_reports_switch'),
-                      value: _crashReportsEnabled,
-                      title: const Text('Crash Reports'),
-                      subtitle: const Text(
-                        'Share crash diagnostics to improve app stability',
-                      ),
-                      onChanged: _isSaving
-                          ? null
-                          : (value) {
-                              setState(() {
-                                _crashReportsEnabled = value;
-                                _hasChanges = true;
-                              });
-                            },
-                    ),
-                    const Divider(height: 1),
-                    SwitchListTile(
-                      key: const Key('privacy_personalized_tips_switch'),
-                      value: _personalizedTipsEnabled,
-                      title: const Text('Personalized Tips'),
-                      subtitle: const Text(
-                        'Use settings and activity patterns for suggestions',
-                      ),
-                      onChanged: _isSaving
-                          ? null
-                          : (value) {
-                              setState(() {
-                                _personalizedTipsEnabled = value;
-                                _hasChanges = true;
-                              });
-                            },
-                    ),
-                  ],
-                ),
-              ),
-              const SizedBox(height: 16),
-              Container(
-                padding: const EdgeInsets.all(12),
-                decoration: BoxDecoration(
-                  color: Colors.blue.shade50,
-                  borderRadius: BorderRadius.circular(10),
-                  border: Border.all(color: Colors.blue.shade200),
-                ),
-                child: Row(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: [
-                    Icon(Icons.verified_user_outlined,
-                        size: 18, color: Colors.blue.shade700),
-                    const SizedBox(width: 10),
-                    Expanded(
-                      child: Text(
-                        'TrustBridge does not sell personal data. These settings control only your in-app experience and diagnostics.',
-                        style: Theme.of(context).textTheme.bodySmall?.copyWith(
-                              color: Colors.blue.shade900,
+                  if (snapshot.hasError) {
+                    return Center(
+                      child: Padding(
+                        padding:
+                            const EdgeInsets.symmetric(horizontal: 24),
+                        child: Column(
+                          mainAxisAlignment: MainAxisAlignment.center,
+                          children: [
+                            const Icon(Icons.error_outline,
+                                size: 48, color: AppColors.danger),
+                            const SizedBox(height: 12),
+                            Text(
+                              'Unable to load privacy settings',
+                              style: AppTextStyles.headingLarge(),
                             ),
+                            const SizedBox(height: 8),
+                            Text(
+                              '${snapshot.error}',
+                              textAlign: TextAlign.center,
+                              style: AppTextStyles.bodySmall(
+                                color: AppColors.textSecondary,
+                              ),
+                            ),
+                            const SizedBox(height: 14),
+                            GestureDetector(
+                              onTap: () => setState(() {}),
+                              child: Container(
+                                padding: const EdgeInsets.symmetric(
+                                  horizontal: 24,
+                                  vertical: 10,
+                                ),
+                                decoration: BoxDecoration(
+                                  color: AppColors.primaryDim,
+                                  borderRadius: BorderRadius.circular(12),
+                                ),
+                                child: Text(
+                                  'Retry',
+                                  style: AppTextStyles.label(
+                                    color: AppColors.primary,
+                                  ),
+                                ),
+                              ),
+                            ),
+                          ],
+                        ),
                       ),
+                    );
+                  }
+
+                  final profile = snapshot.data;
+                  _hydrateFromProfile(profile);
+
+                  return ListView(
+                    padding: EdgeInsets.fromLTRB(
+                      R.sp(20), 0, R.sp(20), R.sp(28),
                     ),
-                  ],
-                ),
+                    children: [
+                      _buildPrivacyToggle(
+                        key: const Key('privacy_activity_history_switch'),
+                        title: 'Activity History',
+                        subtitle:
+                            'Store dashboard activity history for reports',
+                        value: _activityHistoryEnabled,
+                        onChanged: (value) {
+                          setState(() {
+                            _activityHistoryEnabled = value;
+                            _hasChanges = true;
+                          });
+                        },
+                      ),
+                      _buildPrivacyToggle(
+                        key: const Key('privacy_crash_reports_switch'),
+                        title: 'Crash Reports',
+                        subtitle:
+                            'Share crash diagnostics to improve stability',
+                        value: _crashReportsEnabled,
+                        onChanged: (value) {
+                          setState(() {
+                            _crashReportsEnabled = value;
+                            _hasChanges = true;
+                          });
+                        },
+                      ),
+                      _buildPrivacyToggle(
+                        key: const Key(
+                            'privacy_personalized_tips_switch'),
+                        title: 'Personalized Tips',
+                        subtitle:
+                            'Use activity patterns for suggestions',
+                        value: _personalizedTipsEnabled,
+                        onChanged: (value) {
+                          setState(() {
+                            _personalizedTipsEnabled = value;
+                            _hasChanges = true;
+                          });
+                        },
+                      ),
+                      const SizedBox(height: 16),
+                      Container(
+                        padding: const EdgeInsets.all(12),
+                        decoration: BoxDecoration(
+                          color: AppColors.primaryDim,
+                          borderRadius: BorderRadius.circular(10),
+                          border: Border.all(
+                            color: AppColors.primary
+                                .withValues(alpha: 0.25),
+                          ),
+                        ),
+                        child: Row(
+                          crossAxisAlignment: CrossAxisAlignment.start,
+                          children: [
+                            const Icon(
+                              Icons.verified_user_outlined,
+                              size: 16,
+                              color: AppColors.primary,
+                            ),
+                            const SizedBox(width: 10),
+                            Expanded(
+                              child: Text(
+                                'TrustBridge does not sell personal data. These settings control only your in-app experience and diagnostics.',
+                                style: AppTextStyles.bodySmall(
+                                  color: AppColors.primary,
+                                ),
+                              ),
+                            ),
+                          ],
+                        ),
+                      ),
+                    ],
+                  );
+                },
               ),
-            ],
-          );
-        },
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+
+  Widget _buildPrivacyToggle({
+    required Key key,
+    required String title,
+    required String subtitle,
+    required bool value,
+    required ValueChanged<bool> onChanged,
+  }) {
+    return Padding(
+      key: key,
+      padding: const EdgeInsets.only(bottom: 10),
+      child: Row(
+        children: [
+          Expanded(
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Text(title, style: AppTextStyles.body()),
+                const SizedBox(height: 2),
+                Text(
+                  subtitle,
+                  style: AppTextStyles.bodySmall(
+                    color: AppColors.textMuted,
+                  ),
+                ),
+              ],
+            ),
+          ),
+          const SizedBox(width: 8),
+          Switch.adaptive(
+            value: value,
+            onChanged: _isSaving ? null : onChanged,
+          ),
+        ],
       ),
     );
   }

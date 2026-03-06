@@ -1,9 +1,13 @@
 import 'package:flutter/material.dart';
+import 'package:cloud_firestore/cloud_firestore.dart';
 
+import '../core/utils/responsive.dart';
 import '../models/child_profile.dart';
 import '../models/schedule.dart';
 import '../services/auth_service.dart';
 import '../services/firestore_service.dart';
+import '../theme/app_text_styles.dart';
+import '../theme/app_theme.dart';
 import '../widgets/skeleton_loaders.dart';
 
 class ModesScreen extends StatefulWidget {
@@ -49,146 +53,286 @@ class _ModesScreenState extends State<ModesScreen> {
 
   @override
   Widget build(BuildContext context) {
+    R.init(context);
     final parentId = _parentId;
     if (parentId == null || parentId.isEmpty) {
       return Scaffold(
-        appBar: AppBar(title: const Text('Modes')),
-        body: const Center(child: Text('Please sign in first.')),
+        body: Center(
+          child: Text(
+            'Please sign in first.',
+            style: AppTextStyles.body(color: AppColors.textSecondary),
+          ),
+        ),
       );
     }
 
     return Scaffold(
-      appBar: AppBar(title: const Text('Modes')),
-      body: StreamBuilder<List<ChildProfile>>(
-        stream: _resolvedFirestoreService.getChildrenStream(parentId),
-        initialData: _lastChildrenSnapshot ??
-            _resolvedFirestoreService.getCachedChildren(parentId),
-        builder: (context, snapshot) {
-          final children = snapshot.data ?? const <ChildProfile>[];
-          if (snapshot.hasData) {
-            _lastChildrenSnapshot = children;
-          }
-          if (snapshot.connectionState == ConnectionState.waiting &&
-              children.isEmpty) {
-            return ListView(
-              padding: const EdgeInsets.fromLTRB(16, 12, 16, 24),
-              children: const <Widget>[
-                SkeletonCard(height: 54),
-                SizedBox(height: 12),
-                SkeletonCard(height: 76),
-                SizedBox(height: 10),
-                SkeletonCard(height: 76),
-                SizedBox(height: 10),
-                SkeletonCard(height: 76),
-              ],
-            );
-          }
-          if (snapshot.hasError) {
-            return const Center(
-              child: Padding(
-                padding: EdgeInsets.all(24),
-                child: Text(
-                  'Modes are unavailable right now. Please try again.',
-                  textAlign: TextAlign.center,
-                ),
+      body: SafeArea(
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            // Back button row
+            Padding(
+              padding: EdgeInsets.fromLTRB(R.sp(8), R.sp(8), R.sp(8), 0),
+              child: Row(
+                children: [
+                  IconButton(
+                    icon: const Icon(
+                      Icons.arrow_back_rounded,
+                      color: AppColors.textSecondary,
+                    ),
+                    onPressed: () => Navigator.of(context).pop(),
+                  ),
+                ],
               ),
-              );
-          }
-
-          if (children.isEmpty) {
-            return const Center(child: Text('Add a child profile first.'));
-          }
-          final selectedChild = _resolveSelectedChild(children);
-          if (selectedChild == null) {
-            return const Center(child: Text('Choose a child to continue.'));
-          }
-
-          final activeMode = _activeMode(selectedChild, DateTime.now());
-          final modeSummary = _modeSummary(activeMode);
-          final modeWarning = _modeConflictWarning(selectedChild, activeMode);
-
-          return ListView(
-            padding: const EdgeInsets.fromLTRB(16, 12, 16, 24),
-            children: [
-              DropdownButtonFormField<String>(
-                initialValue: _selectedChildId ?? selectedChild.id,
-                decoration: const InputDecoration(
-                  labelText: 'Selected child',
-                  border: OutlineInputBorder(),
-                ),
-                items: children
-                    .map(
-                      (child) => DropdownMenuItem<String>(
-                        value: child.id,
-                        child: Text(child.nickname),
-                      ),
-                    )
-                    .toList(growable: false),
-                onChanged: (value) {
-                  if (value == null) {
-                    return;
+            ),
+            // Title
+            Padding(
+              padding: EdgeInsets.fromLTRB(R.sp(20), R.sp(4), R.sp(20), 0),
+              child: Text('Modes', style: AppTextStyles.displayMedium()),
+            ),
+            const SizedBox(height: 12),
+            // Content
+            Expanded(
+              child: StreamBuilder<List<ChildProfile>>(
+                stream: _resolvedFirestoreService.getChildrenStream(parentId),
+                initialData: _lastChildrenSnapshot ??
+                    _resolvedFirestoreService.getCachedChildren(parentId),
+                builder: (context, snapshot) {
+                  final children = snapshot.data ?? const <ChildProfile>[];
+                  if (snapshot.hasData) {
+                    _lastChildrenSnapshot = children;
                   }
-                  setState(() {
-                    _selectedChildId = value;
-                  });
+                  if (snapshot.connectionState == ConnectionState.waiting &&
+                      children.isEmpty) {
+                    return ListView(
+                      padding: EdgeInsets.fromLTRB(
+                        R.sp(20),
+                        0,
+                        R.sp(20),
+                        R.sp(24),
+                      ),
+                      children: const <Widget>[
+                        SkeletonCard(height: 54),
+                        SizedBox(height: 12),
+                        SkeletonCard(height: 76),
+                        SizedBox(height: 10),
+                        SkeletonCard(height: 76),
+                        SizedBox(height: 10),
+                        SkeletonCard(height: 76),
+                      ],
+                    );
+                  }
+                  if (snapshot.hasError) {
+                    return Center(
+                      child: Text(
+                        'Modes are unavailable right now.',
+                        style: AppTextStyles.body(
+                          color: AppColors.textSecondary,
+                        ),
+                      ),
+                    );
+                  }
+
+                  if (children.isEmpty) {
+                    return Center(
+                      child: Text(
+                        'Add a child profile first.',
+                        style: AppTextStyles.body(
+                          color: AppColors.textSecondary,
+                        ),
+                      ),
+                    );
+                  }
+                  final selectedChild = _resolveSelectedChild(children);
+                  if (selectedChild == null) {
+                    return Center(
+                      child: Text(
+                        'Choose a child to continue.',
+                        style: AppTextStyles.body(
+                          color: AppColors.textSecondary,
+                        ),
+                      ),
+                    );
+                  }
+
+                  final activeMode = _activeMode(selectedChild, DateTime.now());
+                  final modeSummary = _modeSummary(activeMode);
+                  final modeWarning =
+                      _modeConflictWarning(selectedChild, activeMode);
+
+                  return ListView(
+                    padding: EdgeInsets.fromLTRB(
+                      R.sp(20),
+                      0,
+                      R.sp(20),
+                      R.sp(24),
+                    ),
+                    children: [
+                      // Child selector chips
+                      if (children.length > 1)
+                        SingleChildScrollView(
+                          scrollDirection: Axis.horizontal,
+                          child: Row(
+                            children: children.map((child) {
+                              final selected = child.id ==
+                                  (_selectedChildId ?? selectedChild.id);
+                              return Padding(
+                                padding: const EdgeInsets.only(right: 8),
+                                child: GestureDetector(
+                                  onTap: () => setState(() {
+                                    _selectedChildId = child.id;
+                                  }),
+                                  child: AnimatedContainer(
+                                    duration: const Duration(milliseconds: 200),
+                                    padding: const EdgeInsets.symmetric(
+                                      horizontal: 14,
+                                      vertical: 8,
+                                    ),
+                                    decoration: BoxDecoration(
+                                      color: selected
+                                          ? AppColors.primaryDim
+                                          : AppColors.surface,
+                                      borderRadius: BorderRadius.circular(10),
+                                      border: Border.all(
+                                        color: selected
+                                            ? AppColors.primary
+                                            : AppColors.surfaceBorder,
+                                        width: selected ? 1 : 0.5,
+                                      ),
+                                    ),
+                                    child: Text(
+                                      child.nickname,
+                                      style: AppTextStyles.label(
+                                        color: selected
+                                            ? AppColors.primary
+                                            : AppColors.textSecondary,
+                                      ),
+                                    ),
+                                  ),
+                                ),
+                              );
+                            }).toList(growable: false),
+                          ),
+                        ),
+                      if (children.length > 1) const SizedBox(height: 16),
+                      // Mode cards
+                      ..._ModeType.values.map(
+                        (mode) {
+                          final isActive = mode == activeMode;
+                          return GestureDetector(
+                            onTap: _saving
+                                ? null
+                                : () => _setMode(
+                                      parentId: parentId,
+                                      child: selectedChild,
+                                      mode: mode,
+                                    ),
+                            child: AnimatedContainer(
+                              duration: const Duration(milliseconds: 200),
+                              margin: const EdgeInsets.only(bottom: 8),
+                              padding: const EdgeInsets.all(16),
+                              decoration: BoxDecoration(
+                                color: isActive
+                                    ? AppColors.primaryDim
+                                    : AppColors.surfaceRaised,
+                                borderRadius: BorderRadius.circular(14),
+                                border: Border.all(
+                                  color: isActive
+                                      ? AppColors.primary
+                                      : AppColors.surfaceBorder,
+                                  width: isActive ? 1 : 0.5,
+                                ),
+                              ),
+                              child: Row(
+                                children: [
+                                  // Left accent bar
+                                  Container(
+                                    width: 3,
+                                    height: 36,
+                                    margin: const EdgeInsets.only(right: 14),
+                                    decoration: BoxDecoration(
+                                      color: isActive
+                                          ? AppColors.primary
+                                          : Colors.transparent,
+                                      borderRadius: BorderRadius.circular(2),
+                                    ),
+                                  ),
+                                  Expanded(
+                                    child: Column(
+                                      crossAxisAlignment:
+                                          CrossAxisAlignment.start,
+                                      children: [
+                                        Text(
+                                          _modeLabel(mode),
+                                          style: AppTextStyles.headingMedium(
+                                            color: isActive
+                                                ? AppColors.primary
+                                                : AppColors.textPrimary,
+                                          ),
+                                        ),
+                                        const SizedBox(height: 2),
+                                        Text(
+                                          _modeSummary(mode),
+                                          maxLines: 2,
+                                          overflow: TextOverflow.ellipsis,
+                                          style: AppTextStyles.bodySmall(
+                                            color: AppColors.textSecondary,
+                                          ),
+                                        ),
+                                      ],
+                                    ),
+                                  ),
+                                  if (isActive) ...[
+                                    const SizedBox(width: 8),
+                                    Container(
+                                      width: 8,
+                                      height: 8,
+                                      decoration: const BoxDecoration(
+                                        color: AppColors.success,
+                                        shape: BoxShape.circle,
+                                      ),
+                                    ),
+                                  ],
+                                ],
+                              ),
+                            ),
+                          );
+                        },
+                      ),
+                      const SizedBox(height: 8),
+                      Text(
+                        modeSummary,
+                        style: AppTextStyles.bodySmall(
+                          color: AppColors.textSecondary,
+                        ),
+                      ),
+                      if (modeWarning != null) ...[
+                        const SizedBox(height: 10),
+                        Container(
+                          padding: const EdgeInsets.all(10),
+                          decoration: BoxDecoration(
+                            color: AppColors.warningDim,
+                            borderRadius: BorderRadius.circular(10),
+                            border: Border.all(
+                              color: AppColors.warning.withValues(alpha: 0.4),
+                            ),
+                          ),
+                          child: Text(
+                            modeWarning,
+                            style: AppTextStyles.bodySmall(
+                              color: AppColors.warning,
+                            ),
+                          ),
+                        ),
+                      ],
+                    ],
+                  );
                 },
               ),
-              const SizedBox(height: 12),
-              ..._ModeType.values.map(
-                (mode) => Card(
-                  child: ListTile(
-                    title: Text(
-                      _modeLabel(mode),
-                      style: const TextStyle(fontWeight: FontWeight.w700),
-                    ),
-                    subtitle: Text(_modeSummary(mode)),
-                    trailing: mode == activeMode
-                        ? const Chip(label: Text('Active'))
-                        : null,
-                    onTap: _saving
-                        ? null
-                        : () => _setMode(
-                              parentId: parentId,
-                              child: selectedChild,
-                              mode: mode,
-                            ),
-                  ),
-                ),
-              ),
-              const SizedBox(height: 8),
-              Text(
-                modeSummary,
-                style: Theme.of(context).textTheme.bodyMedium,
-              ),
-              const SizedBox(height: 6),
-              Text(
-                'If settings conflict, your manual app/category change wins.',
-                style: Theme.of(context).textTheme.bodySmall?.copyWith(
-                      color: Theme.of(context).colorScheme.onSurfaceVariant,
-                    ),
-              ),
-              if (modeWarning != null) ...[
-                const SizedBox(height: 10),
-                Container(
-                  padding: const EdgeInsets.all(10),
-                  decoration: BoxDecoration(
-                    color: Colors.orange.withValues(alpha: 0.12),
-                    borderRadius: BorderRadius.circular(10),
-                    border:
-                        Border.all(color: Colors.orange.withValues(alpha: 0.4)),
-                  ),
-                  child: Text(
-                    modeWarning,
-                    style: TextStyle(
-                      color: Colors.orange.shade900,
-                      fontWeight: FontWeight.w600,
-                    ),
-                  ),
-                ),
-              ],
-            ],
-          );
-        },
+            ),
+          ],
+        ),
       ),
     );
   }
@@ -281,62 +425,70 @@ class _ModesScreenState extends State<ModesScreen> {
       _saving = true;
     });
     try {
+      final ownedChild = await _resolvedFirestoreService.getChild(
+        parentId: parentId,
+        childId: child.id,
+      );
+      if (ownedChild == null) {
+        throw StateError('child_access_revoked');
+      }
+
       switch (mode) {
         case _ModeType.freePlay:
           await _resolvedFirestoreService.setChildPause(
             parentId: parentId,
-            childId: child.id,
+            childId: ownedChild.id,
             pausedUntil: null,
           );
           await _resolvedFirestoreService.setChildManualMode(
             parentId: parentId,
-            childId: child.id,
+            childId: ownedChild.id,
             mode: 'free',
           );
           break;
         case _ModeType.homework:
           await _resolvedFirestoreService.setChildPause(
             parentId: parentId,
-            childId: child.id,
+            childId: ownedChild.id,
             pausedUntil: null,
           );
           await _resolvedFirestoreService.setChildManualMode(
             parentId: parentId,
-            childId: child.id,
+            childId: ownedChild.id,
             mode: 'homework',
           );
           break;
         case _ModeType.bedtime:
           await _resolvedFirestoreService.setChildPause(
             parentId: parentId,
-            childId: child.id,
+            childId: ownedChild.id,
             pausedUntil: null,
           );
           await _resolvedFirestoreService.setChildManualMode(
             parentId: parentId,
-            childId: child.id,
+            childId: ownedChild.id,
             mode: 'bedtime',
           );
           break;
         case _ModeType.lockdown:
           await _resolvedFirestoreService.setChildManualMode(
             parentId: parentId,
-            childId: child.id,
+            childId: ownedChild.id,
             mode: null,
           );
           await _resolvedFirestoreService.setChildPause(
             parentId: parentId,
-            childId: child.id,
+            childId: ownedChild.id,
             pausedUntil: DateTime.now().add(const Duration(hours: 8)),
           );
           break;
       }
-    } catch (_) {
+    } catch (error) {
       if (!mounted) {
         return;
       }
       ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text('Could not switch mode right now.')),
+        SnackBar(content: Text(_modeFailureMessage(error))),
       );
     } finally {
       if (mounted) {
@@ -345,6 +497,28 @@ class _ModesScreenState extends State<ModesScreen> {
         });
       }
     }
+  }
+
+  String _modeFailureMessage(Object error) {
+    if (error is StateError &&
+        error.message.toString().contains('child_access_revoked')) {
+      return 'This child profile is no longer linked. Refresh children or pair again.';
+    }
+    if (error is FirebaseException) {
+      final code = error.code.trim().toLowerCase();
+      if (code == 'permission-denied' || code == 'permission_denied') {
+        return 'Permission denied. Refresh children or pair again.';
+      }
+      if (code == 'unauthenticated') {
+        return 'Session expired. Please sign in again.';
+      }
+    }
+    final text = error.toString().toLowerCase();
+    if (text.contains('permission_denied') ||
+        text.contains('permission-denied')) {
+      return 'Permission denied. Refresh children or pair again.';
+    }
+    return 'Could not switch mode right now.';
   }
 
   String _modeLabel(_ModeType mode) {

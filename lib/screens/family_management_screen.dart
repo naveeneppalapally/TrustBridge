@@ -1,8 +1,11 @@
 import 'package:flutter/material.dart';
+import 'package:trustbridge_app/core/utils/responsive.dart';
 import 'package:trustbridge_app/models/child_profile.dart';
 import 'package:trustbridge_app/screens/add_child_screen.dart';
 import 'package:trustbridge_app/services/auth_service.dart';
 import 'package:trustbridge_app/services/firestore_service.dart';
+import 'package:trustbridge_app/theme/app_text_styles.dart';
+import 'package:trustbridge_app/theme/app_theme.dart';
 
 class FamilyManagementScreen extends StatelessWidget {
   const FamilyManagementScreen({
@@ -18,83 +21,126 @@ class FamilyManagementScreen extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    R.init(context);
     final resolvedFirestoreService = firestoreService ?? FirestoreService();
     final parentId = _resolveParentId();
 
     if (parentId == null || parentId.trim().isEmpty) {
-      return const Scaffold(
+      return Scaffold(
         body: Center(
-          child: Text('Please sign in to manage your family group.'),
+          child: Text(
+            'Please sign in to manage your family group.',
+            style: AppTextStyles.body(color: AppColors.textSecondary),
+          ),
         ),
       );
     }
 
     return Scaffold(
-      appBar: AppBar(
-        title: const Text('Family Management'),
-      ),
-      body: StreamBuilder<Map<String, dynamic>?>(
-        stream: resolvedFirestoreService.watchParentProfile(parentId),
-        builder: (context, profileSnapshot) {
-          final profile = profileSnapshot.data;
-          return StreamBuilder<List<ChildProfile>>(
-            stream: resolvedFirestoreService.getChildrenStream(parentId),
-            builder: (context, childSnapshot) {
-              if ((profileSnapshot.connectionState == ConnectionState.waiting &&
-                      !profileSnapshot.hasData) ||
-                  (childSnapshot.connectionState == ConnectionState.waiting &&
-                      !childSnapshot.hasData)) {
-                return const Center(child: CircularProgressIndicator());
-              }
-
-              final children = childSnapshot.data ?? const <ChildProfile>[];
-              final adminRows = _buildAdminRows(profile);
-
-              return ListView(
-                padding: const EdgeInsets.fromLTRB(16, 12, 16, 24),
+      body: SafeArea(
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Padding(
+              padding: EdgeInsets.fromLTRB(R.sp(8), R.sp(8), R.sp(8), 0),
+              child: Row(
                 children: [
-                  _buildSubscriptionCard(context),
-                  const SizedBox(height: 14),
-                  Text(
-                    'LOCKED END-TO-END ENCRYPTED MANAGEMENT',
-                    style: Theme.of(context).textTheme.labelMedium?.copyWith(
-                          letterSpacing: 0.8,
-                          fontWeight: FontWeight.w700,
-                          color: Colors.grey[600],
-                        ),
-                  ),
-                  const SizedBox(height: 14),
-                  _buildAdminsCard(context, adminRows),
-                  const SizedBox(height: 14),
-                  _buildChildrenCard(
-                    context,
-                    children: children,
-                    authService: authService,
-                    firestoreService: firestoreService,
-                    parentIdOverride: parentIdOverride,
-                  ),
-                  const SizedBox(height: 14),
-                  TextButton(
-                    key: const Key('family_leave_group_button'),
-                    onPressed: () {
-                      ScaffoldMessenger.of(context).showSnackBar(
-                        const SnackBar(
-                          content: Text(
-                            'Leave group flow will be available in billing settings.',
-                          ),
-                        ),
-                      );
-                    },
-                    style: TextButton.styleFrom(
-                      foregroundColor: Colors.red,
+                  IconButton(
+                    icon: const Icon(
+                      Icons.arrow_back_rounded,
+                      color: AppColors.textSecondary,
                     ),
-                    child: const Text('Leave Family Group'),
+                    onPressed: () => Navigator.of(context).pop(),
                   ),
                 ],
-              );
-            },
-          );
-        },
+              ),
+            ),
+            Padding(
+              padding: EdgeInsets.fromLTRB(R.sp(20), R.sp(4), R.sp(20), 0),
+              child: Text(
+                'Family Management',
+                style: AppTextStyles.displayMedium(),
+              ),
+            ),
+            const SizedBox(height: 12),
+            Expanded(
+              child: StreamBuilder<Map<String, dynamic>?>(
+                stream: resolvedFirestoreService.watchParentProfile(parentId),
+                builder: (context, profileSnapshot) {
+                  final profile = profileSnapshot.data;
+                  return StreamBuilder<List<ChildProfile>>(
+                    stream:
+                        resolvedFirestoreService.getChildrenStream(parentId),
+                    builder: (context, childSnapshot) {
+                      if ((profileSnapshot.connectionState ==
+                                  ConnectionState.waiting &&
+                              !profileSnapshot.hasData) ||
+                          (childSnapshot.connectionState ==
+                                  ConnectionState.waiting &&
+                              !childSnapshot.hasData)) {
+                        return const Center(
+                            child: CircularProgressIndicator());
+                      }
+
+                      final children =
+                          childSnapshot.data ?? const <ChildProfile>[];
+                      final adminRows = _buildAdminRows(profile);
+
+                      return ListView(
+                        padding: EdgeInsets.fromLTRB(
+                          R.sp(20), 0, R.sp(20), R.sp(24),
+                        ),
+                        children: [
+                          _buildSubscriptionCard(context),
+                          const SizedBox(height: 20),
+                          _buildAdminsSection(context, adminRows),
+                          const SizedBox(height: 20),
+                          _buildChildrenSection(
+                            context,
+                            children: children,
+                            authService: authService,
+                            firestoreService: firestoreService,
+                            parentIdOverride: parentIdOverride,
+                          ),
+                          const SizedBox(height: 20),
+                          GestureDetector(
+                            key: const Key('family_leave_group_button'),
+                            onTap: () {
+                              ScaffoldMessenger.of(context).showSnackBar(
+                                const SnackBar(
+                                  content: Text(
+                                    'Leave group flow will be available in billing settings.',
+                                  ),
+                                ),
+                              );
+                            },
+                            child: Container(
+                              width: double.infinity,
+                              padding:
+                                  const EdgeInsets.symmetric(vertical: 14),
+                              decoration: BoxDecoration(
+                                color: AppColors.dangerDim,
+                                borderRadius: BorderRadius.circular(12),
+                              ),
+                              child: Center(
+                                child: Text(
+                                  'Leave Family Group',
+                                  style: AppTextStyles.headingMedium(
+                                    color: AppColors.danger,
+                                  ),
+                                ),
+                              ),
+                            ),
+                          ),
+                        ],
+                      );
+                    },
+                  );
+                },
+              ),
+            ),
+          ],
+        ),
       ),
     );
   }
@@ -117,14 +163,15 @@ class FamilyManagementScreen extends StatelessWidget {
   }
 
   Widget _buildSubscriptionCard(BuildContext context) {
-    final scheme = Theme.of(context).colorScheme;
     return Container(
       key: const Key('family_subscription_card'),
       padding: const EdgeInsets.all(16),
       decoration: BoxDecoration(
-        color: scheme.surfaceContainerHighest,
-        borderRadius: BorderRadius.circular(16),
-        border: Border.all(color: scheme.outlineVariant),
+        color: AppColors.primaryDim,
+        borderRadius: BorderRadius.circular(14),
+        border: Border.all(
+          color: AppColors.primary.withValues(alpha: 0.25),
+        ),
       ),
       child: Column(
         children: [
@@ -134,12 +181,12 @@ class FamilyManagementScreen extends StatelessWidget {
                 width: 42,
                 height: 42,
                 decoration: BoxDecoration(
-                  color: scheme.primary.withValues(alpha: 0.14),
+                  color: AppColors.primary.withValues(alpha: 0.2),
                   borderRadius: BorderRadius.circular(12),
                 ),
-                child: Icon(
+                child: const Icon(
                   Icons.shield_rounded,
-                  color: scheme.primary,
+                  color: AppColors.primary,
                 ),
               ),
               const SizedBox(width: 10),
@@ -147,19 +194,17 @@ class FamilyManagementScreen extends StatelessWidget {
                 child: Column(
                   crossAxisAlignment: CrossAxisAlignment.start,
                   children: [
-                    const Text(
+                    Text(
                       'Premium Family',
-                      style: TextStyle(
-                        fontWeight: FontWeight.w800,
-                        fontSize: 16,
+                      style: AppTextStyles.headingMedium(
+                        color: AppColors.primary,
                       ),
                     ),
                     const SizedBox(height: 2),
                     Text(
                       'Active subscription',
-                      style: TextStyle(
-                        color: scheme.onSurfaceVariant,
-                        fontSize: 12,
+                      style: AppTextStyles.bodySmall(
+                        color: AppColors.textSecondary,
                       ),
                     ),
                   ],
@@ -169,34 +214,35 @@ class FamilyManagementScreen extends StatelessWidget {
                 padding:
                     const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
                 decoration: BoxDecoration(
-                  color: scheme.primaryContainer,
+                  color: AppColors.successDim,
                   borderRadius: BorderRadius.circular(999),
                 ),
                 child: Text(
                   'ACTIVE',
-                  style: TextStyle(
-                    color: scheme.onPrimaryContainer,
-                    fontSize: 11,
-                    fontWeight: FontWeight.w800,
+                  style: AppTextStyles.labelCaps(
+                    color: AppColors.success,
                   ),
                 ),
               ),
             ],
           ),
           const SizedBox(height: 12),
-          InkWell(
+          GestureDetector(
             onTap: () {},
             child: Row(
               children: [
                 Text(
                   'Manage Billing',
-                  style: TextStyle(
-                    color: scheme.primary,
-                    fontWeight: FontWeight.w700,
+                  style: AppTextStyles.label(
+                    color: AppColors.primary,
                   ),
                 ),
                 const SizedBox(width: 6),
-                Icon(Icons.arrow_forward_ios, size: 13, color: scheme.primary),
+                const Icon(
+                  Icons.arrow_forward_ios,
+                  size: 12,
+                  color: AppColors.primary,
+                ),
               ],
             ),
           ),
@@ -205,45 +251,38 @@ class FamilyManagementScreen extends StatelessWidget {
     );
   }
 
-  Widget _buildAdminsCard(BuildContext context, List<_FamilyAdmin> admins) {
-    return Card(
+  Widget _buildAdminsSection(BuildContext context, List<_FamilyAdmin> admins) {
+    return Column(
       key: const Key('family_admins_card'),
-      elevation: 0,
-      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
-      child: Padding(
-        padding: const EdgeInsets.all(16),
-        child: Column(
-          crossAxisAlignment: CrossAxisAlignment.start,
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        Row(
           children: [
-            Row(
-              children: [
-                Text(
-                  'ADMINS (PARENTS)',
-                  style: Theme.of(context).textTheme.labelLarge?.copyWith(
-                        fontWeight: FontWeight.w800,
-                      ),
-                ),
-                const Spacer(),
-                Text(
-                  '${admins.length} / 4 Seats',
-                  style: Theme.of(context).textTheme.bodySmall?.copyWith(
-                        color: Colors.grey[600],
-                        fontWeight: FontWeight.w700,
-                      ),
-                ),
-              ],
+            Text(
+              'ADMINS (PARENTS)',
+              style: AppTextStyles.labelCaps(color: AppColors.textMuted),
             ),
-            const SizedBox(height: 10),
-            ...admins.map((admin) => _buildAdminRow(admin)),
-            const SizedBox(height: 8),
-            TextButton(
-              key: const Key('family_invite_parent_button'),
-              onPressed: () {},
-              child: const Text('+ Invite another parent'),
+            const Spacer(),
+            Text(
+              '${admins.length} / 4 Seats',
+              style: AppTextStyles.bodySmall(
+                color: AppColors.textMuted,
+              ),
             ),
           ],
         ),
-      ),
+        const SizedBox(height: 10),
+        ...admins.map((admin) => _buildAdminRow(admin)),
+        const SizedBox(height: 4),
+        GestureDetector(
+          key: const Key('family_invite_parent_button'),
+          onTap: () {},
+          child: Text(
+            '+ Invite another parent',
+            style: AppTextStyles.label(color: AppColors.primary),
+          ),
+        ),
+      ],
     );
   }
 
@@ -252,14 +291,19 @@ class FamilyManagementScreen extends StatelessWidget {
       padding: const EdgeInsets.only(bottom: 10),
       child: Row(
         children: [
-          CircleAvatar(
-            radius: 18,
-            backgroundColor: const Color(0xFFE8F2FF),
-            child: Text(
-              admin.name.isEmpty ? '?' : admin.name[0].toUpperCase(),
-              style: const TextStyle(
-                color: Color(0xFF2E86FF),
-                fontWeight: FontWeight.w700,
+          Container(
+            width: 36,
+            height: 36,
+            decoration: BoxDecoration(
+              color: AppColors.primaryDim,
+              borderRadius: BorderRadius.circular(12),
+            ),
+            child: Center(
+              child: Text(
+                admin.name.isEmpty ? '?' : admin.name[0].toUpperCase(),
+                style: AppTextStyles.headingMedium(
+                  color: AppColors.primary,
+                ),
               ),
             ),
           ),
@@ -270,11 +314,13 @@ class FamilyManagementScreen extends StatelessWidget {
               children: [
                 Text(
                   admin.name,
-                  style: const TextStyle(fontWeight: FontWeight.w700),
+                  style: AppTextStyles.body(),
                 ),
                 Text(
                   admin.email,
-                  style: const TextStyle(color: Colors.grey, fontSize: 12),
+                  style: AppTextStyles.bodySmall(
+                    color: AppColors.textMuted,
+                  ),
                 ),
               ],
             ),
@@ -283,105 +329,108 @@ class FamilyManagementScreen extends StatelessWidget {
             Container(
               padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
               decoration: BoxDecoration(
-                color: const Color(0xFFE0ECFF),
+                color: AppColors.primaryDim,
                 borderRadius: BorderRadius.circular(999),
               ),
-              child: const Text(
+              child: Text(
                 'OWNER',
-                style: TextStyle(
-                  color: Color(0xFF2E86FF),
-                  fontSize: 10,
-                  fontWeight: FontWeight.w800,
+                style: AppTextStyles.labelCaps(
+                  color: AppColors.primary,
                 ),
               ),
             )
           else
-            const Icon(Icons.more_horiz),
+            const Icon(
+              Icons.more_horiz,
+              color: AppColors.textMuted,
+              size: 18,
+            ),
         ],
       ),
     );
   }
 
-  Widget _buildChildrenCard(
+  Widget _buildChildrenSection(
     BuildContext context, {
     required List<ChildProfile> children,
     required AuthService? authService,
     required FirestoreService? firestoreService,
     required String? parentIdOverride,
   }) {
-    return Card(
+    return Column(
       key: const Key('family_children_card'),
-      elevation: 0,
-      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
-      child: Padding(
-        padding: const EdgeInsets.all(16),
-        child: Column(
-          crossAxisAlignment: CrossAxisAlignment.start,
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        Row(
           children: [
-            Row(
-              children: [
-                Text(
-                  'CHILDREN',
-                  style: Theme.of(context).textTheme.labelLarge?.copyWith(
-                        fontWeight: FontWeight.w800,
-                      ),
-                ),
-                const Spacer(),
-                Text(
-                  '${children.length} / Unlimited',
-                  style: Theme.of(context).textTheme.bodySmall?.copyWith(
-                        color: Colors.grey[600],
-                        fontWeight: FontWeight.w700,
-                      ),
-                ),
-              ],
+            Text(
+              'CHILDREN',
+              style: AppTextStyles.labelCaps(color: AppColors.textMuted),
             ),
-            const SizedBox(height: 10),
-            if (children.isEmpty)
-              const Text(
-                'No child profiles yet.',
-                style: TextStyle(color: Colors.grey),
-              )
-            else
-              ...children.map((child) => _buildChildRow(child)),
-            const SizedBox(height: 8),
-            TextButton(
-              key: const Key('family_add_child_button'),
-              onPressed: () {
-                Navigator.of(context).push(
-                  MaterialPageRoute(
-                    builder: (_) => AddChildScreen(
-                      authService: authService,
-                      firestoreService: firestoreService,
-                      parentIdOverride: parentIdOverride,
-                    ),
-                  ),
-                );
-              },
-              child: const Text('+ Add child profile'),
+            const Spacer(),
+            Text(
+              '${children.length} / Unlimited',
+              style: AppTextStyles.bodySmall(
+                color: AppColors.textMuted,
+              ),
             ),
           ],
         ),
-      ),
+        const SizedBox(height: 10),
+        if (children.isEmpty)
+          Text(
+            'No child profiles yet.',
+            style: AppTextStyles.body(color: AppColors.textSecondary),
+          )
+        else
+          ...children.map((child) => _buildChildRow(child)),
+        const SizedBox(height: 4),
+        GestureDetector(
+          key: const Key('family_add_child_button'),
+          onTap: () {
+            Navigator.of(context).push(
+              MaterialPageRoute(
+                builder: (_) => AddChildScreen(
+                  authService: authService,
+                  firestoreService: firestoreService,
+                  parentIdOverride: parentIdOverride,
+                ),
+              ),
+            );
+          },
+          child: Text(
+            '+ Add child profile',
+            style: AppTextStyles.label(color: AppColors.primary),
+          ),
+        ),
+      ],
     );
   }
 
   Widget _buildChildRow(ChildProfile child) {
     final deviceLabel = _childDeviceLabel(child);
-    final statusText = child.deviceIds.isEmpty ? '2h ago' : 'Active Now';
+    final isActive = child.deviceIds.isNotEmpty;
+    final statusText = isActive ? 'Active Now' : '2h ago';
 
     return Padding(
       padding: const EdgeInsets.only(bottom: 10),
       child: Row(
         children: [
-          CircleAvatar(
-            radius: 18,
-            backgroundColor: const Color(0xFFF1F5F9),
-            child: Text(
-              child.nickname.isEmpty ? '?' : child.nickname[0].toUpperCase(),
-              style: const TextStyle(
-                color: Color(0xFF475569),
-                fontWeight: FontWeight.w700,
+          Container(
+            width: 36,
+            height: 36,
+            decoration: BoxDecoration(
+              color: AppColors.surfaceRaised,
+              borderRadius: BorderRadius.circular(12),
+            ),
+            child: Center(
+              child: Text(
+                child.nickname.isEmpty
+                    ? '?'
+                    : child.nickname[0].toUpperCase(),
+                style: AppTextStyles.headingMedium(
+                  color: AppColors.textSecondary,
+                ),
               ),
             ),
           ),
@@ -392,24 +441,39 @@ class FamilyManagementScreen extends StatelessWidget {
               children: [
                 Text(
                   child.nickname,
-                  style: const TextStyle(fontWeight: FontWeight.w700),
+                  style: AppTextStyles.body(),
                 ),
                 Text(
                   deviceLabel,
-                  style: const TextStyle(color: Colors.grey, fontSize: 12),
+                  style: AppTextStyles.bodySmall(
+                    color: AppColors.textMuted,
+                  ),
                 ),
               ],
             ),
           ),
-          Text(
-            statusText,
-            style: TextStyle(
-              color: statusText == 'Active Now'
-                  ? const Color(0xFF0F9D58)
-                  : Colors.grey,
-              fontSize: 12,
-              fontWeight: FontWeight.w700,
-            ),
+          Row(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              if (isActive)
+                Container(
+                  width: 6,
+                  height: 6,
+                  margin: const EdgeInsets.only(right: 4),
+                  decoration: const BoxDecoration(
+                    color: AppColors.success,
+                    shape: BoxShape.circle,
+                  ),
+                ),
+              Text(
+                statusText,
+                style: AppTextStyles.label(
+                  color: isActive
+                      ? AppColors.success
+                      : AppColors.textMuted,
+                ),
+              ),
+            ],
           ),
         ],
       ),
