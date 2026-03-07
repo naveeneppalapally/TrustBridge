@@ -92,9 +92,10 @@ class _LoginScreenState extends State<LoginScreen> {
     }
 
     switch (code) {
+      case 'network_error':
       case 'network-request-failed':
       case 'network-timeout':
-        return 'Firebase sign-in did not complete on this network. Retry once. If it still fails, check Wi-Fi/router filtering, disable VPN/Private DNS, or try mobile data.';
+        return 'Authentication could not complete on this network. Retry once. If it still fails, check Wi-Fi/router filtering, disable VPN/Private DNS, or try mobile data.';
       case 'invalid-credential':
       case 'wrong-password':
       case 'user-not-found':

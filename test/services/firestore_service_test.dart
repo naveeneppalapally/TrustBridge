@@ -330,6 +330,53 @@ void main() {
       expect(snapshot.data()!['onboardingComplete'], isFalse);
     });
 
+    test('ensureParentProfile clears child parentSessionRevokedAt markers',
+        () async {
+      await fakeFirestore.collection('children').doc('child-a').set(
+            _childDocData(
+              parentId: 'parent-restore',
+              nickname: 'A',
+              ageBand: AgeBand.middle,
+              createdAt: DateTime(2026, 3, 7, 10, 0),
+            )..['parentSessionRevokedAt'] =
+                Timestamp.fromDate(DateTime(2026, 3, 7, 9, 0)),
+          );
+      await fakeFirestore.collection('children').doc('child-b').set(
+            _childDocData(
+              parentId: 'parent-restore',
+              nickname: 'B',
+              ageBand: AgeBand.teen,
+              createdAt: DateTime(2026, 3, 7, 10, 5),
+            )..['parentSessionRevokedAt'] =
+                Timestamp.fromDate(DateTime(2026, 3, 7, 9, 5)),
+          );
+      await fakeFirestore.collection('children').doc('child-other').set(
+            _childDocData(
+              parentId: 'parent-other',
+              nickname: 'Other',
+              ageBand: AgeBand.young,
+              createdAt: DateTime(2026, 3, 7, 10, 10),
+            )..['parentSessionRevokedAt'] =
+                Timestamp.fromDate(DateTime(2026, 3, 7, 9, 10)),
+          );
+
+      await firestoreService.ensureParentProfile(
+        parentId: 'parent-restore',
+        phoneNumber: '+919999999999',
+      );
+
+      final childA =
+          await fakeFirestore.collection('children').doc('child-a').get();
+      final childB =
+          await fakeFirestore.collection('children').doc('child-b').get();
+      final childOther =
+          await fakeFirestore.collection('children').doc('child-other').get();
+
+      expect(childA.data()!.containsKey('parentSessionRevokedAt'), isFalse);
+      expect(childB.data()!.containsKey('parentSessionRevokedAt'), isFalse);
+      expect(childOther.data()!.containsKey('parentSessionRevokedAt'), isTrue);
+    });
+
     test('updateParentPreferences merges preference values', () async {
       await fakeFirestore.collection('parents').doc('parentA').set({
         'parentId': 'parentA',

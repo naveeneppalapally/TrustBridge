@@ -3,6 +3,7 @@ import 'dart:developer' as developer;
 
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:firebase_auth/firebase_auth.dart';
+import 'package:flutter/services.dart';
 import 'package:google_sign_in/google_sign_in.dart';
 import 'package:trustbridge_app/services/firestore_service.dart';
 
@@ -267,8 +268,9 @@ class AuthService {
             )
             .timeout(_authRequestTimeout);
         final user = credential.user;
-        if (user != null &&
-            (credential.additionalUserInfo?.isNewUser ?? false)) {
+        if (user != null) {
+          // Existing-account re-login should restore child session markers
+          // immediately instead of waiting for child-side recovery paths.
           unawaited(_ensureParentProfileSafely(user));
         }
         _log('Email sign-in succeeded');
@@ -414,6 +416,15 @@ class AuthService {
     if (error is TimeoutException) {
       return 'network-timeout';
     }
+    if (error is PlatformException) {
+      final normalizedCode = error.code.trim().toLowerCase();
+      final normalizedMessage = (error.message ?? '').trim().toLowerCase();
+      if (normalizedCode == 'sign_in_failed' &&
+          normalizedMessage.contains('apiexception: 7')) {
+        return 'network_error';
+      }
+      return normalizedCode.isEmpty ? 'platform-error' : normalizedCode;
+    }
     if (error is FirebaseAuthException) {
       return error.code;
     }
@@ -428,6 +439,7 @@ class AuthService {
       return false;
     }
     return code == 'network-request-failed' ||
+        code == 'network_error' ||
         code == 'network-timeout' ||
         code == 'timeout' ||
         code == 'unknown';
@@ -439,7 +451,9 @@ class AuthService {
   }) async {
     Future<T?> attempt({required bool allowRetry}) async {
       try {
-        return await action();
+        final result = await action();
+        _lastErrorMessage = null;
+        return result;
       } catch (error, stackTrace) {
         _lastErrorMessage = _extractErrorCode(error);
         final errorCode = _lastErrorMessage;

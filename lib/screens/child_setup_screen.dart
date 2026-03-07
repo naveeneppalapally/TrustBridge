@@ -11,20 +11,26 @@ class ChildSetupScreen extends StatefulWidget {
   const ChildSetupScreen({
     super.key,
     this.pairingService,
+    this.auth,
   });
 
   final PairingService? pairingService;
+  final FirebaseAuth? auth;
 
   @override
   State<ChildSetupScreen> createState() => _ChildSetupScreenState();
 }
 
 class _ChildSetupScreenState extends State<ChildSetupScreen> {
+  static const Duration _authRetryDelay = Duration(seconds: 2);
+
   PairingService? _pairingService;
   PairingService get _resolvedPairingService {
     _pairingService ??= widget.pairingService ?? PairingService();
     return _pairingService!;
   }
+
+  FirebaseAuth get _auth => widget.auth ?? FirebaseAuth.instance;
 
   late final List<TextEditingController> _controllers;
   late final List<FocusNode> _focusNodes;
@@ -98,10 +104,10 @@ class _ChildSetupScreenState extends State<ChildSetupScreen> {
     });
 
     try {
-      var currentUser = FirebaseAuth.instance.currentUser;
+      var currentUser = _auth.currentUser;
       if (currentUser == null) {
         try {
-          final credential = await FirebaseAuth.instance.signInAnonymously();
+          final credential = await _signInAnonymouslyWithRetry();
           currentUser = credential.user;
         } on FirebaseAuthException catch (error) {
           if (!mounted) {
@@ -155,6 +161,31 @@ class _ChildSetupScreenState extends State<ChildSetupScreen> {
         _errorMessage = 'Could not connect. Check internet and try again.';
       });
     }
+  }
+
+  Future<UserCredential> _signInAnonymouslyWithRetry() async {
+    FirebaseAuthException? lastError;
+    for (var attempt = 0; attempt < 2; attempt++) {
+      try {
+        return await _auth.signInAnonymously();
+      } on FirebaseAuthException catch (error) {
+        lastError = error;
+        final code = error.code.trim().toLowerCase();
+        if (attempt == 0 && code == 'network-request-failed') {
+          await Future<void>.delayed(_authRetryDelay);
+          if (!mounted) {
+            break;
+          }
+          continue;
+        }
+        rethrow;
+      }
+    }
+    throw lastError ??
+        FirebaseAuthException(
+          code: 'auth-init-failed',
+          message: 'Could not start secure child setup.',
+        );
   }
 
   void _onCodeCharChanged(int index, String value) {

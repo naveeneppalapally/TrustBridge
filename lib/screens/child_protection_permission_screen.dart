@@ -4,6 +4,7 @@ import 'package:trustbridge_app/core/utils/app_logger.dart';
 import 'package:flutter/material.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
 
+import '../services/app_usage_service.dart';
 import '../services/bypass_detection_service.dart';
 import '../services/device_admin_service.dart';
 import '../services/heartbeat_service.dart';
@@ -13,7 +14,24 @@ import '../services/vpn_service.dart';
 
 /// Post-pairing protection permission flow for child devices.
 class ChildProtectionPermissionScreen extends StatefulWidget {
-  const ChildProtectionPermissionScreen({super.key});
+  const ChildProtectionPermissionScreen({
+    super.key,
+    VpnServiceBase? vpnService,
+    AppUsageService? appUsageService,
+    DeviceAdminService? deviceAdminService,
+    PairingService? pairingService,
+    BypassDetectionService? bypassDetectionService,
+  })  : _vpnService = vpnService,
+        _appUsageService = appUsageService,
+        _deviceAdminService = deviceAdminService,
+        _pairingService = pairingService,
+        _bypassDetectionService = bypassDetectionService;
+
+  final VpnServiceBase? _vpnService;
+  final AppUsageService? _appUsageService;
+  final DeviceAdminService? _deviceAdminService;
+  final PairingService? _pairingService;
+  final BypassDetectionService? _bypassDetectionService;
 
   @override
   State<ChildProtectionPermissionScreen> createState() =>
@@ -21,12 +39,12 @@ class ChildProtectionPermissionScreen extends StatefulWidget {
 }
 
 class _ChildProtectionPermissionScreenState
-    extends State<ChildProtectionPermissionScreen> {
-  final VpnService _vpnService = VpnService();
-  final DeviceAdminService _deviceAdminService = DeviceAdminService();
-  final PairingService _pairingService = PairingService();
-  final BypassDetectionService _bypassDetectionService =
-      BypassDetectionService();
+    extends State<ChildProtectionPermissionScreen> with WidgetsBindingObserver {
+  late final VpnServiceBase _vpnService;
+  late final AppUsageService _appUsageService;
+  late final DeviceAdminService _deviceAdminService;
+  late final PairingService _pairingService;
+  late final BypassDetectionService _bypassDetectionService;
 
   bool _isRequesting = false;
   bool _needsRetry = false;
@@ -37,6 +55,34 @@ class _ChildProtectionPermissionScreenState
   static const Duration _vpnStartTimeout = Duration(seconds: 20);
   static const Duration _deviceAdminTimeout = Duration(seconds: 30);
   static const Duration _backgroundOpTimeout = Duration(seconds: 8);
+
+  @override
+  void initState() {
+    super.initState();
+    _vpnService = widget._vpnService ?? VpnService();
+    _appUsageService = widget._appUsageService ?? AppUsageService();
+    _deviceAdminService = widget._deviceAdminService ?? DeviceAdminService();
+    _pairingService = widget._pairingService ?? PairingService();
+    _bypassDetectionService =
+        widget._bypassDetectionService ?? BypassDetectionService();
+    WidgetsBinding.instance.addObserver(this);
+  }
+
+  @override
+  void dispose() {
+    WidgetsBinding.instance.removeObserver(this);
+    super.dispose();
+  }
+
+  @override
+  void didChangeAppLifecycleState(AppLifecycleState state) {
+    if (state != AppLifecycleState.resumed ||
+        _step != _SetupStep.usageAccess ||
+        _isRequesting) {
+      return;
+    }
+    unawaited(_refreshUsageAccessStateOnResume());
+  }
 
   Future<void> _requestProtectionPermission() async {
     if (_isRequesting) {
@@ -68,12 +114,20 @@ class _ChildProtectionPermissionScreenState
         return;
       }
       if (started) {
+        final usageAccessGranted =
+            await _appUsageService.hasUsageAccessPermission();
+        if (!mounted) {
+          return;
+        }
+        if (usageAccessGranted) {
+          _enterDeviceAdminStep();
+          return;
+        }
         setState(() {
-          _step = _SetupStep.deviceAdmin;
+          _step = _SetupStep.usageAccess;
           _isRequesting = false;
           _needsRetry = false;
         });
-        unawaited(_autoPromptDeviceAdminIfNeeded());
         return;
       }
 
@@ -90,6 +144,74 @@ class _ChildProtectionPermissionScreenState
         _isRequesting = false;
       });
     }
+  }
+
+  Future<void> _requestUsageAccessPermission() async {
+    if (_isRequesting) {
+      return;
+    }
+    setState(() {
+      _isRequesting = true;
+      _needsRetry = false;
+    });
+
+    try {
+      final opened = await _appUsageService.openUsageAccessSettings();
+      if (!mounted) {
+        return;
+      }
+      if (!opened) {
+        setState(() {
+          _isRequesting = false;
+          _needsRetry = true;
+        });
+        return;
+      }
+
+      final granted = await _appUsageService.hasUsageAccessPermission();
+      if (!mounted) {
+        return;
+      }
+      if (granted) {
+        _enterDeviceAdminStep();
+        return;
+      }
+
+      setState(() {
+        _isRequesting = false;
+      });
+    } catch (_) {
+      if (!mounted) {
+        return;
+      }
+      setState(() {
+        _isRequesting = false;
+        _needsRetry = true;
+      });
+    }
+  }
+
+  Future<void> _refreshUsageAccessStateOnResume() async {
+    final granted = await _appUsageService.hasUsageAccessPermission();
+    if (!mounted || _step != _SetupStep.usageAccess) {
+      return;
+    }
+    if (granted) {
+      _enterDeviceAdminStep();
+      return;
+    }
+    setState(() {
+      _needsRetry = true;
+    });
+  }
+
+  void _enterDeviceAdminStep() {
+    setState(() {
+      _step = _SetupStep.deviceAdmin;
+      _isRequesting = false;
+      _needsRetry = false;
+    });
+    unawaited(_autoPromptDeviceAdminIfNeeded());
   }
 
   Future<void> _requestDeviceAdminAndFinish() async {
@@ -150,7 +272,8 @@ class _ChildProtectionPermissionScreenState
 
   Future<void> _finishSetup({required bool deviceAdminActive}) async {
     try {
-      await _saveDeviceAdminState(deviceAdminActive).timeout(_backgroundOpTimeout);
+      await _saveDeviceAdminState(deviceAdminActive)
+          .timeout(_backgroundOpTimeout);
     } catch (error) {
       AppLogger.debug('[ChildSetup] saveDeviceAdminState skipped: $error');
     }
@@ -241,16 +364,25 @@ class _ChildProtectionPermissionScreenState
   @override
   Widget build(BuildContext context) {
     final isDeviceAdminStep = _step == _SetupStep.deviceAdmin;
+    final isUsageAccessStep = _step == _SetupStep.usageAccess;
     final title = isDeviceAdminStep
         ? 'Activate uninstall protection'
-        : _needsRetry
-            ? 'Protection needs this permission to work.'
-            : 'Setting up protection for your phone';
+        : isUsageAccessStep
+            ? _needsRetry
+                ? 'App blocking needs one more permission.'
+                : 'Allow app access for instant blocking'
+            : _needsRetry
+                ? 'Protection needs this permission to work.'
+                : 'Setting up protection for your phone';
     final subtitle = isDeviceAdminStep
         ? 'This prevents your child from uninstalling TrustBridge.'
-        : _needsRetry
-            ? "Ask your parent if you're not sure."
-            : 'We need one permission to keep you safe online.';
+        : isUsageAccessStep
+            ? _needsRetry
+                ? 'Turn on Usage Access for TrustBridge, then return here.'
+                : 'This lets TrustBridge detect blocked apps like WhatsApp and Instagram and close them right away.'
+            : _needsRetry
+                ? "Ask your parent if you're not sure."
+                : 'We need one permission to keep you safe online.';
 
     return Scaffold(
       body: SafeArea(
@@ -289,7 +421,9 @@ class _ChildProtectionPermissionScreenState
                       ? null
                       : isDeviceAdminStep
                           ? _requestDeviceAdminAndFinish
-                          : _requestProtectionPermission,
+                          : isUsageAccessStep
+                              ? _requestUsageAccessPermission
+                              : _requestProtectionPermission,
                   child: _isRequesting
                       ? const SizedBox(
                           width: 18,
@@ -299,7 +433,11 @@ class _ChildProtectionPermissionScreenState
                       : Text(
                           isDeviceAdminStep
                               ? 'Activate protection'
-                              : (_needsRetry ? 'Try again' : 'Continue'),
+                              : isUsageAccessStep
+                                  ? (_needsRetry
+                                      ? 'Open settings again'
+                                      : 'Allow app access')
+                                  : (_needsRetry ? 'Try again' : 'Continue'),
                         ),
                 ),
               ),
@@ -320,5 +458,6 @@ class _ChildProtectionPermissionScreenState
 
 enum _SetupStep {
   protectionPermission,
+  usageAccess,
   deviceAdmin,
 }

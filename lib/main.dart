@@ -52,8 +52,8 @@ import 'package:trustbridge_app/widgets/skeleton_loaders.dart';
 Future<void> main() async {
   WidgetsFlutterBinding.ensureInitialized();
   NotificationService.navigatorKey = GlobalKey<NavigatorState>();
+  await _bootstrapStartupServices();
   runApp(const MyApp());
-  unawaited(_bootstrapStartupServices());
   WidgetsBinding.instance.addPostFrameCallback((_) {
     // Defer background scheduler registration until after first frame to
     // minimize startup jank and reduce ANR risk on lower-memory devices.
@@ -410,9 +410,9 @@ class _ModeRootScreenState extends State<_ModeRootScreen>
     super.initState();
     WidgetsBinding.instance.addObserver(this);
     _bootstrapFuture = _appModeService.primeCache().timeout(
-      const Duration(seconds: 3),
-      onTimeout: () {},
-    );
+          const Duration(seconds: 3),
+          onTimeout: () {},
+        );
   }
 
   @override

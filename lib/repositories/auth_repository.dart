@@ -49,6 +49,7 @@ class AuthRepository {
         },
         SetOptions(merge: true),
       );
+      await _restoreChildSessionsForParent(parentId);
     } catch (error, stackTrace) {
       await _crashlyticsService.logError(
         error,
@@ -199,5 +200,50 @@ class AuthRepository {
     }
     await commitBatch();
     return updated;
+  }
+
+  Future<void> _restoreChildSessionsForParent(String parentId) async {
+    final normalizedParentId = parentId.trim();
+    if (normalizedParentId.isEmpty) {
+      return;
+    }
+
+    final children = await _firestore
+        .collection('children')
+        .where('parentId', isEqualTo: normalizedParentId)
+        .get();
+    if (children.docs.isEmpty) {
+      return;
+    }
+
+    final now = Timestamp.fromDate(DateTime.now());
+    var batch = _firestore.batch();
+    var pending = 0;
+
+    Future<void> commitBatch() async {
+      if (pending == 0) {
+        return;
+      }
+      await batch.commit();
+      batch = _firestore.batch();
+      pending = 0;
+    }
+
+    for (final childDoc in children.docs) {
+      final childData = childDoc.data();
+      if (childData['parentSessionRevokedAt'] == null) {
+        continue;
+      }
+      batch.update(childDoc.reference, <String, dynamic>{
+        'parentSessionRevokedAt': FieldValue.delete(),
+        'updatedAt': now,
+      });
+      pending += 1;
+      if (pending >= 400) {
+        await commitBatch();
+      }
+    }
+
+    await commitBatch();
   }
 }
