@@ -37,7 +37,7 @@ class LaunchRouteService {
     }
 
     if (localCompletion) {
-      unawaited(_reconcileOnboardingStateWithCloud(user));
+      await _reconcileOnboardingStateWithCloud(user);
       return LaunchRoute(
         parentId: user.uid,
         onboardingComplete: true,
